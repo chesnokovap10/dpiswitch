@@ -31,6 +31,7 @@ type Supervisor struct {
 	running atomic.Bool
 	recheck chan struct{} // request to check the tunnel right away
 	job     windows.Handle
+	v6busy  atomic.Bool // an IPv6 check is already running for this start
 }
 
 func New() *Supervisor { return &Supervisor{recheck: make(chan struct{}, 1)} }
@@ -197,6 +198,15 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 	s.mu.Unlock()
 	s.running.Store(true)
 	log.Printf("core started, pid %d", cmd.Process.Pid)
+
+	// one-shot per core start: find out whether IPv6 gets through each
+	// tunnel (see ipv6.go). It waits for the tunnels, so it runs aside.
+	go func() {
+		if s.v6busy.CompareAndSwap(false, true) {
+			defer s.v6busy.Store(false)
+			s.checkIPv6(ctx)
+		}
+	}()
 
 	go func() { waitErr = cmd.Wait(); close(done) }()
 

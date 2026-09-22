@@ -349,11 +349,14 @@ func (c *Conf) Render() (string, error) {
 	w("    path: ./direct-verified.txt")
 	w("")
 	w("proxies:")
-	c.writeProxy(w, "awg", tunDNS, set.IPv6)
+	// a tunnel the check found IPv6 dead on keeps its address but resolves
+	// IPv4 only -- otherwise every IPv6-only host hangs until its timeout
+	tunV6 := ctl.LoadTunnelIPv6(paths.TunnelIPv6())
+	c.writeProxy(w, "awg", tunDNS, set.IPv6, tunV6.Dead("awg"))
 	if c2 != nil {
 		// the second tunnel uses its own DNS from the .conf: names must be
 		// resolved by the server that traffic will go through
-		c2.writeProxy(w, "awg2", split(c2.Interface["DNS"]), set.IPv6)
+		c2.writeProxy(w, "awg2", split(c2.Interface["DNS"]), set.IPv6, tunV6.Dead("awg2"))
 	}
 	w("")
 	w("rules:")
@@ -424,7 +427,7 @@ func writeEndpointRule(w func(string, ...any), host string) {
 }
 
 // writeProxy: an AmneziaWG outbound with the given name
-func (c *Conf) writeProxy(w func(string, ...any), name string, tunDNS []string, ipv6 bool) {
+func (c *Conf) writeProxy(w func(string, ...any), name string, tunDNS []string, ipv6, v6Dead bool) {
 	host, port, _ := net.SplitHostPort(c.Peer["Endpoint"])
 	v4, v6, _ := c.addrs()
 	mtu := c.Interface["MTU"]
@@ -465,7 +468,7 @@ func (c *Conf) writeProxy(w func(string, ...any), name string, tunDNS []string, 
 	w("    persistent-keepalive: %s", keepalive)
 	w("    udp: true")
 	w("    remote-dns-resolve: true")
-	if ipv6 {
+	if ipv6 && !v6Dead {
 		// IPv4 first, IPv6 when a site has only IPv6. The address family a
 		// program chose is not preserved with fake-ip: the core resolves the
 		// domain again itself. With ipv6-prefer all tunnel traffic went over
@@ -474,7 +477,7 @@ func (c *Conf) writeProxy(w func(string, ...any), name string, tunDNS []string, 
 		// A VPS typically has one IPv4, so the country stays consistent.
 		w("    ip-version: ipv4-prefer")
 	} else {
-		// IPv6 turned off in the settings. Without this the outbound keeps
+		// IPv6 turned off in the settings, or dead through this tunnel. Without this the outbound keeps
 		// the core default, which is DualStack: the TUN hands out no IPv6
 		// and no AAAA fake address, so nothing reaches the tunnel over IPv6,
 		// but the core still resolves the domain itself on the other side and

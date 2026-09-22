@@ -69,6 +69,7 @@ func SourceConf2() string     { return Data("source2.conf") }
 func Awg2Hosts() string       { return Data("awg2-hosts.txt") }
 func Preset(id string) string { return Data("preset-" + id + ".txt") }
 func ForceTunnel() string     { return Data("force-tunnel.txt") }
+func TunnelIPv6() string      { return Data("tunnel-ipv6.json") }
 func ServiceLog() string      { return filepath.Join(LogDir(), "service.log") }
 func MihomoLog() string       { return filepath.Join(LogDir(), "mihomo.log") }
 func ControllerLog() string   { return filepath.Join(LogDir(), "controller.log") }

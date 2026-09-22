@@ -130,9 +130,15 @@ func newHealthChecker(apiAddr, secret, proxy string) *healthChecker {
 // an honest end-to-end check: TUN being up with a dead peer looks fine from
 // the outside while traffic goes nowhere.
 func (h *healthChecker) alive() (bool, string) {
-	u := fmt.Sprintf("http://%s/proxies/%s/delay?timeout=5000&url=%s",
-		h.apiAddr, url.PathEscape(h.proxy),
-		url.QueryEscape("http://cp.cloudflare.com/generate_204"))
+	return h.check(h.proxy, "http://cp.cloudflare.com/generate_204", 5000)
+}
+
+// check measures one proxy against one URL through the core's own API, so the
+// path tested is the path traffic takes.
+func (h *healthChecker) check(proxy, target string, timeoutMs int) (bool, string) {
+	u := fmt.Sprintf("http://%s/proxies/%s/delay?timeout=%d&url=%s",
+		h.apiAddr, url.PathEscape(proxy), timeoutMs,
+		url.QueryEscape(target))
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
 		return false, err.Error()
