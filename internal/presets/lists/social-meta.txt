@@ -1,0 +1,14 @@
+# Instagram and Facebook. Blocked in Russia, and a Russian exit does not help:
+# Meta maps the client by the resolver's network and hands out an FNA node --
+# a caching appliance living inside some ISP -- which our Moscow VPS cannot
+# reach either, so the page loads and the media never does. From a German exit
+# Meta returns its own edge nodes instead. Hence the second tunnel.
+instagram.com
+cdninstagram.com
+fbcdn.net
+fbsbx.com
+facebook.com
+facebook.net
+fb.com
+messenger.com
+# WhatsApp is deliberately absent: it is not blocked and works direct.
