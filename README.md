@@ -50,8 +50,15 @@ Requires Go 1.26+.
 .\build.ps1
 ```
 
-The result is `dist\dpiswitch.exe`. `mihomo.exe`, built from mihomo sources with the
-`with_gvisor` tag, must sit next to it. The release archive contains both.
+The result is `dist\dpiswitch.exe`. `mihomo.exe` must sit next to it; build a slim one with
+
+```powershell
+.	oolsuild-mihomo.ps1
+```
+
+It pins the tested mihomo commit and drops what DPI Switch does not use (embedded
+Tailscale, ZeroTier, EasyTier, Hysteria fake-TCP, debug symbols): ~39 MB instead of ~80 MB.
+The release archive contains both binaries.
 
 ## Installation
 
