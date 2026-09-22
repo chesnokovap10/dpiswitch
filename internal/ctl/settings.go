@@ -63,10 +63,13 @@ func (s Settings) Equal(o Settings) bool { return reflect.DeepEqual(s, o) }
 
 func DefaultSettings() Settings {
 	return Settings{
-		AutoSwitch:    true,
-		Families:      true,
-		IPv6:          true,
-		Awg2Presets:   []string{"youtube", "telegram", "ai"},
+		AutoSwitch: true,
+		Families:   true,
+		IPv6:       true,
+		// every preset off by default: the second tunnel is optional, and a
+		// preset silently pinning traffic to a tunnel the user has not set up
+		// is worse than no preset at all
+		Awg2Presets:   []string{},
 		CleanTTLMin:   7 * 24 * 60,
 		FailTTLMin:    60,
 		MaxBackoffMin: 24 * 60,
