@@ -84,6 +84,7 @@ func Run(ctx context.Context, cfg Config) {
 	w := newWatcher(ctx, cfg, a)
 
 	t := time.NewTicker(cfg.Interval)
+	offline := false // no gateway right now (see the tick below)
 	defer t.Stop()
 	cycle(cfg, a, st, netID, w)
 	for {
@@ -99,7 +100,24 @@ func Run(ctx context.Context, cfg Config) {
 				set, haveSet = ns, true
 			}
 			// the network may have changed -- another network's verdicts do not apply
-			if id := resolveNetwork(cfg, st); id != netID {
+			id := resolveNetwork(cfg, st)
+			if id == "unknown" {
+				// no gateway: Wi-Fi reconnecting, sleep, cable out. This is not
+				// a new network -- switching to an empty memory used to send every
+				// site into the tunnel for the duration of a one-minute Wi-Fi blip.
+				// Keep the current memory and skip probing: without a network
+				// every probe would fail anyway.
+				if !offline {
+					log.Printf("no network, keeping memory of %s and pausing probes", netID)
+					offline = true
+				}
+				continue
+			}
+			if offline {
+				log.Printf("network is back")
+				offline = false
+			}
+			if id != netID {
 				log.Printf("network changed: %s -> %s, switching memory", netID, id)
 				netID = id
 				st.setCurrent(id)

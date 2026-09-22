@@ -117,6 +117,21 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			}
 
 			prev, had := st.get(netID, dom)
+
+			// INCONCLUSIVE says nothing about the direct path (usually the
+			// tunnel side failed, e.g. right after a Wi-Fi reconnect). It must
+			// not replace a definite verdict: a working direct site would be
+			// reverted into the tunnel because the TUNNEL was flaky. Keep the
+			// previous verdict and just retry later.
+			if had && rep.Verdict == probe.Inconcl && prev.Verdict != probe.Inconcl {
+				kept := *prev
+				kept.ExpiresAt = time.Now().Add(cfg.FailTTL)
+				st.put(netID, dom, &kept)
+				log.Printf("  %s inconclusive (%s), keeping %s, retry in %s",
+					dom, rep.Reason, prev.Verdict, cfg.FailTTL)
+				return
+			}
+
 			e := &entry{
 				Verdict:   rep.Verdict,
 				Reason:    rep.Reason,
