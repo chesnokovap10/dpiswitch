@@ -55,7 +55,7 @@ func RunQUIC(d Dialer, ip string, port int, host string) PathResult {
 	// for QUIC the handshake is indivisible: success means both datagram
 	// delivery and a completed TLS. Map it onto the same fields so Judge
 	// works without special cases.
-	r.TCPOk, r.TLSOk = true, true
+	r.TCPOk, r.TLSOk, r.TLSTried = true, true, true
 	r.TLSTime = time.Since(t0)
 
 	st := conn.ConnectionState().TLS

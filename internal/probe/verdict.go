@@ -163,14 +163,20 @@ func Judge(d, t PathResult) (Verdict, string) {
 		return BlockedTCP, ClassifyErr(d)
 	}
 	// a probe without TLS (not 443): nothing more to compare
-	if !t.TLSOk && !d.TLSOk {
+	if !d.TLSTried && !t.TLSTried {
 		return Clean, ""
+	}
+	// The direct path decides on its own: if its handshake fails, the site
+	// does not work direct, whatever the tunnel did. This used to be checked
+	// after the tunnel, so a host that answered on neither path fell into the
+	// "no TLS anywhere" branch above and came out CLEAN -- and a host that
+	// works nowhere was then sent direct, where it kept not working.
+	// A false "blocked" only costs a detour through the tunnel.
+	if !d.TLSOk {
+		return BlockedTLS, ClassifyErr(d)
 	}
 	if !t.TLSOk {
 		return Inconcl, "tunnel path unavailable: " + ClassifyErr(t)
-	}
-	if !d.TLSOk {
-		return BlockedTLS, ClassifyErr(d)
 	}
 	// certificate fingerprints cannot be compared -- different CDN nodes serve
 	// different valid certificates. The sign of substitution: the direct path's

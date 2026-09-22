@@ -16,11 +16,16 @@ import (
 
 // result of one pass over one path (direct or tunnel)
 type PathResult struct {
-	IP         string        `json:"ip,omitempty"`
-	TCPOk      bool          `json:"tcp_ok"`
-	TCPTime    time.Duration `json:"tcp_time_ms"`
-	TLSOk      bool          `json:"tls_ok"`
-	TLSTime    time.Duration `json:"tls_time_ms"`
+	IP      string        `json:"ip,omitempty"`
+	TCPOk   bool          `json:"tcp_ok"`
+	TCPTime time.Duration `json:"tcp_time_ns"`
+	TLSOk   bool          `json:"tls_ok"`
+	// TLSTried separates "not a TLS port, nothing was attempted" from
+	// "the handshake was attempted and failed" -- the two used to be
+	// indistinguishable in Judge, which read the second as "no difference
+	// between the paths" and called a host that answers nowhere clean.
+	TLSTried   bool          `json:"tls_tried"`
+	TLSTime    time.Duration `json:"tls_time_ns"`
 	CertSHA256 string        `json:"cert_sha256,omitempty"`
 	CertCN     string        `json:"cert_cn,omitempty"`
 	CertValid  bool          `json:"cert_valid"`
@@ -28,7 +33,7 @@ type PathResult struct {
 	HTTPStatus int           `json:"http_status,omitempty"`
 	BodySHA256 string        `json:"body_sha256,omitempty"`
 	BodyLen    int           `json:"body_len"`
-	TTFB       time.Duration `json:"ttfb_ms"`
+	TTFB       time.Duration `json:"ttfb_ns"`
 	Err        string        `json:"err,omitempty"`
 	ErrStage   string        `json:"err_stage,omitempty"`
 }
@@ -54,6 +59,7 @@ func Run(d Dialer, ip, host string) PathResult {
 	// InsecureSkipVerify: we need the certificate even if it is forged --
 	// the forgery is the signal. Validity is checked separately, by hand.
 	t1 := time.Now()
+	r.TLSTried = true
 	tc := tls.Client(conn, &tls.Config{
 		ServerName:         host,
 		InsecureSkipVerify: true,
