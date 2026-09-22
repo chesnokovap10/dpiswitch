@@ -473,6 +473,15 @@ func (c *Conf) writeProxy(w func(string, ...any), name string, tunDNS []string, 
 		// databases place in another country -- sites saw the user hop countries.
 		// A VPS typically has one IPv4, so the country stays consistent.
 		w("    ip-version: ipv4-prefer")
+	} else {
+		// IPv6 turned off in the settings. Without this the outbound keeps
+		// the core default, which is DualStack: the TUN hands out no IPv6
+		// and no AAAA fake address, so nothing reaches the tunnel over IPv6,
+		// but the core still resolves the domain itself on the other side and
+		// may pick an AAAA there -- the very IPv6 egress the switch turns off.
+		// The value is "ipv4", not "ipv4-only": an unknown one silently
+		// unmarshals back to DualStack (constant/dns.go).
+		w("    ip-version: ipv4")
 	}
 	if len(tunDNS) > 0 {
 		w("    dns: %s", quoteList(tunDNS))
