@@ -134,12 +134,11 @@ func (s *Supervisor) keepCore(ctx context.Context) {
 }
 
 func (s *Supervisor) runCore(ctx context.Context) error {
-	logf, err := os.OpenFile(paths.MihomoLog(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	logf, err := openRotating(paths.MihomoLog(), 8<<20)
 	if err != nil {
 		return fmt.Errorf("core log: %w", err)
 	}
 	defer logf.Close()
-	rotate(paths.MihomoLog(), 8<<20)
 
 	// the config is rebuilt before EVERY start: this way the core gets both
 	// a new program version and DNS changes from settings (for those
@@ -159,8 +158,13 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 	// here IPv6 may exist only inside the tunnel -- the ISP may not
 	// provide any -- so that check is wrong for us
 	cmd.Env = append(os.Environ(), "SKIP_SYSTEM_IPV6_CHECK=true")
-	cmd.Stdout = logf
-	cmd.Stderr = logf
+	// repeated warnings (a burst of retries while the network is down)
+	// are collapsed; see logfilter.go. Closed after the process exits,
+	// when exec has finished copying its output.
+	out := newDedupWriter(logf, time.Minute)
+	defer out.Close()
+	cmd.Stdout = out
+	cmd.Stderr = out
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("starting the core: %w", err)
 	}
@@ -263,16 +267,6 @@ func (s *Supervisor) waitAPI(ctx context.Context, limit time.Duration) bool {
 		time.Sleep(time.Second)
 	}
 	return false
-}
-
-// simple rotation: keep one previous file, no libraries
-func rotate(path string, max int64) {
-	fi, err := os.Stat(path)
-	if err != nil || fi.Size() < max {
-		return
-	}
-	_ = os.Remove(path + ".1")
-	_ = os.Rename(path, path+".1")
 }
 
 var _ = io.Discard
