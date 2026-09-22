@@ -86,6 +86,17 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool)
 		// if the resolver does not answer, direct traffic would not work either
 		ips, err := LookupAny(direct, direct.DNS, dom)
 		if err != nil {
+			// No A record does not mean "nothing can be said": the host may
+			// live on IPv6 only, and then the question is simply whether the
+			// direct path has IPv6 at all. Probing its AAAA answers that --
+			// on a network without IPv6 the connection fails and the host
+			// goes through the tunnel, instead of staying INCONCLUSIVE
+			// forever and being swept along direct by its family.
+			if v6, e6 := LookupAnyV6(direct, direct.DNS, dom); e6 == nil && len(v6) > 0 {
+				ips, err = v6, nil
+			}
+		}
+		if err != nil {
 			rep.Verdict, rep.Reason = Inconcl, "direct DNS did not answer: "+errText(err)
 			return rep
 		}

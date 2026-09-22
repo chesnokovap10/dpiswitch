@@ -86,7 +86,18 @@ func ParseResolver(s string) (Resolver, error) {
 // Plain udp:// is checked over TCP to the same server: the prober's
 // SOCKS listener is TCP, and the server and answers are the same.
 func (r Resolver) Lookup(d Dialer, name string) ([]string, error) {
-	q, id := buildQuery(name)
+	return r.lookup(d, name, typeA)
+}
+
+// LookupV6 asks for AAAA. A host with no A record at all is not "unknown":
+// it is reachable only over IPv6, and whether the direct path has IPv6 is
+// exactly what the probe then finds out by connecting to that address.
+func (r Resolver) LookupV6(d Dialer, name string) ([]string, error) {
+	return r.lookup(d, name, typeAAAA)
+}
+
+func (r Resolver) lookup(d Dialer, name string, qtype uint16) ([]string, error) {
+	q, id := buildQuery(name, qtype)
 	var resp []byte
 	var err error
 	switch r.Scheme {
@@ -98,7 +109,7 @@ func (r Resolver) Lookup(d Dialer, name string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseA(resp, id)
+	return parseAnswer(resp, id, qtype)
 }
 
 func (r Resolver) tlsConf() *tls.Config {
@@ -176,6 +187,15 @@ func (r Resolver) stream(d Dialer, q []byte) ([]byte, error) {
 // LookupAny queries resolvers concurrently and takes the first answer --
 // just like the core: otherwise the prober and traffic would get different nodes
 func LookupAny(d Dialer, rs []Resolver, name string) ([]string, error) {
+	return lookupAny(d, rs, name, Resolver.Lookup)
+}
+
+// LookupAnyV6: the same across the resolvers, but for AAAA.
+func LookupAnyV6(d Dialer, rs []Resolver, name string) ([]string, error) {
+	return lookupAny(d, rs, name, Resolver.LookupV6)
+}
+
+func lookupAny(d Dialer, rs []Resolver, name string, lookup func(Resolver, Dialer, string) ([]string, error)) ([]string, error) {
 	type res struct {
 		ips []string
 		err error
@@ -183,9 +203,9 @@ func LookupAny(d Dialer, rs []Resolver, name string) ([]string, error) {
 	ch := make(chan res, len(rs))
 	for _, r := range rs {
 		go func(r Resolver) {
-			ips, err := r.Lookup(d, name)
+			ips, err := lookup(r, d, name)
 			if err == nil && len(ips) == 0 {
-				err = errors.New("no A records")
+				err = errors.New("no records")
 			}
 			ch <- res{ips, err}
 		}(r)
@@ -201,9 +221,14 @@ func LookupAny(d Dialer, rs []Resolver, name string) ([]string, error) {
 	return nil, errors.New(strings.Join(errs, "; "))
 }
 
-// --- DNS message format: exactly what an A query needs ---
+// --- DNS message format: exactly what an A or AAAA query needs ---
 
-func buildQuery(name string) ([]byte, uint16) {
+const (
+	typeA    uint16 = 1
+	typeAAAA uint16 = 28
+)
+
+func buildQuery(name string, qtype uint16) ([]byte, uint16) {
 	var idb [2]byte
 	_, _ = rand.Read(idb[:])
 	id := binary.BigEndian.Uint16(idb[:])
@@ -215,13 +240,15 @@ func buildQuery(name string) ([]byte, uint16) {
 		b = append(b, byte(len(l)))
 		b = append(b, l...)
 	}
-	b = append(b, 0, 0, 1, 0, 1) // type A, class IN
+	b = append(b, 0)                            // end of name
+	b = binary.BigEndian.AppendUint16(b, qtype) // type
+	b = binary.BigEndian.AppendUint16(b, 1)     // class IN
 	return b, id
 }
 
 var rcodeText = map[int]string{2: "SERVFAIL", 3: "NXDOMAIN", 5: "REFUSED"}
 
-func parseA(m []byte, id uint16) ([]string, error) {
+func parseAnswer(m []byte, id uint16, qtype uint16) ([]string, error) {
 	if len(m) < 12 {
 		return nil, errors.New("short DNS response")
 	}
@@ -255,8 +282,8 @@ func parseA(m []byte, id uint16) ([]string, error) {
 		if off+rdl > len(m) {
 			break
 		}
-		if typ == 1 && rdl == 4 {
-			out = append(out, net.IP(m[off:off+4]).String())
+		if typ == qtype && ((qtype == typeA && rdl == 4) || (qtype == typeAAAA && rdl == 16)) {
+			out = append(out, net.IP(m[off:off+rdl]).String())
 		}
 		off += rdl
 	}

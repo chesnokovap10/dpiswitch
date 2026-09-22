@@ -222,6 +222,11 @@ func suspectDirect(cfg Config, st *state, netID string, conns []connection) []st
 		case had && e.Verdict == probe.Clean:
 		case !had && fams[familyOf(dom)]:
 			// sent direct by a family, never checked on its own
+		case had && e.Verdict == probe.Inconcl && fams[familyOf(dom)]:
+			// a family keeps sending it direct while its own check never
+			// concluded. Without this it would never be picked again: the
+			// entry exists, so it is not "unchecked", and it is not CLEAN
+			// either -- and it would sit direct and broken forever.
 		default:
 			continue
 		}
