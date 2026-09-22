@@ -36,7 +36,10 @@ const (
 )
 
 // checkIPv6 waits for the tunnels to come up, tests IPv6 through each and
-// rewrites the config if the answer changed. Runs after every core start.
+// rewrites the config for the ones that cannot carry it. Runs after every core
+// start, against a config that was just rebuilt with IPv6 on for everyone --
+// an outbound already pinned to ip-version: ipv4 rejects IPv6 targets, so a
+// check running against yesterday's answer would only ever confirm it.
 func (s *Supervisor) checkIPv6(ctx context.Context) {
 	if !ctl.LoadSettings(paths.Settings()).IPv6 {
 		return // IPv6 is off altogether: both tunnels are already ipv4
@@ -48,6 +51,8 @@ func (s *Supervisor) checkIPv6(ctx context.Context) {
 		names = append(names, "awg2")
 	}
 
+	// reset at core start, so this is empty unless a previous check in this
+	// same core session already answered
 	old := ctl.LoadTunnelIPv6(paths.TunnelIPv6())
 	found := ctl.TunnelIPv6{}
 	for _, name := range names {
