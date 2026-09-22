@@ -17,3 +17,7 @@ settings.json
 # editors
 .vscode/
 .idea/
+
+# embedded core, produced by build.ps1
+internal/core/mihomo.exe.gz
+internal/core/mihomo.exe.sha256

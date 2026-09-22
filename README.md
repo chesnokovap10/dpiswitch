@@ -50,17 +50,22 @@ Requires Go 1.26+.
 .\build.ps1
 ```
 
-The result is `dist\dpiswitch.exe`. `mihomo.exe` must sit next to it; build a slim one with
+The result is a single `dist\dpiswitch.exe` with the mihomo core embedded inside
+(gzip-compressed, ~24 MB in total). On the first build the core is built by
+`tools\build-mihomo.ps1` into `dist\mihomo.exe` and reused afterwards; it pins the
+tested mihomo commit and drops what DPI Switch does not use (embedded Tailscale,
+ZeroTier, EasyTier, Hysteria fake-TCP, debug symbols): ~39 MB instead of ~80 MB.
 
-```powershell
-.\tools\build-mihomo.ps1
-```
+At startup the service extracts the core to `%ProgramData%\dpiswitch\core\mihomo.exe`
+and verifies its SHA-256 before every start, re-extracting it if it does not match.
+That directory is writable by SYSTEM and Administrators only.
 
-It pins the tested mihomo commit and drops what DPI Switch does not use (embedded
-Tailscale, ZeroTier, EasyTier, Hysteria fake-TCP, debug symbols): ~39 MB instead of ~80 MB.
-The release archive contains both binaries.
+For development, `.\build.ps1 -NoEmbed` builds without the core; then `mihomo.exe`
+must sit next to `dpiswitch.exe`.
 
 ## Installation
+
+`dpiswitch.exe` is self-contained: there is nothing else to copy.
 
 1. Run `dpiswitch.exe` — a tray icon appears.
 2. Left click the icon — web UI; right click — menu.

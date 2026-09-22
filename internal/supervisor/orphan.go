@@ -3,13 +3,12 @@ package supervisor
 import (
 	"log"
 	"os"
-	"path/filepath"
 	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 
-	"dpiswitch/internal/paths"
+	"dpiswitch/internal/core"
 )
 
 // Job Object: the core must die together with the service.
@@ -54,7 +53,11 @@ func assignToJob(job windows.Handle, pid int) error {
 // not be touched.
 func killOrphans() {
 	self := os.Getpid()
-	target := strings.ToLower(paths.Mihomo())
+	// both the extracted core and a legacy mihomo.exe next to dpiswitch.exe
+	targets := map[string]bool{}
+	for _, p := range core.Paths() {
+		targets[strings.ToLower(p)] = true
+	}
 
 	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
@@ -70,8 +73,8 @@ func killOrphans() {
 	for {
 		name := strings.ToLower(windows.UTF16ToString(e.ExeFile[:]))
 		pid := int(e.ProcessID)
-		if name == strings.ToLower(filepath.Base(target)) && pid != self {
-			if path := processPath(uint32(pid)); strings.EqualFold(path, target) {
+		if name == "mihomo.exe" && pid != self {
+			if path := processPath(uint32(pid)); targets[strings.ToLower(path)] {
 				log.Printf("killing orphaned core, pid %d", pid)
 				if h, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(pid)); err == nil {
 					windows.TerminateProcess(h, 1)

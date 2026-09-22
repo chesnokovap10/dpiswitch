@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sys/windows"
 
 	"dpiswitch/internal/awgconf"
+	"dpiswitch/internal/core"
 	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/paths"
 	"dpiswitch/internal/winexec"
@@ -152,7 +153,15 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 		}
 	}
 
-	cmd := winexec.Command(paths.Mihomo(), "-d", paths.DataDir(), "-f", paths.Config())
+	// the core is embedded into dpiswitch.exe: make sure the extracted copy
+	// is present and untampered before every start (see internal/core)
+	if wrote, err := core.Ensure(); err != nil {
+		return fmt.Errorf("core binary: %w", err)
+	} else if wrote {
+		log.Printf("core extracted to %s", core.Path())
+	}
+
+	cmd := winexec.Command(core.Path(), "-d", paths.DataDir(), "-f", paths.Config())
 	cmd.Dir = paths.DataDir()
 	// the core disables IPv6 on TUN if the machine has no global IPv6.
 	// here IPv6 may exist only inside the tunnel -- the ISP may not
