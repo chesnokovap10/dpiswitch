@@ -53,7 +53,7 @@ Requires Go 1.26+.
 The result is `dist\dpiswitch.exe`. `mihomo.exe` must sit next to it; build a slim one with
 
 ```powershell
-.	oolsuild-mihomo.ps1
+.\tools\build-mihomo.ps1
 ```
 
 It pins the tested mihomo commit and drops what DPI Switch does not use (embedded
