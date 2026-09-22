@@ -1,0 +1,17 @@
+# Instagram and Facebook. Blocked in Russia, and a Russian exit does not fix
+# them: Meta hands out an FNA node -- its caching appliance living inside some
+# ISP's network -- and one belonging to a different ISP is unreachable both
+# from home and from the Moscow VPS. The page then loads from Meta's ordinary
+# edges while photos and video point at the dead appliance. From a German exit
+# Meta stops offering FNA nodes at all and serves its own edges.
+#
+# Every domain here was seen in real traffic; the CDN zones are separate
+# registrable domains and have to be listed on their own.
+fbcdn.net
+instagram.com
+facebook.com
+cdninstagram.com
+fbsbx.com
+# Deliberately absent: facebook.net (the SDK and pixel other sites embed --
+# routing those through Germany would slow down unrelated pages) and
+# whatsapp.com/whatsapp.net (not blocked, works direct).

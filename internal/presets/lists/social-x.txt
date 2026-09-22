@@ -1,0 +1,6 @@
+# X (Twitter). Blocked in Russia. twimg.com is a separate zone and fails on
+# its own -- the shell loads while images and video do not.
+x.com
+twimg.com
+# t.co and twitter.com are absent: neither appeared in traffic, and a redirect
+# through them works over the default tunnel anyway.
