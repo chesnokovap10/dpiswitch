@@ -454,6 +454,14 @@ func (c *Conf) writeProxy(w func(string, ...any), name string, tunDNS []string, 
 	}
 	w("    allowed-ips: %s", quoteList(allowed))
 	w("    mtu: %s", mtu)
+	// mihomo's own userspace TCP stack with BBR instead of the default gVisor
+	// one. With gVisor the upload through the tunnel was capped at 5-20 Mbit/s
+	// with an idle CPU and zero loss on the server -- a sender-side window
+	// limit. Measured on the same tunnel: gVisor 7, mips 28, mips+cubic 108,
+	// mips+bbr ~150 Mbit/s upload; download unchanged.
+	w("    ip-stack:")
+	w("      mode: mips")
+	w("      congestion-controller: bbr")
 	w("    persistent-keepalive: %s", keepalive)
 	w("    udp: true")
 	w("    remote-dns-resolve: true")
