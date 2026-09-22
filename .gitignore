@@ -1,0 +1,19 @@
+# сборка
+/dist/
+*.exe
+*.exe~*
+
+# конфиги AmneziaWG и mihomo содержат приватные ключи -- никогда в репозиторий
+*.conf
+config*.yaml
+
+# данные времени работы (живут в %ProgramData%\dpiswitch, но на всякий случай)
+*.log
+*.jsonl
+cache.db
+controller-state*.json
+settings.json
+
+# редакторы
+.vscode/
+.idea/

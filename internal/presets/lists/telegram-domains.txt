@@ -1,0 +1,13 @@
+# Telegram: домены веб-версии, ссылок, CDN и Telegraph.
+# Приложение ходит и по голым IP -- их диапазоны в telegram-cidr.txt
+# (с core.telegram.org/resources/cidr.txt, кэш relay-routes на vpsru).
+telegram.org
+telegram.me
+t.me
+telegra.ph
+graph.org
+telesco.pe
+tdesktop.com
+telegram-cdn.org
+cdn-telegram.org
+fragment.com
