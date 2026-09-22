@@ -1,11 +1,11 @@
-// Программы, у которых сейчас есть сетевые сокеты.
+// Programs that currently have network sockets.
 //
-// Нужно для выбора исключений: имя exe пользователь обычно не помнит,
-// а браузер из соображений безопасности не отдаёт полный путь файла,
-// выбранного в диалоге. Проще показать то, что прямо сейчас в сети.
+// Used to pick exclusions: users rarely remember the exe name, and a browser
+// will not reveal the full path of a file picked in a dialog for security
+// reasons. Easier to show what is on the network right now.
 //
-// TUN на это не влияет: он работает на уровне IP-пакетов, а сокеты
-// по-прежнему принадлежат самим программам.
+// TUN does not interfere: it works at the IP packet level, while the
+// sockets still belong to the programs themselves.
 package netprocs
 
 import (
@@ -33,7 +33,7 @@ type Proc struct {
 	Conns int    `json:"conns"`
 }
 
-// раскладка строк таблиц по заголовкам Windows: смещение PID и размер строки
+// table row layouts from the Windows headers: PID offset and row size
 type table struct {
 	proc    *windows.LazyProc
 	family  uintptr
@@ -55,7 +55,7 @@ func pids(t table, count map[uint32]int) {
 	if r != errInsufficient || size == 0 {
 		return
 	}
-	// таблица может вырасти между вызовами -- берём с запасом
+	// the table may grow between calls -- allocate with headroom
 	size += 4096
 	buf := make([]byte, size)
 	r, _, _ = t.proc.Call(uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&size)),
@@ -73,9 +73,9 @@ func pids(t table, count map[uint32]int) {
 	}
 }
 
-// Active возвращает программы с сокетами, по одной строке на exe.
-// Системные процессы, чей путь недоступен обычному пользователю,
-// пропускаются: исключать их всё равно бессмысленно.
+// Active returns programs with sockets, one row per exe. System processes
+// whose path is not readable by a normal user are skipped: excluding them
+// makes no sense anyway.
 func Active(skip ...string) []Proc {
 	count := map[uint32]int{}
 	for _, t := range tables {

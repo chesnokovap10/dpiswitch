@@ -9,24 +9,24 @@ import (
 	"dpiswitch/internal/probe"
 )
 
-// Семейства поддоменов.
+// Subdomain families.
 //
-// Сервисы вроде speedtest.ru раздают трафик по пулу хостов (*.qms.ru)
-// и каждый раз берут новые. Каждый новый хост сначала идёт в туннель
-// и ждёт проверки -- а замер длится меньше, чем проверка. Если же у
-// домена набралось несколько чистых поддоменов и ни одного
-// заблокированного, домен целиком ведёт себя одинаково, и новые хосты
-// разумно пускать напрямую сразу.
+// Services like speedtest.ru spread traffic over a pool of hosts (*.qms.ru)
+// and pick new ones every time. Each new host first goes into the tunnel and
+// waits to be checked -- and a speed test is shorter than the check. If a
+// domain has accumulated several clean subdomains and no blocked ones, the
+// whole domain behaves the same, and it is reasonable to send new hosts
+// direct right away.
 //
-// Страховка от ошибки: хосты семейства, пущенные напрямую без проверки,
-// ловит suspectDirect (соединение открыто, данных нет) -- после чего
-// хост проверяется, и первый же плохой вердикт снимает всё семейство.
+// Safety net: family hosts sent direct without a check are caught by
+// suspectDirect (connection open, no data) -- the host is then checked, and
+// the first bad verdict removes the whole family.
 //
-// Граница "домена" -- по списку публичных суффиксов вместе с частными
-// (github.io, cloudfront.net, appspot.com): иначе чужие друг другу
-// сайты на общем хостинге слились бы в одно семейство.
+// The "domain" boundary follows the public suffix list including private
+// suffixes (github.io, cloudfront.net, appspot.com): otherwise unrelated
+// sites on shared hosting would merge into one family.
 
-// minFamily: сколько чистых поддоменов нужно для вывода о домене
+// minFamily: how many clean subdomains are needed to judge the domain
 const minFamily = 3
 
 type family struct {
@@ -34,9 +34,9 @@ type family struct {
 	Clean  int    `json:"clean"`
 }
 
-// badForFamily: вердикты, говорящие, что домен НЕ однороден.
-// INCONCLUSIVE ничего не говорит о блокировке и не считается.
-// SLOWER считается: часть хостов напрямую хуже, значит обобщать нельзя.
+// badForFamily: verdicts showing the domain is NOT uniform.
+// INCONCLUSIVE says nothing about blocking and does not count.
+// SLOWER counts: some hosts are worse direct, so generalising is unsafe.
 func badForFamily(v probe.Verdict) bool {
 	return v != probe.Clean && v != probe.Inconcl
 }
@@ -49,7 +49,7 @@ func familyOf(dom string) string {
 	return f
 }
 
-// families: домены, чьи поддомены можно пускать напрямую целиком
+// families: domains whose subdomains may go direct as a whole
 func (s *state) families(id string) []family {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -77,8 +77,8 @@ func (s *state) families(id string) []family {
 	return out
 }
 
-// directRules: содержимое списка прямого пути -- проверенные домены
-// и, если включено, семейства в записи "+.домен"
+// directRules: contents of the direct list -- verified domains and,
+// if enabled, families written as "+.domain"
 func directRules(cfg Config, st *state, id string) (rules []string, fams []family) {
 	rules = st.verified(id)
 	if !cfg.Families {
@@ -90,7 +90,7 @@ func directRules(cfg Config, st *state, id string) (rules []string, fams []famil
 		covered[f.Domain] = true
 		rules = append(rules, "+."+f.Domain)
 	}
-	// хосты, покрытые семейством, в списке уже лишние
+	// hosts covered by a family are redundant in the list
 	out := rules[:0]
 	for _, r := range rules {
 		if !strings.HasPrefix(r, "+.") && covered[familyOf(r)] {

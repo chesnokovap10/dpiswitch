@@ -18,8 +18,8 @@ import (
 	"dpiswitch/internal/winsvc"
 )
 
-// Второй туннель (awg2, выход vpsde): только пресеты и свой список.
-// Остальной трафик его не касается -- там по-прежнему awg + детектор.
+// Second tunnel (awg2): presets and the custom list only.
+// Other traffic is unaffected -- it still goes through awg + the detector.
 
 type awg2Preset struct {
 	presets.Preset
@@ -72,20 +72,20 @@ func (s *Server) handleAwg2(w http.ResponseWriter, r *http.Request) {
 			writeResult(w, err)
 			return
 		}
-		// файлы пишем сразу: ядро следит за ними само,
-		// ждать цикла контроллера незачем
+		// write the files right away: the core watches them itself,
+		// no need to wait for the controller cycle
 		if err := presets.Write(set.Awg2Presets); err != nil {
 			writeResult(w, err)
 			return
 		}
-		writeResult(w, writeList(paths.Awg2Hosts(), "через второй туннель", body.Hosts))
+		writeResult(w, writeList(paths.Awg2Hosts(), "via the second tunnel", body.Hosts))
 	default:
-		http.Error(w, "нужен GET или POST", 405)
+		http.Error(w, "GET or POST required", 405)
 	}
 }
 
-// подгрузка и удаление .conf второго туннеля: меняет config.yaml,
-// поэтому служба перезапускается сама -- связь пропадает на секунды
+// loading and removing the second tunnel's .conf changes config.yaml,
+// so the service restarts itself -- connectivity drops for a few seconds
 func (s *Server) handleConfig2(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
@@ -102,13 +102,13 @@ func (s *Server) handleConfig2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if _, _, err := net.SplitHostPort(c.Peer["Endpoint"]); err != nil {
-			writeResult(w, fmt.Errorf("не разобран Endpoint: %w", err))
+			writeResult(w, fmt.Errorf("cannot parse Endpoint: %w", err))
 			return
 		}
 		if c1, err := awgconf.ParseFile(paths.SourceConf()); err == nil &&
 			c1.Interface["PrivateKey"] == c.Interface["PrivateKey"] {
-			// один ключ на двух сессиях -- серверы перебивают друг друга
-			writeResult(w, fmt.Errorf("это тот же конфиг, что у первого туннеля"))
+			// one key in two sessions -- the servers keep stealing it from each other
+			writeResult(w, fmt.Errorf("this is the same config as the first tunnel"))
 			return
 		}
 		if err := os.WriteFile(paths.SourceConf2(), []byte(body.Text), 0o600); err != nil {
@@ -116,7 +116,7 @@ func (s *Server) handleConfig2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := paths.Restrict(paths.SourceConf2()); err != nil {
-			log.Printf("предупреждение: права на %s не ограничены: %v", paths.SourceConf2(), err)
+			log.Printf("warning: permissions on %s not restricted: %v", paths.SourceConf2(), err)
 		}
 	case http.MethodDelete:
 		if err := os.Remove(paths.SourceConf2()); err != nil && !os.IsNotExist(err) {
@@ -124,14 +124,14 @@ func (s *Server) handleConfig2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	default:
-		http.Error(w, "нужен POST или DELETE", 405)
+		http.Error(w, "POST or DELETE required", 405)
 		return
 	}
 	writeResult(w, restartService())
 }
 
-// перезапуск нужен, только если служба работает: остановленную
-// пользователь запустит сам, и конфиг соберётся при старте
+// a restart is needed only if the service is running: a stopped one
+// will be started by the user, and the config is built on start
 func restartService() error {
 	if !winsvc.Installed() {
 		return nil
@@ -140,7 +140,7 @@ func restartService() error {
 		return nil
 	}
 	if err := winsvc.Stop(); err != nil {
-		return fmt.Errorf("остановка службы: %w", err)
+		return fmt.Errorf("stopping the service: %w", err)
 	}
 	return winsvc.Start()
 }

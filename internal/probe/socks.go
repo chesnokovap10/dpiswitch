@@ -10,16 +10,16 @@ import (
 	"time"
 )
 
-// минимальный SOCKS5 CONNECT. нужен именно сырой net.Conn:
-// TLS мы поднимаем сами, чтобы видеть сертификат и характер ошибки.
+// Minimal SOCKS5 CONNECT. A raw net.Conn is required: we run TLS
+// ourselves to see the certificate and the exact failure mode.
 type Dialer struct {
-	Addr    string // адрес listener'а mihomo
+	Addr    string // mihomo listener address
 	Timeout time.Duration
-	// резолверы этого пути: те же, что у ядра. пусто -- встроенный DoH
+	// resolvers for this path: the same the core uses. Empty -- built-in DoH
 	DNS []Resolver
 }
 
-// Alive: принимает ли соединения сам вход ядра (не сайт за ним)
+// Alive: whether the core's listener itself accepts connections (not the site behind it)
 func (d Dialer) Alive() bool {
 	c, err := net.DialTimeout("tcp", d.Addr, time.Second)
 	if err != nil {
@@ -36,7 +36,7 @@ func (d Dialer) dial(host string, port int) (net.Conn, error) {
 	}
 	_ = c.SetDeadline(time.Now().Add(d.Timeout))
 
-	// greeting: версия 5, один метод -- без аутентификации
+	// greeting: version 5, one method -- no authentication
 	if _, err := c.Write([]byte{5, 1, 0}); err != nil {
 		c.Close()
 		return nil, fmt.Errorf("socks greeting: %w", err)
@@ -51,14 +51,14 @@ func (d Dialer) dial(host string, port int) (net.Conn, error) {
 		return nil, fmt.Errorf("socks method rejected: %v", resp)
 	}
 
-	// CONNECT по имени хоста: резолв отдаём mihomo,
-	// чтобы путь совпадал с тем, которым пойдёт реальный трафик
+	// CONNECT by host name: resolution is left to mihomo so the path
+	// matches the one real traffic will take
 	if len(host) > 255 {
 		c.Close()
 		return nil, errors.New("hostname too long for socks5")
 	}
-	// IP-литерал передаём как адрес (типы 1 и 4), а не как имя: строку
-	// "fd7a::" ядро не обязано распознавать как IPv6 внутри поля имени
+	// an IP literal is sent as an address (types 1 and 4), not as a name:
+	// the core is not obliged to recognise "fd7a::" as IPv6 in the name field
 	var req []byte
 	if ip := net.ParseIP(strings.Trim(host, "[]")); ip != nil {
 		if v4 := ip.To4(); v4 != nil {
@@ -84,7 +84,7 @@ func (d Dialer) dial(host string, port int) (net.Conn, error) {
 		c.Close()
 		return nil, fmt.Errorf("socks refused: %s", socksErr(head[1]))
 	}
-	// дочитываем BND.ADDR, он нам не нужен, но остаться в потоке обязан
+	// drain BND.ADDR: we don't need it, but it must not stay in the stream
 	var skip int
 	switch head[3] {
 	case 1:

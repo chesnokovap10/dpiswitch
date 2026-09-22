@@ -1,5 +1,5 @@
-// Автозапуск трея через ключ реестра пользователя.
-// HKCU, а не HKLM и не планировщик: прав администратора не требует.
+// Tray autostart via the per-user Run registry key.
+// HKCU rather than HKLM or Task Scheduler: no administrator rights needed.
 package autostart
 
 import (
@@ -27,8 +27,8 @@ func Enabled() bool {
 	if err != nil {
 		return false
 	}
-	// путь мог устареть после переноса папки -- тогда автозапуск
-	// формально включён, но запускает не то
+	// the path may be stale after the folder was moved: autostart is then
+	// formally on but launches the wrong binary
 	return strings.EqualFold(v, command())
 }
 

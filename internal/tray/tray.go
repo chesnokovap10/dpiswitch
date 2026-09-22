@@ -1,10 +1,11 @@
-// Иконка в трее на голом Win32. Никаких GUI-фреймворков:
-// x/sys/windows уже в дереве, а Shell_NotifyIcon требует
-// скрытого окна и оконной процедуры -- и это всё.
+// Tray icon on plain Win32. No GUI frameworks:
+// x/sys/windows is already a dependency, and Shell_NotifyIcon needs
+// a hidden window and a window procedure -- that's all.
 package tray
 
 import (
 	"embed"
+	"encoding/binary"
 	"fmt"
 	"log"
 	"syscall"
@@ -26,7 +27,8 @@ const (
 
 const (
 	wmTrayIcon = 0x0400 + 1 // WM_APP+1
-	wmQuitReq  = 0x0400 + 2 // WM_APP+2: просьба завершиться
+	wmQuitReq  = 0x0400 + 2 // WM_APP+2: quit request
+	smCxSmIcon = 49         // SM_CXSMICON: small icon width at the current DPI
 	wmClose    = 0x0010
 	wmDestroy  = 0x0002
 	wmCommand  = 0x0111
@@ -49,8 +51,8 @@ const (
 	tpmRightButton = 0x2
 )
 
-// Item: пункт меню. Действие выполняется в горутине,
-// чтобы не подвешивать оконный цикл.
+// Item: a menu entry. The action runs in a goroutine
+// so the window loop is never blocked.
 type Item struct {
 	ID      uint32
 	Text    string
@@ -66,7 +68,7 @@ type Tray struct {
 	state   State
 	tip     string
 	Menu    func() []Item
-	OnOpen  func() // левый щелчок
+	OnOpen  func() // left click
 	items   map[uint32]func()
 	classNm *uint16
 }
@@ -92,6 +94,7 @@ var (
 	pGetCursorPos             = user32.NewProc("GetCursorPos")
 	pSetForegroundWindow      = user32.NewProc("SetForegroundWindow")
 	pCreateIconFromResourceEx = user32.NewProc("CreateIconFromResourceEx")
+	pGetSystemMetrics         = user32.NewProc("GetSystemMetrics")
 	pShellNotifyIcon          = shell32.NewProc("Shell_NotifyIconW")
 	pGetModuleHandle          = kernel32.NewProc("GetModuleHandleW")
 	pGetProcessWindowStation  = user32.NewProc("GetProcessWindowStation")
@@ -142,7 +145,7 @@ func New(tip string) (*Tray, error) {
 	for i, name := range []string{"icons/off.ico", "icons/on.ico", "icons/error.ico"} {
 		h, err := loadIcon(name)
 		if err != nil {
-			return nil, fmt.Errorf("иконка %s: %w", name, err)
+			return nil, fmt.Errorf("icon %s: %w", name, err)
 		}
 		t.icons[i] = h
 	}
@@ -156,38 +159,38 @@ func New(tip string) (*Tray, error) {
 		className: t.classNm,
 	}
 	if r, _, err := pRegisterClassEx.Call(uintptr(unsafe.Pointer(&wc))); r == 0 {
-		return nil, fmt.Errorf("регистрация класса окна: %w", err)
+		return nil, fmt.Errorf("registering the window class: %w", err)
 	}
-	// окно скрытое и нужно только как получатель сообщений трея
+	// the window is hidden and only receives tray messages
 	hwnd, _, err := pCreateWindowEx.Call(0,
 		uintptr(unsafe.Pointer(t.classNm)),
 		uintptr(unsafe.Pointer(windows.StringToUTF16Ptr("dpiswitch"))),
 		0, 0, 0, 0, 0, 0, 0, inst, 0)
 	if hwnd == 0 {
-		return nil, fmt.Errorf("создание окна: %w", err)
+		return nil, fmt.Errorf("creating the window: %w", err)
 	}
 	t.hwnd = windows.HWND(hwnd)
 
-	// GUID у иконки НЕ используем. Windows связывает его с конкретным
-	// файлом программы: после обновления бинаря связь рвётся, и оболочка
-	// перестаёт показывать иконку вовсе. Проверено на практике -- трей
-	// исчезал после каждой подмены exe. Призраки от аварийно убитых
-	// процессов -- меньшее зло, чем пропавшая иконка.
+	// No icon GUID is used. Windows binds it to a specific
+	// program file: after the binary is updated the binding breaks and the shell
+	// stops showing the icon entirely. Seen in practice -- the tray icon
+	// vanished after every exe replacement. Ghost icons from crashed
+	// processes are a lesser evil than a missing icon.
 	if err := t.notify(nimAdd); err != nil {
-		log.Printf("трей: первая попытка добавить иконку не удалась: %v", err)
-		// прежняя запись могла остаться от убитой копии
+		log.Printf("tray: first attempt to add the icon failed: %v", err)
+		// a stale entry may be left by a killed copy
 		_ = t.notify(nimDelete)
 		if err2 := t.notify(nimAdd); err2 != nil {
-			log.Printf("трей: повторная попытка тоже не удалась: %v", err2)
+			log.Printf("tray: the retry failed too: %v", err2)
 			return nil, err2
 		}
-		log.Println("трей: иконка добавлена со второй попытки")
+		log.Println("tray: icon added on the second attempt")
 	} else {
-		log.Println("трей: иконка добавлена")
+		log.Println("tray: icon added")
 	}
-	// рабочий стол, к которому привязан процесс: если это не
-	// WinSta0\Default, иконки не будет видно, сколько ни добавляй
-	log.Printf("трей: рабочая станция %q, окно %v", stationName(), t.hwnd)
+	// the desktop the process is attached to: if it is not
+	// WinSta0\Default, the icon will never be visible
+	log.Printf("tray: window station %q, window %v", stationName(), t.hwnd)
 	return t, nil
 }
 
@@ -196,15 +199,48 @@ func loadIcon(name string) (windows.Handle, error) {
 	if err != nil {
 		return 0, err
 	}
-	// пропускаем ICONDIR и ICONDIRENTRY: CreateIconFromResourceEx
-	// ждёт сам образ, а не файл целиком
-	if len(b) < 22 {
-		return 0, fmt.Errorf("слишком короткий ico")
+	// The .ico holds several sizes (16..32). Pick the one the tray actually
+	// uses at the current display scale (SM_CXSMICON: 16 at 100%, 20 at 125%,
+	// 24 at 150%...), so Windows does not blur a downscaled bitmap.
+	// CreateIconFromResourceEx expects a single image, not the whole file.
+	if len(b) < 6 {
+		return 0, fmt.Errorf("ico too short")
 	}
-	img := b[22:]
+	want, _, _ := pGetSystemMetrics.Call(smCxSmIcon)
+	if want == 0 {
+		want = 16
+	}
+	n := int(binary.LittleEndian.Uint16(b[4:]))
+	var img []byte
+	best := 0
+	for i := 0; i < n; i++ {
+		e := b[6+16*i:]
+		if len(e) < 16 {
+			break
+		}
+		size := int(e[0])
+		if size == 0 {
+			size = 256
+		}
+		ln := binary.LittleEndian.Uint32(e[8:])
+		off := binary.LittleEndian.Uint32(e[12:])
+		if int(off)+int(ln) > len(b) {
+			continue
+		}
+		// the smallest image not smaller than needed; otherwise the largest
+		better := best == 0 ||
+			(size >= int(want) && (best < int(want) || size < best)) ||
+			(best < int(want) && size > best)
+		if better {
+			best, img = size, b[off:off+ln]
+		}
+	}
+	if img == nil {
+		return 0, fmt.Errorf("no usable image in %s", name)
+	}
 	h, _, err := pCreateIconFromResourceEx.Call(
 		uintptr(unsafe.Pointer(&img[0])), uintptr(len(img)),
-		1, 0x00030000, 32, 32, 0)
+		1, 0x00030000, want, want, 0)
 	if h == 0 {
 		return 0, err
 	}
@@ -233,8 +269,8 @@ func (t *Tray) notify(action uint32) error {
 	return nil
 }
 
-// SetState меняет иконку и подсказку. Безопасно звать из любой горутины:
-// Shell_NotifyIcon не требует принадлежности к потоку окна.
+// SetState changes the icon and tooltip. Safe to call from any goroutine:
+// Shell_NotifyIcon does not require the window's thread.
 func (t *Tray) SetState(s State, tip string) {
 	t.state = s
 	if len(tip) > 120 {
@@ -251,8 +287,8 @@ func (t *Tray) wndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr
 		case wmRButtonUp:
 			t.showMenu()
 		case wmLButtonUp, wmLButtonDbl:
-			// двойной щелчок обрабатываем так же: иначе первый клик
-			// уже открыл бы интерфейс, а второй открыл бы его повторно
+			// double click is handled the same way: otherwise the first click
+			// would open the UI and the second would open it again
 			if t.OnOpen != nil {
 				go t.OnOpen()
 			}
@@ -261,14 +297,14 @@ func (t *Tray) wndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr
 	case wmCommand:
 		id := uint32(wParam & 0xffff)
 		if fn, ok := t.items[id]; ok && fn != nil {
-			go fn() // действие может быть долгим, окно блокировать нельзя
+			go fn() // the action may take long; the window must not be blocked
 		}
 		return 0
 	case wmQuitReq:
-		// разрушение окна выполняется здесь, в потоке цикла сообщений:
-		// из другого потока DestroyWindow молча не сработает
+		// the window is destroyed here, on the message loop thread:
+		// from another thread DestroyWindow silently does nothing
 		if err := t.notify(nimDelete); err != nil {
-			log.Printf("трей: иконка не снята: %v", err)
+			log.Printf("tray: icon not removed: %v", err)
 		}
 		pDestroyWindow.Call(uintptr(t.hwnd))
 		return 0
@@ -310,15 +346,15 @@ func (t *Tray) showMenu() {
 
 	var pt point
 	pGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
-	// без этого меню не закроется по щелчку мимо -- известная
-	// особенность всплывающих меню у окон без фокуса
+	// without this the menu does not close on an outside click -- a known
+	// quirk of popup menus for windows without focus
 	pSetForegroundWindow.Call(uintptr(t.hwnd))
 	pTrackPopupMenu.Call(hmenu, tpmRightAlign|tpmBottomAlign|tpmRightButton,
 		uintptr(pt.X), uintptr(pt.Y), 0, uintptr(t.hwnd), 0)
 }
 
-// Loop крутит цикл сообщений. Обязан выполняться в том же потоке,
-// где создано окно, поэтому вызывающий делает runtime.LockOSThread.
+// Loop runs the message loop. It must run on the same thread
+// that created the window, so the caller does runtime.LockOSThread.
 func (t *Tray) Loop() {
 	var m msg
 	for {
@@ -331,27 +367,27 @@ func (t *Tray) Loop() {
 	}
 }
 
-// Quit безопасен из любой горутины: пункты меню выполняются в
-// отдельных потоках, а DestroyWindow обязан вызываться в том, где
-// окно создано. Поэтому просто отправляем окну сообщение, а всю
-// работу делает оконная процедура.
+// Quit is safe from any goroutine: menu items run on
+// separate threads, while DestroyWindow must be called on the one that
+// created the window. So we just post a message to the window and
+// the window procedure does the work.
 //
-// Раньше здесь был прямой DestroyWindow из чужого потока: он молча
-// не срабатывал, окно оставалось жить, процесс не завершался и держал
-// мьютекс -- следующий запуск считал программу уже работающей,
-// открывал браузер и выходил без иконки.
+// This used to call DestroyWindow directly from a foreign thread: it silently
+// did nothing, the window stayed alive, the process never exited and held
+// the mutex -- the next launch considered the program already running,
+// opened the browser and exited without an icon.
 func (t *Tray) Quit() {
 	pPostMessage.Call(uintptr(t.hwnd), wmQuitReq, 0, 0)
 }
 
-// stationName: к какой оконной станции привязан процесс.
-// Интерактивный рабочий стол -- только WinSta0. Процесс, запущенный
-// из службы или из неинтерактивного контекста, попадает в другую
-// станцию, и его иконка в трее не появится никогда.
+// stationName: which window station the process is attached to.
+// Only WinSta0 is interactive. A process started
+// from a service or a non-interactive context lands in another
+// station, and its tray icon will never appear.
 func stationName() string {
 	h, _, _ := pGetProcessWindowStation.Call()
 	if h == 0 {
-		return "нет станции"
+		return "no station"
 	}
 	buf := make([]uint16, 256)
 	var n uint32
@@ -359,7 +395,7 @@ func stationName() string {
 		uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)*2),
 		uintptr(unsafe.Pointer(&n)))
 	if r == 0 {
-		return "неизвестно"
+		return "unknown"
 	}
 	return windows.UTF16ToString(buf)
 }

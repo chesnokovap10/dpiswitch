@@ -10,20 +10,19 @@ import (
 	"time"
 )
 
-// Память вердиктов привязана к ПРОВАЙДЕРУ (номеру автономной системы),
-// а не к точке подключения.
+// Verdict memory is keyed by the ISP (autonomous system number), not by
+// the point of connection.
 //
-// Блокировки ставит провайдер, поэтому вердикты одинаково верны для
-// любого роутера и диапазона в его сети. Раньше ключом был шлюз с его
-// MAC, и переключение между 2.4 и 5 ГГц одного роутера (у диапазонов
-// разные MAC) считалось новой сетью: память начиналась с нуля, и все
-// сайты на время уходили в туннель.
+// Blocking is done by the ISP, so verdicts hold equally for any router and
+// band within its network. The key used to be the gateway and its MAC, and
+// switching between 2.4 and 5 GHz of one router counted as a new network:
+// memory started from scratch and every site went into the tunnel for a while.
 //
-// Шлюз остаётся "адресом подключения": по нему видно, что сеть
-// сменилась, и по нему кэшируется найденный провайдер.
+// The gateway remains the "attachment address": it shows that the network
+// changed, and the discovered ISP is cached by it.
 
-// asnCacheTTL: как часто перепроверять провайдера за тем же шлюзом
-// (роутер могли переключить на другой канал связи)
+// asnCacheTTL: how often to re-check the ISP behind the same gateway
+// (the router may have been switched to another uplink)
 const asnCacheTTL = 24 * time.Hour
 
 type attachment struct {
@@ -31,8 +30,8 @@ type attachment struct {
 	Checked time.Time `json:"checked"`
 }
 
-// lookupASN узнаёт провайдера по внешнему адресу ПРЯМОГО пути.
-// Через туннель ответом был бы провайдер VPS.
+// lookupASN finds the ISP from the public address of the DIRECT path.
+// Through the tunnel the answer would be the VPS provider.
 func lookupASN(directAddr string) (string, error) {
 	cl := &http.Client{
 		Timeout: 8 * time.Second,
@@ -45,10 +44,10 @@ func lookupASN(directAddr string) (string, error) {
 		} `json:"data"`
 	}
 	if err := getJSON(cl, "https://stat.ripe.net/data/whats-my-ip/data.json", &ip); err != nil {
-		return "", fmt.Errorf("внешний адрес: %w", err)
+		return "", fmt.Errorf("public address: %w", err)
 	}
 	if ip.Data.IP == "" {
-		return "", errors.New("внешний адрес не получен")
+		return "", errors.New("public address not received")
 	}
 	var info struct {
 		Data struct {
@@ -57,10 +56,10 @@ func lookupASN(directAddr string) (string, error) {
 	}
 	if err := getJSON(cl, "https://stat.ripe.net/data/network-info/data.json?resource="+
 		url.QueryEscape(ip.Data.IP), &info); err != nil {
-		return "", fmt.Errorf("провайдер: %w", err)
+		return "", fmt.Errorf("ISP: %w", err)
 	}
 	if len(info.Data.ASNs) == 0 {
-		return "", fmt.Errorf("для %s провайдер неизвестен", ip.Data.IP)
+		return "", fmt.Errorf("ISP unknown for %s", ip.Data.IP)
 	}
 	return "AS" + info.Data.ASNs[0], nil
 }
@@ -77,12 +76,12 @@ func getJSON(cl *http.Client, u string, v any) error {
 	return json.NewDecoder(resp.Body).Decode(v)
 }
 
-// resolveNetwork: ключ памяти для текущего подключения.
+// resolveNetwork: the memory key for the current connection.
 //
-// Провайдер не определился (сеть ещё поднимается, RIPE недоступен) --
-// работаем под ключом шлюза, как раньше, и пробуем снова в следующем
-// цикле. Брать вердикты прошлого провайдера "на всякий случай" нельзя:
-// на чужой сети ложное "чисто" ломает сайты.
+// If the ISP cannot be determined (network still coming up, RIPE
+// unreachable) we work under the gateway key as before and retry next cycle.
+// Borrowing the previous ISP's verdicts "just in case" is not allowed: on a
+// foreign network a false "clean" breaks sites.
 func resolveNetwork(cfg Config, st *state) string {
 	att := networkID()
 	if att == "unknown" {
@@ -103,16 +102,16 @@ func resolveNetwork(cfg Config, st *state) string {
 	}
 	if err != nil {
 		if ok {
-			// провайдер за этим шлюзом уже известен, просто не
-			// перепроверился -- продолжаем с ним
+			// the ISP behind this gateway is already known, it just failed
+			// to re-check -- keep using it
 			return cached.Net
 		}
-		log.Printf("провайдер не определён (%v), память по шлюзу %s", err, att)
+		log.Printf("ISP not determined (%v), using gateway memory %s", err, att)
 		return att
 	}
 	st.attach(att, asn)
 	if n := st.mergeInto(asn); n > 0 {
-		log.Printf("провайдер %s: влито %d вердиктов из прежней памяти по шлюзу", asn, n)
+		log.Printf("ISP %s: merged %d verdicts from previous gateway memory", asn, n)
 	}
 	return asn
 }

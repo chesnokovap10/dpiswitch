@@ -9,14 +9,14 @@ import (
 type Verdict string
 
 const (
-	Clean       Verdict = "CLEAN"        // прямой путь чист -- кандидат в DIRECT
-	BlockedTCP  Verdict = "BLOCKED_TCP"  // рвётся на уровне соединения
-	BlockedTLS  Verdict = "BLOCKED_TLS"  // рвётся на ClientHello -- фильтр по SNI
-	MITM        Verdict = "MITM"         // подмена сертификата
-	ContentDiff Verdict = "CONTENT_DIFF" // ответ отличается -- возможна заглушка
-	BlockedQUIC Verdict = "BLOCKED_QUIC" // QUIC режется (TCP при этом может быть чист)
-	Slower      Verdict = "SLOWER"       // блокировки нет, но прямой путь медленнее туннеля
-	Inconcl     Verdict = "INCONCLUSIVE" // туннель тоже не работает, сравнивать не с чем
+	Clean       Verdict = "CLEAN"        // direct path is clean -- a DIRECT candidate
+	BlockedTCP  Verdict = "BLOCKED_TCP"  // cut at the connection level
+	BlockedTLS  Verdict = "BLOCKED_TLS"  // cut on ClientHello -- SNI filter
+	MITM        Verdict = "MITM"         // certificate substitution
+	ContentDiff Verdict = "CONTENT_DIFF" // the response differs -- possibly a block page
+	BlockedQUIC Verdict = "BLOCKED_QUIC" // QUIC is blocked (TCP may still be clean)
+	Slower      Verdict = "SLOWER"       // not blocked, but the direct path is slower than the tunnel
+	Inconcl     Verdict = "INCONCLUSIVE" // the tunnel fails too, nothing to compare against
 )
 
 type Report struct {
@@ -31,8 +31,8 @@ type Report struct {
 	Port      int     `json:"port,omitempty"`
 	Proto     string  `json:"proto,omitempty"`
 	Note      string  `json:"note,omitempty"`
-	// Aborted: проверка сорвалась по нашей стороне (ядро перезапускалось),
-	// результат ничего не говорит о сайте и в память идти не должен
+	// Aborted: the check failed on our side (the core was restarting);
+	// the result says nothing about the site and must not be remembered
 	Aborted  bool       `json:"aborted,omitempty"`
 	DirectMs int64      `json:"direct_ms,omitempty"`
 	TunnelMs int64      `json:"tunnel_ms,omitempty"`
@@ -40,16 +40,16 @@ type Report struct {
 	Tunnel   PathResult `json:"tunnel"`
 }
 
-// Проба: N проходов подряд, CLEAN только если чисты все.
-// асимметрия намеренная -- ложное "чисто" ломает сайт,
-// ложное "заблокировано" стоит лишь крюка через туннель.
-// "не заблокирован" и "быстрее" -- разные вещи. домен, который открывается
-// напрямую, но медленнее туннеля, переключать незачем: станет только хуже.
-// запас по множителю и абсолютный -- чтобы близкие значения не дёргались.
+// Probing: N passes in a row, CLEAN only if all of them are clean.
+// The asymmetry is deliberate -- a false "clean" breaks the site,
+// a false "blocked" only costs a detour through the tunnel.
+// "not blocked" and "faster" are different things. A domain that opens
+// directly but slower than the tunnel is not worth switching: it only gets worse.
+// Both a multiplicative and an absolute margin -- so close values don't flap.
 const slowMargin = 10 * time.Millisecond
 
-// множитель настраивается из интерфейса; читается пробами из разных
-// горутин, поэтому хранится атомарно (в тысячных долях)
+// the factor is configurable from the UI; probes read it from several
+// goroutines, so it is stored atomically (in thousandths)
 var slowFactorMilli atomic.Int64
 
 func init() { slowFactorMilli.Store(1200) }
@@ -58,15 +58,15 @@ func SetSlowFactor(f float64) { slowFactorMilli.Store(int64(f * 1000)) }
 
 func slowFactor() float64 { return float64(slowFactorMilli.Load()) / 1000 }
 
-// CheckProto: udp=true означает пробу QUIC на этом порту.
+// CheckProto: udp=true means a QUIC probe on this port.
 func CheckProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool) Report {
 	rep := checkProto(direct, tunnel, dom, port, attempts, udp)
-	// неудача, пока ядро перезапускается, выглядит как блокировка: входы
-	// пробника просто не отвечают. засчитать её -- значит откатить в
-	// туннель рабочий сайт и отодвинуть его перепроверку
+	// a failure while the core restarts looks like blocking: the prober's
+	// listeners simply don't answer. Counting it would revert a working
+	// site into the tunnel and postpone its re-check
 	if rep.Verdict != Clean && (!direct.Alive() || !tunnel.Alive()) {
 		rep.Verdict, rep.Aborted = Inconcl, true
-		rep.Reason = "ядро недоступно (перезапуск?), проверка не в счёт"
+		rep.Reason = "core unavailable (restarting?), check discarded"
 	}
 	return rep
 }
@@ -80,22 +80,22 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool)
 
 	var ip string
 	if len(direct.DNS) > 0 {
-		// проверяем ровно тот узел, на который пойдёт прямой трафик:
-		// адрес берём у того же резолвера, что и ядро. подмену ответа
-		// поймает проверка сертификата -- на чужом узле она не пройдёт.
-		// не ответил резолвер -- прямой трафик тоже не заработал бы
+		// test exactly the node direct traffic will go to:
+		// the address comes from the same resolver the core uses. A spoofed
+		// answer is caught by certificate verification -- it fails on a foreign node.
+		// if the resolver does not answer, direct traffic would not work either
 		ips, err := LookupAny(direct, direct.DNS, dom)
 		if err != nil {
-			rep.Verdict, rep.Reason = Inconcl, "прямой DNS не ответил: "+errText(err)
+			rep.Verdict, rep.Reason = Inconcl, "direct DNS did not answer: "+errText(err)
 			return rep
 		}
 		rep.DNSDirect = JoinIPs(ips)
 		ip = ips[0]
 	} else {
-		// эталонный резолв -- через туннель, он заведомо не подменён
+		// reference resolution through the tunnel, which is known not to be spoofed
 		tunIPs, err := ResolveVia(tunnel, dom)
 		if err != nil || len(tunIPs) == 0 {
-			rep.Verdict, rep.Reason = Inconcl, "не резолвится даже через туннель: "+errText(err)
+			rep.Verdict, rep.Reason = Inconcl, "does not resolve even through the tunnel: "+errText(err)
 			return rep
 		}
 		rep.DNSTunnel = JoinIPs(tunIPs)
@@ -104,12 +104,12 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool)
 		ip = tunIPs[0]
 	}
 
-	// обе стороны проверяем на ОДНОМ узле, иначе сравнение бессмысленно:
-	// у CDN разные узлы блокируются по-разному
+	// both sides are tested on the SAME node, otherwise the comparison is meaningless:
+	// different CDN nodes are blocked differently
 	rep.TestedIP = ip
 
-	// берём лучшее измерение из проходов, а не последнее: минимум
-	// устойчивее к случайным всплескам, чем среднее
+	// take the best measurement across passes, not the last one: the minimum
+	// is more robust to random spikes than the average
 	var bestDirect, bestTunnel time.Duration
 	for i := 0; i < attempts; i++ {
 		var d, t PathResult
@@ -123,14 +123,14 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool)
 		}
 		rep.Direct, rep.Tunnel = d, t
 		v, reason := Judge(d, t)
-		// для QUIC рукопожатие неразделимо, поэтому обе "транспортные"
-		// неудачи означают одно и то же -- пакеты не дошли
+		// for QUIC the handshake is indivisible, so both "transport"
+		// failures mean the same thing -- packets did not get through
 		if udp && (v == BlockedTCP || v == BlockedTLS) {
 			v = BlockedQUIC
 		}
 		rep.Verdict, rep.Reason = v, reason
 		if v != Clean {
-			return rep // первый же не-чистый проход решает
+			return rep // the first non-clean pass decides
 		}
 		if dt := d.TCPTime + d.TLSTime; bestDirect == 0 || dt < bestDirect {
 			bestDirect = dt
@@ -144,61 +144,61 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool)
 
 	if bestTunnel > 0 && bestDirect > time.Duration(float64(bestTunnel)*slowFactor())+slowMargin {
 		rep.Verdict = Slower
-		rep.Reason = fmt.Sprintf("прямой путь медленнее: %d мс против %d через туннель",
+		rep.Reason = fmt.Sprintf("direct path is slower: %d ms vs %d via tunnel",
 			bestDirect.Milliseconds(), bestTunnel.Milliseconds())
 		return rep
 	}
 
-	// расхождение наборов адресов между путями НЕ является признаком блокировки:
-	// резолверы применяют EDNS Client Subnet, и с адреса VPS тот же google
-	// отдаёт другой узел CDN, чем с домашнего адреса. проверено на example.com.
+	// differing address sets between paths are NOT a sign of blocking:
+	// resolvers apply EDNS Client Subnet, and from the VPS address the same google
+	// returns a different CDN node than from home. Verified on example.com.
 	return rep
 }
 
 func Judge(d, t PathResult) (Verdict, string) {
 	if !t.TCPOk {
-		return Inconcl, "туннельный путь недоступен: " + ClassifyErr(t)
+		return Inconcl, "tunnel path unavailable: " + ClassifyErr(t)
 	}
 	if !d.TCPOk {
 		return BlockedTCP, ClassifyErr(d)
 	}
-	// проба без TLS (не 443): дальше сравнивать нечего
+	// a probe without TLS (not 443): nothing more to compare
 	if !t.TLSOk && !d.TLSOk {
 		return Clean, ""
 	}
 	if !t.TLSOk {
-		return Inconcl, "туннельный путь недоступен: " + ClassifyErr(t)
+		return Inconcl, "tunnel path unavailable: " + ClassifyErr(t)
 	}
 	if !d.TLSOk {
 		return BlockedTLS, ClassifyErr(d)
 	}
-	// сравнивать отпечатки сертификатов нельзя -- у CDN разные узлы отдают
-	// разные валидные сертификаты. признак подмены: цепочка прямого пути
-	// не проходит проверку, а туннельного проходит.
+	// certificate fingerprints cannot be compared -- different CDN nodes serve
+	// different valid certificates. The sign of substitution: the direct path's
+	// chain fails verification while the tunnel's passes.
 	if t.CertValid && !d.CertValid {
-		return MITM, "сертификат на прямом пути не проходит проверку цепочки (CN=" + d.CertCN + ")"
+		return MITM, "direct path certificate fails chain verification (CN=" + d.CertCN + ")"
 	}
 	if d.HTTPStatus != 0 && t.HTTPStatus != 0 && d.HTTPStatus != t.HTTPStatus {
-		// туннель -- не абсолютный эталон. выход у нас в дата-центре,
-		// и Cloudflare отдаёт таким адресам challenge вместо контента.
-		// если напрямую приходит нормальный ответ, а через туннель
-		// заградительный статус -- испорчен туннель, и уводить домен
-		// в него значит выбрать заведомо сломанный путь.
+		// the tunnel is not an absolute reference. Its exit is in a data centre,
+		// and Cloudflare serves such addresses a challenge instead of content.
+		// if the direct path gets a normal answer and the tunnel gets
+		// a blocking status, it is the tunnel that is broken, and moving the domain
+		// into it would pick a known-broken path.
 		if d.HTTPStatus < 400 && isChallenge(t.HTTPStatus) {
 			return Clean, ""
 		}
-		return ContentDiff, fmt.Sprintf("HTTP %d напрямую против %d через туннель", d.HTTPStatus, t.HTTPStatus)
+		return ContentDiff, fmt.Sprintf("HTTP %d direct vs %d via tunnel", d.HTTPStatus, t.HTTPStatus)
 	}
 	if d.BodyLen > 0 && t.BodyLen > 0 && !isChallenge(t.HTTPStatus) {
 		ratio := float64(d.BodyLen) / float64(t.BodyLen)
 		if ratio < 0.25 || ratio > 4 {
-			return ContentDiff, fmt.Sprintf("размер ответа %d против %d байт", d.BodyLen, t.BodyLen)
+			return ContentDiff, fmt.Sprintf("response size %d vs %d bytes", d.BodyLen, t.BodyLen)
 		}
 	}
 	return Clean, ""
 }
 
-// статусы, которыми отвечает защита от ботов, а не сам сайт
+// statuses returned by bot protection rather than the site itself
 func isChallenge(code int) bool {
 	return code == 403 || code == 429 || code == 503
 }

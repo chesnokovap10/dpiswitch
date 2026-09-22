@@ -1,5 +1,5 @@
-// dpiswitch: трей, служба и установка в одном бинаре.
-// Режим выбирается аргументом; без аргументов -- трей.
+// dpiswitch: tray, service and installer in one binary.
+// The mode is chosen by an argument; without one -- the tray.
 package main
 
 import (
@@ -27,8 +27,8 @@ import (
 )
 
 func main() {
-	// запуск диспетчером служб распознаётся сам: ярлык и автозапуск
-	// зовут тот же бинарь, перепутать режимы нельзя
+	// a start by the service manager is detected automatically: a shortcut and
+	// autostart call the same binary, so the modes cannot be confused
 	if winsvc.IsWindowsService() {
 		runService()
 		return
@@ -42,18 +42,18 @@ func main() {
 	case "service":
 		runService()
 	case "install":
-		report("Установка службы", winsvc.Install())
+		report("Install service", winsvc.Install())
 	case "uninstall":
-		report("Удаление службы", winsvc.Uninstall())
+		report("Uninstall service", winsvc.Uninstall())
 	case "reinstall":
 		_ = winsvc.Uninstall()
-		report("Переустановка службы", winsvc.Install())
+		report("Reinstall service", winsvc.Install())
 	case "", "tray":
 		runTray()
 	case "version", "-v", "--version":
-		msgBox("DPI Switch", "Версия "+version.Version, 0x40)
+		msgBox("DPI Switch", "Version "+version.Version, 0x40)
 	default:
-		report("dpiswitch", fmt.Errorf("неизвестная команда %q; допустимы: tray, service, install, uninstall, reinstall, version", cmd))
+		report("dpiswitch", fmt.Errorf("unknown command %q; valid: tray, service, install, uninstall, reinstall, version", cmd))
 	}
 }
 
@@ -64,15 +64,15 @@ func runService() {
 	}
 	log.SetFlags(log.LstdFlags)
 	if err := winsvc.RunService(true); err != nil {
-		log.Printf("служба завершилась с ошибкой: %v", err)
+		log.Printf("service exited with an error: %v", err)
 	}
 }
 
-// Второй экземпляр не нужен: две иконки в трее и две копии
-// веб-сервера только путают. Но и молча умирать неправильно --
-// пользователь запустил ярлык, ожидая увидеть интерфейс.
-// Порт теперь постоянен внутри сессии, поэтому достаточно открыть
-// его в браузере и выйти.
+// A second instance is not needed: two tray icons and two copies
+// of the web server only confuse. But dying silently is wrong too --
+// the user launched the shortcut expecting to see the UI.
+// The port is stable within the session, so it is enough to open
+// it in the browser and exit.
 func alreadyRunning() bool {
 	name, err := syscall.UTF16PtrFromString(`Local\dpiswitch-tray`)
 	if err != nil {
@@ -83,24 +83,24 @@ func alreadyRunning() bool {
 }
 
 func runTray() {
-	// журнал настраиваем ПЕРВЫМ делом: раньше проверка "уже запущено"
-	// стояла выше, и выход по ней не оставлял в логе ни строчки --
-	// ровно тот путь, который и надо было увидеть
+	// logging is set up FIRST: the "already running" check used to come
+	// earlier, and exiting through it left no trace in the log --
+	// exactly the path that needed to be seen
 	_ = paths.EnsureDataDir()
 	if f, err := os.OpenFile(paths.ControllerLog(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
 		log.SetOutput(f)
 	}
-	log.Printf("запуск трея %s: pid %d, аргументы %v", version.Version, os.Getpid(), os.Args[1:])
+	log.Printf("tray %s starting: pid %d, args %v", version.Version, os.Getpid(), os.Args[1:])
 
-	// мьютекс -- объект ядра: при смерти процесса он освобождается сам,
-	// поэтому "зависнуть" не может и дополнительных проверок не требует
+	// the mutex is a kernel object: it is released when the process dies,
+	// so it cannot get "stuck" and needs no extra checks
 	if alreadyRunning() {
-		log.Println("трей: другая копия уже работает -- открываю интерфейс и выхожу")
+		log.Println("tray: another copy is already running -- opening the UI and exiting")
 		browse(fmt.Sprintf("http://127.0.0.1:%d/", session.Port()))
 		return
 	}
 
-	// оконный цикл обязан жить в одном потоке с окном
+	// the window loop must live on the same thread as the window
 	runtime.LockOSThread()
 
 	srv := &webui.Server{
@@ -108,13 +108,13 @@ func runTray() {
 		Reload:  func() error { return nil },
 	}
 	if err := srv.Start(); err != nil {
-		report("dpiswitch", fmt.Errorf("не поднялся интерфейс: %w", err))
+		report("dpiswitch", fmt.Errorf("the UI failed to start: %w", err))
 		return
 	}
 
 	t, err := tray.New("DPI Switch " + version.Version)
 	if err != nil {
-		report("dpiswitch", fmt.Errorf("не создана иконка в трее: %w", err))
+		report("dpiswitch", fmt.Errorf("the tray icon was not created: %w", err))
 		return
 	}
 	openUI := func() { browse(srv.Addr()) }
@@ -129,28 +129,28 @@ func runTray() {
 			}
 		}
 		items := []tray.Item{
-			{ID: 1, Text: "Настройки…", Do: openUI},
+			{ID: 1, Text: "Settings…", Do: openUI},
 			{Sep: true},
 		}
 		if !installed {
-			items = append(items, tray.Item{ID: 2, Text: "Установить службу…",
+			items = append(items, tray.Item{ID: 2, Text: "Install service…",
 				Do: func() { _ = elevate("install") }})
 		} else if running {
-			items = append(items, tray.Item{ID: 3, Text: "Остановить туннель",
+			items = append(items, tray.Item{ID: 3, Text: "Stop tunnel",
 				Do: func() { _ = winsvc.Stop() }})
 		} else {
-			items = append(items, tray.Item{ID: 4, Text: "Включить туннель",
+			items = append(items, tray.Item{ID: 4, Text: "Start tunnel",
 				Do: func() { _ = winsvc.Start() }})
 		}
 		items = append(items,
-			tray.Item{ID: 5, Text: "Всё в туннель (сбросить вердикты)", Grayed: !running,
+			tray.Item{ID: 5, Text: "Everything via tunnel (reset verdicts)", Grayed: !running,
 				Do: panicTunnel},
 			tray.Item{Sep: true},
-			tray.Item{ID: 6, Text: "Автозапуск", Checked: autostart.Enabled(),
+			tray.Item{ID: 6, Text: "Start with Windows", Checked: autostart.Enabled(),
 				Do: func() { _ = autostart.Set(!autostart.Enabled()) }},
-			tray.Item{ID: 7, Text: "Папка данных", Do: func() { browse(paths.DataDir()) }},
+			tray.Item{ID: 7, Text: "Data folder", Do: func() { browse(paths.DataDir()) }},
 			tray.Item{Sep: true},
-			tray.Item{ID: 9, Text: "Выход", Do: func() { t.Quit() }},
+			tray.Item{ID: 9, Text: "Exit", Do: func() { t.Quit() }},
 		)
 		return items
 	}
@@ -160,59 +160,59 @@ func runTray() {
 	srv.Close()
 }
 
-// иконка отражает состояние: иначе непонятно, работает ли оно вообще
+// the icon reflects the state: otherwise it's unclear whether anything works
 func watchStatus(t *tray.Tray) {
 	for {
 		state, tip := status()
 		t.SetState(state, tip)
-		// проверка туннеля ходит в API ядра, поэтому реже,
-		// чем обновлялась бы простая надпись
+		// the tunnel check calls the core API, so it runs less often
+		// than a plain label would refresh
 		sleep(10)
 	}
 }
 
 func status() (tray.State, string) {
 	if !winsvc.Installed() {
-		return tray.StateOff, "DPI Switch — служба не установлена"
+		return tray.StateOff, "DPI Switch — service not installed"
 	}
 	st, err := winsvc.State()
 	if err != nil {
-		return tray.StateError, "DPI Switch — ошибка: " + err.Error()
+		return tray.StateError, "DPI Switch — error: " + err.Error()
 	}
 	if st != svc.Running {
 		if !supervisor.NetworkUp() {
-			return tray.StateOff, "DPI Switch — выключен, сети нет"
+			return tray.StateOff, "DPI Switch — off, no network"
 		}
-		return tray.StateOff, "DPI Switch — туннель выключен"
+		return tray.StateOff, "DPI Switch — tunnel off"
 	}
-	// служба на ходу и туннель пропускает трафик -- разные вещи:
-	// при мёртвом пире TUN стоит, а интернета нет
+	// a running service and a tunnel that passes traffic are different things:
+	// with a dead peer TUN is up but there is no internet
 	alive, note := supervisor.TunnelAlive("127.0.0.1:9090",
 		ctl.SecretFromConfig(paths.Config()), "awg")
 	if !alive {
 		if !supervisor.NetworkUp() {
-			return tray.StateError, "DPI Switch — нет сети, жду подключения"
+			return tray.StateError, "DPI Switch — no network, waiting"
 		}
-		return tray.StateError, "DPI Switch — туннель не отвечает: " + note
+		return tray.StateError, "DPI Switch — tunnel not responding: " + note
 	}
 	snap := ctl.Load(paths.State())
 	blocked := snap.Counts["BLOCKED_TLS"] + snap.Counts["BLOCKED_TCP"] + snap.Counts["BLOCKED_QUIC"]
-	return tray.StateOn, fmt.Sprintf("DPI Switch — туннель работает (%s)\n"+
-		"напрямую: %d, заблокировано: %d", note, len(snap.Direct), blocked)
+	return tray.StateOn, fmt.Sprintf("DPI Switch — tunnel up (%s)\n"+
+		"direct: %d, blocked: %d", note, len(snap.Direct), blocked)
 }
 
-// аварийный сброс: очищаем вердикты, весь трафик возвращается в туннель.
-// нужен, когда детектор ошибся и что-то перестало открываться.
+// panic reset: clear verdicts, all traffic returns to the tunnel.
+// for when the detector made a mistake and something stopped opening.
 func panicTunnel() {
 	_ = os.WriteFile(paths.Verified(),
-		[]byte("# сброшено вручную из трея\n"), 0o644)
+		[]byte("# reset manually from the tray\n"), 0o644)
 	_ = os.Remove(paths.State())
-	msgBox("DPI Switch", "Вердикты сброшены, весь трафик идёт через туннель.\n"+
-		"Детектор начнёт заново подбирать домены.", 0x40)
+	msgBox("DPI Switch", "Verdicts reset, all traffic goes through the tunnel.\n"+
+		"The detector will start picking domains again.", 0x40)
 }
 
-// установка и удаление службы требуют администратора: обычный
-// процесс их выполнить не может, поэтому зовём себя же с runas
+// installing and removing the service needs administrator rights: a normal
+// process cannot do it, so we call ourselves with runas
 func elevate(verb string) error {
 	exe, _ := syscall.UTF16PtrFromString(paths.Exe())
 	args, _ := syscall.UTF16PtrFromString(verb)
@@ -226,29 +226,29 @@ var (
 	pAllowSetForegroundWindow = user32.NewProc("AllowSetForegroundWindow")
 )
 
-const asfwAny = ^uintptr(0) // ASFW_ANY: право на фокус любому процессу
+const asfwAny = ^uintptr(0) // ASFW_ANY: allow any process to take focus
 
-// Windows не даёт процессу самому выйти на передний план -- иначе окна
-// перехватывали бы фокус у пользователя. Легальный способ один:
-// заранее передать это право тому, кого мы сейчас запускаем.
-// Если браузер уже открыт, он всплывёт с нужной вкладкой.
+// Windows does not let a process bring itself to the foreground -- otherwise
+// windows would steal focus from the user. The only legal way is to
+// hand that right in advance to whatever we are launching.
+// If the browser is already open, it comes up with the right tab.
 func browse(target string) {
 	pAllowSetForegroundWindow.Call(asfwAny)
 
 	verb, _ := syscall.UTF16PtrFromString("open")
 	file, _ := syscall.UTF16PtrFromString(target)
 	if err := windows.ShellExecute(0, verb, file, nil, nil, windows.SW_SHOWNORMAL); err != nil {
-		// запасной путь: ShellExecute капризен к некоторым схемам
+		// fallback: ShellExecute is picky about some schemes
 		_ = winexec.Command("rundll32", "url.dll,FileProtocolHandler", target).Start()
 	}
 }
 
 func report(title string, err error) {
 	if err != nil {
-		msgBox(title, "Не получилось:\n\n"+err.Error(), 0x10)
+		msgBox(title, "Failed:\n\n"+err.Error(), 0x10)
 		os.Exit(1)
 	}
-	msgBox(title, "Готово.", 0x40)
+	msgBox(title, "Done.", 0x40)
 }
 
 func msgBox(title, text string, icon uint32) {

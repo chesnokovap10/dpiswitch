@@ -12,48 +12,48 @@ import (
 	"dpiswitch/internal/probe"
 )
 
-// Settings: то, что пользователь правит из интерфейса. Хранится
-// отдельным файлом, а не в config.yaml: конфиг ядра закрыт правами
-// (там приватный ключ), а эти значения трей должен писать сам.
+// Settings: what the user edits in the UI. Stored
+// in a separate file, not in config.yaml: the core config is ACL-locked
+// (it holds the private key), while the tray must write these values itself.
 //
-// Контроллер перечитывает файл каждый цикл -- перезапуск службы
-// ради смены срока не нужен.
+// The controller re-reads the file every cycle -- no service restart
+// is needed to change a TTL.
 type Settings struct {
-	// автопереключение: false -- только наблюдать, всё идёт в туннель
+	// auto-switch: false -- observe only, everything goes through the tunnel
 	AutoSwitch bool `json:"auto_switch"`
-	// сколько держать домен напрямую до перепроверки
+	// how long a domain stays direct before a re-check
 	CleanTTLMin int `json:"clean_ttl_min"`
-	// через сколько перепроверять заблокированный
+	// when to re-check a blocked domain
 	FailTTLMin int `json:"fail_ttl_min"`
-	// потолок паузы для доменов, которые уже теряли прямой путь
+	// pause cap for domains that have lost their direct path before
 	MaxBackoffMin int `json:"max_backoff_min"`
-	// насколько прямой путь может быть медленнее туннеля, в процентах
+	// how much slower than the tunnel the direct path may be, in percent
 	SlowPct int `json:"slow_pct"`
-	// попыток на каждую пробу; лучшее измерение идёт в зачёт
+	// attempts per probe; the best measurement counts
 	Attempts int `json:"attempts"`
-	// переносить вердикт на весь домен, когда у него несколько чистых
-	// поддоменов и ни одного заблокированного
+	// extend the verdict to the whole domain when it has several clean
+	// subdomains and no blocked ones
 	Families bool `json:"families"`
-	// IPv6 через туннель: TUN получает IPv6, туннель предпочитает его
+	// IPv6 through the tunnel: TUN gets IPv6 and a route
 	IPv6 bool `json:"ipv6"`
-	// пресеты второго туннеля (awg2): youtube, telegram, ai
+	// second tunnel (awg2) presets: youtube, telegram, ai
 	Awg2Presets []string `json:"awg2_presets"`
-	// резолверы прямого пути: к ним ядро и пробник ходят напрямую,
-	// поэтому CDN выдаёт узлы, ближайшие к провайдеру пользователя
+	// direct-path resolvers: the core and the prober reach them directly,
+	// so CDNs hand out nodes closest to the user's ISP
 	DirectDNS []string `json:"direct_dns"`
-	// резолверы внутри туннеля; пусто -- DNS из .conf
+	// resolvers inside the tunnel; empty -- DNS from the .conf
 	TunnelDNS []string `json:"tunnel_dns"`
 }
 
-// Яндекс: проверен на сети пользователя напрямую, ответы на
-// заблокированные домены не подменяет, узлы CDN подбирает под
-// российских провайдеров. DoH и DoT на разных адресах: закроют
-// один протокол или адрес -- останется другой.
+// Yandex: verified reachable directly, does not tamper with answers
+// for blocked domains, picks CDN nodes for
+// Russian ISPs. DoH and DoT on different addresses: if one protocol
+// or address gets blocked, the other remains.
 var defaultDirectDNS = []string{"https://77.88.8.8/dns-query", "tls://77.88.8.1"}
 
-// SameCore: не изменилось ли то, что входит в конфиг ядра (резолверы,
-// IPv6). Такие настройки требуют перезапуска ядра, остальные
-// подхватываются на лету
+// SameCore: whether anything that goes into the core config changed (resolvers,
+// IPv6). Such settings need a core restart; the rest
+// are picked up on the fly
 func (s Settings) SameCore(o Settings) bool {
 	return reflect.DeepEqual(s.DirectDNS, o.DirectDNS) &&
 		reflect.DeepEqual(s.TunnelDNS, o.TunnelDNS) && s.IPv6 == o.IPv6
@@ -77,8 +77,8 @@ func DefaultSettings() Settings {
 	}
 }
 
-// LoadSettings: отсутствующий или битый файл -- не ошибка,
-// берутся значения по умолчанию. Недостающие поля тоже.
+// LoadSettings: a missing or broken file is not an error,
+// defaults are used. The same for missing fields.
 func LoadSettings(path string) Settings {
 	s := DefaultSettings()
 	if b, err := os.ReadFile(path); err == nil {
@@ -106,25 +106,25 @@ func SaveSettings(path string, s Settings) error {
 func (s Settings) Validate() error {
 	switch {
 	case s.CleanTTLMin < 10 || s.CleanTTLMin > 30*24*60:
-		return fmt.Errorf("срок прямого пути: от 10 минут до 30 дней")
+		return fmt.Errorf("direct TTL: from 10 minutes to 30 days")
 	case s.FailTTLMin < 5 || s.FailTTLMin > 7*24*60:
-		return fmt.Errorf("перепроверка заблокированных: от 5 минут до 7 дней")
-	// потолок паузы ограничивает перепроверку ЗАБЛОКИРОВАННЫХ после отката,
-	// со сроком прямого пути он не связан: 7 дней напрямую и 1 день
-	// потолка -- законное сочетание. раньше сравнивалось именно с ним,
-	// и такое сохранение молча отклонялось
+		return fmt.Errorf("blocked re-check: from 5 minutes to 7 days")
+	// the pause cap limits re-checking of BLOCKED domains after a revert,
+	// it is unrelated to the direct TTL: 7 days direct and a 1 day
+	// cap is a valid combination. It used to be compared against it,
+	// and such a save was silently rejected
 	case s.MaxBackoffMin < s.FailTTLMin || s.MaxBackoffMin > 30*24*60:
-		return fmt.Errorf("потолок паузы: не меньше перепроверки заблокированных и не больше 30 дней")
+		return fmt.Errorf("pause cap: no less than the blocked re-check and no more than 30 days")
 	case s.SlowPct < 0 || s.SlowPct > 500:
-		return fmt.Errorf("допуск по задержке: от 0 до 500%%")
+		return fmt.Errorf("latency tolerance: from 0 to 500%%")
 	case s.Attempts < 1 || s.Attempts > 10:
-		return fmt.Errorf("попыток: от 1 до 10")
+		return fmt.Errorf("attempts: from 1 to 10")
 	case len(s.DirectDNS) == 0:
-		return fmt.Errorf("нужен хотя бы один DNS для прямых сайтов")
+		return fmt.Errorf("at least one DNS server for direct sites is required")
 	}
 	for _, id := range s.Awg2Presets {
 		if !presets.Valid(id) {
-			return fmt.Errorf("неизвестный пресет %q", id)
+			return fmt.Errorf("unknown preset %q", id)
 		}
 	}
 	for _, list := range [][]string{s.DirectDNS, s.TunnelDNS} {
@@ -137,8 +137,8 @@ func (s Settings) Validate() error {
 	return nil
 }
 
-// clamp чинит руками испорченный файл, а не отказывается работать:
-// служба не должна падать из-за опечатки в настройках
+// clamp repairs a hand-broken file instead of refusing to work:
+// the service must not fail over a typo in the settings
 func (s *Settings) clamp() {
 	d := DefaultSettings()
 	if s.CleanTTLMin < 10 {
@@ -173,9 +173,9 @@ func (s *Settings) clamp() {
 	}
 }
 
-// cleanDNS отбрасывает пустые и нераспознанные записи: ядро с кривым
-// резолвером не стартует, а оставлять пользователя без сети из-за
-// опечатки нельзя
+// cleanDNS drops empty and unparseable entries: the core will not start
+// with a broken resolver, and leaving the user offline over
+// a typo is not acceptable
 func cleanDNS(in []string) []string {
 	out := []string{}
 	for _, d := range in {

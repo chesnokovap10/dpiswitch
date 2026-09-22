@@ -12,11 +12,11 @@ import (
 	"github.com/quic-go/quic-go"
 )
 
-// проба QUIC. делаем настоящее рукопожатие, а не самодельный пробный
-// пакет: сервер молча игнорирует всё невалидное, и отсутствие ответа
-// на кустарный пакет я бы принял за блокировку. ложное "заблокировано"
-// терпимо, но ложное "чисто" ломает сайт -- а самодельная проба даёт
-// ровно его, если DPI режет по SNI внутри Initial.
+// QUIC probe. A real handshake rather than a hand-crafted probe packet:
+// servers silently ignore anything invalid, so a missing answer to a crafted
+// packet would be mistaken for blocking. A false "blocked" is tolerable, but a
+// false "clean" breaks the site -- and a crafted probe yields exactly that if
+// DPI filters on the SNI inside the Initial packet.
 func RunQUIC(d Dialer, ip string, port int, host string) PathResult {
 	var r PathResult
 	r.IP = ip
@@ -30,7 +30,7 @@ func RunQUIC(d Dialer, ip string, port int, host string) PathResult {
 
 	addr := &net.UDPAddr{IP: net.ParseIP(ip), Port: port}
 	if addr.IP == nil {
-		r.Err, r.ErrStage = "не разобран адрес "+ip, "udp_associate"
+		r.Err, r.ErrStage = "cannot parse address "+ip, "udp_associate"
 		return r
 	}
 
@@ -40,7 +40,7 @@ func RunQUIC(d Dialer, ip string, port int, host string) PathResult {
 	t0 := time.Now()
 	conn, err := quic.Dial(ctx, pc, addr, &tls.Config{
 		ServerName:         host,
-		InsecureSkipVerify: true, // сертификат нужен даже поддельный: он и есть сигнал
+		InsecureSkipVerify: true, // we need the certificate even if forged: that is the signal
 		NextProtos:         []string{"h3"},
 	}, &quic.Config{
 		HandshakeIdleTimeout: d.Timeout,
@@ -52,9 +52,9 @@ func RunQUIC(d Dialer, ip string, port int, host string) PathResult {
 	}
 	defer conn.CloseWithError(0, "")
 
-	// для QUIC рукопожатие неразделимо: успех означает и доставку
-	// датаграмм, и согласованный TLS. разносим по тем же полям,
-	// чтобы Judge работал без особых случаев.
+	// for QUIC the handshake is indivisible: success means both datagram
+	// delivery and a completed TLS. Map it onto the same fields so Judge
+	// works without special cases.
 	r.TCPOk, r.TLSOk = true, true
 	r.TLSTime = time.Since(t0)
 

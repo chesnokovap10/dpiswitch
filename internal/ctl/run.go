@@ -1,6 +1,6 @@
-// контроллер: берёт кандидатов из живого трафика mihomo, гоняет пробы,
-// ведёт память вердиктов с TTL и привязкой к сети.
-// по умолчанию НИЧЕГО не применяет -- только пишет, что сделал бы.
+// Controller: takes candidates from live mihomo traffic, runs probes,
+// keeps a verdict memory with TTLs, bound to the network.
+// By default it applies NOTHING -- it only logs what it would do.
 package ctl
 
 import (
@@ -32,9 +32,9 @@ type Config struct {
 	FailTTL       time.Duration
 	MaxBackoff    time.Duration
 	SettingsPath  string
-	Families      bool             // переносить вердикт на весь домен, см. family.go
-	DirectDNS     []probe.Resolver // пусто -- встроенный DoH пробника
-	// просьба перезапустить ядро: смена резолверов или IPv6 меняет его конфиг
+	Families      bool             // extend verdicts to the whole domain, see family.go
+	DirectDNS     []probe.Resolver // empty -- the prober's built-in DoH
+	// asks for a core restart: changing resolvers or IPv6 changes its config
 	OnCoreChange func()
 	Timeout      time.Duration
 	Attempts     int
@@ -47,14 +47,14 @@ type Config struct {
 func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	conns, err := a.connections()
 	if err != nil {
-		log.Printf("не читаются соединения: %v", err)
+		log.Printf("cannot read connections: %v", err)
 		return
 	}
 
 	ports := w.drain()
 
-	// порядок важен: сперва подозрительные, потом просроченные,
-	// и только затем новые кандидаты -- откат срочнее расширения
+	// order matters: suspicious first, then expired,
+	// and only then new candidates -- rolling back is more urgent than expanding
 	queue := dedupe(concat(
 		suspectDirect(cfg, st, netID, conns),
 		st.expired(netID),
@@ -66,7 +66,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	total := len(queue)
 	if len(queue) > cfg.PerCycle {
 		queue = queue[:cfg.PerCycle]
-		log.Printf("в очереди %d доменов, беру %d за цикл", total, cfg.PerCycle)
+		log.Printf("%d domains queued, taking %d this cycle", total, cfg.PerCycle)
 	}
 
 	direct := probe.Dialer{Addr: cfg.DirectAddr, Timeout: cfg.Timeout, DNS: cfg.DirectDNS}
@@ -85,9 +85,9 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			// правило в mihomo доменное, поэтому решение распространяется
-			// на все порты сразу. значит и проверить надо все, что видели,
-			// и худший вердикт побеждает.
+			// mihomo rules are per domain, so a decision applies
+			// to all ports at once. Hence every port seen must be checked,
+			// and the worst verdict wins.
 			eps := ports[dom]
 			if len(eps) == 0 {
 				eps = []endpoint{{port: 443}}
@@ -97,14 +97,14 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 				r := probe.CheckProto(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp)
 				appendJSONL(cfg.JSONLPath, r)
 				if r.Aborted {
-					// память не трогаем: домен останется в очереди
-					// и проверится заново, когда ядро поднимется
+					// leave memory alone: the domain stays queued
+					// and is re-checked once the core is back
 					return
 				}
-				// INCONCLUSIVE означает "измерить не удалось" -- например, хост
-				// вообще не отвечает по QUIC ни туда, ни сюда. такой результат
-				// не должен перебивать определённый вердикт, иначе домен
-				// застрянет в туннеле из-за протокола, которого у него нет.
+				// INCONCLUSIVE means "could not measure" -- e.g. the host
+				// does not answer QUIC on either path. Such a result
+				// must not override a definite verdict, otherwise the domain
+				// gets stuck in the tunnel over a protocol it does not have.
 				switch {
 				case rep.Domain == "":
 					rep = r
@@ -130,8 +130,8 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			}
 			if had {
 				e.Reverts = prev.Reverts
-				// домен терял прямой путь -- чем чаще это повторяется,
-				// тем дольше он потом не проверяется заново
+				// the domain lost its direct path -- the more often this happens,
+				// the longer it waits before being re-checked
 				if prev.Verdict == probe.Clean && rep.Verdict != probe.Clean {
 					e.Reverts++
 					backoff := time.Duration(e.Reverts) * cfg.TTL
@@ -139,7 +139,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 						backoff = cfg.MaxBackoff
 					}
 					e.ExpiresAt = time.Now().Add(backoff)
-					log.Printf("ОТКАТ %s: %s (%s), откатов всего %d", dom, rep.Verdict, rep.Reason, e.Reverts)
+					log.Printf("REVERT %s: %s (%s), reverts total %d", dom, rep.Verdict, rep.Reason, e.Reverts)
 				}
 			}
 
@@ -149,10 +149,10 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			if !had || prev.Verdict != rep.Verdict {
 				changed = true
 				if rep.Verdict == probe.Clean {
-					// печатаем ЛУЧШИЕ измерения -- те самые, на которых
-					// основано решение. последний проход мог быть случайно
-					// медленным, и показывать его значит вводить в заблуждение
-					log.Printf("ЧИСТО %s (узел %s, прямой %s против туннеля %s)",
+					// log the BEST measurements -- the very ones the decision
+					// is based on. The last pass may have been slow by chance,
+					// and showing it would be misleading
+					log.Printf("CLEAN %s (node %s, direct %s vs tunnel %s)",
 						dom, rep.TestedIP, msVal(rep.DirectMs, rep.Direct), msVal(rep.TunnelMs, rep.Tunnel))
 				} else if !had {
 					log.Printf("  %s %s: %s", rep.Verdict, dom, rep.Reason)
@@ -164,15 +164,15 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	wg.Wait()
 
 	if err := st.save(); err != nil {
-		log.Printf("состояние не сохранено: %v", err)
+		log.Printf("state not saved: %v", err)
 	}
 	if changed {
 		applyList(cfg, a, st, netID)
 	}
 }
 
-// кандидаты: то, что накопил наблюдатель и о чём мы ещё не решали.
-// фильтры по протоколу и маршруту уже применены при сборе.
+// candidates: what the watcher accumulated and we have not decided yet.
+// protocol and route filters were already applied while collecting.
 func pickCandidates(cfg Config, st *state, netID string, seen map[string][]endpoint) []string {
 	var out []string
 	for dom := range seen {
@@ -187,8 +187,8 @@ func pickCandidates(cfg Config, st *state, netID string, seen map[string][]endpo
 	return dedupe(out)
 }
 
-// домены с прямым путём, у которых соединение открыто, но ничего не пришло:
-// похоже на разрыв -- перепроверяем не дожидаясь TTL
+// direct domains whose connection is open but nothing arrived:
+// looks like a cut -- re-check without waiting for the TTL
 func suspectDirect(cfg Config, st *state, netID string, conns []connection) []string {
 	var out []string
 	fams := map[string]bool{}
@@ -206,7 +206,7 @@ func suspectDirect(cfg Config, st *state, netID string, conns []connection) []st
 		switch {
 		case had && e.Verdict == probe.Clean:
 		case !had && fams[familyOf(dom)]:
-			// пущен напрямую семейством, сам ни разу не проверялся
+			// sent direct by a family, never checked on its own
 		default:
 			continue
 		}
@@ -217,30 +217,30 @@ func suspectDirect(cfg Config, st *state, netID string, conns []connection) []st
 	return dedupe(out)
 }
 
-// запись вердиктов в rule-provider и перечитывание его ядром
+// write verdicts to the rule-provider and have the core reload it
 func applyList(cfg Config, a *api, st *state, netID string) {
 	doms, fams := directRules(cfg, st, netID)
 	if !cfg.Apply {
-		log.Printf("наблюдение: в DIRECT ушли бы %d доменов (%s)", len(doms), preview(doms))
+		log.Printf("observe mode: %d domains would go DIRECT (%s)", len(doms), preview(doms))
 		return
 	}
 	var b strings.Builder
-	b.WriteString("# генерируется контроллером, руками не править\n")
-	fmt.Fprintf(&b, "# сеть %s, обновлено %s\n", netID, time.Now().Format(time.RFC3339))
+	b.WriteString("# generated by the controller, do not edit\n")
+	fmt.Fprintf(&b, "# network %s, updated %s\n", netID, time.Now().Format(time.RFC3339))
 	for _, d := range doms {
 		b.WriteString(d + "\n")
 	}
 	tmp := cfg.ListPath + ".tmp"
 	if err := os.WriteFile(tmp, []byte(b.String()), 0644); err != nil {
-		log.Printf("список не записан: %v", err)
+		log.Printf("list not written: %v", err)
 		return
 	}
 	if err := os.Rename(tmp, cfg.ListPath); err != nil {
-		log.Printf("список не заменён: %v", err)
+		log.Printf("list not replaced: %v", err)
 		return
 	}
 	if err := a.reloadProvider(cfg.Provider); err != nil {
-		log.Printf("провайдер не перечитан: %v", err)
+		log.Printf("provider not reloaded: %v", err)
 		return
 	}
 	if len(fams) > 0 {
@@ -248,29 +248,29 @@ func applyList(cfg Config, a *api, st *state, netID string) {
 		for i, f := range fams {
 			names[i] = fmt.Sprintf("%s (%d)", f.Domain, f.Clean)
 		}
-		log.Printf("применено: %d правил напрямую, из них семейств %d: %s",
+		log.Printf("applied: %d direct rules, %d of them families: %s",
 			len(doms), len(fams), strings.Join(names, ", "))
 		return
 	}
-	log.Printf("применено: %d доменов идут напрямую", len(doms))
+	log.Printf("applied: %d domains go direct", len(doms))
 }
 
 func clearList(cfg Config, a *api) {
-	b := "# автопереключение выключено -- всё идёт через туннель\n"
+	b := "# auto-switch disabled -- everything goes through the tunnel\n"
 	tmp := cfg.ListPath + ".tmp"
 	if err := os.WriteFile(tmp, []byte(b), 0644); err != nil {
-		log.Printf("список не очищен: %v", err)
+		log.Printf("list not cleared: %v", err)
 		return
 	}
 	if err := os.Rename(tmp, cfg.ListPath); err != nil {
-		log.Printf("список не заменён: %v", err)
+		log.Printf("list not replaced: %v", err)
 		return
 	}
 	if err := a.reloadProvider(cfg.Provider); err != nil {
-		log.Printf("провайдер не перечитан: %v", err)
+		log.Printf("provider not reloaded: %v", err)
 		return
 	}
-	log.Println("автопереключение выключено: прямой путь снят со всех доменов")
+	log.Println("auto-switch disabled: direct path removed from all domains")
 }
 
 func skipped(cfg Config, dom string) bool {
@@ -290,7 +290,7 @@ func concat(lists ...[]string) []string {
 	return out
 }
 
-// порядок первого появления сохраняется: очередь приоритетная
+// first-seen order is kept: the queue is prioritised
 func dedupe(in []string) []string {
 	seen := map[string]bool{}
 	var out []string
@@ -332,7 +332,7 @@ func ms(r probe.PathResult) string {
 	return fmt.Sprintf("%dms", (r.TCPTime + r.TLSTime).Milliseconds())
 }
 
-// msVal: лучшее измерение, если оно есть; иначе последнее
+// msVal: the best measurement if present, otherwise the last one
 func msVal(best int64, last probe.PathResult) string {
 	if best > 0 {
 		return fmt.Sprintf("%dms", best)

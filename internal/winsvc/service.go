@@ -1,6 +1,6 @@
-// Служба Windows: регистрация, удаление, управление и режим работы.
-// Служба нужна ради LocalSystem -- TUN требует привилегий, и без неё
-// каждый запуск туннеля спрашивал бы UAC.
+// Windows service: registration, removal, control and the service mode.
+// The service exists for LocalSystem -- TUN needs privileges, and without it
+// every tunnel start would prompt for UAC.
 package winsvc
 
 import (
@@ -23,57 +23,57 @@ import (
 const (
 	Name        = "dpiswitch"
 	DisplayName = "DPI Switch (AmneziaWG + mihomo)"
-	Description = "Держит туннель AmneziaWG и переключает незаблокированные сайты напрямую."
+	Description = "Keeps the AmneziaWG tunnel up and switches unblocked sites to a direct path."
 )
 
-// Права на старт/стоп для интерактивных пользователей: без этого
-// каждое включение туннеля из трея требовало бы UAC.
-// IU -- любой вошедший в систему, SY -- система, BA -- администраторы.
+// Start/stop rights for interactive users: without this
+// every tunnel toggle from the tray would require UAC.
+// IU -- any signed-in user, SY -- SYSTEM, BA -- Administrators.
 const sddl = "D:(A;;CCLCSWRPWPDTLOCRRC;;;IU)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)"
 
 func Install() error {
 	if err := paths.EnsureDataDir(); err != nil {
-		return fmt.Errorf("каталог данных: %w", err)
+		return fmt.Errorf("data directory: %w", err)
 	}
 	m, err := mgr.Connect()
 	if err != nil {
-		return fmt.Errorf("нет доступа к диспетчеру служб (нужны права администратора): %w", err)
+		return fmt.Errorf("no access to the service manager (administrator rights required): %w", err)
 	}
 	defer m.Disconnect()
 
 	if s, err := m.OpenService(Name); err == nil {
 		s.Close()
-		return fmt.Errorf("служба %s уже установлена", Name)
+		return fmt.Errorf("service %s is already installed", Name)
 	}
 
 	s, err := m.CreateService(Name, paths.Exe(), mgr.Config{
 		DisplayName: DisplayName,
 		Description: Description,
 		StartType:   mgr.StartAutomatic,
-		// обычный автозапуск, НЕ отложенный. отложенный стоил бы двух
-		// минут без туннеля после каждой загрузки, а защищал бы от того,
-		// что супервизор и так умеет: он сам ждёт появления физической
-		// сети перед каждым стартом ядра (см. waitNetwork)
+		// regular automatic start, NOT delayed. Delayed would cost two
+		// minutes without the tunnel after every boot, while guarding against what
+		// the supervisor already handles: it waits for a physical
+		// network before every core start (see waitNetwork)
 		DelayedAutoStart: false,
 		ServiceStartName: "LocalSystem",
 		Dependencies:     []string{"Tcpip", "Nsi", "Dnscache"},
 	}, "service")
 	if err != nil {
-		return fmt.Errorf("создание службы: %w", err)
+		return fmt.Errorf("creating the service: %w", err)
 	}
 	defer s.Close()
 
-	// без восстановления упавшая служба оставит машину без сети
+	// without recovery actions a crashed service would leave the machine offline
 	if err := s.SetRecoveryActions([]mgr.RecoveryAction{
 		{Type: mgr.ServiceRestart, Delay: 5 * time.Second},
 		{Type: mgr.ServiceRestart, Delay: 10 * time.Second},
 		{Type: mgr.ServiceRestart, Delay: 30 * time.Second},
 	}, 86400); err != nil {
-		log.Printf("предупреждение: не настроено восстановление: %v", err)
+		log.Printf("warning: recovery actions not configured: %v", err)
 	}
 
 	if out, err := sc("sdset", Name, sddl); err != nil {
-		return fmt.Errorf("не выданы права на управление службой: %v (%s)", err, out)
+		return fmt.Errorf("service control rights not granted: %v (%s)", err, out)
 	}
 	return nil
 }
@@ -81,21 +81,21 @@ func Install() error {
 func Uninstall() error {
 	m, err := mgr.Connect()
 	if err != nil {
-		return fmt.Errorf("нет доступа к диспетчеру служб (нужны права администратора): %w", err)
+		return fmt.Errorf("no access to the service manager (administrator rights required): %w", err)
 	}
 	defer m.Disconnect()
 
 	s, err := m.OpenService(Name)
 	if err != nil {
-		return fmt.Errorf("служба не установлена")
+		return fmt.Errorf("service is not installed")
 	}
 	defer s.Close()
 
-	// остановка обязательна до удаления: иначе ядро останется
-	// работать, а с ним TUN и изменённые маршруты
+	// stopping before removal is mandatory: otherwise the core keeps
+	// running, and with it TUN and the modified routes
 	if st, err := s.Query(); err == nil && st.State != svc.Stopped {
 		if _, err := s.Control(svc.Stop); err != nil {
-			log.Printf("предупреждение: остановка не удалась: %v", err)
+			log.Printf("warning: stop failed: %v", err)
 		}
 		waitState(s, svc.Stopped, 30*time.Second)
 	}
@@ -111,8 +111,8 @@ func Installed() bool {
 	return true
 }
 
-// BinPath: путь, с которым служба зарегистрирована. Нужен, чтобы
-// заметить перенос папки -- зарегистрированный путь зашит намертво.
+// BinPath: the path the service is registered with. Used to
+// notice a moved folder -- the registered path is fixed.
 func BinPath() string {
 	s, closer, err := openLimited()
 	if err != nil {
@@ -126,7 +126,7 @@ func BinPath() string {
 	return cfg.BinaryPathName
 }
 
-// PathMatches: совпадает ли регистрация с текущим положением бинаря
+// PathMatches: whether the registration matches the current binary location
 func PathMatches() bool {
 	bp := BinPath()
 	if bp == "" {
@@ -190,7 +190,7 @@ func sc(args ...string) (string, error) {
 	return string(out), err
 }
 
-// --- режим работы службы ---
+// --- service mode ---
 
 type handler struct{ apply bool }
 
@@ -199,8 +199,8 @@ func (h *handler) Execute(args []string, r <-chan svc.ChangeRequest, s chan<- sv
 	s <- svc.Status{State: svc.StartPending}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel() // страховка: на любом выходе супервизор обязан получить отмену
-	log.Printf("служба %s запускается", version.Version)
+	defer cancel() // safety net: the supervisor must be cancelled on every exit path
+	log.Printf("service %s starting", version.Version)
 	sup := supervisor.New()
 	done := make(chan struct{})
 	go func() { defer close(done); sup.Run(ctx, h.apply) }()
@@ -213,8 +213,8 @@ func (h *handler) Execute(args []string, r <-chan svc.ChangeRequest, s chan<- sv
 			case svc.Interrogate:
 				s <- c.CurrentStatus
 			case svc.Stop, svc.Shutdown:
-				// сообщаем StopPending заранее: корректная остановка
-				// ядра занимает секунды, иначе SCM сочтёт службу зависшей
+				// report StopPending early: a clean core shutdown
+				// takes seconds, otherwise the SCM considers the service hung
 				s <- svc.Status{State: svc.StopPending}
 				cancel()
 				select {
@@ -231,7 +231,7 @@ func (h *handler) Execute(args []string, r <-chan svc.ChangeRequest, s chan<- sv
 	}
 }
 
-// RunService вызывается, когда процесс запущен диспетчером служб.
+// RunService is called when the process is started by the service manager.
 func RunService(apply bool) error {
 	return svc.Run(Name, &handler{apply: apply})
 }

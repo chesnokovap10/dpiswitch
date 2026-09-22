@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -54,7 +54,7 @@
   table{width:100%;border-collapse:collapse;font-size:13px}
   th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line)}
   th{color:var(--muted);font-weight:500}
-  /* прокручиваемая область той же высоты, что и журнал */
+  /* scrollable area of the same height as the log */
   .scroll{max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:7px}
   .scroll table th{position:sticky;top:0;background:var(--card)}
   .tabs button.active{border-color:var(--accent);color:var(--accent)}
@@ -69,182 +69,182 @@
 <body>
 <div class="wrap">
   <h1>DPI Switch <span class="muted" id="version" style="font-size:13px;font-weight:400"></span></h1>
-  <p class="sub">Туннель AmneziaWG на ядре mihomo. Незаблокированные сайты уходят напрямую.</p>
+  <p class="sub">AmneziaWG tunnel on the mihomo core. Unblocked sites go direct.</p>
 
   <div class="card">
-    <h2>Состояние</h2>
+    <h2>Status</h2>
     <div class="grid" id="stats"></div>
     <div class="row" style="margin-top:14px">
-      <button id="btn-install" class="primary">Установить службу</button>
-      <button id="btn-uninstall" class="danger">Удалить службу</button>
-      <button id="btn-start">Запустить</button>
-      <button id="btn-stop">Остановить</button>
-      <label class="sw"><input type="checkbox" id="chk-autostart"> автозапуск трея</label>
+      <button id="btn-install" class="primary">Install service</button>
+      <button id="btn-uninstall" class="danger">Remove service</button>
+      <button id="btn-start">Start</button>
+      <button id="btn-stop">Stop</button>
+      <label class="sw"><input type="checkbox" id="chk-autostart"> start tray with Windows</label>
     </div>
     <div class="msg" id="msg-svc"></div>
     <p class="muted" id="path-warn" style="display:none"></p>
   </div>
 
   <div class="card">
-    <h2>Конфигурация AmneziaWG</h2>
+    <h2>AmneziaWG configuration</h2>
     <p class="muted" style="margin:0 0 8px">
-      Вставь содержимое <code>.conf</code> или перетащи файл сюда. Ключи никуда не уходят —
-      конвертация целиком локальная.
+      Paste the contents of a <code>.conf</code> or drop the file here. Keys never leave the machine —
+      the conversion is fully local.
     </p>
     <textarea id="conf" placeholder="[Interface]&#10;PrivateKey = ...&#10;[Peer]&#10;Endpoint = ..."></textarea>
     <div class="row" style="margin-top:9px">
-      <button id="btn-conf" class="primary">Подгрузить конфиг</button>
+      <button id="btn-conf" class="primary">Load config</button>
       <span class="muted" id="conf-hint"></span>
     </div>
     <div class="msg" id="msg-conf"></div>
   </div>
 
   <div class="card">
-    <h2>Второй туннель (awg2)</h2>
+    <h2>Second tunnel (awg2)</h2>
     <p class="muted" style="margin:0 0 8px">
-      Работает только для выбранных пресетов и своего списка сайтов — остальной трафик его
-      не касается. Упадёт — эти сайты пойдут первым туннелем, упадут оба — напрямую.
+      Used only for the selected presets and the custom site list — other traffic is
+      unaffected. If it goes down these sites use the first tunnel; if both are down — direct.
     </p>
     <div class="row" id="awg2-state" style="margin-bottom:10px"></div>
     <div id="awg2-load">
       <textarea id="conf2" style="min-height:80px"
-        placeholder="[Interface]&#10;PrivateKey = ...&#10;[Peer]&#10;Endpoint = ...  (конфиг второго сервера; можно перетащить файл сюда)"></textarea>
+        placeholder="[Interface]&#10;PrivateKey = ...&#10;[Peer]&#10;Endpoint = ...  (second server config; you can drop the file here)"></textarea>
       <div class="row" style="margin-top:9px">
-        <button id="btn-conf2" class="primary">Подгрузить конфиг</button>
-        <button id="btn-conf2-del" class="danger" style="display:none">Отключить второй туннель</button>
-        <span class="muted">служба перезапустится — связь пропадёт на пару секунд</span>
+        <button id="btn-conf2" class="primary">Load config</button>
+        <button id="btn-conf2-del" class="danger" style="display:none">Detach second tunnel</button>
+        <span class="muted">the service will restart — connectivity drops for a couple of seconds</span>
       </div>
       <div class="msg" id="msg-conf2"></div>
     </div>
-    <h2 style="margin-top:14px">Пресеты</h2>
+    <h2 style="margin-top:14px">Presets</h2>
     <div id="awg2-presets"></div>
-    <h2 style="margin-top:14px">Свои сайты через второй туннель</h2>
+    <h2 style="margin-top:14px">Custom sites via the second tunnel</h2>
     <textarea id="awg2-hosts" style="min-height:70px" placeholder="example.com&#10;+.example.org"></textarea>
-    <div class="row" style="margin-top:9px"><button id="btn-awg2-save">Сохранить</button></div>
+    <div class="row" style="margin-top:9px"><button id="btn-awg2-save">Save</button></div>
     <div class="msg" id="msg-awg2"></div>
   </div>
 
   <div class="cols">
     <div class="card">
-      <h2>Всегда напрямую</h2>
-      <p class="muted" style="margin:0 0 8px">Детектор эти хосты не трогает.</p>
+      <h2>Always direct</h2>
+      <p class="muted" style="margin:0 0 8px">The detector leaves these hosts alone.</p>
       <textarea id="force-direct" placeholder="example.com&#10;+.example.org"></textarea>
-      <div class="row" style="margin-top:9px"><button data-save="direct">Сохранить</button></div>
+      <div class="row" style="margin-top:9px"><button data-save="direct">Save</button></div>
       <div class="msg" id="msg-direct"></div>
     </div>
     <div class="card">
-      <h2>Всегда в туннель</h2>
-      <p class="muted" style="margin:0 0 8px">Выигрывает у вердиктов детектора.</p>
+      <h2>Always via tunnel</h2>
+      <p class="muted" style="margin:0 0 8px">Overrides detector verdicts.</p>
       <textarea id="force-tunnel" placeholder="example.com&#10;+.example.org"></textarea>
-      <div class="row" style="margin-top:9px"><button data-save="tunnel">Сохранить</button></div>
+      <div class="row" style="margin-top:9px"><button data-save="tunnel">Save</button></div>
       <div class="msg" id="msg-tunnel"></div>
     </div>
   </div>
 
   <div class="card">
-    <h2>Программы мимо туннеля</h2>
+    <h2>Programs bypassing the tunnel</h2>
     <p class="muted" style="margin:0 0 8px">
-      Весь трафик этих программ идёт напрямую, что бы ни решил детектор и что бы ни стояло
-      в «Всегда в туннель». Имя (<code>qbittorrent.exe</code>) ловит программу где угодно
-      и переживает обновления; полный путь — только конкретную копию.
+      All traffic of these programs goes direct, regardless of the detector and of
+      “Always via tunnel”. A name (<code>qbittorrent.exe</code>) matches the program anywhere
+      and survives updates; a full path matches only that exact copy.
     </p>
     <div class="row" style="margin-bottom:8px">
-      <select id="apps-active" style="flex:1;min-width:200px"><option value="">— программы, которые сейчас в сети —</option></select>
-      <button id="btn-apps-add">Добавить</button>
-      <button id="btn-apps-refresh" title="Обновить список">↻</button>
+      <select id="apps-active" style="flex:1;min-width:200px"><option value="">— programs currently online —</option></select>
+      <button id="btn-apps-add">Add</button>
+      <button id="btn-apps-refresh" title="Refresh list">↻</button>
     </div>
     <textarea id="apps" placeholder="qbittorrent.exe&#10;C:\Games\Steam\steam.exe"></textarea>
-    <div class="row" style="margin-top:9px"><button id="btn-apps-save">Сохранить</button></div>
+    <div class="row" style="margin-top:9px"><button id="btn-apps-save">Save</button></div>
     <div class="msg" id="msg-apps"></div>
   </div>
 
   <div class="card">
-    <h2>Занесение в «напрямую»</h2>
+    <h2>Direct routing</h2>
     <div class="set">
-      <label for="s-auto">Автопереключение</label>
-      <select id="s-auto"><option value="1">включено</option><option value="0">только наблюдать</option></select>
-      <small>Выключено — всё идёт через туннель, детектор лишь записывает вердикты.</small>
+      <label for="s-auto">Auto-switch</label>
+      <select id="s-auto"><option value="1">enabled</option><option value="0">observe only</option></select>
+      <small>When off, everything goes through the tunnel and the detector only records verdicts.</small>
 
-      <label for="s-fam">Целые домены</label>
-      <select id="s-fam"><option value="1">переносить на домен</option><option value="0">только проверенные хосты</option></select>
-      <small>Когда у домена 3+ проверенных поддомена напрямую и ни одного заблокированного,
-        новые поддомены идут напрямую сразу, без ожидания проверки. Нужно сервисам с пулом
-        серверов (speedtest, CDN). Первый же заблокированный поддомен снимает правило.</small>
+      <label for="s-fam">Whole domains</label>
+      <select id="s-fam"><option value="1">extend to domain</option><option value="0">verified hosts only</option></select>
+      <small>When a domain has 3+ verified direct subdomains and no blocked ones,
+        new subdomains go direct right away without waiting for a check. Helps services with a pool
+        of servers (speedtest, CDNs). The first blocked subdomain removes the rule.</small>
 
       <label for="s-v6">IPv6</label>
-      <select id="s-v6"><option value="1">через туннель</option><option value="0">выключен</option></select>
-      <small>Даёт IPv6 даже без IPv6 у провайдера: он идёт через туннель. Сайты из прямого списка
-        остаются на IPv4. Переключение перезапускает ядро.</small>
+      <select id="s-v6"><option value="1">via tunnel</option><option value="0">disabled</option></select>
+      <small>Provides IPv6 even if your ISP has none: it goes through the tunnel. Sites on the direct list
+        stay on IPv4. Switching restarts the core.</small>
 
-      <label for="s-clean">Держать напрямую до перепроверки</label>
+      <label for="s-clean">Keep direct before re-check</label>
       <select id="s-clean"></select>
-      <small>Сколько сайт идёт мимо туннеля, прежде чем его проверят заново.</small>
+      <small>How long a site bypasses the tunnel before it is checked again.</small>
 
-      <label for="s-fail">Перепроверять заблокированные через</label>
+      <label for="s-fail">Re-check blocked after</label>
       <select id="s-fail"></select>
-      <small>Блокировки снимают — не стоит держать сайт в туннеле вечно.</small>
+      <small>Blocks get lifted — no point keeping a site in the tunnel forever.</small>
 
-      <label for="s-backoff">Потолок паузы после откатов</label>
+      <label for="s-backoff">Max pause after reverts</label>
       <select id="s-backoff"></select>
-      <small>Сайт, терявший прямой путь, перепроверяется всё реже — но не реже этого.</small>
+      <small>A site that lost its direct path is re-checked less and less often — but no less often than this.</small>
 
-      <label for="s-slow">Допуск по задержке, %</label>
+      <label for="s-slow">Latency tolerance, %</label>
       <input type="number" id="s-slow" min="0" max="500" step="5">
-      <small>Насколько прямой путь может быть медленнее туннеля. 0 — только если не медленнее.</small>
+      <small>How much slower than the tunnel the direct path may be. 0 — only if not slower.</small>
 
-      <label for="s-att">Попыток на пробу</label>
+      <label for="s-att">Attempts per probe</label>
       <input type="number" id="s-att" min="1" max="10">
-      <small>Больше — точнее решение, но дольше проверка.</small>
+      <small>More attempts — a more accurate decision, but a longer check.</small>
     </div>
 
     <h2 style="margin-top:18px">DNS</h2>
     <div class="cols">
       <div>
-        <label for="s-ddns"><b>Для прямых сайтов</b></label>
+        <label for="s-ddns"><b>For direct sites</b></label>
         <textarea id="s-ddns" style="min-height:70px;margin-top:6px"></textarea>
-        <small class="muted">Спрашивается напрямую, мимо туннеля — CDN отдаёт узлы под твоего
-          провайдера. Им же пользуется детектор, поэтому проверяется ровно тот узел, куда пойдёт
-          трафик. Лучше указывать IP, а не имя.</small>
-        <div class="row" style="margin-top:6px"><button data-dnstest="direct">Проверить</button></div>
+        <small class="muted">Queried directly, outside the tunnel — CDNs return nodes for your
+          ISP. The detector uses it too, so it tests exactly the node traffic
+          will go to. Prefer IPs over names.</small>
+        <div class="row" style="margin-top:6px"><button data-dnstest="direct">Test</button></div>
         <div id="dns-direct" class="msg"></div>
       </div>
       <div>
-        <label for="s-tdns"><b>Внутри туннеля</b></label>
+        <label for="s-tdns"><b>Inside the tunnel</b></label>
         <textarea id="s-tdns" style="min-height:70px;margin-top:6px"></textarea>
-        <small class="muted">Для сайтов, идущих через туннель: узел подбирается под VPS.
-          Пусто — DNS из <code>.conf</code>.</small>
-        <div class="row" style="margin-top:6px"><button data-dnstest="tunnel">Проверить</button></div>
+        <small class="muted">For sites going through the tunnel: nodes are picked for the VPS.
+          Empty — DNS from the <code>.conf</code>.</small>
+        <div class="row" style="margin-top:6px"><button data-dnstest="tunnel">Test</button></div>
         <div id="dns-tunnel" class="msg"></div>
       </div>
     </div>
-    <p class="muted" style="margin:8px 0 0;font-size:12px">Форматы: <code>https://IP/dns-query</code> (DoH),
-      <code>tls://IP</code> (DoT), <code>IP</code> (обычный DNS). По одному в строке, опрашиваются одновременно.
-      Обычный DNS у многих провайдеров режется — лучше DoH. Смена DNS перезапускает ядро: связь пропадёт на пару секунд.</p>
+    <p class="muted" style="margin:8px 0 0;font-size:12px">Formats: <code>https://IP/dns-query</code> (DoH),
+      <code>tls://IP</code> (DoT), <code>IP</code> (plain DNS). One per line, queried concurrently.
+      Many ISPs block plain DNS — prefer DoH. Changing DNS restarts the core: connectivity drops for a couple of seconds.</p>
     <div class="row" style="margin-top:12px">
-      <button id="btn-set" class="primary">Сохранить</button>
-      <button id="btn-set-def">По умолчанию</button>
+      <button id="btn-set" class="primary">Save</button>
+      <button id="btn-set-def">Defaults</button>
     </div>
     <div class="msg" id="msg-set"></div>
   </div>
 
   <div class="card">
-    <h2>Вердикты</h2>
+    <h2>Verdicts</h2>
     <div class="row tabs" id="verdict-tabs">
-      <button data-vcat="direct">Напрямую</button>
-      <button data-vcat="blocked">Заблокированные</button>
-      <button data-vcat="slow">Медленнее туннеля</button>
-      <button data-vcat="unknown">Не удалось проверить</button>
+      <button data-vcat="direct">Direct</button>
+      <button data-vcat="blocked">Blocked</button>
+      <button data-vcat="slow">Slower than tunnel</button>
+      <button data-vcat="unknown">Could not verify</button>
       <span class="muted" id="verdicts-note"></span>
     </div>
     <div id="verdicts" class="scroll" style="margin-top:10px;display:none"></div>
   </div>
 
   <div class="card">
-    <h2>Журнал</h2>
+    <h2>Logs</h2>
     <div class="row tabs">
-      <button data-log="controller">Контроллер</button>
-      <button data-log="mihomo">Ядро</button>
-      <button data-log="service">Служба</button>
+      <button data-log="controller">Controller</button>
+      <button data-log="mihomo">Core</button>
+      <button data-log="service">Service</button>
     </div>
     <pre id="log" style="margin-top:10px">—</pre>
   </div>
@@ -262,30 +262,30 @@ const say = (el, text, cls) => { const n = $(el); n.textContent = text; n.classN
 function renderStats(s){
   const pill = (v, t, f) => `<span class="pill ${v?'ok':'bad'}">${v?t:f}</span>`;
   $('#stats').innerHTML = `
-    <div class="stat"><b>${pill(s.installed,'установлена','не установлена')}</b><span>установка</span></div>
-    <div class="stat"><b>${pill(s.service_running, s.service_text||'работает','остановлена')}</b><span>служба</span></div>
+    <div class="stat"><b>${pill(s.installed,'installed','not installed')}</b><span>installation</span></div>
+    <div class="stat"><b>${pill(s.service_running, s.service_text||'running','stopped')}</b><span>service</span></div>
     <div class="stat"><b>${s.service_running
         ? (s.tunnel_alive ? `<span class="pill ok">${s.tunnel_note}</span>`
-                          : `<span class="pill bad">не отвечает</span>`)
-        : (s.network_up ? '<span class="pill">выключен</span>'
-                        : '<span class="pill warn">нет сети</span>')}</b><span>туннель</span></div>
-    <div class="stat"><b>${s.direct_count}</b><span>идут напрямую</span></div>
-    <div class="stat"><b>${(s.counts&&s.counts.BLOCKED_TLS)||0}</b><span>заблокировано</span></div>
-    <div class="stat"><b>${pill(s.has_config,'загружен','нет')}</b><span>конфиг</span></div>
-    <div class="stat"><b style="font-size:13px">${(s.network_id||'—').slice(0,10)}</b><span>профиль сети</span></div>`;
+                          : `<span class="pill bad">not responding</span>`)
+        : (s.network_up ? '<span class="pill">off</span>'
+                        : '<span class="pill warn">no network</span>')}</b><span>tunnel</span></div>
+    <div class="stat"><b>${s.direct_count}</b><span>going direct</span></div>
+    <div class="stat"><b>${(s.counts&&s.counts.BLOCKED_TLS)||0}</b><span>blocked</span></div>
+    <div class="stat"><b>${pill(s.has_config,'loaded','none')}</b><span>config</span></div>
+    <div class="stat"><b style="font-size:13px">${(s.network_id||'—').slice(0,10)}</b><span>network profile</span></div>`;
   $('#chk-autostart').checked = !!s.autostart;
   if (s.version) $('#version').textContent = 'v' + s.version;
   $('#btn-install').disabled = s.installed;
   $('#btn-uninstall').disabled = !s.installed;
   $('#btn-start').disabled = !s.installed || s.service_running;
   $('#btn-stop').disabled = !s.installed || !s.service_running;
-  $('#conf-hint').textContent = 'данные: ' + s.data_dir;
+  $('#conf-hint').textContent = 'data: ' + s.data_dir;
   const warn = $('#path-warn');
   if (s.installed && !s.path_ok){
     warn.style.display = 'block';
-    warn.innerHTML = `<span class="pill warn">путь устарел</span> служба зарегистрирована на
-      <code>${s.bin_path}</code>, а запущен <code>${s.exe_path}</code>.
-      Переустанови службу, иначе она не стартует.`;
+    warn.innerHTML = `<span class="pill warn">stale path</span> the service is registered at
+      <code>${s.bin_path}</code>, but <code>${s.exe_path}</code> is running.
+      Reinstall the service, otherwise it will not start.`;
   } else warn.style.display = 'none';
 }
 
@@ -294,9 +294,9 @@ async function refresh(){ renderStats(await api('/api/status')); }
 for (const [id, action] of [['btn-install','install'],['btn-uninstall','uninstall'],
                             ['btn-start','start'],['btn-stop','stop']]){
   $('#'+id).onclick = async () => {
-    say('#msg-svc', 'выполняю…', 'muted');
+    say('#msg-svc', 'working…', 'muted');
     const r = await api('/api/service/'+action, {method:'POST'});
-    say('#msg-svc', r.ok ? 'готово' : ('ошибка: '+r.error), r.ok?'ok':'bad');
+    say('#msg-svc', r.ok ? 'done' : ('error: '+r.error), r.ok?'ok':'bad');
     setTimeout(refresh, 1200);
   };
 }
@@ -304,14 +304,14 @@ for (const [id, action] of [['btn-install','install'],['btn-uninstall','uninstal
 $('#chk-autostart').onchange = async e => {
   const r = await api('/api/autostart', {method:'POST',
     body: JSON.stringify({enabled: e.target.checked})});
-  say('#msg-svc', r.ok ? 'автозапуск обновлён' : ('ошибка: '+r.error), r.ok?'ok':'bad');
+  say('#msg-svc', r.ok ? 'autostart updated' : ('error: '+r.error), r.ok?'ok':'bad');
 };
 
 $('#btn-conf').onclick = async () => {
   const text = $('#conf').value.trim();
-  if (!text) return say('#msg-conf', 'пусто', 'bad');
+  if (!text) return say('#msg-conf', 'empty', 'bad');
   const r = await api('/api/config', {method:'POST', body: JSON.stringify({text})});
-  say('#msg-conf', r.ok ? (r.note||'готово') : ('ошибка: '+r.error), r.ok?'ok':'bad');
+  say('#msg-conf', r.ok ? (r.note||'done') : ('error: '+r.error), r.ok?'ok':'bad');
   if (r.ok) { $('#conf').value = ''; refresh(); }
 };
 
@@ -321,7 +321,7 @@ document.addEventListener('drop', e => {
   const f = e.dataTransfer.files[0];
   if (!f) return;
   const fr = new FileReader();
-  fr.onload = () => { $('#conf').value = fr.result; say('#msg-conf', 'файл прочитан: '+f.name, 'muted'); };
+  fr.onload = () => { $('#conf').value = fr.result; say('#msg-conf', 'file read: '+f.name, 'muted'); };
   fr.readAsText(f);
 });
 
@@ -334,19 +334,19 @@ for (const b of document.querySelectorAll('[data-save]')){
     const kind = b.dataset.save;
     const hosts = $('#force-'+kind).value.split('\n').map(s=>s.trim()).filter(Boolean);
     const r = await api('/api/hosts?kind='+kind, {method:'POST', body: JSON.stringify({hosts})});
-    say('#msg-'+kind, r.ok ? 'сохранено' : ('ошибка: '+r.error), r.ok?'ok':'bad');
+    say('#msg-'+kind, r.ok ? 'saved' : ('error: '+r.error), r.ok?'ok':'bad');
     if (r.ok) loadHosts(kind);
   };
 }
 
-// --- настройки ---
-const DUR = [[10,'10 мин'],[30,'30 мин'],[60,'1 ч'],[180,'3 ч'],[360,'6 ч'],[480,'8 ч'],
-             [720,'12 ч'],[1440,'1 день'],[4320,'3 дня'],[10080,'7 дней'],[43200,'30 дней']];
+// --- settings ---
+const DUR = [[10,'10 min'],[30,'30 min'],[60,'1 h'],[180,'3 h'],[360,'6 h'],[480,'8 h'],
+             [720,'12 h'],[1440,'1 day'],[4320,'3 days'],[10080,'7 days'],[43200,'30 days']];
 const esc = t => String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function fillDur(id, val){
   const el = $(id);
-  // значение, выставленное руками в файле, не должно теряться при показе
-  const opts = DUR.some(([m]) => m === val) ? DUR : [...DUR, [val, val+' мин']].sort((a,b)=>a[0]-b[0]);
+  // a value set by hand in the file must not be lost when displayed
+  const opts = DUR.some(([m]) => m === val) ? DUR : [...DUR, [val, val+' min']].sort((a,b)=>a[0]-b[0]);
   el.innerHTML = opts.map(([m,t]) => `<option value="${m}">${t}</option>`).join('');
   el.value = String(val);
 }
@@ -370,16 +370,16 @@ for (const b of document.querySelectorAll('[data-dnstest]')){
     let servers = lines(path === 'direct' ? '#s-ddns' : '#s-tdns');
     if (!servers.length && path === 'tunnel') servers = confDNS;
     const box = $('#dns-'+path);
-    if (!servers.length) { box.textContent = 'пусто'; box.className = 'msg bad'; return; }
-    box.textContent = 'проверяю…'; box.className = 'msg muted';
+    if (!servers.length) { box.textContent = 'empty'; box.className = 'msg bad'; return; }
+    box.textContent = 'testing…'; box.className = 'msg muted';
     const r = await api('/api/dns/test', {method:'POST', body: JSON.stringify({servers, path})});
     box.className = 'msg';
-    // одна строка на сервер: пинг, тип DNS, адрес
+    // one line per server: ping, DNS type, address
     const kind = s => /^https:\/\//i.test(s) ? 'DoH' : /^tls:\/\//i.test(s) ? 'DoT' : 'DNS';
     const addr = s => s.replace(/^[a-z]+:\/\//i, '').replace(/\/.*$/, '').replace(/^\[(.*)\](:\d+)?$/, '$1');
     box.innerHTML = (r.results||[]).map(x => x.ok
-      ? `<span class="pill ok">${x.ms} мс</span> ${kind(x.server)} ${esc(addr(x.server))}`
-      : `<span class="pill bad">ошибка</span> ${kind(x.server)} ${esc(addr(x.server))} <span class="muted">${esc(x.error||'нет ответа')}</span>`
+      ? `<span class="pill ok">${x.ms} ms</span> ${kind(x.server)} ${esc(addr(x.server))}`
+      : `<span class="pill bad">error</span> ${kind(x.server)} ${esc(addr(x.server))} <span class="muted">${esc(x.error||'no answer')}</span>`
     ).join('<br>');
   };
 }
@@ -387,7 +387,7 @@ async function loadSettings(){
   const r = await api('/api/settings');
   defaults = r.defaults;
   confDNS = r.conf_dns || [];
-  $('#s-tdns').placeholder = confDNS.length ? 'из .conf: ' + confDNS.join(', ') : 'из .conf';
+  $('#s-tdns').placeholder = confDNS.length ? 'from .conf: ' + confDNS.join(', ') : 'from .conf';
   showSettings(r.settings);
 }
 $('#btn-set').onclick = async () => {
@@ -404,32 +404,32 @@ $('#btn-set').onclick = async () => {
     tunnel_dns: lines('#s-tdns'),
   };
   const r = await api('/api/settings', {method:'POST', body: JSON.stringify(body)});
-  say('#msg-set', r.ok ? 'сохранено — служба подхватит в течение минуты (смена DNS — с перезапуском ядра)'
-                       : ('ошибка: '+r.error), r.ok?'ok':'bad');
+  say('#msg-set', r.ok ? 'saved — the service picks it up within a minute (DNS changes restart the core)'
+                       : ('error: '+r.error), r.ok?'ok':'bad');
 };
 $('#btn-set-def').onclick = () => {
-  if (defaults) { showSettings(defaults); say('#msg-set', 'значения по умолчанию — нажми «Сохранить»', 'muted'); }
+  if (defaults) { showSettings(defaults); say('#msg-set', 'default values — press “Save”', 'muted'); }
 };
 
-// --- вердикты: кнопка-переключатель ---
+// --- verdicts ---
 const fmtLeft = iso => {
   const m = Math.round((new Date(iso) - Date.now()) / 60000);
-  if (m <= 0) return 'ждёт перепроверки';
-  return m < 60 ? m+' мин' : m < 2880 ? Math.round(m/60)+' ч' : Math.round(m/1440)+' дн';
+  if (m <= 0) return 'pending re-check';
+  return m < 60 ? m+' min' : m < 2880 ? Math.round(m/60)+' h' : Math.round(m/1440)+' d';
 };
-const fmtTime = iso => new Date(iso).toLocaleString('ru-RU',
+const fmtTime = iso => new Date(iso).toLocaleString('en-GB',
   {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
-// категории вердиктов: кнопка открывает свою таблицу, повторное
-// нажатие закрывает, другая кнопка переключает
+// verdict categories: a button opens its table, a second
+// click closes it, another button switches
 const VCAT = {
-  direct:  {title: 'Напрямую'},
-  blocked: {title: 'Заблокированные', match: v => /^BLOCKED_|^MITM$|^CONTENT_DIFF$/.test(v)},
-  slow:    {title: 'Медленнее туннеля', match: v => v === 'SLOWER'},
-  unknown: {title: 'Не удалось проверить', match: v => v === 'INCONCLUSIVE'},
+  direct:  {title: 'Direct'},
+  blocked: {title: 'Blocked', match: v => /^BLOCKED_|^MITM$|^CONTENT_DIFF$/.test(v)},
+  slow:    {title: 'Slower than tunnel', match: v => v === 'SLOWER'},
+  unknown: {title: 'Could not verify', match: v => v === 'INCONCLUSIVE'},
 };
-const VNAME = {BLOCKED_TCP: 'обрыв соединения', BLOCKED_TLS: 'обрыв TLS (по имени сайта)',
-  BLOCKED_QUIC: 'режется QUIC', MITM: 'подмена сертификата', CONTENT_DIFF: 'подмена ответа',
-  SLOWER: 'медленнее туннеля', INCONCLUSIVE: 'не проверен'};
+const VNAME = {BLOCKED_TCP: 'connection reset', BLOCKED_TLS: 'TLS cut (by site name)',
+  BLOCKED_QUIC: 'QUIC blocked', MITM: 'certificate spoofed', CONTENT_DIFF: 'response tampered',
+  SLOWER: 'slower than tunnel', INCONCLUSIVE: 'unverified'};
 let verdictsOpen = null;
 let lastVerdicts = null;
 
@@ -452,16 +452,16 @@ async function loadVerdicts(){
   if (verdictsOpen === 'direct') {
     const fams = r.families || [];
     const list = [...fams.map(f => ({domain: '+.' + f.domain, fam: f.clean})), ...(r.details || [])];
-    note = (r.details||[]).length + ' доменов' + (fams.length ? ', ' + fams.length + ' целых доменов' : '');
-    head = '<th>домен</th><th>решено</th><th>до перепроверки</th><th>узел</th>';
+    note = (r.details||[]).length + ' domains' + (fams.length ? ', ' + fams.length + ' whole domains' : '');
+    head = '<th>domain</th><th>decided</th><th>re-check in</th><th>node</th>';
     rows = list.map(d => d.fam
-      ? `<tr><td><b>${esc(d.domain)}</b></td><td colspan="3" class="muted">весь домен: чистых поддоменов ${d.fam}, заблокированных нет</td></tr>`
+      ? `<tr><td><b>${esc(d.domain)}</b></td><td colspan="3" class="muted">whole domain: ${d.fam} clean subdomains, none blocked</td></tr>`
       : `<tr><td>${esc(d.domain)}</td><td>${fmtTime(d.decided_at)}</td>
         <td>${fmtLeft(d.expires_at)}</td><td class="muted">${esc(d.tested_ip||'')}</td></tr>`);
   } else {
     const list = (r.others || []).filter(o => VCAT[verdictsOpen].match(o.verdict));
-    note = list.length + ' доменов — идут через туннель';
-    head = '<th>домен</th><th>почему</th><th>решено</th><th>перепроверка</th>';
+    note = list.length + ' domains — going through the tunnel';
+    head = '<th>domain</th><th>reason</th><th>decided</th><th>re-check in</th>';
     rows = list.map(d => `<tr><td>${esc(d.domain)}</td>
       <td><span class="pill ${verdictsOpen==='blocked'?'bad':verdictsOpen==='slow'?'warn':''}">${esc(VNAME[d.verdict]||d.verdict)}</span>
         <div class="muted" style="font-size:12px">${esc(d.reason||'')}</div></td>
@@ -470,8 +470,8 @@ async function loadVerdicts(){
   $('#verdicts-note').textContent = note;
   box.innerHTML = rows.length
     ? `<table><thead><tr>${head}</tr></thead><tbody>${rows.join('')}</tbody></table>`
-    : '<p class="muted" style="margin:10px">пусто</p>';
-  box.scrollTop = top; // автообновление не должно сбрасывать прокрутку
+    : '<p class="muted" style="margin:10px">empty</p>';
+  box.scrollTop = top; // auto-refresh must not reset the scroll position
 }
 for (const b of document.querySelectorAll('[data-vcat]')) {
   b.onclick = async () => {
@@ -484,13 +484,13 @@ for (const b of document.querySelectorAll('[data-vcat]')) {
     await loadVerdicts();
   };
 }
-loadVerdicts(); // счётчики на кнопках видны сразу
+loadVerdicts(); // button counters are visible right away
 
-// --- журнал: первая вкладка открыта сразу, содержимое обновляется само ---
+// --- logs: the first tab opens right away and refreshes itself ---
 let logName = 'controller';
 async function loadLog(){
   const el = $('#log');
-  // прокрутку держим внизу, только если читатель и так был внизу
+  // keep the scroll at the bottom only if the reader was already there
   const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
   el.textContent = await api('/api/log?name='+logName) || '—';
   if (atBottom) el.scrollTop = el.scrollHeight;
@@ -504,7 +504,7 @@ for (const b of document.querySelectorAll('[data-log]')){
   };
 }
 
-// --- программы-исключения ---
+// --- excluded programs ---
 async function loadApps(){
   const r = await api('/api/apps');
   $('#apps').value = (r.apps||[]).join('\n');
@@ -513,68 +513,68 @@ async function loadActive(){
   const r = await api('/api/apps/active');
   const have = new Set($('#apps').value.toLowerCase().split('\n').map(x=>x.trim()));
   const list = (r.apps||[]).filter(a => !have.has(a.name.toLowerCase()) && !have.has(a.path.toLowerCase()));
-  $('#apps-active').innerHTML = `<option value="">— программы, которые сейчас в сети (${list.length}) —</option>` +
-    list.map(a => `<option value="${esc(a.name)}" title="${esc(a.path)}">${esc(a.name)} · ${a.conns} соед. · ${esc(a.path)}</option>`).join('');
+  $('#apps-active').innerHTML = `<option value="">— programs currently online (${list.length}) —</option>` +
+    list.map(a => `<option value="${esc(a.name)}" title="${esc(a.path)}">${esc(a.name)} · ${a.conns} conn. · ${esc(a.path)}</option>`).join('');
 }
 $('#btn-apps-add').onclick = () => {
   const v = $('#apps-active').value;
-  if (!v) return say('#msg-apps', 'выбери программу в списке', 'muted');
+  if (!v) return say('#msg-apps', 'pick a program from the list', 'muted');
   const t = $('#apps');
   t.value = (t.value.trim() ? t.value.trim() + '\n' : '') + v;
-  say('#msg-apps', v + ' добавлена — нажми «Сохранить»', 'muted');
+  say('#msg-apps', v + ' added — press “Save”', 'muted');
   loadActive();
 };
 $('#btn-apps-refresh').onclick = loadActive;
 $('#btn-apps-save').onclick = async () => {
   const apps = $('#apps').value.split('\n').map(s=>s.trim()).filter(Boolean);
   const r = await api('/api/apps', {method:'POST', body: JSON.stringify({apps})});
-  say('#msg-apps', r.ok ? 'сохранено — ядро подхватит сразу, уже открытые соединения доживут своё'
-                        : ('ошибка: '+r.error), r.ok?'ok':'bad');
+  say('#msg-apps', r.ok ? 'saved — the core applies it right away; already open connections keep their route'
+                        : ('error: '+r.error), r.ok?'ok':'bad');
   if (r.ok) { await loadApps(); loadActive(); }
 };
 
-// --- второй туннель ---
+// --- second tunnel ---
 async function loadAwg2(){
   const r = await api('/api/awg2');
   const st = $('#awg2-state');
   if (!r.loaded) {
-    st.innerHTML = '<span class="pill warn">не подключён</span> <span class="muted">пресеты пока идут первым туннелем</span>';
+    st.innerHTML = '<span class="pill warn">not attached</span> <span class="muted">presets use the first tunnel for now</span>';
   } else {
-    const alive = r.alive === undefined ? '<span class="pill">служба остановлена</span>'
-      : r.alive ? `<span class="pill ok">${esc(r.note)}</span>` : `<span class="pill bad">не отвечает: ${esc(r.note||'')}</span>`;
-    st.innerHTML = `<span class="pill ok">подключён</span> <span class="muted">${esc(r.endpoint||'')}</span> ${alive}`;
+    const alive = r.alive === undefined ? '<span class="pill">service stopped</span>'
+      : r.alive ? `<span class="pill ok">${esc(r.note)}</span>` : `<span class="pill bad">not responding: ${esc(r.note||'')}</span>`;
+    st.innerHTML = `<span class="pill ok">attached</span> <span class="muted">${esc(r.endpoint||'')}</span> ${alive}`;
   }
   $('#btn-conf2-del').style.display = r.loaded ? '' : 'none';
   $('#awg2-presets').innerHTML = (r.presets||[]).map(p => `
     <label class="sw" style="margin:4px 0"><input type="checkbox" data-preset="${esc(p.id)}" ${p.enabled?'checked':''}>
-      <b>${esc(p.title)}</b> <span class="muted">— ${esc(p.note)}, правил: ${p.rules}</span></label>`).join('');
+      <b>${esc(p.title)}</b> <span class="muted">— ${esc(p.note)}, rules: ${p.rules}</span></label>`).join('');
   $('#awg2-hosts').value = (r.hosts||[]).join('\n');
 }
 $('#btn-awg2-save').onclick = async () => {
   const presets = [...document.querySelectorAll('[data-preset]')].filter(x=>x.checked).map(x=>x.dataset.preset);
   const hosts = $('#awg2-hosts').value.split('\n').map(x=>x.trim()).filter(Boolean);
   const r = await api('/api/awg2', {method:'POST', body: JSON.stringify({presets, hosts})});
-  say('#msg-awg2', r.ok ? 'сохранено — действует сразу для новых соединений' : ('ошибка: '+r.error), r.ok?'ok':'bad');
+  say('#msg-awg2', r.ok ? 'saved — applies right away to new connections' : ('error: '+r.error), r.ok?'ok':'bad');
   if (r.ok) loadAwg2();
 };
 async function sendConf2(method, body){
-  say('#msg-conf2', 'применяю, служба перезапускается…', 'muted');
+  say('#msg-conf2', 'applying, the service is restarting…', 'muted');
   const r = await api('/api/config2', {method, body: body && JSON.stringify(body)});
-  say('#msg-conf2', r.ok ? 'готово' : ('ошибка: '+r.error), r.ok?'ok':'bad');
+  say('#msg-conf2', r.ok ? 'done' : ('error: '+r.error), r.ok?'ok':'bad');
   if (r.ok) { $('#conf2').value = ''; setTimeout(() => { loadAwg2(); refresh(); }, 4000); }
 }
 $('#btn-conf2').onclick = () => {
   const text = $('#conf2').value.trim();
-  if (!text) return say('#msg-conf2', 'пусто', 'bad');
+  if (!text) return say('#msg-conf2', 'empty', 'bad');
   sendConf2('POST', {text});
 };
-$('#btn-conf2-del').onclick = () => { if (confirm('Отключить второй туннель?')) sendConf2('DELETE'); };
+$('#btn-conf2-del').onclick = () => { if (confirm('Detach the second tunnel?')) sendConf2('DELETE'); };
 $('#conf2').addEventListener('drop', e => {
   e.preventDefault(); e.stopPropagation();
   const f = e.dataTransfer.files[0];
   if (!f) return;
   const fr = new FileReader();
-  fr.onload = () => { $('#conf2').value = fr.result; say('#msg-conf2', 'файл прочитан: '+f.name, 'muted'); };
+  fr.onload = () => { $('#conf2').value = fr.result; say('#msg-conf2', 'file read: '+f.name, 'muted'); };
   fr.readAsText(f);
 });
 

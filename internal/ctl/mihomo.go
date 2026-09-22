@@ -74,15 +74,15 @@ func (a *api) connections() ([]connection, error) {
 	return wrap.Connections, nil
 }
 
-// перечитать rule-provider с диска
+// reload a rule-provider from disk
 func (a *api) reloadProvider(name string) error {
 	_, err := a.do("PUT", "/providers/rules/"+name, nil)
 	return err
 }
 
-// имя домена из соединения. sniffHost заполняется, когда домен
-// восстановлен из ClientHello -- для софта со своим DoH это
-// единственный источник имени.
+// domain name of a connection. sniffHost is filled when the domain was
+// recovered from the ClientHello -- for software with its own DoH it is
+// the only source of the name.
 func (c connection) domain() string {
 	h := c.Metadata.SniffHost
 	if h == "" {
@@ -90,16 +90,15 @@ func (c connection) domain() string {
 	}
 	h = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(h)), ".")
 	if h == "" || net.ParseIP(h) != nil {
-		return "" // голый IP -- имени нет, решать не по чему
+		return "" // bare IP -- no name, nothing to decide on
 	}
 	return h
 }
 
-// берём любой TCP-порт, не только 443: на 20000 живут замерочные
-// серверы speedtest, и раньше они были заперты в туннеле навсегда.
-// UDP по-прежнему пропускаем -- STUN по TCP-пробе судить нельзя.
-// по TCP проверяем любой порт; по UDP -- только 443, то есть QUIC.
-// STUN, DNS и прочий UDP пробой QUIC судить нельзя.
+// Any TCP port is probeable, not just 443: speedtest measurement servers
+// live on 20000 and used to be locked into the tunnel forever. For UDP only
+// 443 (QUIC) is probed: STUN, DNS and other UDP cannot be judged by a QUIC
+// probe.
 func (c connection) probeable() bool {
 	if c.port() <= 0 {
 		return false
@@ -131,7 +130,7 @@ func (c connection) viaTunnel(proxyName string) bool {
 	return false
 }
 
-// byProvider: соединение пошло по правилу из этого rule-provider'а
+// byProvider: the connection matched a rule from this rule-provider
 func (c connection) byProvider(name string) bool {
 	return c.Rule == "RuleSet" && c.RulePayload == name
 }
@@ -147,9 +146,8 @@ func (c connection) viaDirect() bool {
 
 var secretRe = regexp.MustCompile(`(?m)^secret:\s*'?"?([^'"\r\n]+)'?"?\s*$`)
 
-// секрет берём из того же конфига, которым запущен mihomo,
-// чтобы его не приходилось дублировать в двух местах
-// SecretFromConfig: секрет нужен и супервизору для проверки здоровья
+// SecretFromConfig reads the API secret from the config mihomo runs with,
+// so it never has to be duplicated; the supervisor needs it for health checks too
 func SecretFromConfig(path string) string { return secretFromConfig(path) }
 
 func secretFromConfig(path string) string {

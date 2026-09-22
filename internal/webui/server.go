@@ -1,6 +1,6 @@
-// Локальный веб-интерфейс. Нативное окно на Win32 потребовало бы
-// руками верстать списки и поля -- сотни строк ради того, что
-// браузер делает лучше. Страница вшита, весит килобайты.
+// Local web UI. A native Win32 window would need lists and fields
+// laid out by hand -- hundreds of lines for what a browser
+// does better. The page is embedded and weighs kilobytes.
 package webui
 
 import (
@@ -39,8 +39,8 @@ type Server struct {
 	mu   sync.Mutex
 	ln   net.Listener
 	addr string
-	// элевация запрашивается треем: веб-процесс работает от пользователя
-	// и сам права повысить не может
+	// elevation is requested by the tray: the web process runs as the user
+	// and cannot elevate itself
 	Elevate func(verb string) error
 	Reload  func() error
 }
@@ -51,9 +51,9 @@ func (s *Server) Addr() string {
 	return s.addr
 }
 
-// Start поднимает сервер на порту, постоянном внутри сеанса входа:
-// открытая вкладка и закладка должны переживать перезапуск программы.
-// Наружу не слушаем никогда -- только петля.
+// Start serves on a port that is stable within the logon session:
+// an open tab and a bookmark must survive a program restart.
+// Never listens outside -- loopback only.
 func (s *Server) Start() error {
 	ln, err := session.Listen()
 	if err != nil {
@@ -144,8 +144,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			st.ServiceText = stateText(state)
 		}
 	}
-	// поднятая служба и работающий туннель -- разные вещи: TUN может
-	// стоять при мёртвом пире, и тогда трафик уходит в никуда
+	// a running service and a working tunnel are different things: TUN may
+	// be up with a dead peer, and then traffic goes nowhere
 	if st.ServiceRun {
 		st.TunnelAlive, st.TunnelNote = supervisor.TunnelAlive(
 			"127.0.0.1:9090", ctl.SecretFromConfig(paths.Config()), "awg")
@@ -162,31 +162,31 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 func stateText(s svc.State) string {
 	switch s {
 	case svc.Stopped:
-		return "остановлена"
+		return "stopped"
 	case svc.StartPending:
-		return "запускается"
+		return "starting"
 	case svc.StopPending:
-		return "останавливается"
+		return "stopping"
 	case svc.Running:
-		return "работает"
+		return "running"
 	case svc.Paused:
-		return "приостановлена"
+		return "paused"
 	}
-	return "неизвестно"
+	return "unknown"
 }
 
 func (s *Server) handleService(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "нужен POST", 405)
+		http.Error(w, "POST required", 405)
 		return
 	}
 	action := strings.TrimPrefix(r.URL.Path, "/api/service/")
 	var err error
 	switch action {
 	case "install", "uninstall", "reinstall":
-		// требует администратора -- уходит через элевацию трея
+		// needs administrator rights -- goes through the tray's elevation
 		if s.Elevate == nil {
-			err = fmt.Errorf("элевация недоступна")
+			err = fmt.Errorf("elevation unavailable")
 		} else {
 			err = s.Elevate(action)
 		}
@@ -203,7 +203,7 @@ func (s *Server) handleService(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAutostart(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "нужен POST", 405)
+		http.Error(w, "POST required", 405)
 		return
 	}
 	var body struct {
@@ -213,8 +213,8 @@ func (s *Server) handleAutostart(w http.ResponseWriter, r *http.Request) {
 	writeResult(w, autostart.Set(body.Enabled))
 }
 
-// списки пользователя: читаются и пишутся целиком, это проще
-// и честнее, чем частичные правки через API
+// user lists are read and written as a whole -- simpler
+// and more honest than partial edits through the API
 func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 	kind := r.URL.Query().Get("kind")
 	var path string
@@ -224,7 +224,7 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 	case "tunnel":
 		path = paths.ForceTunnel()
 	default:
-		http.Error(w, "kind должен быть direct или tunnel", 400)
+		http.Error(w, "kind must be direct or tunnel", 400)
 		return
 	}
 
@@ -243,15 +243,15 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 			writeResult(w, err)
 			return
 		}
-		// ядро перечитывает провайдер само по изменению файла,
-		// но просим явно -- так изменение видно сразу
+		// the core reloads the provider on file change by itself,
+		// but ask explicitly -- so the change is visible immediately
 		var err error
 		if s.Reload != nil {
 			err = s.Reload()
 		}
 		writeResult(w, err)
 	default:
-		http.Error(w, "нужен GET или POST", 405)
+		http.Error(w, "GET or POST required", 405)
 	}
 }
 
@@ -296,8 +296,8 @@ func writeList(path, kind string, hosts []string) error {
 	sort.Strings(clean)
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "# принудительно %s -- список ведёт пользователь\n", kind)
-	b.WriteString("# +.example.com покрывает и поддомены\n")
+	fmt.Fprintf(&b, "# always %s -- list maintained by the user\n", kind)
+	b.WriteString("# +.example.com also covers subdomains\n")
 	for _, h := range clean {
 		b.WriteString(h + "\n")
 	}
@@ -308,10 +308,10 @@ func writeList(path, kind string, hosts []string) error {
 	return os.Rename(tmp, path)
 }
 
-// программы-исключения. В файле -- готовые классические правила ядра:
-// имя без пути -> PROCESS-NAME (переживает обновления с новым путём),
-// полный путь -> PROCESS-PATH (когда одноимённых exe несколько).
-// Ядро следит за файлом само, перечитывать через API не нужно.
+// excluded programs. The file holds ready classical core rules:
+// a name without a path -> PROCESS-NAME (survives updates to a new path),
+// a full path -> PROCESS-PATH (when several exes share a name).
+// The core watches the file itself, no API reload needed.
 func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 	path := paths.ForceDirectApps()
 	switch r.Method {
@@ -336,7 +336,7 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 		}
 		writeResult(w, writeApps(path, body.Apps))
 	default:
-		http.Error(w, "нужен GET или POST", 405)
+		http.Error(w, "GET or POST required", 405)
 	}
 }
 
@@ -348,12 +348,12 @@ func writeApps(path string, apps []string) error {
 		if a == "" {
 			continue
 		}
-		// запятая -- разделитель полей в правиле ядра
+		// a comma is the field separator in a core rule
 		if strings.Contains(a, ",") {
-			return fmt.Errorf("%q: запятая в имени не поддерживается", a)
+			return fmt.Errorf("%q: commas in the name are not supported", a)
 		}
 		if !strings.HasSuffix(strings.ToLower(a), ".exe") {
-			return fmt.Errorf("%q: нужно имя программы с .exe, например telegram.exe", a)
+			return fmt.Errorf("%q: a program name with .exe is required, e.g. telegram.exe", a)
 		}
 		kind := "PROCESS-NAME"
 		if strings.ContainsAny(a, `\/`) {
@@ -369,7 +369,7 @@ func writeApps(path string, apps []string) error {
 	sort.Slice(rules, func(i, j int) bool { return strings.ToLower(rules[i]) < strings.ToLower(rules[j]) })
 
 	var b strings.Builder
-	b.WriteString("# программы, чей трафик идёт мимо туннеля -- список ведёт пользователь\n")
+	b.WriteString("# programs whose traffic bypasses the tunnel -- list maintained by the user\n")
 	for _, r := range rules {
 		b.WriteString(r + "\n")
 	}
@@ -384,11 +384,11 @@ func (s *Server) handleActiveApps(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"apps": netprocs.Active("mihomo.exe", "dpiswitch.exe")})
 }
 
-// подгрузка .conf: конвертируем и кладём рядом исходник,
-// чтобы конфиг можно было пересобрать без повторного выбора файла
+// loading a .conf: convert it and keep the source next to it,
+// so the config can be rebuilt without picking the file again
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "нужен POST", 405)
+		http.Error(w, "POST required", 405)
 		return
 	}
 	var body struct {
@@ -412,8 +412,8 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, err)
 		return
 	}
-	// оба файла содержат приватный ключ WireGuard, поэтому после
-	// записи закрываем их правами: режим 0600 на Windows ничего не даёт
+	// both files contain the WireGuard private key, so after
+	// writing they are locked down by ACL: mode 0600 means nothing on Windows
 	for _, f := range []struct {
 		path string
 		data string
@@ -423,11 +423,11 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := paths.Restrict(f.path); err != nil {
-			log.Printf("предупреждение: права на %s не ограничены: %v", f.path, err)
+			log.Printf("warning: permissions on %s not restricted: %v", f.path, err)
 		}
 	}
 	awgconf.EnsureLists()
-	writeJSON(w, map[string]any{"ok": true, "note": "конфиг записан, перезапусти службу"})
+	writeJSON(w, map[string]any{"ok": true, "note": "config saved, restart the service"})
 }
 
 func (s *Server) handleVerdicts(w http.ResponseWriter, r *http.Request) {
@@ -435,12 +435,12 @@ func (s *Server) handleVerdicts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, snap)
 }
 
-// настройки контроллера: служба подхватывает их в течение минуты
-// сама, перезапуск не нужен
+// controller settings: the service picks them up within a minute
+// on its own, no restart needed
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		// DNS из .conf -- то, что стоит в туннеле при пустой настройке
+		// DNS from the .conf -- what the tunnel uses when the setting is empty
 		confDNS := []string{}
 		if c, err := awgconf.ParseFile(paths.SourceConf()); err == nil {
 			confDNS = c.DNS()
@@ -462,12 +462,12 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		writeResult(w, ctl.SaveSettings(paths.Settings(), set))
 	default:
-		http.Error(w, "нужен GET или POST", 405)
+		http.Error(w, "GET or POST required", 405)
 	}
 }
 
-// проверка резолверов тем же путём, каким ими будет пользоваться ядро:
-// прямые -- через вход пробника мимо туннеля, туннельные -- через awg
+// checks resolvers over the same path the core will use:
+// direct ones via the prober's listener bypassing the tunnel, tunnel ones via awg
 func (s *Server) handleDNSTest(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Servers []string `json:"servers"`
@@ -499,10 +499,10 @@ func (s *Server) handleDNSTest(w http.ResponseWriter, r *http.Request) {
 			rs, err := probe.ParseResolver(srv)
 			if err == nil {
 				t := time.Now()
-				// whoami.akamai.net отвечает адресом того рекурсивного
-				// сервера, который к нему пришёл: видно, КТО на самом деле
-				// резолвит. на обычном домене (раньше был ya.ru) ответ
-				// выглядел так, будто резолвит владелец домена
+				// whoami.akamai.net answers with the address of the recursive
+				// server that queried it: this shows WHO actually
+				// resolves. With an ordinary domain the answer
+				// looked as if the domain owner were resolving
 				res.IPs, err = rs.Lookup(d, "whoami.akamai.net")
 				res.Ms = time.Since(t).Milliseconds()
 			}
@@ -531,9 +531,9 @@ func (s *Server) handleLog(w http.ResponseWriter, r *http.Request) {
 	}
 	b, err := tail(path, 400)
 	if err != nil {
-		// вкладка обновляется сама, и текст ошибки ОС на каждом
-		// обновлении выглядел бы как поломка, хотя файла просто ещё нет
-		b = "журнал пока пуст (" + filepath.Base(path) + " не создан)"
+		// the tab refreshes itself, and an OS error text on every
+		// refresh would look like a failure while the file simply doesn't exist yet
+		b = "log is empty so far (" + filepath.Base(path) + " not created yet)"
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Write([]byte(b))

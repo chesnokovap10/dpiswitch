@@ -12,11 +12,11 @@ import (
 	"dpiswitch/internal/paths"
 )
 
-// Defaults: настройки по умолчанию, рассчитанные от каталога данных.
+// Defaults: default settings derived from the data directory.
 func Defaults() Config {
 	return Config{
 		DirectAddr:    "127.0.0.1:7892",
-		TunnelAddr:    "127.0.0.1:7891", // вход, привязанный к awg напрямую
+		TunnelAddr:    "127.0.0.1:7891", // listener bound directly to awg
 		APIAddr:       "127.0.0.1:9090",
 		CfgPath:       paths.Config(),
 		ProxyName:     "awg",
@@ -41,12 +41,12 @@ func Defaults() Config {
 	}
 }
 
-// Run крутит цикл до отмены контекста. Используется и службой,
-// и отдельным CLI -- логика одна, дублировать её нельзя.
+// Run loops until the context is cancelled. It is the single
+// implementation of the controller logic.
 func Run(ctx context.Context, cfg Config) {
 	secret := secretFromConfig(cfg.CfgPath)
 	if secret == "" {
-		log.Printf("предупреждение: секрет не найден в %s, обращаюсь к API без авторизации", cfg.CfgPath)
+		log.Printf("warning: secret not found in %s, calling the API without auth", cfg.CfgPath)
 	}
 	a := newAPI(cfg.APIAddr, secret)
 	st := loadState(cfg.StatePath)
@@ -54,30 +54,30 @@ func Run(ctx context.Context, cfg Config) {
 	st.setCurrent(netID)
 	_ = st.save()
 
-	// файл настроек пользователя главнее значений службы; его нет --
-	// остаётся то, что передали при запуске
+	// the user's settings file overrides the service values; if it is missing,
+	// whatever was passed at start stays
 	set, haveSet := readSettings(cfg)
 	if haveSet {
 		cfg = set.apply(cfg)
 	}
 
-	mode := "НАБЛЮДЕНИЕ (ничего не меняется)"
+	mode := "OBSERVE (nothing is changed)"
 	if cfg.Apply {
-		mode = "ПРИМЕНЕНИЕ"
+		mode = "APPLY"
 	}
-	log.Printf("сеть %s | режим: %s | TTL чистых %s, блокировок %s", netID, mode, cfg.TTL, cfg.FailTTL)
+	log.Printf("network %s | mode: %s | clean TTL %s, blocked TTL %s", netID, mode, cfg.TTL, cfg.FailTTL)
 	if n := len(st.verified(netID)); n > 0 {
-		log.Printf("в памяти уже %d доменов с прямым путём для этой сети", n)
+		log.Printf("memory already holds %d direct domains for this network", n)
 	}
 
-	// синхронизируем файл с памятью СРАЗУ, не дожидаясь изменения вердикта.
-	// иначе список и состояние расходятся после переноса, ручной правки
-	// или аварийного сброса -- и накопленные вердикты просто не применяются
+	// sync the file with memory RIGHT AWAY, without waiting for a verdict change.
+	// otherwise the list and the state diverge after a migration, a manual edit
+	// or a panic reset -- and accumulated verdicts are simply not applied
 	if cfg.Apply {
 		applyList(cfg, a, st, netID)
 	} else if haveSet {
-		// выключено пользователем: список от прошлого запуска не должен
-		// продолжать уводить сайты напрямую
+		// disabled by the user: the list from the previous run must not
+		// keep sending sites direct
 		clearList(cfg, a)
 	}
 
@@ -91,16 +91,16 @@ func Run(ctx context.Context, cfg Config) {
 		case <-t.C:
 			if ns, ok := readSettings(cfg); ok && (!haveSet || !ns.Equal(set)) {
 				if haveSet && !ns.SameCore(set) && cfg.OnCoreChange != nil {
-					log.Printf("изменены настройки ядра (DNS: прямой %v, в туннеле %v; IPv6 %v) -- перезапускаю ядро",
+					log.Printf("core settings changed (DNS: direct %v, tunnel %v; IPv6 %v) -- restarting the core",
 						ns.DirectDNS, ns.TunnelDNS, ns.IPv6)
 					cfg.OnCoreChange()
 				}
 				cfg = onSettingsChanged(cfg, ns, a, st, netID)
 				set, haveSet = ns, true
 			}
-			// сеть могла смениться -- вердикты другой сети неприменимы
+			// the network may have changed -- another network's verdicts do not apply
 			if id := resolveNetwork(cfg, st); id != netID {
-				log.Printf("сеть сменилась: %s -> %s, переключаю память", netID, id)
+				log.Printf("network changed: %s -> %s, switching memory", netID, id)
 				netID = id
 				st.setCurrent(id)
 				_ = st.save()
@@ -110,25 +110,25 @@ func Run(ctx context.Context, cfg Config) {
 			}
 			cycle(cfg, a, st, netID, w)
 		case <-ctx.Done():
-			log.Println("контроллер остановлен")
+			log.Println("controller stopped")
 			_ = st.save()
 			return
 		}
 	}
 }
 
-// Snapshot: сводка для интерфейса.
+// Snapshot: a summary for the UI.
 type Snapshot struct {
 	NetworkID string         `json:"network_id"`
 	Counts    map[string]int `json:"counts"`
 	Direct    []string       `json:"direct"`
 	Details   []DirectEntry  `json:"details"`
 	Families  []family       `json:"families"`
-	// всё, что НЕ идёт напрямую: заблокированные, медленные, непроверенные
+	// everything that does NOT go direct: blocked, slower, unverified
 	Others []DirectEntry `json:"others"`
 }
 
-// DirectEntry: строка таблицы "идут напрямую" в интерфейсе
+// DirectEntry: a row of the verdict tables in the UI
 type DirectEntry struct {
 	Domain    string    `json:"domain"`
 	DecidedAt time.Time `json:"decided_at"`
@@ -180,12 +180,12 @@ func readSettings(cfg Config) (Settings, bool) {
 	return LoadSettings(cfg.SettingsPath), true
 }
 
-// onSettingsChanged применяет новые настройки к уже вынесенным вердиктам,
-// а не только к будущим: сократил срок -- ждать старого незачем
+// onSettingsChanged applies new settings to verdicts already made,
+// not only to future ones: if the TTL was shortened there is no need to wait out the old one
 func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) Config {
 	was := cfg.Apply
 	cfg = s.apply(cfg)
-	log.Printf("настройки: автопереключение %v, прямой путь %s, блокировки %s, потолок %s, допуск +%d%%, попыток %d",
+	log.Printf("settings: auto-switch %v, direct TTL %s, blocked TTL %s, cap %s, tolerance +%d%%, attempts %d",
 		cfg.Apply, cfg.TTL, cfg.FailTTL, cfg.MaxBackoff, s.SlowPct, cfg.Attempts)
 
 	st.mu.Lock()
@@ -198,13 +198,13 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 	}
 	st.mu.Unlock()
 	if err := st.save(); err != nil {
-		log.Printf("состояние не сохранено: %v", err)
+		log.Printf("state not saved: %v", err)
 	}
 
 	switch {
 	case was && !cfg.Apply:
-		// выключили -- всё возвращается в туннель немедленно, а не когда
-		// истекут вердикты; память при этом сохраняется
+		// disabled -- everything returns to the tunnel immediately, not when
+		// verdicts expire; memory is kept
 		clearList(cfg, a)
 	default:
 		applyList(cfg, a, st, netID)

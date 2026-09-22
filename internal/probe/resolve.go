@@ -12,12 +12,12 @@ import (
 	"time"
 )
 
-// DoH-резолв через заданный путь (direct или tunnel).
-// подключаемся к резолверу по IP-литералу: обычный UDP/53 на этой сети
-// не работает, а бутстрап по имени был бы курицей и яйцом.
+// DoH resolution over a given path (direct or tunnel).
+// The resolver is dialed by IP literal: plain UDP/53 may be blocked, and
+// bootstrapping by name would be a chicken-and-egg problem.
 type dohResolver struct {
-	ip   string // адрес DoH-сервера
-	sni  string // имя для SNI и проверки сертификата
+	ip   string // DoH server address
+	sni  string // name for SNI and certificate verification
 	path string
 }
 
@@ -45,7 +45,7 @@ func ResolveVia(d Dialer, host string) ([]string, error) {
 		}
 	}
 	if lastErr == nil {
-		lastErr = fmt.Errorf("пустой ответ от всех резолверов")
+		lastErr = fmt.Errorf("empty answer from all resolvers")
 	}
 	return nil, lastErr
 }

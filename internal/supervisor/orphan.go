@@ -12,12 +12,12 @@ import (
 	"dpiswitch/internal/paths"
 )
 
-// Job Object: ядро обязано умереть вместе со службой.
+// Job Object: the core must die together with the service.
 //
-// Без этого убитая или аварийно завершённая служба оставляет mihomo
-// сиротой -- с поднятым TUN и переписанными маршрутами, но без всякого
-// присмотра. Машина остаётся без сети, и чинить некому: супервизора
-// уже нет, а ядро само себя не остановит.
+// Otherwise a killed or crashed service leaves mihomo orphaned -- with TUN
+// up and routes rewritten, but nobody watching it. The machine is left
+// without network and nothing can fix it: the supervisor is gone and the
+// core will not stop itself.
 func newKillJob() (windows.Handle, error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
@@ -47,11 +47,11 @@ func assignToJob(job windows.Handle, pid int) error {
 	return windows.AssignProcessToJobObject(job, h)
 }
 
-// killOrphans снимает ядра, оставшиеся от прежнего запуска.
+// killOrphans kills cores left over from a previous run.
 //
-// Сюда попадаем после жёсткого выключения или падения службы. Сравниваем
-// полный путь, а не имя: чужой mihomo (например, запущенный вручную)
-// трогать нельзя.
+// We get here after a hard power-off or a service crash. The full path is
+// compared, not the name: someone else's mihomo (e.g. started by hand) must
+// not be touched.
 func killOrphans() {
 	self := os.Getpid()
 	target := strings.ToLower(paths.Mihomo())
@@ -72,7 +72,7 @@ func killOrphans() {
 		pid := int(e.ProcessID)
 		if name == strings.ToLower(filepath.Base(target)) && pid != self {
 			if path := processPath(uint32(pid)); strings.EqualFold(path, target) {
-				log.Printf("снимаю осиротевшее ядро, pid %d", pid)
+				log.Printf("killing orphaned core, pid %d", pid)
 				if h, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(pid)); err == nil {
 					windows.TerminateProcess(h, 1)
 					windows.CloseHandle(h)

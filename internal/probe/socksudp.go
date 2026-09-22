@@ -9,14 +9,14 @@ import (
 	"time"
 )
 
-// SOCKS5 UDP ASSOCIATE. нужен, потому что под TUN обычный UDP-сокет
-// пробника утянуло бы в туннель, и "прямая" проба QUIC меряла бы
-// туннель. управляющее TCP-соединение обязано жить всё время
-// ассоциации: закроется оно -- релей выбросит нашу сессию.
+// SOCKS5 UDP ASSOCIATE. Needed because under TUN a plain UDP socket of the
+// prober would be pulled into the tunnel, and the "direct" QUIC probe would
+// measure the tunnel. The control TCP connection must live for the whole
+// association: once it closes, the relay drops our session.
 type udpConn struct {
-	ctrl  net.Conn // управляющее TCP-соединение, держим открытым
+	ctrl  net.Conn // control TCP connection, kept open
 	relay *net.UDPConn
-	to    *net.UDPAddr // адрес релея mihomo
+	to    *net.UDPAddr // mihomo relay address
 	once  sync.Once
 }
 
@@ -41,8 +41,8 @@ func (d Dialer) DialUDP() (*udpConn, error) {
 		return nil, fmt.Errorf("socks method rejected: %v", resp)
 	}
 
-	// CMD=3 (UDP ASSOCIATE). адрес источника не знаем, шлём нули --
-	// релей вернёт адрес, на который нам слать датаграммы
+	// CMD=3 (UDP ASSOCIATE). The source address is unknown, send zeros --
+	// the relay answers with the address to send datagrams to
 	req := []byte{5, 3, 0, 1, 0, 0, 0, 0, 0, 0}
 	if _, err := c.Write(req); err != nil {
 		c.Close()
@@ -98,8 +98,8 @@ func (d Dialer) DialUDP() (*udpConn, error) {
 	}
 	port := int(pb[0])<<8 | int(pb[1])
 
-	// релей мог назвать себя 0.0.0.0 -- тогда шлём туда же,
-	// куда подключались по TCP
+	// the relay may call itself 0.0.0.0 -- then send to wherever
+	// the TCP connection went
 	if host == "0.0.0.0" || host == "::" {
 		h, _, _ := net.SplitHostPort(d.Addr)
 		host = h
@@ -118,13 +118,13 @@ func (d Dialer) DialUDP() (*udpConn, error) {
 	return &udpConn{ctrl: c, relay: uc, to: raddr}, nil
 }
 
-// дальше -- реализация net.PacketConn поверх релея, чтобы её
-// можно было отдать quic-go как обычный сокет
+// below: a net.PacketConn implementation on top of the relay, so it can
+// be handed to quic-go as a regular socket
 
 func (u *udpConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	ua, ok := addr.(*net.UDPAddr)
 	if !ok {
-		return 0, errors.New("нужен *net.UDPAddr")
+		return 0, errors.New("*net.UDPAddr required")
 	}
 	ip4 := ua.IP.To4()
 	var hdr []byte
@@ -141,13 +141,13 @@ func (u *udpConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 }
 
 func (u *udpConn) ReadFrom(p []byte) (int, net.Addr, error) {
-	buf := make([]byte, len(p)+262) // запас под заголовок SOCKS
+	buf := make([]byte, len(p)+262) // headroom for the SOCKS header
 	n, _, err := u.relay.ReadFromUDP(buf)
 	if err != nil {
 		return 0, nil, err
 	}
 	if n < 10 {
-		return 0, nil, errors.New("слишком короткая датаграмма")
+		return 0, nil, errors.New("datagram too short")
 	}
 	// RSV(2) FRAG(1) ATYP(1) ADDR PORT DATA
 	var off int
@@ -155,24 +155,24 @@ func (u *udpConn) ReadFrom(p []byte) (int, net.Addr, error) {
 	switch buf[3] {
 	case 1:
 		if n < 10 {
-			return 0, nil, errors.New("короткий ipv4-заголовок")
+			return 0, nil, errors.New("short ipv4 header")
 		}
 		ip = net.IP(buf[4:8])
 		off = 8
 	case 4:
 		if n < 22 {
-			return 0, nil, errors.New("короткий ipv6-заголовок")
+			return 0, nil, errors.New("short ipv6 header")
 		}
 		ip = net.IP(buf[4:20])
 		off = 20
 	case 3:
 		l := int(buf[4])
 		if n < 5+l+2 {
-			return 0, nil, errors.New("короткий доменный заголовок")
+			return 0, nil, errors.New("short domain header")
 		}
 		off = 5 + l
 	default:
-		return 0, nil, fmt.Errorf("неизвестный atyp %d", buf[3])
+		return 0, nil, fmt.Errorf("unknown atyp %d", buf[3])
 	}
 	port := int(buf[off])<<8 | int(buf[off+1])
 	off += 2
@@ -183,13 +183,13 @@ func (u *udpConn) ReadFrom(p []byte) (int, net.Addr, error) {
 func (u *udpConn) Close() error {
 	u.once.Do(func() {
 		u.relay.Close()
-		u.ctrl.Close() // закрытие управляющего соединения рвёт ассоциацию
+		u.ctrl.Close() // closing the control connection tears down the association
 	})
 	return nil
 }
 
-// quic-go проверяет наличие этих методов, иначе пишет предупреждение
-// о размере буфера на каждый вызов
+// quic-go checks for these methods; without them it logs a buffer-size
+// warning on every call
 func (u *udpConn) SetReadBuffer(n int) error  { return u.relay.SetReadBuffer(n) }
 func (u *udpConn) SetWriteBuffer(n int) error { return u.relay.SetWriteBuffer(n) }
 

@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// результат одного прохода по одному пути (direct или tunnel)
+// result of one pass over one path (direct or tunnel)
 type PathResult struct {
 	IP         string        `json:"ip,omitempty"`
 	TCPOk      bool          `json:"tcp_ok"`
@@ -33,11 +33,11 @@ type PathResult struct {
 	ErrStage   string        `json:"err_stage,omitempty"`
 }
 
-const bodyLimit = 64 << 10 // читаем не больше 64 КБ: нам нужна подпись, не контент
+const bodyLimit = 64 << 10 // read at most 64 KB: we need a fingerprint, not the content
 
-// ip -- конкретный узел, который проверяем; host -- имя для SNI и Host.
-// подключаемся именно по IP: так обрыв хендшейка нельзя перепутать
-// с несостоявшимся резолвом, и мы точно знаем, какой узел проверен.
+// ip is the exact node under test; host is the name for SNI and Host.
+// We connect by IP so a broken handshake cannot be confused with a failed
+// resolution, and we know exactly which node was tested.
 func Run(d Dialer, ip, host string) PathResult {
 	var r PathResult
 	r.IP = ip
@@ -51,8 +51,8 @@ func Run(d Dialer, ip, host string) PathResult {
 	defer conn.Close()
 	r.TCPOk, r.TCPTime = true, time.Since(t0)
 
-	// InsecureSkipVerify: сертификат нужен даже если он поддельный --
-	// именно подделка и есть сигнал. валидность проверяем отдельно, вручную.
+	// InsecureSkipVerify: we need the certificate even if it is forged --
+	// the forgery is the signal. Validity is checked separately, by hand.
 	t1 := time.Now()
 	tc := tls.Client(conn, &tls.Config{
 		ServerName:         host,
@@ -76,10 +76,10 @@ func Run(d Dialer, ip, host string) PathResult {
 		r.CertValid = verifyChain(host, st.PeerCertificates)
 	}
 
-	// HTTP/1.1 запрос руками: http.Client поверх готового conn
-	// увёл бы нас от контроля над таймингом
+	// a hand-written HTTP/1.1 request: http.Client on top of an existing
+	// conn would take timing out of our control
 	if st.NegotiatedProtocol == "h2" {
-		// h2 в v1 не разбираем, достаточно факта успешного TLS
+		// h2 is not parsed; a successful TLS handshake is enough
 		return r
 	}
 	req := "GET / HTTP/1.1\r\nHost: " + host + "\r\n" +
@@ -110,9 +110,9 @@ func Run(d Dialer, ip, host string) PathResult {
 	return r
 }
 
-// проба только на уровне TCP: для порта, где TLS может не быть.
-// сигнал слабее -- ни SNI, ни сертификата, ни тела ответа, --
-// но обрыв соединения DPI показывает и здесь.
+// TCP-only probe for ports that may not speak TLS. A weaker signal --
+// no SNI, certificate or response body -- but DPI connection resets
+// still show up here.
 func RunTCP(d Dialer, ip string, port int) PathResult {
 	var r PathResult
 	r.IP = ip
@@ -127,7 +127,7 @@ func RunTCP(d Dialer, ip string, port int) PathResult {
 	return r
 }
 
-// проверка цепочки против системных корней, отдельно от рукопожатия
+// chain verification against system roots, separate from the handshake
 func verifyChain(host string, certs []*x509.Certificate) bool {
 	if len(certs) == 0 {
 		return false
@@ -143,19 +143,19 @@ func verifyChain(host string, certs []*x509.Certificate) bool {
 	return err == nil
 }
 
-// классификация ошибки прямого пути -- что именно сделал DPI
+// classify the direct-path error -- what exactly DPI did
 func ClassifyErr(r PathResult) string {
 	e := strings.ToLower(r.Err)
 	switch {
 	case strings.Contains(e, "reset"):
 		if r.ErrStage == "tls" {
-			return "RST на ClientHello -- фильтр по SNI"
+			return "RST on ClientHello -- SNI filter"
 		}
-		return "RST на " + r.ErrStage
+		return "RST on " + r.ErrStage
 	case strings.Contains(e, "timeout") || strings.Contains(e, "deadline"):
-		return "таймаут на " + r.ErrStage
+		return "timeout on " + r.ErrStage
 	case strings.Contains(e, "refused"):
-		return "connection refused на " + r.ErrStage
+		return "connection refused on " + r.ErrStage
 	case strings.Contains(e, "unreachable"):
 		return "host unreachable"
 	}

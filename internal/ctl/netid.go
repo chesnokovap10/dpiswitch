@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-// диапазон fake-ip из конфига mihomo: 198.18.0.1/16
+// fake-ip range from the mihomo config: 198.18.0.1/16
 var _, fakeIPRange, _ = net.ParseCIDR("198.18.0.0/15")
 
 var (
@@ -23,9 +23,9 @@ var (
 	netIDWhen time.Time
 )
 
-// networkID кэшируется: он опрашивает route и arp, то есть запускает
-// процессы, а статус в трее обновляется каждые несколько секунд.
-// Смена сети за полминуты не потеряется -- цикл контроллера длиннее.
+// networkID is cached: it queries route and arp, i.e. spawns processes,
+// while the tray status refreshes every few seconds. A network change is
+// not lost within half a minute -- the controller cycle is longer.
 func networkID() string {
 	netIDMu.Lock()
 	defer netIDMu.Unlock()
@@ -38,24 +38,24 @@ func networkID() string {
 }
 
 func computeNetworkID() string {
-	// Идентичность сети -- это шлюз и его MAC, и только они.
+	// The network identity is the gateway and its MAC, nothing else.
 	//
-	// Раньше сюда шли адреса ВСЕХ интерфейсов, и появление любого
-	// лишнего адаптера (Bluetooth с APIPA, псевдоадаптер другого VPN)
-	// считалось сменой сети: накопленные вердикты разом обнулялись.
-	// Проверено на практике -- 192 домена улетели в пустоту.
+	// It used to include the addresses of ALL interfaces, and any extra
+	// adapter (Bluetooth with APIPA, another VPN's virtual adapter) counted
+	// as a network change: accumulated verdicts were wiped at once.
+	// Seen in practice -- 192 domains lost.
 	if gw := defaultGateway(); gw != "" {
 		parts := []string{"gw=" + gw}
 		if mac := arpMAC(gw); mac != "" {
-			// отличает разные сети с одинаковым 192.168.1.x
+			// tells apart different networks with the same 192.168.1.x
 			parts = append(parts, "mac="+mac)
 		}
 		sum := sha256.Sum256([]byte(strings.Join(parts, "|")))
 		return hex.EncodeToString(sum[:])[:16]
 	}
 
-	// шлюза нет -- падаем на подсети, но только на настоящие:
-	// APIPA означает, что DHCP не ответил, и адрес там случайный
+	// no gateway -- fall back to subnets, but only real ones:
+	// APIPA means DHCP did not answer and the address is random
 	nets := localNets()
 	if len(nets) == 0 {
 		return "unknown"
@@ -65,17 +65,17 @@ func computeNetworkID() string {
 	return hex.EncodeToString(sum[:])[:16]
 }
 
-// парсим по числовым полям, а не по заголовкам: вывод route локализован
-// поля: сеть, маска, шлюз, интерфейс, метрика
+// parse by numeric fields, not headers: route output is localized
+// fields: network, mask, gateway, interface, metric
 var zeroRoute = regexp.MustCompile(`^\s*0\.0\.0\.0\s+0\.0\.0\.0\s+(\S+)\s+\S+\s+(\d+)`)
 
-// defaultGateway: шлюз ФИЗИЧЕСКОЙ сети.
+// defaultGateway: the gateway of the PHYSICAL network.
 //
-// Маршрутов по умолчанию два: через сетевую карту и через наш TUN
-// (198.18.0.2). Порядок строк в выводе route не гарантирован: после
-// переподключения Wi-Fi первой оказалась строка TUN, и собственный
-// туннель был принят за новую сеть -- с пустой памятью вердиктов.
-// Поэтому TUN отбрасываем, а из остальных берём наименьшую метрику.
+// There are two default routes: via the network card and via our TUN
+// (198.18.0.2). The order of lines in route output is not guaranteed: after
+// a Wi-Fi reconnect the TUN line came first, and our own tunnel was taken
+// for a new network -- with an empty verdict memory. So TUN is dropped and
+// the lowest metric among the rest wins.
 func defaultGateway() string {
 	out, err := winexec.Output("route", "print", "-4", "0.0.0.0")
 	if err != nil {
@@ -136,9 +136,8 @@ func localNets() []string {
 			if !ok || n.IP.To4() == nil {
 				continue
 			}
-			// собственный TUN mihomo пропускаем: иначе идентификатор
-			// зависит от того, поднят ли туннель, и память раздваивается
-			// на одну и ту же физическую сеть
+			// skip mihomo's own TUN: otherwise the id depends on whether the
+			// tunnel is up, and memory splits in two for one physical network
 			if fakeIPRange.Contains(n.IP) {
 				continue
 			}

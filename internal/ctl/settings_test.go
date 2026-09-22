@@ -10,7 +10,7 @@ import (
 func TestSettingsRoundTrip(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "settings.json")
 	if s := LoadSettings(p); !s.Equal(DefaultSettings()) {
-		t.Fatalf("без файла ждал умолчания, получил %+v", s)
+		t.Fatalf("without a file expected defaults, got %+v", s)
 	}
 	want := DefaultSettings()
 	want.CleanTTLMin = 480
@@ -24,24 +24,24 @@ func TestSettingsRoundTrip(t *testing.T) {
 	}
 	cfg := got.apply(Defaults())
 	if cfg.TTL != 8*time.Hour || cfg.Apply {
-		t.Fatalf("не применилось: TTL %s apply %v", cfg.TTL, cfg.Apply)
+		t.Fatalf("not applied: TTL %s apply %v", cfg.TTL, cfg.Apply)
 	}
 
-	// сочетание со скриншота пользователя: 7 дней напрямую, 1 день
-	// потолка -- раньше отклонялось по ошибке
+	// a real user combination: 7 days direct, 1 day cap -- it used to be
+	// rejected by mistake
 	ok := DefaultSettings()
 	ok.CleanTTLMin, ok.FailTTLMin, ok.MaxBackoffMin = 7*24*60, 60, 24*60
 	if err := SaveSettings(p, ok); err != nil {
-		t.Fatalf("законное сочетание отклонено: %v", err)
+		t.Fatalf("a valid combination was rejected: %v", err)
 	}
 	bad := ok
-	bad.MaxBackoffMin = 30 // меньше перепроверки заблокированных (60)
+	bad.MaxBackoffMin = 30 // below the blocked re-check interval (60)
 	if SaveSettings(p, bad) == nil {
-		t.Fatal("потолок меньше перепроверки заблокированных должен отклоняться")
+		t.Fatal("a cap below the blocked re-check interval must be rejected")
 	}
-	// испорченный руками файл не валит службу
+	// a hand-broken file must not crash the service
 	os.WriteFile(p, []byte(`{"clean_ttl_min":-5,"attempts":99}`), 0o644)
 	if s := LoadSettings(p); s.CleanTTLMin != 7*24*60 || s.Attempts != 3 {
-		t.Fatalf("clamp не сработал: %+v", s)
+		t.Fatalf("clamp did not work: %+v", s)
 	}
 }

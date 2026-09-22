@@ -1,6 +1,6 @@
-# Telegram: домены веб-версии, ссылок, CDN и Telegraph.
-# Приложение ходит и по голым IP -- их диапазоны в telegram-cidr.txt
-# (с core.telegram.org/resources/cidr.txt, кэш relay-routes на vpsru).
+# Telegram: web client, links, CDN and Telegraph domains.
+# The apps also connect to bare IPs -- those ranges are in telegram-cidr.txt
+# (from core.telegram.org/resources/cidr.txt).
 telegram.org
 telegram.me
 t.me

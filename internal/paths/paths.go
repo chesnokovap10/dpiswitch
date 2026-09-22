@@ -1,6 +1,6 @@
-// Пути приложения. Служба работает с рабочим каталогом C:\Windows\System32,
-// поэтому ничего нельзя резолвить относительно текущего каталога --
-// только от реального положения бинаря и от ProgramData.
+// Application paths. The service runs with C:\Windows\System32 as its working
+// directory, so nothing may be resolved relative to the current directory --
+// only relative to the actual binary location and to ProgramData.
 package paths
 
 import (
@@ -10,7 +10,7 @@ import (
 
 const AppName = "dpiswitch"
 
-// каталог с бинарями: dpiswitch.exe и mihomo.exe лежат рядом
+// binaries directory: dpiswitch.exe and mihomo.exe sit side by side
 func ExeDir() string {
 	exe, err := os.Executable()
 	if err != nil {
@@ -33,8 +33,8 @@ func Exe() string {
 
 func Mihomo() string { return filepath.Join(ExeDir(), "mihomo.exe") }
 
-// каталог данных на системном диске: не зависит от готовности
-// тома с бинарями при загрузке и позволяет закрыть конфиг правами
+// data directory on the system drive: does not depend on the binaries'
+// volume being ready at boot, and lets the config be locked down by ACL
 func DataDir() string {
 	base := os.Getenv("ProgramData")
 	if base == "" {
@@ -64,7 +64,7 @@ func Verified() string        { return Data("direct-verified.txt") }
 func ForceDirect() string     { return Data("force-direct.txt") }
 func ForceDirectApps() string { return Data("force-direct-apps.txt") }
 
-// второй туннель (vpsde): исходник .conf, свой список сайтов, пресеты
+// second tunnel (awg2): source .conf, custom host list, presets
 func SourceConf2() string     { return Data("source2.conf") }
 func Awg2Hosts() string       { return Data("awg2-hosts.txt") }
 func Preset(id string) string { return Data("preset-" + id + ".txt") }

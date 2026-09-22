@@ -15,10 +15,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// --- присутствие физической сети ---
+// --- physical network presence ---
 
-// fake-ip и адрес самого TUN: интерфейс ядра не считается сетью,
-// иначе проверка всегда была бы положительной
+// fake-ip and the TUN address itself: the core's interface does not count
+// as a network, otherwise the check would always pass
 var tunRange = mustCIDR("198.18.0.0/15")
 
 func mustCIDR(s string) *net.IPNet {
@@ -29,9 +29,9 @@ func mustCIDR(s string) *net.IPNet {
 	return n
 }
 
-// physicalNetwork: есть ли хоть один рабочий сетевой интерфейс помимо
-// нашего TUN. После перезагрузки Wi-Fi поднимается позже службы, и
-// запускать ядро в пустоту бессмысленно -- оно только сожжёт попытки.
+// physicalNetwork: whether there is at least one working interface besides
+// our TUN. After a reboot Wi-Fi comes up later than the service, and starting
+// the core into the void is pointless -- it would only burn retries.
 func physicalNetwork() bool {
 	ifaces, err := net.Interfaces()
 	if err != nil {
@@ -54,7 +54,7 @@ func physicalNetwork() bool {
 			if ip == nil || tunRange.Contains(ip) {
 				continue
 			}
-			// 169.254.x.x -- адрес без DHCP: связи с сетью ещё нет
+			// 169.254.x.x -- no DHCP lease: not connected yet
 			if ip[0] == 169 && ip[1] == 254 {
 				continue
 			}
@@ -64,16 +64,16 @@ func physicalNetwork() bool {
 	return false
 }
 
-// --- уведомление о смене сети ---
+// --- network change notifications ---
 
 var (
 	iphlpapi          = windows.NewLazySystemDLL("iphlpapi.dll")
 	pNotifyAddrChange = iphlpapi.NewProc("NotifyAddrChange")
 )
 
-// watchNetworkChanges шлёт сигнал, когда меняются адреса интерфейсов:
-// подключили Wi-Fi, переключили сеть, вытащили кабель. Ждать общего
-// опроса в такие моменты незачем -- проверять надо сразу.
+// watchNetworkChanges signals when interface addresses change: Wi-Fi
+// connected, network switched, cable unplugged. No reason to wait for the
+// regular poll in such moments -- check right away.
 func watchNetworkChanges(ctx context.Context, notify func()) {
 	for {
 		if ctx.Err() != nil {
@@ -90,15 +90,15 @@ func watchNetworkChanges(ctx context.Context, notify func()) {
 
 		r, _, _ := pNotifyAddrChange.Call(
 			uintptr(unsafe.Pointer(&handle)), uintptr(unsafe.Pointer(&ov)))
-		// ERROR_IO_PENDING -- нормальный путь: уведомление придёт позже
+		// ERROR_IO_PENDING is the normal path: the notification comes later
 		if r != uintptr(syscall.ERROR_IO_PENDING) && r != 0 {
 			windows.CloseHandle(ev)
 			time.Sleep(10 * time.Second)
 			continue
 		}
 
-		// ждём событие, но не дольше минуты -- иначе отмена контекста
-		// не разбудит нас до следующей смены адреса
+		// wait for the event, but no longer than a minute -- otherwise a
+		// context cancel would not wake us until the next address change
 		res, _ := windows.WaitForSingleObject(ev, 60000)
 		windows.CloseHandle(ev)
 		if ctx.Err() != nil {
@@ -110,7 +110,7 @@ func watchNetworkChanges(ctx context.Context, notify func()) {
 	}
 }
 
-// --- проверка живости туннеля ---
+// --- tunnel liveness check ---
 
 type healthChecker struct {
 	apiAddr string
@@ -126,9 +126,9 @@ func newHealthChecker(apiAddr, secret, proxy string) *healthChecker {
 	}
 }
 
-// alive спрашивает у ядра задержку через сам туннель. Это честная
-// проверка сквозной работы: поднятый TUN при мёртвом пире выглядит
-// снаружи нормально, а трафик при этом уходит в никуда.
+// alive asks the core for a delay measured through the tunnel itself. This is
+// an honest end-to-end check: TUN being up with a dead peer looks fine from
+// the outside while traffic goes nowhere.
 func (h *healthChecker) alive() (bool, string) {
 	u := fmt.Sprintf("http://%s/proxies/%s/delay?timeout=5000&url=%s",
 		h.apiAddr, url.PathEscape(h.proxy),
@@ -142,8 +142,8 @@ func (h *healthChecker) alive() (bool, string) {
 	}
 	resp, err := h.client.Do(req)
 	if err != nil {
-		// само ядро недоступно -- это отдельная беда, но лечится тем же
-		return false, "API ядра не отвечает: " + trim(err.Error())
+		// the core itself is unreachable -- a separate problem, but cured the same way
+		return false, "core API not responding: " + trim(err.Error())
 	}
 	defer resp.Body.Close()
 
@@ -159,7 +159,7 @@ func (h *healthChecker) alive() (bool, string) {
 		}
 		return false, trim(msg)
 	}
-	return true, fmt.Sprintf("%d мс", body.Delay)
+	return true, fmt.Sprintf("%d ms", body.Delay)
 }
 
 func trim(s string) string {
@@ -170,22 +170,22 @@ func trim(s string) string {
 	return s
 }
 
-// NetworkUp: есть ли физическая сеть. Нужна интерфейсу, чтобы
-// отличить "туннель сломался" от "сети нет вообще".
+// NetworkUp: whether a physical network exists. The UI uses it to tell
+// "the tunnel is broken" from "there is no network at all".
 func NetworkUp() bool { return physicalNetwork() }
 
-// TunnelAlive: проверка снаружи службы -- ею пользуется трей,
-// у которого нет доступа к состоянию супервизора.
+// TunnelAlive: a check from outside the service -- used by the tray,
+// which has no access to the supervisor's state.
 func TunnelAlive(apiAddr, secret, proxy string) (bool, string) {
 	return newHealthChecker(apiAddr, secret, proxy).alive()
 }
 
-// foreignTunnel: поднят ли ЧУЖОЙ туннельный адаптер.
+// foreignTunnel: whether SOMEONE ELSE's tunnel adapter is up.
 //
-// Если параллельно запущен другой клиент WireGuard с тем же ключом,
-// сервер перебивает сессии: наш туннель падает, мы переподнимаем ядро,
-// сессия снова перебивается -- и так по кругу. Перезапуск тут не лечит,
-// а мешает, поэтому в такой ситуации мы просто не трогаем ядро.
+// If another WireGuard client with the same key runs in parallel, the server
+// keeps stealing the session: our tunnel drops, we restart the core, the
+// session is stolen again -- round and round. A restart does not help here,
+// it hurts, so in this situation we leave the core alone.
 func foreignTunnel() (bool, string) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
@@ -197,7 +197,7 @@ func foreignTunnel() (bool, string) {
 		}
 		name := ifc.Name
 		if name == "Meta" || strings.EqualFold(name, "Meta") {
-			continue // наш собственный
+			continue // our own
 		}
 		addrs, _ := ifc.Addrs()
 		for _, a := range addrs {
@@ -205,8 +205,8 @@ func foreignTunnel() (bool, string) {
 			if !ok || n.IP.To4() == nil || tunRange.Contains(n.IP.To4()) {
 				continue
 			}
-			// туннельные интерфейсы без широковещания и без шлюза:
-			// признак point-to-point, как у WireGuard
+			// tunnel interfaces have no broadcast and no gateway:
+			// a point-to-point sign, like WireGuard
 			if ifc.Flags&net.FlagPointToPoint != 0 ||
 				(ifc.Flags&net.FlagBroadcast == 0 && ifc.Flags&net.FlagMulticast == 0) {
 				return true, name

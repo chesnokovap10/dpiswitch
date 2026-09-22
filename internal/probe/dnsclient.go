@@ -17,13 +17,13 @@ import (
 	"time"
 )
 
-// Resolver: DNS-сервер в той же записи, что понимает ядро
-// (https://…, tls://…, tcp://…, udp://… или просто адрес).
+// Resolver: a DNS server in the same notation the core understands
+// (https://…, tls://…, tcp://…, udp://… or a bare address).
 //
-// Пробник обязан спрашивать ТОТ ЖЕ резолвер, что и ядро для прямого
-// трафика: у CDN узел зависит от того, кто и откуда спросил. Проверять
-// один узел, а пускать трафик на другой -- значит выносить вердикт
-// не о том, что реально будет работать.
+// The prober must ask THE SAME resolver the core uses for direct
+// traffic: a CDN's node depends on who asked and from where. Testing
+// one node while sending traffic to another means judging
+// something other than what will actually be used.
 type Resolver struct {
 	Raw    string
 	Scheme string // https, tls, tcp, udp
@@ -36,13 +36,13 @@ func ParseResolver(s string) (Resolver, error) {
 	s = strings.TrimSpace(s)
 	r := Resolver{Raw: s}
 	if s == "" {
-		return r, errors.New("пустой адрес резолвера")
+		return r, errors.New("empty resolver address")
 	}
 	if !strings.Contains(s, "://") {
 		s = "udp://" + s
 	}
-	// голый IPv6 без скобок: иначе последнее двоеточие адреса
-	// разбирается как разделитель порта ("fd7a::" -> "fd7a:")
+	// a bare IPv6 without brackets: otherwise the address's last colon
+	// is parsed as the port separator ("fd7a::" -> "fd7a:")
 	if scheme, rest, ok := strings.Cut(s, "://"); ok {
 		host, path, _ := strings.Cut(rest, "/")
 		if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
@@ -61,19 +61,19 @@ func ParseResolver(s string) (Resolver, error) {
 	defPort := map[string]int{"https": 443, "tls": 853, "tcp": 53, "udp": 53}
 	p, ok := defPort[r.Scheme]
 	if !ok {
-		return r, fmt.Errorf("%q: поддерживаются https://, tls://, tcp://, udp://", r.Raw)
+		return r, fmt.Errorf("%q: supported schemes are https://, tls://, tcp://, udp://", r.Raw)
 	}
 	r.Port = p
 	if ps := u.Port(); ps != "" {
 		if r.Port, err = strconv.Atoi(ps); err != nil || r.Port < 1 || r.Port > 65535 {
-			return r, fmt.Errorf("%q: неверный порт", r.Raw)
+			return r, fmt.Errorf("%q: invalid port", r.Raw)
 		}
 	}
 	if r.Host == "" {
-		return r, fmt.Errorf("%q: не указан сервер", r.Raw)
+		return r, fmt.Errorf("%q: no server specified", r.Raw)
 	}
 	if u.Fragment != "" {
-		return r, fmt.Errorf("%q: суффикс #… здесь не нужен, путь задаётся отдельно", r.Raw)
+		return r, fmt.Errorf("%q: a #… suffix is not allowed here", r.Raw)
 	}
 	r.Path = u.EscapedPath()
 	if r.Scheme == "https" && r.Path == "" {
@@ -82,9 +82,9 @@ func ParseResolver(s string) (Resolver, error) {
 	return r, nil
 }
 
-// Lookup: A-записи имени через этот резолвер, по пути дайлера.
-// Обычный udp:// проверяется по TCP на тот же сервер: SOCKS-вход
-// пробника сделан под TCP, а сервер и ответы те же.
+// Lookup: A records of a name via this resolver, over the dialer's path.
+// Plain udp:// is checked over TCP to the same server: the prober's
+// SOCKS listener is TCP, and the server and answers are the same.
 func (r Resolver) Lookup(d Dialer, name string) ([]string, error) {
 	q, id := buildQuery(name)
 	var resp []byte
@@ -102,8 +102,8 @@ func (r Resolver) Lookup(d Dialer, name string) ([]string, error) {
 }
 
 func (r Resolver) tlsConf() *tls.Config {
-	// у адреса-литерала сертификат проверяется по IP (у Яндекса и Google
-	// IP прописаны в сертификате), у имени -- по имени
+	// for an address literal the certificate is verified by IP (Yandex and Google
+	// list their IPs in the certificate), for a name -- by name
 	return &tls.Config{ServerName: r.Host, NextProtos: []string{"h2", "http/1.1"}}
 }
 
@@ -123,7 +123,7 @@ func (r Resolver) doh(d Dialer, q []byte) ([]byte, error) {
 			_ = tc.SetDeadline(time.Time{})
 			return tc, nil
 		},
-		// часть серверов (Яндекс) отвечает только по HTTP/2
+		// some servers (Yandex) only answer over HTTP/2
 		ForceAttemptHTTP2: true,
 	}
 	defer tr.CloseIdleConnections()
@@ -173,8 +173,8 @@ func (r Resolver) stream(d Dialer, q []byte) ([]byte, error) {
 	return out, err
 }
 
-// LookupAny опрашивает резолверы одновременно и берёт первый ответ --
-// так же, как ядро: иначе пробник и трафик получали бы разные узлы
+// LookupAny queries resolvers concurrently and takes the first answer --
+// just like the core: otherwise the prober and traffic would get different nodes
 func LookupAny(d Dialer, rs []Resolver, name string) ([]string, error) {
 	type res struct {
 		ips []string
@@ -185,7 +185,7 @@ func LookupAny(d Dialer, rs []Resolver, name string) ([]string, error) {
 		go func(r Resolver) {
 			ips, err := r.Lookup(d, name)
 			if err == nil && len(ips) == 0 {
-				err = errors.New("нет A-записей")
+				err = errors.New("no A records")
 			}
 			ch <- res{ips, err}
 		}(r)
@@ -201,7 +201,7 @@ func LookupAny(d Dialer, rs []Resolver, name string) ([]string, error) {
 	return nil, errors.New(strings.Join(errs, "; "))
 }
 
-// --- формат DNS-сообщения: ровно столько, сколько нужно для A-запроса ---
+// --- DNS message format: exactly what an A query needs ---
 
 func buildQuery(name string) ([]byte, uint16) {
 	var idb [2]byte
@@ -210,12 +210,12 @@ func buildQuery(name string) ([]byte, uint16) {
 	b := make([]byte, 12, 64)
 	binary.BigEndian.PutUint16(b[0:], id)
 	binary.BigEndian.PutUint16(b[2:], 0x0100) // RD
-	binary.BigEndian.PutUint16(b[4:], 1)      // один вопрос
+	binary.BigEndian.PutUint16(b[4:], 1)      // one question
 	for _, l := range strings.Split(strings.TrimSuffix(name, "."), ".") {
 		b = append(b, byte(len(l)))
 		b = append(b, l...)
 	}
-	b = append(b, 0, 0, 1, 0, 1) // тип A, класс IN
+	b = append(b, 0, 0, 1, 0, 1) // type A, class IN
 	return b, id
 }
 
@@ -223,10 +223,10 @@ var rcodeText = map[int]string{2: "SERVFAIL", 3: "NXDOMAIN", 5: "REFUSED"}
 
 func parseA(m []byte, id uint16) ([]string, error) {
 	if len(m) < 12 {
-		return nil, errors.New("короткий ответ DNS")
+		return nil, errors.New("short DNS response")
 	}
 	if binary.BigEndian.Uint16(m) != id {
-		return nil, errors.New("чужой ответ DNS")
+		return nil, errors.New("mismatched DNS response")
 	}
 	if rc := int(m[3] & 0x0f); rc != 0 {
 		if t, ok := rcodeText[rc]; ok {
@@ -239,7 +239,7 @@ func parseA(m []byte, id uint16) ([]string, error) {
 	for i := 0; i < qd; i++ {
 		var ok bool
 		if off, ok = skipName(m, off); !ok || off+4 > len(m) {
-			return nil, errors.New("битый вопрос DNS")
+			return nil, errors.New("malformed DNS question")
 		}
 		off += 4
 	}
@@ -269,7 +269,7 @@ func skipName(m []byte, off int) (int, bool) {
 		switch {
 		case l == 0:
 			return off + 1, true
-		case l&0xc0 == 0xc0: // сжатие: ссылка занимает два байта и завершает имя
+		case l&0xc0 == 0xc0: // compression: a pointer takes two bytes and ends the name
 			return off + 2, off+2 <= len(m)
 		default:
 			off += 1 + l

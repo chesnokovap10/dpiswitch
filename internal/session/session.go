@@ -1,10 +1,9 @@
-// Идентичность сеанса входа и стабильный порт интерфейса.
+// Logon session identity and a stable UI port.
 //
-// Порт не должен прыгать при каждом запуске программы: открытая вкладка
-// и закладка обязаны продолжать работать. Но и намертво зашивать его
-// нельзя -- он может оказаться занят. Компромисс: порт выводится из LUID
-// сеанса входа, поэтому постоянен внутри сессии и меняется после
-// выхода из системы или перезагрузки.
+// The port must not jump on every launch: an open tab and a bookmark have
+// to keep working. But it cannot be hardcoded either -- it may be taken.
+// Compromise: the port is derived from the logon session LUID, so it is
+// stable within a session and changes after sign-out or reboot.
 package session
 
 import (
@@ -16,11 +15,11 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// TOKEN_STATISTICS: в x/sys структуры нет, только константа класса,
-// поэтому раскладка описана вручную по заголовкам Windows.
+// TOKEN_STATISTICS: x/sys has no struct, only the class constant, so the
+// layout is written out by hand from the Windows headers.
 type tokenStatistics struct {
 	TokenID            windows.LUID
-	AuthenticationID   windows.LUID // LUID сеанса входа -- то, что нам нужно
+	AuthenticationID   windows.LUID // logon session LUID -- what we need
 	ExpirationTime     int64
 	TokenType          uint32
 	ImpersonationLevel uint32
@@ -31,12 +30,12 @@ type tokenStatistics struct {
 	ModifiedID         windows.LUID
 }
 
-// LogonID возвращает идентификатор текущего сеанса входа.
+// LogonID returns the current logon session identifier.
 func LogonID() (uint64, error) {
 	var token windows.Token
 	if err := windows.OpenProcessToken(windows.CurrentProcess(),
 		windows.TOKEN_QUERY, &token); err != nil {
-		return 0, fmt.Errorf("токен процесса: %w", err)
+		return 0, fmt.Errorf("process token: %w", err)
 	}
 	defer token.Close()
 
@@ -44,19 +43,19 @@ func LogonID() (uint64, error) {
 	size := uint32(unsafe.Sizeof(st))
 	if err := windows.GetTokenInformation(token, windows.TokenStatistics,
 		(*byte)(unsafe.Pointer(&st)), size, &size); err != nil {
-		return 0, fmt.Errorf("статистика токена: %w", err)
+		return 0, fmt.Errorf("token statistics: %w", err)
 	}
 	return uint64(uint32(st.AuthenticationID.HighPart))<<32 |
 		uint64(st.AuthenticationID.LowPart), nil
 }
 
 const (
-	portBase = 49152 // начало динамического диапазона
+	portBase = 49152 // start of the dynamic range
 	portSpan = 16000
 )
 
-// Port: первый порт-кандидат для этого сеанса. Нужен второму
-// экземпляру, чтобы открыть интерфейс уже работающего.
+// Port: the first candidate port for this session. A second instance
+// uses it to open the UI of the one already running.
 func Port() int {
 	id, err := LogonID()
 	if err != nil {
@@ -67,14 +66,14 @@ func Port() int {
 	return portBase + int(h.Sum32()%portSpan)
 }
 
-// Listen поднимает слушатель на порту, выведенном из сеанса входа.
-// Если порт занят (другим приложением или зависшей копией), идём
-// дальше детерминированным шагом -- так адрес остаётся предсказуемым.
+// Listen opens a listener on the port derived from the logon session.
+// If the port is taken (by another app or a hung copy), it steps forward
+// deterministically -- so the address stays predictable.
 func Listen() (net.Listener, error) {
 	id, err := LogonID()
 	if err != nil {
-		// без идентификатора сеанса падать незачем: берём любой
-		// свободный порт, просто теряем постоянство адреса
+		// no reason to fail without a session id: take any free port,
+		// we just lose the stable address
 		return net.Listen("tcp", "127.0.0.1:0")
 	}
 	_ = id
@@ -92,5 +91,5 @@ func Listen() (net.Listener, error) {
 	if ln, err := net.Listen("tcp", "127.0.0.1:0"); err == nil {
 		return ln, nil
 	}
-	return nil, fmt.Errorf("не удалось занять порт: %w", lastErr)
+	return nil, fmt.Errorf("could not bind a port: %w", lastErr)
 }

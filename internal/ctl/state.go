@@ -16,19 +16,19 @@ type entry struct {
 	DecidedAt time.Time     `json:"decided_at"`
 	ExpiresAt time.Time     `json:"expires_at"`
 	TestedIP  string        `json:"tested_ip,omitempty"`
-	Reverts   int           `json:"reverts"` // сколько раз домен уже откатывали
+	Reverts   int           `json:"reverts"` // how many times the domain has been reverted
 }
 
-// состояние разделено по сетям: ключ -- провайдер (AS...), см. asn.go;
-// пока провайдер не определён -- шлюз, см. networkID()
+// state is split per network: the key is the ISP (AS...), see asn.go;
+// while the ISP is unknown -- the gateway, see networkID()
 type state struct {
 	mu       sync.Mutex
 	path     string
 	Networks map[string]map[string]*entry `json:"networks"`
-	// шлюз -> провайдер за ним
+	// gateway -> ISP behind it
 	Attach map[string]attachment `json:"attach,omitempty"`
-	// сеть, в которой контроллер работает сейчас: интерфейс читает её
-	// отсюда, а не вычисляет сам -- без доступа к прямому пути не может
+	// the network the controller currently works in: the UI reads it from here
+	// instead of computing it -- it cannot without access to the direct path
 	Current string `json:"current,omitempty"`
 }
 
@@ -56,7 +56,7 @@ func (s *state) save() error {
 	if err := os.WriteFile(tmp, b, 0644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.path) // атомарно: файл читает и контроллер, и человек
+	return os.Rename(tmp, s.path) // atomic: both the controller and humans read this file
 }
 
 func (s *state) attached(gw string) (attachment, bool) {
@@ -81,9 +81,9 @@ func (s *state) setCurrent(id string) {
 	s.Current = id
 }
 
-// mergeInto вливает в память провайдера всё, что копилось по шлюзам,
-// оказавшимся за ним. Из двух вердиктов по домену побеждает более
-// свежий. Прежние записи по шлюзам удаляются: память у провайдера одна.
+// mergeInto folds everything accumulated under gateways that turned out to
+// be behind this ISP into the ISP's memory. Of two verdicts for a domain the
+// newer wins. The old per-gateway records are removed: one ISP, one memory.
 func (s *state) mergeInto(asn string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -130,7 +130,7 @@ func (s *state) put(id, dom string, e *entry) {
 	m[dom] = e
 }
 
-// домены, которым сейчас разрешён прямой путь
+// domains currently allowed to go direct
 func (s *state) verified(id string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -145,7 +145,7 @@ func (s *state) verified(id string) []string {
 	return out
 }
 
-// кандидаты на перепроверку: срок вердикта истёк
+// candidates for re-checking: the verdict has expired
 func (s *state) expired(id string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()

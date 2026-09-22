@@ -7,23 +7,22 @@ import (
 	"golang.org/x/sys/windows/svc/mgr"
 )
 
-// mgr.Connect() запрашивает SC_MANAGER_ALL_ACCESS, а это права
-// администратора: из обычной сессии вызов падает, и трей решает,
-// что служба не установлена. Права на старт-стоп мы выдали через
-// sdset именно чтобы обходиться без элевации -- значит и открывать
-// надо ровно тем, что нужно, а не всем подряд.
+// mgr.Connect() requests SC_MANAGER_ALL_ACCESS, which needs administrator
+// rights: from a normal session the call fails and the tray concludes the
+// service is not installed. Start/stop rights were granted via sdset exactly
+// to avoid elevation -- so open with just what is needed, not everything.
 const (
 	scmLimited = windows.SC_MANAGER_CONNECT | windows.SC_MANAGER_ENUMERATE_SERVICE
 	svcLimited = windows.SERVICE_QUERY_STATUS | windows.SERVICE_QUERY_CONFIG |
 		windows.SERVICE_START | windows.SERVICE_STOP
 )
 
-// openLimited открывает службу правами, доступными обычному
-// пользователю. Закрывать возвращённый handle обязан вызывающий.
+// openLimited opens the service with rights available to a normal user.
+// The caller must close the returned handle.
 func openLimited() (*mgr.Service, func(), error) {
 	scm, err := windows.OpenSCManager(nil, nil, scmLimited)
 	if err != nil {
-		return nil, nil, fmt.Errorf("диспетчер служб: %w", err)
+		return nil, nil, fmt.Errorf("service manager: %w", err)
 	}
 	name, err := windows.UTF16PtrFromString(Name)
 	if err != nil {
@@ -35,8 +34,8 @@ func openLimited() (*mgr.Service, func(), error) {
 		windows.CloseServiceHandle(scm)
 		return nil, nil, err
 	}
-	// mgr.Service -- просто пара имя+handle, поэтому его методы
-	// (Query, Start, Control, Config) работают с нашим handle
+	// mgr.Service is just a name+handle pair, so its methods
+	// (Query, Start, Control, Config) work with our handle
 	s := &mgr.Service{Name: Name, Handle: h}
 	closer := func() {
 		windows.CloseServiceHandle(h)

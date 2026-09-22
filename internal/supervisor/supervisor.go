@@ -1,5 +1,5 @@
-// Супервизор: держит запущенным ядро mihomo и крутит контроллер.
-// Используется службой; в одиночку не запускается.
+// Supervisor: keeps the mihomo core running and drives the controller.
+// Used by the service; never runs on its own.
 package supervisor
 
 import (
@@ -26,62 +26,62 @@ import (
 type Supervisor struct {
 	mu      sync.Mutex
 	cmd     *exec.Cmd
-	done    chan struct{} // закрывается, когда ядро завершилось
+	done    chan struct{} // closed when the core has exited
 	running atomic.Bool
-	recheck chan struct{} // просьба проверить туннель немедленно
+	recheck chan struct{} // request to check the tunnel right away
 	job     windows.Handle
 }
 
 func New() *Supervisor { return &Supervisor{recheck: make(chan struct{}, 1)} }
 
-// Run держит ядро живым до отмены контекста и параллельно
-// крутит контроллер. Возврат означает окончательную остановку.
+// Run keeps the core alive until the context is cancelled and runs
+// the controller alongside. Returning means a final stop.
 func (s *Supervisor) Run(ctx context.Context, apply bool) {
 	if err := paths.EnsureDataDir(); err != nil {
-		log.Printf("каталог данных недоступен: %v", err)
+		log.Printf("data directory unavailable: %v", err)
 		return
 	}
-	// служба работает от SYSTEM: без этого её файлы достаются
-	// пользователю только на чтение, и трей не сможет ни сбросить
-	// вердикты, ни поправить списки
+	// the service runs as SYSTEM: without this its files are
+	// read-only for the user, and the tray can neither reset
+	// verdicts nor edit the lists
 	if err := paths.GrantUsersModify(paths.DataDir()); err != nil {
-		log.Printf("предупреждение: права на каталог данных не выданы: %v", err)
+		log.Printf("warning: data directory permissions not granted: %v", err)
 	}
 	if _, err := os.Stat(paths.Config()); err != nil {
-		log.Printf("конфиг не найден: %v -- подгрузи .conf через интерфейс", err)
+		log.Printf("config not found: %v -- load a .conf in the UI", err)
 		return
 	}
 	awgconf.EnsureLists()
 
-	// ядра от прошлого запуска (жёсткое выключение, падение службы)
-	// держат TUN и маршруты -- снимаем их до того, как поднимем своё
+	// cores from a previous run (hard power-off, service crash)
+	// hold TUN and routes -- kill them before bringing up our own
 	killOrphans()
 
 	if job, err := newKillJob(); err == nil {
 		s.job = job
-		defer windows.CloseHandle(job) // закрытие job снимает ядро
+		defer windows.CloseHandle(job) // closing the job kills the core
 	} else {
-		log.Printf("предупреждение: job object недоступен (%v), "+
-			"ядро может пережить службу при аварийном завершении", err)
+		log.Printf("warning: job object unavailable (%v), "+
+			"the core may outlive the service on a crash", err)
 	}
 
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() { defer wg.Done(); s.keepCore(ctx) }()
 
-	// смена адресов (подключили Wi-Fi, переключили сеть, вынули кабель)
-	// должна приводить к немедленной проверке, а не ждать общего опроса
+	// an address change (Wi-Fi connected, network switched, cable unplugged)
+	// must trigger an immediate check instead of waiting for the regular poll
 	go watchNetworkChanges(ctx, s.askRecheck)
 
 	wg.Add(1)
 	go func() { defer wg.Done(); s.keepHealthy(ctx) }()
 
-	// контроллеру нужно, чтобы ядро уже слушало API
+	// the controller needs the core's API to be listening
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		if !s.waitAPI(ctx, 90*time.Second) {
-			log.Println("ядро не поднялось вовремя, контроллер не стартует")
+			log.Println("core did not come up in time, controller not started")
 			return
 		}
 		cfg := ctl.Defaults()
@@ -93,8 +93,8 @@ func (s *Supervisor) Run(ctx context.Context, apply bool) {
 	wg.Wait()
 }
 
-// перезапуск ядра с нарастающей паузой: при загрузке системы сеть
-// может быть ещё не поднята, и первые попытки законно провалятся
+// restart the core with a growing pause: at boot the network
+// may not be up yet, and the first attempts legitimately fail
 func (s *Supervisor) keepCore(ctx context.Context) {
 	backoff := 2 * time.Second
 	const maxBackoff = 60 * time.Second
@@ -102,9 +102,9 @@ func (s *Supervisor) keepCore(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		// после перезагрузки служба стартует раньше Wi-Fi. поднимать
-		// ядро в пустоту незачем: оно только сожжёт попытки и уйдёт
-		// в долгую паузу к тому моменту, когда сеть наконец появится
+		// after a reboot the service starts before Wi-Fi. Starting
+		// the core into the void is pointless: it only burns retries and goes
+		// into a long pause by the time the network finally appears
 		if !s.waitNetwork(ctx) {
 			return
 		}
@@ -115,10 +115,10 @@ func (s *Supervisor) keepCore(ctx context.Context) {
 			return
 		}
 		if err != nil {
-			log.Printf("ядро завершилось: %v", err)
+			log.Printf("core exited: %v", err)
 		}
-		// продержалось долго -- считаем это нормальной работой
-		// и сбрасываем паузу, иначе она росла бы бесконечно
+		// it lasted long -- consider that normal operation
+		// and reset the pause, otherwise it would grow forever
 		if time.Since(start) > 2*time.Minute {
 			backoff = 2 * time.Second
 		}
@@ -136,45 +136,45 @@ func (s *Supervisor) keepCore(ctx context.Context) {
 func (s *Supervisor) runCore(ctx context.Context) error {
 	logf, err := os.OpenFile(paths.MihomoLog(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		return fmt.Errorf("лог ядра: %w", err)
+		return fmt.Errorf("core log: %w", err)
 	}
 	defer logf.Close()
 	rotate(paths.MihomoLog(), 8<<20)
 
-	// конфиг пересобирается перед КАЖДЫМ запуском: так до ядра доходят
-	// и новая версия программы, и смена DNS в настройках (для неё
-	// контроллер просит перезапуск). исходника может не быть -- тогда
-	// работаем с тем, что есть; сломанный исходник не повод не стартовать
+	// the config is rebuilt before EVERY start: this way the core gets both
+	// a new program version and DNS changes from settings (for those
+	// the controller requests a restart). The source may be missing -- then
+	// use what exists; a broken source is no reason not to start
 	if _, err := os.Stat(paths.SourceConf()); err == nil {
 		if changed, err := awgconf.Regenerate(); err != nil {
-			log.Printf("конфиг не пересобран, работаю со старым: %v", err)
+			log.Printf("config not rebuilt, using the old one: %v", err)
 		} else if changed {
-			log.Println("конфиг пересобран")
+			log.Println("config rebuilt")
 		}
 	}
 
 	cmd := winexec.Command(paths.Mihomo(), "-d", paths.DataDir(), "-f", paths.Config())
 	cmd.Dir = paths.DataDir()
-	// ядро отключает IPv6 у TUN, если на машине нет глобального IPv6.
-	// у нас IPv6 может быть только внутри туннеля -- у провайдера его
-	// нет вовсе, -- поэтому проверка тут ошибочна
+	// the core disables IPv6 on TUN if the machine has no global IPv6.
+	// here IPv6 may exist only inside the tunnel -- the ISP may not
+	// provide any -- so that check is wrong for us
 	cmd.Env = append(os.Environ(), "SKIP_SYSTEM_IPV6_CHECK=true")
 	cmd.Stdout = logf
 	cmd.Stderr = logf
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("запуск ядра: %w", err)
+		return fmt.Errorf("starting the core: %w", err)
 	}
 
-	// завершение сигнализируется ЗАКРЫТИЕМ канала, а не значением в нём:
-	// ждут двое (этот цикл и stopCore при перезапуске), и значение досталось
-	// бы только одному -- второй ждал бы впустую и писал ложное
-	// "ядро не завершилось после Kill"
+	// exit is signalled by CLOSING the channel, not by a value in it:
+	// two parties wait (this loop and stopCore on restart), and a value would
+	// reach only one -- the other would wait in vain and log a false
+	// "core did not exit after Kill"
 	done := make(chan struct{})
 	var waitErr error
 
 	if s.job != 0 {
 		if err := assignToJob(s.job, cmd.Process.Pid); err != nil {
-			log.Printf("предупреждение: ядро не привязано к job object: %v", err)
+			log.Printf("warning: core not assigned to the job object: %v", err)
 		}
 	}
 
@@ -183,7 +183,7 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 	s.done = done
 	s.mu.Unlock()
 	s.running.Store(true)
-	log.Printf("ядро запущено, pid %d", cmd.Process.Pid)
+	log.Printf("core started, pid %d", cmd.Process.Pid)
 
 	go func() { waitErr = cmd.Wait(); close(done) }()
 
@@ -191,31 +191,31 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 	case <-done:
 		return waitErr
 	case <-ctx.Done():
-		// корректная остановка обязательна: убитое ядро оставит
-		// систему с поднятым TUN и битыми маршрутами
+		// a clean shutdown is mandatory: a killed core leaves
+		// the system with TUN up and broken routes
 		s.stopCore(cmd, done)
 		return nil
 	}
 }
 
-// stopCore снимает ядро КОРРЕКТНО.
+// stopCore shuts the core down CLEANLY.
 //
-// На Windows сигналы не работают: Process.Signal(os.Interrupt) всегда
-// возвращает ошибку, поэтому прежний код каждый раз ждал впустую и убивал
-// ядро принудительно -- а вместе с ним оставались поднятый TUN и
-// переписанные маршруты. Машина оказывалась без интернета.
+// Signals do not work on Windows: Process.Signal(os.Interrupt) always
+// returns an error, so the old code always waited in vain and killed
+// the core forcibly -- leaving TUN up and
+// the routes rewritten. The machine ended up without internet.
 //
-// Правильный путь -- попросить ядро выключить TUN через его же API.
-// Оно само снимет адаптер и вернёт маршруты; после этого завершение
-// процесса уже безопасно.
+// The right way is to ask the core to disable TUN through its own API.
+// It removes the adapter and restores the routes itself; after that
+// terminating the process is safe.
 func (s *Supervisor) stopCore(cmd *exec.Cmd, done <-chan struct{}) {
 	if cmd.Process == nil {
 		return
 	}
 	if err := disableTUN(); err != nil {
-		log.Printf("TUN не выключен через API (%v) -- маршруты может потребоваться чистить вручную", err)
+		log.Printf("TUN not disabled via the API (%v) -- routes may need manual cleanup", err)
 	} else {
-		// ядру нужно время снять адаптер и вернуть маршруты
+		// the core needs time to remove the adapter and restore routes
 		time.Sleep(1500 * time.Millisecond)
 	}
 
@@ -223,11 +223,11 @@ func (s *Supervisor) stopCore(cmd *exec.Cmd, done <-chan struct{}) {
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		log.Println("ядро не завершилось после Kill")
+		log.Println("core did not exit after Kill")
 	}
 }
 
-// disableTUN просит ядро убрать туннельный адаптер и восстановить маршруты
+// disableTUN asks the core to remove the tunnel adapter and restore routes
 func disableTUN() error {
 	body := strings.NewReader(`{"tun":{"enable":false}}`)
 	req, err := http.NewRequest(http.MethodPatch, "http://127.0.0.1:9090/configs", body)
@@ -256,7 +256,7 @@ func (s *Supervisor) waitAPI(ctx context.Context, limit time.Duration) bool {
 			return false
 		}
 		if s.running.Load() {
-			// ядру нужно время поднять слушатели после старта процесса
+			// the core needs time to open its listeners after the process starts
 			time.Sleep(2 * time.Second)
 			return true
 		}
@@ -265,7 +265,7 @@ func (s *Supervisor) waitAPI(ctx context.Context, limit time.Duration) bool {
 	return false
 }
 
-// простая ротация: держим один предыдущий файл, без библиотек
+// simple rotation: keep one previous file, no libraries
 func rotate(path string, max int64) {
 	fi, err := os.Stat(path)
 	if err != nil || fi.Size() < max {
@@ -277,26 +277,26 @@ func rotate(path string, max int64) {
 
 var _ = io.Discard
 
-// waitNetwork ждёт появления физической сети. Возвращает false,
-// только если работу свернули.
+// waitNetwork waits for a physical network. Returns false
+// only if we are shutting down.
 func (s *Supervisor) waitNetwork(ctx context.Context) bool {
 	if physicalNetwork() {
 		return true
 	}
-	log.Println("сети нет, жду её появления")
+	log.Println("no network, waiting for it")
 	for i := 0; ; i++ {
 		select {
 		case <-ctx.Done():
 			return false
-		case <-s.recheck: // уведомление о смене адресов -- проверяем сразу
+		case <-s.recheck: // address change notification -- check right away
 		case <-time.After(3 * time.Second):
 		}
 		if physicalNetwork() {
-			log.Println("сеть появилась")
+			log.Println("network is up")
 			return true
 		}
 		if i == 100 {
-			log.Println("сети всё ещё нет, продолжаю ждать")
+			log.Println("still no network, keep waiting")
 		}
 	}
 }
@@ -304,24 +304,24 @@ func (s *Supervisor) waitNetwork(ctx context.Context) bool {
 func (s *Supervisor) askRecheck() {
 	select {
 	case s.recheck <- struct{}{}:
-	default: // проверка уже запрошена, второй сигнал не нужен
+	default: // a check is already requested, no second signal needed
 	}
 }
 
-// keepHealthy ловит случай, ради которого всё это и затевалось:
-// TUN поднят, ядро живо, а пир недоступен -- тогда весь трафик уходит
-// в никуда, и снаружи это выглядит как полное отсутствие интернета.
-// Само оно не рассосётся, пока кто-то не переподнимет соединение.
+// keepHealthy catches the case all of this exists for:
+// TUN is up, the core is alive, but the peer is unreachable -- then all traffic
+// goes nowhere, and from the outside it looks like no internet at all.
+// It won't resolve itself until someone re-establishes the connection.
 func (s *Supervisor) keepHealthy(ctx context.Context) {
 	hc := newHealthChecker("127.0.0.1:9090",
 		ctl.SecretFromConfig(paths.Config()), "awg")
 
 	const (
 		period   = 30 * time.Second
-		failsMax = 3 // три подряд: одиночный сбой ловить незачем
+		failsMax = 3 // three in a row: a single failure is not worth reacting to
 	)
 	var fails int
-	// даём ядру подняться, прежде чем судить о его здоровье
+	// let the core come up before judging its health
 	if !sleepCtx(ctx, 25*time.Second) {
 		return
 	}
@@ -332,8 +332,8 @@ func (s *Supervisor) keepHealthy(ctx context.Context) {
 			}
 			continue
 		}
-		// без физической сети проверять нечего: туннель мёртв
-		// законно, и перезапуск ядра ничего не исправит
+		// without a physical network there is nothing to check: the tunnel is
+		// legitimately dead, and a core restart would fix nothing
 		if !physicalNetwork() {
 			fails = 0
 			if !s.waitRecheck(ctx, period) {
@@ -345,26 +345,26 @@ func (s *Supervisor) keepHealthy(ctx context.Context) {
 		ok, detail := hc.alive()
 		if ok {
 			if fails > 0 {
-				log.Printf("туннель снова отвечает (%s)", detail)
+				log.Printf("tunnel responding again (%s)", detail)
 			}
 			fails = 0
 		} else {
 			fails++
-			log.Printf("туннель не отвечает (%s), подряд: %d", detail, fails)
+			log.Printf("tunnel not responding (%s), in a row: %d", detail, fails)
 			if fails >= failsMax {
-				// чужой клиент с тем же ключом перебивает сессию на сервере.
-				// переподнимать ядро бессмысленно: получится качели
+				// another client with the same key is stealing the session on the server.
+				// restarting the core is pointless: it would just seesaw
 				if other, name := foreignTunnel(); other {
-					log.Printf("туннель мёртв, но поднят чужой туннельный адаптер %q -- "+
-						"похоже, параллельно работает другой клиент с тем же ключом. "+
-						"ядро не трогаю, иначе будет бесконечный перезапуск", name)
+					log.Printf("tunnel is dead, but a foreign tunnel adapter %q is up -- "+
+						"another client with the same key seems to be running. "+
+						"leaving the core alone to avoid an endless restart loop", name)
 					fails = 0
 					if !s.waitRecheck(ctx, period) {
 						return
 					}
 					continue
 				}
-				log.Println("переподнимаю ядро: туннель мёртв при живой сети")
+				log.Println("restarting the core: tunnel dead while the network is up")
 				s.restartCore()
 				fails = 0
 				if !sleepCtx(ctx, 20*time.Second) {
@@ -379,21 +379,21 @@ func (s *Supervisor) keepHealthy(ctx context.Context) {
 	}
 }
 
-// ждём либо срок, либо сигнал о смене сети
+// wait for either the period or a network change signal
 func (s *Supervisor) waitRecheck(ctx context.Context, d time.Duration) bool {
 	select {
 	case <-ctx.Done():
 		return false
 	case <-s.recheck:
-		// сеть изменилась: даём стеку устояться, иначе проверим
-		// раньше, чем поднимется маршрут по умолчанию
+		// the network changed: let the stack settle, otherwise we would check
+		// before the default route comes up
 		return sleepCtx(ctx, 3*time.Second)
 	case <-time.After(d):
 		return true
 	}
 }
 
-// restartCore снимает ядро; keepCore поднимет его заново сам
+// restartCore stops the core; keepCore brings it back up by itself
 func (s *Supervisor) restartCore() {
 	s.mu.Lock()
 	cmd, done := s.cmd, s.done

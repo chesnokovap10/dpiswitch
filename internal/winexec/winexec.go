@@ -1,9 +1,9 @@
-// Запуск внешних команд без всплывающего консольного окна.
+// Running external commands without a flashing console window.
 //
-// Приложение собрано как GUI (-H=windowsgui), своей консоли у него нет,
-// и Windows создаёт новое окно под каждый дочерний процесс. При опросе
-// раз в несколько секунд это выглядит как мигание чёрного окна.
-// CREATE_NO_WINDOW убирает его.
+// The app is built as a GUI binary (-H=windowsgui) and has no console, so
+// Windows creates a new window for every child process. When polling every
+// few seconds this shows up as a flickering black window.
+// CREATE_NO_WINDOW prevents it.
 package winexec
 
 import (

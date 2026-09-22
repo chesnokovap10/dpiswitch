@@ -6,23 +6,23 @@ import (
 	"os/user"
 )
 
-// Restrict закрывает файл: снимает наследование и оставляет доступ
-// только системе, администраторам и текущему пользователю.
+// Restrict locks a file down: removes inheritance and leaves access only
+// to SYSTEM, Administrators and the current user.
 //
-// Права задаются по SID, а не по именам групп: на локализованной
-// Windows "Administrators" называется иначе, и по имени не найдётся.
+// Permissions are set by SID, not by group name: on a localized Windows
+// "Administrators" has a different name and would not be found.
 //
-// Честная оговорка: это защищает ключ от ДРУГИХ непривилегированных
-// учёток на машине. От администратора и от процессов под твоей же
-// учёткой не защищает -- для этого нужно шифрование, а ключ всё равно
-// должен быть доступен ядру в открытом виде.
+// Caveat: this protects the key from OTHER unprivileged accounts on the
+// machine. It does not protect against an administrator or processes under
+// your own account -- that would need encryption, and the core must read
+// the key in plain text anyway.
 func Restrict(path string) error {
 	grants := []string{
-		"*S-1-5-18:(F)",     // NT AUTHORITY\SYSTEM -- под ней работает служба
+		"*S-1-5-18:(F)",     // NT AUTHORITY\SYSTEM -- the service runs as it
 		"*S-1-5-32-544:(F)", // BUILTIN\Administrators
 	}
 	if u, err := user.Current(); err == nil && u.Uid != "" {
-		grants = append(grants, "*"+u.Uid+":(F)") // чтобы трей мог перезаписать конфиг
+		grants = append(grants, "*"+u.Uid+":(F)") // so the tray can rewrite the config
 	}
 	args := append([]string{path, "/inheritance:r"}, prefix("/grant:r", grants)...)
 	if out, err := winexec.CombinedOutput("icacls.exe", args...); err != nil {
@@ -39,19 +39,19 @@ func prefix(flag string, items []string) []string {
 	return out
 }
 
-// GrantUsersModify выдаёт интерактивным пользователям право изменять
-// файлы в каталоге данных, с наследованием на создаваемые файлы.
+// GrantUsersModify gives interactive users modify rights on the data
+// directory, inherited by newly created files.
 //
-// Нужно потому, что служба работает от SYSTEM: созданные ею файлы
-// (состояние, список вердиктов) достаются пользователю только на чтение.
-// Без этого трей не может ни сбросить вердикты аварийной кнопкой,
-// ни поправить списки -- отказ происходит молча, в самый неподходящий момент.
+// Needed because the service runs as SYSTEM: files it creates (state,
+// verdict list) are read-only for the user. Without this the tray can
+// neither reset verdicts with the panic button nor edit the lists -- and it
+// fails silently, at the worst possible moment.
 //
-// Конфиг с приватным ключом это не затрагивает: у него наследование
-// снято отдельным вызовом Restrict.
+// The config holding the private key is unaffected: its inheritance is
+// removed by a separate Restrict call.
 func GrantUsersModify(dir string) error {
-	// S-1-5-32-545 -- BUILTIN\Users; (OI)(CI) -- наследование на файлы
-	// и подкаталоги; (M) -- изменение без смены прав
+	// S-1-5-32-545 -- BUILTIN\Users; (OI)(CI) -- inherit to files and
+	// subfolders; (M) -- modify without changing permissions
 	if out, err := winexec.CombinedOutput("icacls.exe", dir,
 		"/grant", "*S-1-5-32-545:(OI)(CI)(M)", "/T", "/C"); err != nil {
 		return fmt.Errorf("icacls: %v (%s)", err, out)

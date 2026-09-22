@@ -10,10 +10,11 @@ import (
 	"time"
 )
 
-// GET /connections отдаёт снимок ОТКРЫТЫХ соединений. обычный веб-запрос
-// живёт секунды, поэтому опрос раз в цикл пропускает почти всё: за сеанс
-// через ядро прошло 353 домена, а в опросы попал 31.
-// поэтому смотрим часто и копим имена, а пробуем по-прежнему раз в цикл.
+// GET /connections returns a snapshot of OPEN connections. A typical web
+// request lives for seconds, so polling once per cycle misses almost
+// everything: in one session 353 domains went through the core, yet only 31
+// showed up in polls. So we look often and accumulate names, while probing
+// still happens once per cycle.
 type watcher struct {
 	mu   sync.Mutex
 	seen map[string]map[endpoint]bool
@@ -37,9 +38,9 @@ func (w *watcher) loop(ctx context.Context, cfg Config, a *api) {
 		}
 		conns, err := a.connections()
 		if err != nil {
-			// ядро могло перезапуститься -- не шумим на каждой итерации
+			// the core may have restarted -- don't log on every iteration
 			if failed++; failed%30 == 1 {
-				log.Printf("наблюдатель: соединения не читаются: %v", err)
+				log.Printf("watcher: cannot read connections: %v", err)
 			}
 			continue
 		}
@@ -47,16 +48,16 @@ func (w *watcher) loop(ctx context.Context, cfg Config, a *api) {
 		w.mu.Lock()
 		for _, c := range conns {
 			dom := c.domain()
-			// кроме туннельных берём и пущенные напрямую нашим списком:
-			// так в проверку попадают хосты, которых пустило семейство
-			// без собственного вердикта. уже решённые отсеет состояние
+			// besides tunnelled ones, take those sent direct by our list:
+			// this way hosts admitted by a family without their own verdict
+			// get checked. Already decided ones are filtered by the state
 			if dom == "" || !c.probeable() ||
 				!(c.viaTunnel(cfg.ProxyName) || c.byProvider(cfg.Provider)) {
 				continue
 			}
-			// маршрут закреплён за вторым туннелем (пресет или свой список):
-			// вердикт ничего не изменит, проверка -- пустая трата. без awg2
-			// такие соединения идут через awg и иначе попали бы сюда
+			// the route is pinned to the second tunnel (preset or custom list):
+			// a verdict would change nothing, probing is a waste. Without awg2
+			// such connections go through awg and would otherwise land here
 			if c.Rule == "RuleSet" && (strings.HasPrefix(c.RulePayload, "preset-") ||
 				c.RulePayload == "awg2-hosts") {
 				continue
@@ -70,10 +71,10 @@ func (w *watcher) loop(ctx context.Context, cfg Config, a *api) {
 	}
 }
 
-// забрать накопленное и очистить: решённые домены больше не вернутся,
-// потому что их отфильтрует состояние
-// endpoint: одна проверяемая точка домена. протокол важен --
-// QUIC может резаться отдельно от TCP на том же порту 443.
+// take what has been accumulated and reset: decided domains will not come
+// back because the state filters them out
+// endpoint: one probe target of a domain. The protocol matters --
+// QUIC may be blocked separately from TCP on the same port 443.
 type endpoint struct {
 	udp  bool
 	port int

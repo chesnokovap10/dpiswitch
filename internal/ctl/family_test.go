@@ -24,24 +24,24 @@ func TestFamilies(t *testing.T) {
 	put("a.qms.ru", probe.Clean)
 	put("b.qms.ru", probe.Clean)
 	if has("qms.ru") {
-		t.Fatal("двух поддоменов мало")
+		t.Fatal("two subdomains are not enough")
 	}
 	put("c.qms.ru", probe.Clean)
-	put("d.qms.ru", probe.Inconcl) // ничего не говорит о блокировке
+	put("d.qms.ru", probe.Inconcl) // says nothing about blocking
 	if !has("qms.ru") {
-		t.Fatal("три чистых и ни одного плохого -- семейство")
+		t.Fatal("three clean and no bad ones -- that is a family")
 	}
 	put("e.qms.ru", probe.Slower)
 	if has("qms.ru") {
-		t.Fatal("SLOWER у соседа -- обобщать нельзя")
+		t.Fatal("a SLOWER sibling -- must not generalise")
 	}
 
-	// общий хостинг: соседи на github.io -- чужие друг другу сайты
+	// shared hosting: github.io neighbours are unrelated sites
 	for _, d := range []string{"x.github.io", "y.github.io", "z.github.io", "w.github.io"} {
 		put(d, probe.Clean)
 	}
 	if has("github.io") {
-		t.Fatal("github.io -- публичный суффикс, семейства быть не может")
+		t.Fatal("github.io is a public suffix, it cannot be a family")
 	}
 
 	cfg := Config{Families: true}
@@ -51,7 +51,7 @@ func TestFamilies(t *testing.T) {
 	rules, _ := directRules(cfg, st, "n")
 	for _, r := range rules {
 		if r == "f.ex.com" {
-			t.Fatal("хост, покрытый семейством, дублируется в списке")
+			t.Fatal("a host covered by a family is duplicated in the list")
 		}
 	}
 	found := false
@@ -59,10 +59,10 @@ func TestFamilies(t *testing.T) {
 		found = found || r == "+.ex.com"
 	}
 	if !found {
-		t.Fatalf("нет +.ex.com в %v", rules)
+		t.Fatalf("no +.ex.com in %v", rules)
 	}
 	cfg.Families = false
 	if rules, _ := directRules(cfg, st, "n"); len(rules) == 0 || rules[0] == "+.ex.com" {
-		t.Fatalf("выключено -- только хосты: %v", rules)
+		t.Fatalf("disabled -- hosts only: %v", rules)
 	}
 }

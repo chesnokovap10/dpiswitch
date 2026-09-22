@@ -1,74 +1,74 @@
 # DPI Switch
 
-Клиент AmneziaWG для Windows на ядре [mihomo](https://github.com/MetaCubeX/mihomo).
-Весь трафик по умолчанию идёт в туннель, а детектор параллельно проверяет,
-режет ли провайдер прямой путь к каждому сайту. Незаблокированные сайты
-переключаются напрямую и запоминаются.
+An AmneziaWG client for Windows built on the [mihomo](https://github.com/MetaCubeX/mihomo) core.
+All traffic goes through the tunnel by default, while a detector checks in parallel whether
+the ISP interferes with the direct path to each site. Sites that are not blocked are switched
+to a direct connection and remembered.
 
-Версия: **1.0.1**
+Version: **1.0.1**
 
-## Маршрутизация
+## Routing
 
-Правила проверяются сверху вниз:
+Rules are evaluated top to bottom:
 
-1. эндпоинты туннелей и локальные сети — напрямую;
-2. программы-исключения (`qbittorrent.exe` и т. п.) — напрямую;
-3. пресеты второго туннеля (YouTube, Telegram, AI-сервисы) и свой список — **awg2**;
-4. «всегда в туннель» — **awg**;
-5. «всегда напрямую» — напрямую;
-6. вердикты детектора — напрямую;
-7. всё остальное — **awg**.
+1. tunnel endpoints and local networks — direct;
+2. excluded programs (`qbittorrent.exe`, etc.) — direct;
+3. second-tunnel presets (YouTube, Telegram, AI services) and the custom list — **awg2**;
+4. "always via tunnel" — **awg**;
+5. "always direct" — direct;
+6. detector verdicts — direct;
+7. everything else — **awg**.
 
-Группы с откатом: упал `awg2` — трафик идёт через `awg`, упали оба — напрямую.
+Fallback groups: if `awg2` is down, its traffic goes through `awg`; if both are down — direct.
 
-## Детектор
+## Detector
 
-- кандидаты берутся из живых соединений ядра;
-- проба сравнивает прямой путь и туннель на **одном и том же** узле:
-  TCP, TLS (проверка цепочки сертификатов), HTTP, QUIC;
-- вердикты: `CLEAN`, `BLOCKED_TCP/TLS/QUIC`, `MITM`, `CONTENT_DIFF`, `SLOWER`, `INCONCLUSIVE`;
-- «чисто» только если чисты все попытки: ложное «чисто» ломает сайт,
-  ложное «заблокировано» стоит лишь крюка через туннель;
-- память вердиктов привязана к провайдеру (ASN), а не к Wi-Fi;
-- «целые домены»: 3+ чистых поддомена и ни одного плохого — новые поддомены
-  идут напрямую сразу и проверяются задним числом.
+- candidates are taken from the core's live connections;
+- a probe compares the direct path and the tunnel on **the same** node:
+  TCP, TLS (certificate chain verification), HTTP, QUIC;
+- verdicts: `CLEAN`, `BLOCKED_TCP/TLS/QUIC`, `MITM`, `CONTENT_DIFF`, `SLOWER`, `INCONCLUSIVE`;
+- "clean" only if every attempt is clean: a false "clean" breaks a site,
+  a false "blocked" only costs a detour through the tunnel;
+- verdict memory is keyed by the ISP (ASN), not by the Wi-Fi network;
+- "whole domains": 3+ clean subdomains and no bad ones — new subdomains go
+  direct right away and are verified afterwards.
 
 ## DNS
 
-- сайты напрямую — Yandex DoH/DoT, запрашиваемый мимо туннеля
-  (CDN отдаёт узлы под провайдера);
-- сайты через туннель — DNS внутри туннеля (из `.conf`);
-- приложения получают фиктивные адреса (fake-ip): IPv4 `198.18.0.0/16`,
-  IPv6 `2001:2::/48`. Диапазон IPv6 намеренно не ULA: адреса `fc00::/7`
-  Chrome считает локальной сетью и режет к ним запросы (Local Network Access).
+- direct sites — Yandex DoH/DoT, queried outside the tunnel
+  (CDNs return nodes for the user's ISP);
+- tunnelled sites — the DNS inside the tunnel (from the `.conf`);
+- applications receive fake addresses (fake-ip): IPv4 `198.18.0.0/16`,
+  IPv6 `2001:2::/48`. The IPv6 range is deliberately not ULA: Chrome treats
+  `fc00::/7` as a local network and blocks requests to it (Local Network Access).
 
-## Сборка
+## Build
 
-Нужен Go 1.26+.
+Requires Go 1.26+.
 
 ```powershell
 .\build.ps1
 ```
 
-Результат — `dist\dpiswitch.exe`. Рядом с ним должен лежать `mihomo.exe`,
-собранный из исходников mihomo с тегом `with_gvisor`.
+The result is `dist\dpiswitch.exe`. `mihomo.exe`, built from mihomo sources with the
+`with_gvisor` tag, must sit next to it. The release archive contains both.
 
-## Установка
+## Installation
 
-1. Запустить `dpiswitch.exe` — появится значок в трее.
-2. Левый клик по значку — веб-интерфейс, правый — меню.
-3. «Установить службу» (один запрос прав администратора).
-4. Подгрузить `.conf` AmneziaWG; при необходимости — второй `.conf` для awg2.
+1. Run `dpiswitch.exe` — a tray icon appears.
+2. Left click the icon — web UI; right click — menu.
+3. "Install service" (one administrator prompt).
+4. Load the AmneziaWG `.conf`; optionally a second `.conf` for awg2.
 
-Данные: `%ProgramData%\dpiswitch` (конфиг, списки, вердикты, настройки, журналы).
-Файлы с приватными ключами закрыты правами от других пользователей.
+Data: `%ProgramData%\dpiswitch` (config, lists, verdicts, settings, logs).
+Files containing private keys are locked down from other users.
 
-## Команды
+## Commands
 
 ```
-dpiswitch            трей (по умолчанию)
-dpiswitch install    установить службу
-dpiswitch uninstall  удалить службу
-dpiswitch reinstall  переустановить
-dpiswitch version    показать версию
+dpiswitch            tray (default)
+dpiswitch install    install the service
+dpiswitch uninstall  remove the service
+dpiswitch reinstall  reinstall the service
+dpiswitch version    show the version
 ```

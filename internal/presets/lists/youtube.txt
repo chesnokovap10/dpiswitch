@@ -1,6 +1,6 @@
-# YouTube: сайт, видеопоток, превью, аватары, API, детская и музыкальная версии.
-# Сервер (relay-routes.sh на vpsru) шлёт через vpsde все адреса Google из
-# goog.json; клиенту достаточно доменов YouTube -- остальной Google решает детектор.
+# YouTube: site, video stream, thumbnails, avatars, API, Kids and Music.
+# The server side relays every Google range from goog.json; the client only
+# needs YouTube's domains -- the rest of Google is left to the detector.
 youtube.com
 youtu.be
 yt.be
