@@ -1,6 +1,0 @@
-# X (Twitter). Blocked in Russia; the media host twimg.com is a separate zone
-# and breaks on its own -- the shell loads while images and video do not.
-x.com
-twitter.com
-twimg.com
-t.co

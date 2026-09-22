@@ -41,8 +41,6 @@ var All = []Preset{
 		files: []string{"telegram-domains.txt", "telegram-cidr.txt"}},
 	{ID: "ai", Title: "AI services", Note: "ChatGPT, Claude, Gemini, Grok, Copilot, DeepL and more",
 		files: []string{"ai-sni.txt", "ai-google.txt"}},
-	{ID: "social", Title: "Instagram, Facebook, X", Note: "the media CDNs too -- without them the page loads but photos and video do not",
-		files: []string{"social-meta.txt", "social-x.txt"}},
 }
 
 func Valid(id string) bool {

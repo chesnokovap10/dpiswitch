@@ -66,7 +66,7 @@ func DefaultSettings() Settings {
 		AutoSwitch:    true,
 		Families:      true,
 		IPv6:          true,
-		Awg2Presets:   []string{"youtube", "telegram", "ai", "social"},
+		Awg2Presets:   []string{"youtube", "telegram", "ai"},
 		CleanTTLMin:   7 * 24 * 60,
 		FailTTLMin:    60,
 		MaxBackoffMin: 24 * 60,
