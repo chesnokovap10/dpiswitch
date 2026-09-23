@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -129,8 +130,50 @@ func RunTCP(d Dialer, ip string, port int) PathResult {
 		return r
 	}
 	defer conn.Close()
-	r.TCPOk, r.TCPTime = true, time.Since(t0)
+	r.TCPTime = time.Since(t0)
+	if err := confirmDial(conn); err != nil {
+		r.Err, r.ErrStage = err.Error(), "tcp"
+		return r
+	}
+	r.TCPOk = true
 	return r
+}
+
+// confirmWindow covers mihomo's own dial: C.DefaultTCPTimeout is 5 s, and
+// the retries it makes all fit inside that one context.
+var confirmWindow = 6 * time.Second
+
+// confirmDial: the SOCKS "succeeded" reply means nothing yet. mihomo answers
+// CONNECT BEFORE it dials the target (listener/socks and listener/http both
+// write success and only then hand the connection to the tunnel), and when
+// the dial fails it simply closes the connection. On 443 the TLS handshake
+// exposes that; on any other port the reply was all the probe looked at, so
+// a host unreachable over the direct path came out CLEAN -- an IPv6-only
+// host on a link with no IPv6 did, the same second the core logged
+// "unreachable network" for it.
+//
+// So wait for the truth: data from the server or the window running out with
+// the connection still open means the dial went through; the core closing the
+// connection means it did not. Nothing is written -- the probe must not speak
+// a protocol it does not know.
+func confirmDial(conn net.Conn) error {
+	_ = conn.SetReadDeadline(time.Now().Add(confirmWindow))
+	defer conn.SetReadDeadline(time.Time{})
+	var b [1]byte
+	_, err := conn.Read(b[:])
+	switch {
+	case err == nil:
+		return nil // the server spoke first
+	case isTimeout(err):
+		return nil // still open after the core's whole dial budget
+	default:
+		return fmt.Errorf("closed by the proxy after CONNECT, the dial failed: %w", err)
+	}
+}
+
+func isTimeout(err error) bool {
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
 }
 
 // chain verification against system roots, separate from the handshake
