@@ -233,8 +233,9 @@ func (c *Conf) Render() (string, error) {
 		w("  fake-ip-range6: '2001:2::/48'")
 	}
 	w("  fake-ip-filter:")
-	w("    - '*.lan'")
-	w("    - '*.local'")
+	for _, z := range localPatterns() {
+		w("    - '%s'", z)
+	}
 	if net.ParseIP(host) == nil {
 		w("    - '%s'", host)
 	}
@@ -263,6 +264,12 @@ func (c *Conf) Render() (string, error) {
 	for _, d := range directDNS {
 		w("    - '%s'", d)
 	}
+	w("  # local names go to the DNS the router hands out over DHCP: the remote")
+	w("  # resolver has never heard of them, and the router answers for itself")
+	w("  nameserver-policy:")
+	w("    '%s':", strings.Join(localPatterns(), ","))
+	w("      - 'dhcp://system'")
+	w("      - 'system'")
 	w("  direct-nameserver:")
 	for _, d := range directDNS {
 		w("    - '%s'", d)
@@ -368,32 +375,60 @@ func (c *Conf) Render() (string, error) {
 		}
 	}
 	w("")
-	w("  # 2. local networks")
+	w("  # 2. addressing INSIDE the tunnels. It lives in ULA space, which the next")
+	w("  #    block sends direct -- including the DNS server inside the tunnel.")
+	w("  #    These have to come first, or that DNS would be dialled on the local")
+	w("  #    network, where nothing answers.")
+	writeInsideRules(w, c, tunDNS, "tunnel")
+	if c2 != nil {
+		writeInsideRules(w, c2, split(c2.Interface["DNS"]), "tunnel2")
+	}
+	w("")
+	w("  # 3. local networks -- the LAN, the router, printers, network shares.")
+	w("  # Nothing here is reachable from the other end of a tunnel anyway.")
 	w("  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve")
 	w("  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve")
 	w("  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve")
 	w("  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve")
+	w("  - IP-CIDR,169.254.0.0/16,DIRECT,no-resolve")
+	w("  - IP-CIDR,100.64.0.0/10,DIRECT,no-resolve")
+	w("  # multicast: mDNS 224.0.0.251 and SSDP 239.255.255.250 find the printers,")
+	w("  # speakers and TVs on this network")
+	w("  - IP-CIDR,224.0.0.0/4,DIRECT,no-resolve")
+	w("  - IP-CIDR,255.255.255.255/32,DIRECT,no-resolve")
+	w("  - IP-CIDR,0.0.0.0/8,DIRECT,no-resolve")
+	w("  - IP-CIDR6,::1/128,DIRECT,no-resolve")
 	w("  - IP-CIDR6,fe80::/10,DIRECT,no-resolve")
+	w("  - IP-CIDR6,ff00::/8,DIRECT,no-resolve")
+	w("  - IP-CIDR6,fc00::/7,DIRECT,no-resolve")
+	w("  # the same networks by name. An IP rule with no-resolve never fires for")
+	w("  # a connection that carries a domain, and a request to the router does.")
+	for _, s := range localSuffixes {
+		w("  - DOMAIN-SUFFIX,%s,DIRECT", s)
+	}
+	for _, d := range localExact {
+		w("  - DOMAIN,%s,DIRECT", d)
+	}
 	w("")
-	w("  # 3. excluded programs: all their traffic bypasses the tunnel")
+	w("  # 4. excluded programs: all their traffic bypasses the tunnel")
 	w("  - RULE-SET,force-direct-apps,DIRECT")
 	w("")
-	w("  # 4. second tunnel: presets and custom list -- the detector leaves them alone")
+	w("  # 5. second tunnel: presets and custom list -- the detector leaves them alone")
 	for _, p := range presets.All {
 		w("  - RULE-SET,preset-%s,tunnel2", p.ID)
 	}
 	w("  - RULE-SET,awg2-hosts,tunnel2")
 	w("")
-	w("  # 5. user's always-tunnel list -- beats detector verdicts")
+	w("  # 6. user's always-tunnel list -- beats detector verdicts")
 	w("  - RULE-SET,force-tunnel,tunnel")
 	w("")
-	w("  # 6. user's always-direct list")
+	w("  # 7. user's always-direct list")
 	w("  - RULE-SET,force-direct,DIRECT")
 	w("")
-	w("  # 7. detector verdicts")
+	w("  # 8. detector verdicts")
 	w("  - RULE-SET,direct-verified,DIRECT")
 	w("")
-	w("  # 8. everything else goes to the first tunnel")
+	w("  # 9. everything else goes to the first tunnel")
 	w("  - MATCH,tunnel")
 	return b.String(), nil
 }
@@ -412,6 +447,67 @@ func (c *Conf) addrs() (v4, v6 string, err error) {
 		return "", "", fmt.Errorf("the config has no IPv4 address")
 	}
 	return v4, v6, nil
+}
+
+// Names that belong to this machine's own network. They are kept out of
+// fake-ip, resolved by the DNS the router hands out over DHCP, and routed
+// direct BY NAME: the IP rules below carry no-resolve, so they never fire for
+// a connection that arrives with a domain -- and these always do.
+var (
+	// suffix and everything under it
+	localSuffixes = []string{
+		"lan", "local", "home", "home.arpa", "internal", "localdomain",
+		// router names. Each is also a real public domain, so resolving them
+		// through a tunnel would answer with the vendor's website instead of
+		// the box in the next room.
+		"miwifi.com", "fritz.box", "tplinkwifi.net", "routerlogin.net",
+	}
+	// exact names only: the rest of the domain is an ordinary website
+	localExact = []string{"router.asus.com"}
+)
+
+// localPatterns: what fake-ip and the DNS policy match on.
+func localPatterns() []string {
+	out := make([]string, 0, len(localSuffixes)+len(localExact))
+	for _, s := range localSuffixes {
+		out = append(out, "+."+s)
+	}
+	return append(out, localExact...)
+}
+
+// writeInsideRules pins a tunnel's own ULA addressing to that tunnel. The
+// local-network block below sends the whole of fc00::/7 direct, and the DNS
+// server inside a tunnel lives in exactly that space.
+func writeInsideRules(w func(string, ...any), c *Conf, dns []string, group string) {
+	seen := map[string]bool{}
+	emit := func(cidr string) {
+		if cidr == "" || seen[cidr] {
+			return
+		}
+		seen[cidr] = true
+		w("  - IP-CIDR6,%s,%s,no-resolve", cidr, group)
+	}
+	if _, v6, err := c.addrs(); err == nil && v6 != "" {
+		emit(prefix64(v6))
+	}
+	for _, d := range dns {
+		ip := net.ParseIP(strings.Trim(d, "[]"))
+		if ip == nil || ip.To4() != nil {
+			continue
+		}
+		emit(prefix64(ip.String()))
+	}
+}
+
+// prefix64: the /64 an address belongs to. Both ends of a tunnel and its DNS
+// sit in the same /64, so one rule covers them.
+func prefix64(addr string) string {
+	ip := net.ParseIP(addr)
+	if ip == nil || ip.To4() != nil {
+		return ""
+	}
+	n := &net.IPNet{IP: ip.Mask(net.CIDRMask(64, 128)), Mask: net.CIDRMask(64, 128)}
+	return n.String()
 }
 
 func writeEndpointRule(w func(string, ...any), host string) {
