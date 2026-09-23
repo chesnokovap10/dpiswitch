@@ -13,9 +13,10 @@ func TestJudge(t *testing.T) {
 		d, t PathResult
 		want Verdict
 	}{
-		// the regression: fbcdn answered on neither path, and the verdict was
-		// CLEAN, so the host was routed direct and stayed broken
-		{"tls fails on both paths", tls(false), tls(false), BlockedTLS},
+		// failing identically on both paths is not a blocking signal. It used
+		// to be CLEAN (a dead Meta node went direct), then BLOCKED_TLS
+		// (speedtest servers, which have no TLS on 443, went to the tunnel)
+		{"tls fails on both paths", tls(false), tls(false), Inconcl},
 		{"tls fails direct only", tls(false), tls(true), BlockedTLS},
 		{"tls fails through tunnel only", tls(true), tls(false), Inconcl},
 		{"tls fine on both", tls(true), tls(true), Clean},

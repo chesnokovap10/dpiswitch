@@ -177,12 +177,18 @@ func Judge(d, t PathResult) (Verdict, string) {
 	if !d.TLSTried && !t.TLSTried {
 		return Clean, ""
 	}
-	// The direct path decides on its own: if its handshake fails, the site
-	// does not work direct, whatever the tunnel did. This used to be checked
-	// after the tunnel, so a host that answered on neither path fell into the
-	// "no TLS anywhere" branch above and came out CLEAN -- and a host that
-	// works nowhere was then sent direct, where it kept not working.
-	// A false "blocked" only costs a detour through the tunnel.
+	// The handshake failing on BOTH paths the same way says nothing about
+	// blocking: the host does not speak TLS on this port at all, or is dead
+	// everywhere. Neither answer is right for it -- CLEAN sent a host that
+	// works nowhere direct (a Meta FNA node), and BLOCKED_TLS locked
+	// speedtest servers, which serve plain TCP on 20000 and nothing on 443,
+	// into the tunnel. INCONCLUSIVE lets another port decide, and a host with
+	// no definite verdict at all does not go direct.
+	if !d.TLSOk && !t.TLSOk {
+		return Inconcl, "fails the same on both paths: " + ClassifyErr(d)
+	}
+	// Only the direct path failing is blocking. A false "blocked" only
+	// costs a detour through the tunnel.
 	if !d.TLSOk {
 		return BlockedTLS, ClassifyErr(d)
 	}
