@@ -19,10 +19,13 @@ import (
 type watcher struct {
 	mu   sync.Mutex
 	seen map[string]map[endpoint]bool
+	// bare destination addresses of connections that carry no name -- see
+	// state.touchIPs
+	bare map[string]bool
 }
 
 func newWatcher(ctx context.Context, cfg Config, a *api) *watcher {
-	w := &watcher{seen: map[string]map[endpoint]bool{}}
+	w := &watcher{seen: map[string]map[endpoint]bool{}, bare: map[string]bool{}}
 	go w.loop(ctx, cfg, a)
 	return w
 }
@@ -49,6 +52,11 @@ func (w *watcher) loop(ctx context.Context, cfg Config, a *api) {
 		w.mu.Lock()
 		for _, c := range conns {
 			dom := c.domain()
+			// a nameless connection from an application (not from the probe,
+			// which dials from loopback through its own listeners)
+			if dom == "" && c.Metadata.SourceIP != "127.0.0.1" && c.Metadata.DestinationIP != "" {
+				w.bare[c.Metadata.DestinationIP] = true
+			}
 			// besides tunnelled ones, take those sent direct by our list:
 			// this way hosts admitted by a family without their own verdict
 			// get checked. Already decided ones are filtered by the state
@@ -134,6 +142,18 @@ func endpointStrings(eps []endpoint) []string {
 	for i, e := range eps {
 		out[i] = e.String()
 	}
+	return out
+}
+
+// drainBare: the bare addresses accumulated since the last call.
+func (w *watcher) drainBare() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	out := make([]string, 0, len(w.bare))
+	for ip := range w.bare {
+		out = append(out, ip)
+	}
+	w.bare = map[string]bool{}
 	return out
 }
 

@@ -55,3 +55,43 @@ func TestForgetDropsUnusedOnly(t *testing.T) {
 		}
 	}
 }
+
+// The tested node of each live CLEAN name, as a host route, for connections
+// that reach a bare address (a speedtest client does).
+func TestVerifiedIPs(t *testing.T) {
+	now := time.Now()
+	live := now.Add(time.Hour)
+	st := &state{Networks: map[string]map[string]*entry{"net": {
+		"tula.qms.ru":  {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "212.12.2.243"},
+		"alias.qms.ru": {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "212.12.2.243"}, // same node once
+		"v6.example":   {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "2001:db8::1"},
+		"blocked.ru":   {Verdict: probe.BlockedTLS, ExpiresAt: live, TestedIP: "192.0.2.1"},
+		"stale.ru":     {Verdict: probe.Clean, ExpiresAt: now.Add(-time.Hour), TestedIP: "192.0.2.2"},
+		"noip.ru":      {Verdict: probe.Clean, ExpiresAt: live},
+	}}}
+	got := st.verifiedIPs("net")
+	want := []string{"2001:db8::1/128", "212.12.2.243/32"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+// A client dialling bare addresses never produces a name; its servers must
+// still count as in use, or an expired verdict is never re-checked.
+func TestTouchIPs(t *testing.T) {
+	old := time.Now().Add(-72 * time.Hour)
+	st := &state{Networks: map[string]map[string]*entry{"net": {
+		"kirov.qms.ru": {Verdict: probe.Clean, TestedIP: "46.61.250.186", DecidedAt: old, ExpiresAt: old},
+		"other.ru":     {Verdict: probe.Clean, TestedIP: "192.0.2.9", DecidedAt: old, ExpiresAt: old},
+	}}}
+	if got := st.expired("net", 24*time.Hour); len(got) != 0 {
+		t.Fatalf("before: %v should look abandoned", got)
+	}
+	if n := st.touchIPs("net", []string{"46.61.250.186", "not-an-ip"}); n != 1 {
+		t.Fatalf("touched %d, want 1", n)
+	}
+	got := st.expired("net", 24*time.Hour)
+	if len(got) != 1 || got[0] != "kirov.qms.ru" {
+		t.Fatalf("after: got %v, want [kirov.qms.ru]", got)
+	}
+}

@@ -2,6 +2,7 @@ package ctl
 
 import (
 	"encoding/json"
+	"net"
 	"os"
 	"sort"
 	"sync"
@@ -155,6 +156,42 @@ func (s *state) verified(id string) []string {
 	return out
 }
 
+// verifiedIPs: the node each CLEAN name was probed on, as /32 or /128.
+//
+// Some clients take a server list with addresses from their own service and
+// connect to the bare IP: the speedtest client does, on port 20000, with a
+// protocol that is neither TLS nor HTTP, so no name can be recovered and the
+// name rules never match -- a verified server went through the tunnel at
+// 126 Mbit/s instead of 700. Only the address the probe itself reached
+// directly is listed, and the rule using it carries no-resolve, so a
+// connection that has a name is still decided by the name.
+func (s *state) verifiedIPs(id string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	seen := map[string]bool{}
+	var out []string
+	for _, e := range s.Networks[id] {
+		if e.Verdict != probe.Clean || !now.Before(e.ExpiresAt) {
+			continue
+		}
+		ip := net.ParseIP(e.TestedIP)
+		if ip == nil {
+			continue
+		}
+		cidr := ip.String() + "/128"
+		if ip.To4() != nil {
+			cidr = ip.String() + "/32"
+		}
+		if !seen[cidr] {
+			seen[cidr] = true
+			out = append(out, cidr)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // touch marks names seen in the core's connections right now.
 func (s *state) touch(id string, doms []string) {
 	m := s.net(id)
@@ -166,6 +203,34 @@ func (s *state) touch(id string, doms []string) {
 			e.LastSeen = now
 		}
 	}
+}
+
+// touchIPs marks as seen the names whose probed node is one of these bare
+// addresses. A client that takes a server list with addresses (the speedtest
+// client, dialling IPs on port 20000) never produces a name, so without this
+// its servers looked abandoned: an expired verdict was never re-checked and
+// the server stayed in the tunnel for good.
+func (s *state) touchIPs(id string, ips []string) int {
+	if len(ips) == 0 {
+		return 0
+	}
+	set := make(map[string]bool, len(ips))
+	for _, ip := range ips {
+		if p := net.ParseIP(ip); p != nil {
+			set[p.String()] = true
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	n := 0
+	for _, e := range s.Networks[id] {
+		if p := net.ParseIP(e.TestedIP); p != nil && set[p.String()] {
+			e.LastSeen = now
+			n++
+		}
+	}
+	return n
 }
 
 // forget drops names nothing has gone to for longer than idle. Without it

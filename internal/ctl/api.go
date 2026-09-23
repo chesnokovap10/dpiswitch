@@ -22,6 +22,8 @@ func Defaults() Config {
 		ProxyName:     "awg",
 		Provider:      "direct-verified",
 		ListPath:      paths.Verified(),
+		IPProvider:    "direct-verified-ip",
+		IPListPath:    paths.VerifiedIP(),
 		StatePath:     paths.State(),
 		JSONLPath:     paths.Reports(),
 		Interval:      60 * time.Second,

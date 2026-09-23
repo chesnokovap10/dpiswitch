@@ -354,6 +354,11 @@ func (c *Conf) Render() (string, error) {
 	w("    behavior: domain")
 	w("    format: text")
 	w("    path: ./direct-verified.txt")
+	w("  direct-verified-ip:")
+	w("    type: file")
+	w("    behavior: ipcidr")
+	w("    format: text")
+	w("    path: ./direct-verified-ip.txt")
 	w("")
 	w("proxies:")
 	// a tunnel the check found IPv6 dead on keeps its address but resolves
@@ -427,6 +432,9 @@ func (c *Conf) Render() (string, error) {
 	w("")
 	w("  # 8. detector verdicts")
 	w("  - RULE-SET,direct-verified,DIRECT")
+	w("  # the same verdicts by the address that was probed, for connections that")
+	w("  # carry no name at all (a speedtest client dialling a bare IP on 20000)")
+	w("  - RULE-SET,direct-verified-ip,DIRECT,no-resolve")
 	w("")
 	w("  # 9. everything else goes to the first tunnel")
 	w("  - MATCH,tunnel")
@@ -653,7 +661,7 @@ func Regenerate() (bool, error) {
 // its file prevents the core from starting
 func EnsureLists() {
 	for _, p := range []string{paths.ForceDirect(), paths.ForceTunnel(),
-		paths.Verified(), paths.ForceDirectApps(), paths.Awg2Hosts()} {
+		paths.Verified(), paths.VerifiedIP(), paths.ForceDirectApps(), paths.Awg2Hosts()} {
 		if _, err := os.Stat(p); err != nil {
 			os.WriteFile(p, []byte("# empty\n"), 0o644)
 		}
