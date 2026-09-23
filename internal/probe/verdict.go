@@ -79,7 +79,11 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool)
 	rep := Report{Domain: dom, Port: port, Proto: proto, Time: time.Now().Format(time.RFC3339), Attempts: attempts}
 
 	var ip string
-	if len(direct.DNS) > 0 {
+	if a, ok := AddrKey(dom); ok {
+		// an address seen with no name: there is nothing to resolve, and
+		// only plain TCP is probed this way (see the controller)
+		ip = a
+	} else if len(direct.DNS) > 0 {
 		// test exactly the node direct traffic will go to:
 		// the address comes from the same resolver the core uses. A spoofed
 		// answer is caught by certificate verification -- it fails on a foreign node.

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"dpiswitch/internal/probe"
 )
 
 // GET /connections returns a snapshot of OPEN connections. A typical web
@@ -22,10 +24,15 @@ type watcher struct {
 	// bare destination addresses of connections that carry no name -- see
 	// state.touchIPs
 	bare map[string]bool
+	// nameless TCP connections that went to the tunnel, by address, and in
+	// how many cycles each was seen -- see addrCandidates
+	addrPorts  map[string]map[endpoint]bool
+	addrCycles map[string]int
 }
 
 func newWatcher(ctx context.Context, cfg Config, a *api) *watcher {
-	w := &watcher{seen: map[string]map[endpoint]bool{}, bare: map[string]bool{}}
+	w := &watcher{seen: map[string]map[endpoint]bool{}, bare: map[string]bool{},
+		addrPorts: map[string]map[endpoint]bool{}, addrCycles: map[string]int{}}
 	go w.loop(ctx, cfg, a)
 	return w
 }
@@ -56,6 +63,13 @@ func (w *watcher) loop(ctx context.Context, cfg Config, a *api) {
 			// which dials from loopback through its own listeners)
 			if dom == "" && c.Metadata.SourceIP != "127.0.0.1" && c.Metadata.DestinationIP != "" {
 				w.bare[c.Metadata.DestinationIP] = true
+				if addrProbeable(c, cfg.ProxyName) {
+					ip := c.Metadata.DestinationIP
+					if w.addrPorts[ip] == nil {
+						w.addrPorts[ip] = map[endpoint]bool{}
+					}
+					w.addrPorts[ip][endpoint{port: c.port()}] = true
+				}
 			}
 			// besides tunnelled ones, take those sent direct by our list:
 			// this way hosts admitted by a family without their own verdict
@@ -157,10 +171,42 @@ func (w *watcher) drainBare() []string {
 	return out
 }
 
+// minAddrCycles: an address must turn up in this many cycles before it is
+// probed. A P2P client left out of the exclusions would otherwise flood the
+// queue with thousands of one-off peer addresses.
+const minAddrCycles = 2
+
+// addrProbeable: a nameless connection whose address can be judged without a
+// name. Plain TCP only, and not 443: a bare address on 443 is TLS the sniffer
+// could not read a name from, and blocking here works on that name -- a
+// probe without it would test something other than the real traffic. UDP
+// (STUN and the like) cannot be judged without knowing its protocol.
+func addrProbeable(c connection, tunnelProxy string) bool {
+	return c.Metadata.SourceIP != "127.0.0.1" &&
+		strings.EqualFold(c.Metadata.Network, "tcp") &&
+		c.port() > 0 && c.port() != 443 &&
+		c.viaTunnel(tunnelProxy)
+}
+
 func (w *watcher) drain() map[string][]endpoint {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	out := make(map[string][]endpoint, len(w.seen))
+	// addresses: count the cycles, hand over the ones seen often enough
+	for ip, eps := range w.addrPorts {
+		w.addrCycles[ip]++
+		if w.addrCycles[ip] < minAddrCycles {
+			continue
+		}
+		key := probe.AddrPrefix + ip
+		for e := range eps {
+			out[key] = append(out[key], e)
+		}
+	}
+	w.addrPorts = map[string]map[endpoint]bool{}
+	if len(w.addrCycles) > 10000 {
+		w.addrCycles = map[string]int{} // bounded: a flood must not grow memory
+	}
 	for d, eps := range w.seen {
 		for e := range eps {
 			out[d] = append(out[d], e)

@@ -148,6 +148,9 @@ func (s *state) verified(id string) []string {
 	var out []string
 	now := time.Now()
 	for dom, e := range s.Networks[id] {
+		if _, addr := probe.AddrKey(dom); addr {
+			continue // goes to the address list, see verifiedIPs
+		}
 		if e.Verdict == probe.Clean && now.Before(e.ExpiresAt) {
 			out = append(out, dom)
 		}

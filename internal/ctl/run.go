@@ -118,7 +118,14 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 				stored = prev.Endpoints
 			}
 			eps := mergeEndpoints(ports[dom], stored)
-			if len(eps) == 0 {
+			if _, addr := probe.AddrKey(dom); addr {
+				// an address is judged by plain TCP only -- 443 would need the
+				// name the sniffer could not find (see addrProbeable)
+				eps = plainTCP(eps)
+				if len(eps) == 0 {
+					return
+				}
+			} else if len(eps) == 0 {
 				eps = []endpoint{{port: 443}}
 			}
 			var rep probe.Report
@@ -431,4 +438,15 @@ func msVal(best int64, last probe.PathResult) string {
 func directFailed(rep probe.Report) bool {
 	d := rep.Direct
 	return !d.TCPOk || (d.TLSTried && !d.TLSOk)
+}
+
+// plainTCP keeps the endpoints an address can be probed on without a name.
+func plainTCP(eps []endpoint) []endpoint {
+	var out []endpoint
+	for _, e := range eps {
+		if !e.udp && e.port != 443 {
+			out = append(out, e)
+		}
+	}
+	return out
 }

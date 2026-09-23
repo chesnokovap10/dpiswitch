@@ -139,6 +139,21 @@ func RunTCP(d Dialer, ip string, port int) PathResult {
 	return r
 }
 
+// AddrPrefix marks a verdict kept for a bare address rather than a name.
+const AddrPrefix = "@"
+
+// AddrKey reports whether a verdict key stands for a bare address, and which.
+func AddrKey(key string) (string, bool) {
+	if !strings.HasPrefix(key, AddrPrefix) {
+		return "", false
+	}
+	ip := net.ParseIP(strings.TrimPrefix(key, AddrPrefix))
+	if ip == nil {
+		return "", false
+	}
+	return ip.String(), true
+}
+
 // confirmWindow covers mihomo's own dial: C.DefaultTCPTimeout is 5 s, and
 // the retries it makes all fit inside that one context.
 var confirmWindow = 6 * time.Second

@@ -42,6 +42,9 @@ func badForFamily(v probe.Verdict) bool {
 }
 
 func familyOf(dom string) string {
+	if _, ok := probe.AddrKey(dom); ok {
+		return "" // "@91.204.108.4" must not make "108.4" a family
+	}
 	f, err := publicsuffix.EffectiveTLDPlusOne(dom)
 	if err != nil {
 		return ""
