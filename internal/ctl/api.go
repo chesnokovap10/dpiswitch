@@ -29,6 +29,7 @@ func Defaults() Config {
 		TTL:           7 * 24 * time.Hour,
 		FailTTL:       time.Hour,
 		MaxBackoff:    24 * time.Hour,
+		Idle:          24 * time.Hour,
 		SettingsPath:  paths.Settings(),
 		Families:      true,
 		DirectDNS:     DefaultSettings().apply(Config{}).DirectDNS,

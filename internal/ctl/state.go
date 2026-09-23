@@ -16,7 +16,12 @@ type entry struct {
 	DecidedAt time.Time     `json:"decided_at"`
 	ExpiresAt time.Time     `json:"expires_at"`
 	TestedIP  string        `json:"tested_ip,omitempty"`
-	Reverts   int           `json:"reverts"` // how many times the domain has been reverted
+	// LastSeen: when this name last showed up in the core's connections,
+	// whatever route it took. A verdict is only worth re-checking while
+	// someone still goes there -- CDN node names live for hours and then
+	// vanish, and re-probing them forever costs a slice of every cycle.
+	LastSeen time.Time `json:"last_seen,omitempty"`
+	Reverts  int       `json:"reverts"` // how many times the domain has been reverted
 }
 
 // state is split per network: the key is the ISP (AS...), see asn.go;
@@ -145,14 +150,57 @@ func (s *state) verified(id string) []string {
 	return out
 }
 
-// candidates for re-checking: the verdict has expired
-func (s *state) expired(id string) []string {
+// touch marks names seen in the core's connections right now.
+func (s *state) touch(id string, doms []string) {
+	m := s.net(id)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	for _, d := range doms {
+		if e, ok := m[d]; ok {
+			e.LastSeen = now
+		}
+	}
+}
+
+// forget drops names nothing has gone to for longer than idle. Without it
+// memory only grows: two thirds of the names a busy day leaves behind are
+// one-off CDN nodes that will never be requested again.
+func (s *state) forget(id string, idle time.Duration) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cut := time.Now().Add(-idle)
+	n := 0
+	for dom, e := range s.Networks[id] {
+		if e.lastSeen().Before(cut) {
+			delete(s.Networks[id], dom)
+			n++
+		}
+	}
+	return n
+}
+
+// lastSeen falls back to the decision time for entries written before the
+// field existed, so an old one is not mistaken for freshly used.
+func (e *entry) lastSeen() time.Time {
+	if e.LastSeen.IsZero() {
+		return e.DecidedAt
+	}
+	return e.LastSeen
+}
+
+// candidates for re-checking: the verdict has expired AND the name is still
+// in use. An expired verdict for a name nobody requests any more is left
+// alone -- when traffic to it appears, the ordinary candidate picking takes
+// it up the same minute.
+func (s *state) expired(id string, idle time.Duration) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []string
 	now := time.Now()
+	fresh := now.Add(-idle)
 	for dom, e := range s.Networks[id] {
-		if now.After(e.ExpiresAt) {
+		if now.After(e.ExpiresAt) && e.lastSeen().After(fresh) {
 			out = append(out, dom)
 		}
 	}

@@ -31,9 +31,12 @@ type Config struct {
 	TTL           time.Duration
 	FailTTL       time.Duration
 	MaxBackoff    time.Duration
-	SettingsPath  string
-	Families      bool             // extend verdicts to the whole domain, see family.go
-	DirectDNS     []probe.Resolver // empty -- the prober's built-in DoH
+	// Idle: how long a name may go unrequested before its verdict stops being
+	// re-checked on a timer, and, at ten times that, is dropped from memory.
+	Idle         time.Duration
+	SettingsPath string
+	Families     bool             // extend verdicts to the whole domain, see family.go
+	DirectDNS    []probe.Resolver // empty -- the prober's built-in DoH
 	// asks for a core restart: changing resolvers or IPv6 changes its config
 	OnCoreChange func()
 	Timeout      time.Duration
@@ -53,11 +56,24 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 
 	ports := w.drain()
 
+	// everything the core is talking to right now, whatever route it takes:
+	// a name still in use keeps its verdict worth re-checking
+	var live []string
+	for _, c := range conns {
+		if d := c.domain(); d != "" {
+			live = append(live, d)
+		}
+	}
+	st.touch(netID, live)
+	if n := st.forget(netID, 10*cfg.Idle); n > 0 {
+		log.Printf("forgot %d names nothing has gone to in %s", n, 10*cfg.Idle)
+	}
+
 	// order matters: suspicious first, then expired,
 	// and only then new candidates -- rolling back is more urgent than expanding
 	queue := dedupe(concat(
 		suspectDirect(cfg, st, netID, conns),
-		st.expired(netID),
+		st.expired(netID, cfg.Idle),
 		pickCandidates(cfg, st, netID, ports),
 	))
 	if len(queue) == 0 {
@@ -137,6 +153,8 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 				Reason:    rep.Reason,
 				DecidedAt: time.Now(),
 				TestedIP:  rep.TestedIP,
+				// a name being probed is a name in use right now
+				LastSeen: time.Now(),
 			}
 			if rep.Verdict == probe.Clean {
 				e.ExpiresAt = time.Now().Add(cfg.TTL)
