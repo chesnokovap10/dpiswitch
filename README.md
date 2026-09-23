@@ -5,7 +5,7 @@ All traffic goes through the tunnel by default, while a detector checks in paral
 the ISP interferes with the direct path to each site. Sites that are not blocked are switched
 to a direct connection and remembered.
 
-Version: **1.0.4**
+Version: **1.0.5**
 
 ## Routing
 
