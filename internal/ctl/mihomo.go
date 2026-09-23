@@ -51,6 +51,8 @@ type connection struct {
 	Rule        string   `json:"rule"`
 	RulePayload string   `json:"rulePayload"`
 	Metadata    struct {
+		SourceIP        string `json:"sourceIP"`
+		SourcePort      string `json:"sourcePort"`
 		Host            string `json:"host"`
 		SniffHost       string `json:"sniffHost"`
 		DestinationIP   string `json:"destinationIP"`
@@ -72,6 +74,24 @@ func (a *api) connections() ([]connection, error) {
 		return nil, err
 	}
 	return wrap.Connections, nil
+}
+
+// established: whether the core holds a live connection for a client coming
+// from 127.0.0.1:port. The core tracks a connection only once its outbound
+// dial has succeeded, so this is the one honest answer to "did the dial go
+// through" -- the SOCKS reply is sent before the dial even starts.
+func (a *api) established(port int) (bool, error) {
+	conns, err := a.connections()
+	if err != nil {
+		return false, err
+	}
+	p := strconv.Itoa(port)
+	for _, c := range conns {
+		if c.Metadata.SourcePort == p && c.Metadata.SourceIP == "127.0.0.1" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // reload a rule-provider from disk

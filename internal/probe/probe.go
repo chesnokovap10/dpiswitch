@@ -131,7 +131,7 @@ func RunTCP(d Dialer, ip string, port int) PathResult {
 	}
 	defer conn.Close()
 	r.TCPTime = time.Since(t0)
-	if err := confirmDial(conn); err != nil {
+	if err := confirmDial(conn, d.Established); err != nil {
 		r.Err, r.ErrStage = err.Error(), "tcp"
 		return r
 	}
@@ -143,32 +143,66 @@ func RunTCP(d Dialer, ip string, port int) PathResult {
 // the retries it makes all fit inside that one context.
 var confirmWindow = 6 * time.Second
 
+// confirmPoll: how often the core is asked while waiting.
+var confirmPoll = 100 * time.Millisecond
+
 // confirmDial: the SOCKS "succeeded" reply means nothing yet. mihomo answers
 // CONNECT BEFORE it dials the target (listener/socks and listener/http both
 // write success and only then hand the connection to the tunnel), and when
 // the dial fails it simply closes the connection. On 443 the TLS handshake
-// exposes that; on any other port the reply was all the probe looked at, so
-// a host unreachable over the direct path came out CLEAN -- an IPv6-only
-// host on a link with no IPv6 did, the same second the core logged
-// "unreachable network" for it.
+// exposes that; on any other port the reply was all the probe looked at, so a
+// host unreachable over the direct path came out CLEAN.
 //
-// So wait for the truth: data from the server or the window running out with
-// the connection still open means the dial went through; the core closing the
-// connection means it did not. Nothing is written -- the probe must not speak
-// a protocol it does not know.
-func confirmDial(conn net.Conn) error {
-	_ = conn.SetReadDeadline(time.Now().Add(confirmWindow))
-	defer conn.SetReadDeadline(time.Time{})
-	var b [1]byte
-	_, err := conn.Read(b[:])
-	switch {
-	case err == nil:
-		return nil // the server spoke first
-	case isTimeout(err):
-		return nil // still open after the core's whole dial budget
-	default:
-		return fmt.Errorf("closed by the proxy after CONNECT, the dial failed: %w", err)
+// The connection closing is not proof of a failed dial either: a speedtest
+// server hangs up on a silent client after four seconds. What does tell is the
+// core itself -- a dial that went through is tracked in its connection list,
+// a failed one never appears there. So poll it, and watch the connection in
+// between: seen by the core -> dialled; data from the server -> dialled;
+// closed without ever being seen -> the dial failed. Nothing is written: the
+// probe does not know the protocol behind the port.
+func confirmDial(conn net.Conn, established func(int) (bool, error)) error {
+	port := 0
+	if a, ok := conn.LocalAddr().(*net.TCPAddr); ok {
+		port = a.Port
 	}
+	ask := func() (seen, usable bool) {
+		if established == nil || port == 0 {
+			return false, false
+		}
+		ok, err := established(port)
+		return ok, err == nil
+	}
+	defer conn.SetReadDeadline(time.Time{})
+	deadline := time.Now().Add(confirmWindow)
+	apiUsable := false
+	var b [1]byte
+	for time.Now().Before(deadline) {
+		seen, usable := ask()
+		apiUsable = apiUsable || usable
+		if seen {
+			return nil
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(confirmPoll))
+		_, err := conn.Read(b[:])
+		switch {
+		case err == nil:
+			return nil // the server spoke first
+		case isTimeout(err):
+			continue
+		default:
+			if seen, _ := ask(); seen {
+				return nil
+			}
+			return fmt.Errorf("closed by the proxy after CONNECT, the dial failed: %w", err)
+		}
+	}
+	if apiUsable {
+		// the core answered all along and never had this connection
+		return errors.New("the core never established the connection")
+	}
+	// no way to ask the core: an open connection after its whole dial
+	// budget is the best evidence there is
+	return nil
 }
 
 func isTimeout(err error) bool {

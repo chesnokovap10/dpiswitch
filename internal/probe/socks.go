@@ -17,6 +17,11 @@ type Dialer struct {
 	Timeout time.Duration
 	// resolvers for this path: the same the core uses. Empty -- built-in DoH
 	DNS []Resolver
+	// Established reports whether the core has a live outbound connection for
+	// the client connection coming from this local port -- i.e. whether its
+	// dial really went through. nil: not available (tests), fall back to
+	// watching the connection alone.
+	Established func(localPort int) (bool, error)
 }
 
 // Alive: whether the core's listener itself accepts connections (not the site behind it)
