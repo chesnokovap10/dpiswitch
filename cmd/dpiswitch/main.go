@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -61,6 +62,15 @@ func runService() {
 	_ = paths.EnsureDataDir()
 	if f, err := os.OpenFile(paths.ServiceLog(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
 		log.SetOutput(f)
+		// A panic goes to stderr, and a service has nobody reading it: the
+		// service died twice with nothing in any log but Windows' "terminated
+		// unexpectedly". The runtime writes the trace here instead.
+		if err := debug.SetCrashOutput(f, debug.CrashOptions{}); err != nil {
+			log.Printf("crash output not redirected: %v", err)
+		}
+		// and anything else written to stderr -- the race detector's reports
+		// among them -- instead of into a handle nobody holds
+		_ = windows.SetStdHandle(windows.STD_ERROR_HANDLE, windows.Handle(f.Fd()))
 	}
 	log.SetFlags(log.LstdFlags)
 	if err := winsvc.RunService(true); err != nil {
