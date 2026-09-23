@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -85,6 +86,55 @@ func (e endpoint) String() string {
 		return fmt.Sprintf("quic/%d", e.port)
 	}
 	return fmt.Sprintf("tcp/%d", e.port)
+}
+
+// parseEndpoint reads back what String wrote.
+func parseEndpoint(s string) (endpoint, bool) {
+	proto, port, ok := strings.Cut(s, "/")
+	n, err := strconv.Atoi(port)
+	if !ok || err != nil || n <= 0 || n > 65535 {
+		return endpoint{}, false
+	}
+	switch proto {
+	case "tcp":
+		return endpoint{port: n}, true
+	case "quic":
+		return endpoint{udp: true, port: n}, true
+	}
+	return endpoint{}, false
+}
+
+// maxEndpoints caps what one name remembers: every port costs a probe.
+const maxEndpoints = 8
+
+// mergeEndpoints: the ports seen now plus the ones remembered, most recent
+// first, without duplicates.
+func mergeEndpoints(now []endpoint, stored []string) []endpoint {
+	seen := map[endpoint]bool{}
+	var out []endpoint
+	add := func(e endpoint) {
+		if !seen[e] && len(out) < maxEndpoints {
+			seen[e] = true
+			out = append(out, e)
+		}
+	}
+	for _, e := range now {
+		add(e)
+	}
+	for _, s := range stored {
+		if e, ok := parseEndpoint(s); ok {
+			add(e)
+		}
+	}
+	return out
+}
+
+func endpointStrings(eps []endpoint) []string {
+	out := make([]string, len(eps))
+	for i, e := range eps {
+		out[i] = e.String()
+	}
+	return out
 }
 
 func (w *watcher) drain() map[string][]endpoint {

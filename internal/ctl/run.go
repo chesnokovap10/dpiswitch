@@ -104,7 +104,14 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			// mihomo rules are per domain, so a decision applies
 			// to all ports at once. Hence every port seen must be checked,
 			// and the worst verdict wins.
-			eps := ports[dom]
+			// the ports seen this minute plus the ones remembered: a re-check
+			// by TTL often runs while the name is idle, and must still probe
+			// the ports it is really used on
+			var stored []string
+			if prev, ok := st.get(netID, dom); ok {
+				stored = prev.Endpoints
+			}
+			eps := mergeEndpoints(ports[dom], stored)
 			if len(eps) == 0 {
 				eps = []endpoint{{port: 443}}
 			}
@@ -139,9 +146,21 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			// not replace a definite verdict: a working direct site would be
 			// reverted into the tunnel because the TUNNEL was flaky. Keep the
 			// previous verdict and just retry later.
-			if had && rep.Verdict == probe.Inconcl && prev.Verdict != probe.Inconcl {
+			// One exception: an expired CLEAN is not extended. Being CLEAN
+			// means "goes direct", and a verdict that could not be confirmed
+			// once its term ran out is not evidence the direct path still
+			// works -- a false "clean" breaks a site, a false "blocked" only
+			// costs a detour. It drops out of the direct list until the next
+			// check, without counting as a revert.
+			expiredClean := had && prev.Verdict == probe.Clean && time.Now().After(prev.ExpiresAt)
+			// Keeping a verdict is for the tunnel side failing. When the
+			// DIRECT path itself failed, a CLEAN is not kept either: whatever
+			// this means about blocking, the host does not work direct now.
+			dropClean := had && prev.Verdict == probe.Clean && (expiredClean || directFailed(rep))
+			if had && rep.Verdict == probe.Inconcl && prev.Verdict != probe.Inconcl && !dropClean {
 				kept := *prev
 				kept.ExpiresAt = time.Now().Add(cfg.FailTTL)
+				kept.Endpoints = endpointStrings(eps)
 				st.put(netID, dom, &kept)
 				log.Printf("  %s inconclusive (%s), keeping %s, retry in %s",
 					dom, rep.Reason, prev.Verdict, cfg.FailTTL)
@@ -154,7 +173,8 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 				DecidedAt: time.Now(),
 				TestedIP:  rep.TestedIP,
 				// a name being probed is a name in use right now
-				LastSeen: time.Now(),
+				LastSeen:  time.Now(),
+				Endpoints: endpointStrings(eps),
 			}
 			if rep.Verdict == probe.Clean {
 				e.ExpiresAt = time.Now().Add(cfg.TTL)
@@ -165,7 +185,12 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 				e.Reverts = prev.Reverts
 				// the domain lost its direct path -- the more often this happens,
 				// the longer it waits before being re-checked
-				if prev.Verdict == probe.Clean && rep.Verdict != probe.Clean {
+				if dropClean && rep.Verdict == probe.Inconcl {
+					// not a revert: no blocking was shown, the direct path just
+					// could not be confirmed. Retry at the normal pace.
+					log.Printf("  %s inconclusive (%s), CLEAN not confirmed -- "+
+						"through the tunnel until the next check in %s", dom, rep.Reason, cfg.FailTTL)
+				} else if prev.Verdict == probe.Clean && rep.Verdict != probe.Clean {
 					e.Reverts++
 					backoff := time.Duration(e.Reverts) * cfg.TTL
 					if backoff > cfg.MaxBackoff {
@@ -376,4 +401,11 @@ func msVal(best int64, last probe.PathResult) string {
 		return fmt.Sprintf("%dms", best)
 	}
 	return ms(last)
+}
+
+// directFailed: the direct side of a probe did not get through -- no TCP, or
+// a TLS handshake that was attempted and failed.
+func directFailed(rep probe.Report) bool {
+	d := rep.Direct
+	return !d.TCPOk || (d.TLSTried && !d.TLSOk)
 }

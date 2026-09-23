@@ -21,7 +21,12 @@ type entry struct {
 	// someone still goes there -- CDN node names live for hours and then
 	// vanish, and re-probing them forever costs a slice of every cycle.
 	LastSeen time.Time `json:"last_seen,omitempty"`
-	Reverts  int       `json:"reverts"` // how many times the domain has been reverted
+	// Endpoints: every port the name was seen on ("tcp/20000", "quic/443").
+	// A re-check made when the name is not in the connections that minute
+	// used to probe 443 alone -- and speedtest servers, which work on 20000
+	// and have nothing on 443, could never be confirmed clean again.
+	Endpoints []string `json:"endpoints,omitempty"`
+	Reverts   int      `json:"reverts"` // how many times the domain has been reverted
 }
 
 // state is split per network: the key is the ISP (AS...), see asn.go;
