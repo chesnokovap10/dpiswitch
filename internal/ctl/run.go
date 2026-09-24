@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"slices"
 	"sort"
@@ -121,7 +122,8 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 		log.Printf("%d domains queued, taking %d this cycle", total, cfg.PerCycle)
 	}
 
-	direct := probe.Dialer{Addr: cfg.DirectAddr, Timeout: cfg.Timeout, DNS: cfg.DirectDNS, Established: a.established}
+	direct := probe.Dialer{Addr: cfg.DirectAddr, Timeout: cfg.Timeout, DNS: cfg.DirectDNS,
+		Established: a.established, NoV6: st.directNoV6(netID)}
 	tunnel := probe.Dialer{Addr: cfg.TunnelAddr, Timeout: cfg.Timeout, Established: a.established}
 
 	var (
@@ -129,6 +131,9 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 		sem     = make(chan struct{}, cfg.Workers)
 		mu      sync.Mutex
 		changed bool
+		// what this cycle showed of IPv6 on the direct path, see learnV6
+		v6Missed  int
+		v6Reached bool
 	)
 	for _, dom := range queue {
 		wg.Add(1)
@@ -167,6 +172,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			directDown := false
 			var downOn probe.Report
 			noV6 := false // see probe.Report.DirectNoV6
+			reachedV6 := false
 			for _, ep := range eps {
 				r := probe.CheckProto(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp, was)
 				appendJSONL(cfg.JSONLPath, r)
@@ -181,6 +187,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 					directDown, downOn = true, r
 				}
 				noV6 = noV6 || r.DirectNoV6
+				reachedV6 = reachedV6 || directReachedV6(r)
 				// INCONCLUSIVE means "could not measure" -- e.g. the host
 				// does not answer QUIC on either path. Such a result
 				// must not override a definite verdict, otherwise the domain
@@ -206,105 +213,27 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 				rep.Reason = fmt.Sprintf("direct path fails on %s/%d: %s",
 					downOn.Proto, downOn.Port, downOn.Reason)
 			}
-
-			prev, had := st.get(netID, dom)
-
-			// INCONCLUSIVE says nothing about the direct path (usually the
-			// tunnel side failed, e.g. right after a Wi-Fi reconnect). It must
-			// not replace a definite verdict: a working direct site would be
-			// reverted into the tunnel because the TUNNEL was flaky. Keep the
-			// previous verdict and just retry later.
-			// One exception: an expired CLEAN is not extended. Being CLEAN
-			// means "goes direct", and a verdict that could not be confirmed
-			// once its term ran out is not evidence the direct path still
-			// works -- a false "clean" breaks a site, a false "blocked" only
-			// costs a detour. It drops out of the direct list until the next
-			// check, without counting as a revert.
-			expiredClean := had && prev.Verdict == probe.Clean && time.Now().After(prev.ExpiresAt)
-			// Keeping a verdict is for the tunnel side failing. When the
-			// DIRECT path itself failed, a CLEAN is not kept either: whatever
-			// this means about blocking, the host does not work direct now.
-			// On any TCP port it uses, not only the one the report came from --
-			// and not over QUIC, which most hosts simply do not have.
-			dropClean := had && prev.Verdict == probe.Clean && (expiredClean || directDown)
-			// Nor is a verdict kept against an IPv6 node the direct path does
-			// not reach: that is a finding about the direct path, and the
-			// BLOCKED it replaces was the old mislabel of the same thing.
-			if had && rep.Verdict == probe.Inconcl && prev.Verdict != probe.Inconcl && !dropClean && !noV6 {
-				kept := *prev
-				kept.ExpiresAt = time.Now().Add(cfg.FailTTL)
-				kept.Endpoints = endpointStrings(eps)
-				st.put(netID, dom, &kept)
-				log.Printf("  %s inconclusive (%s), keeping %s, retry in %s",
-					dom, rep.Reason, prev.Verdict, cfg.FailTTL)
-				return
-			}
-
-			e := &entry{
-				Verdict:    rep.Verdict,
-				Reason:     rep.Reason,
-				DecidedAt:  time.Now(),
-				TestedIP:   rep.TestedIP,
-				Endpoints:  endpointStrings(eps),
-				DirectDown: rep.Verdict == probe.Inconcl && directDown,
-			}
-			// A new name was just seen by the watcher. A known one keeps its
-			// own mark: the probe is not a use. It used to count as one, and
-			// every verdict re-checked hourly renewed itself -- names nothing
-			// had gone to for days were probed around the clock and never
-			// forgotten.
-			if had {
-				e.LastSeen = prev.lastSeen()
-			} else {
-				e.LastSeen = time.Now()
-			}
-			if rep.Verdict == probe.Clean {
-				e.ExpiresAt = time.Now().Add(cfg.TTL)
-			} else {
-				e.ExpiresAt = time.Now().Add(cfg.FailTTL)
-			}
-			if had {
-				e.Reverts = prev.Reverts
-				// the domain lost its direct path -- the more often this happens,
-				// the longer it waits before being re-checked
-				if dropClean && rep.Verdict == probe.Inconcl {
-					// not a revert: no blocking was shown, the direct path just
-					// could not be confirmed. Retry at the normal pace.
-					log.Printf("  %s inconclusive (%s), CLEAN not confirmed -- "+
-						"through the tunnel until the next check in %s", dom, rep.Reason, cfg.FailTTL)
-				} else if prev.Verdict == probe.Clean && rep.Verdict != probe.Clean {
-					e.Reverts++
-					// from the blocked re-check up: the direct term (a week)
-					// hit the cap on the very first revert, so it never grew
-					backoff := time.Duration(e.Reverts) * cfg.FailTTL
-					if backoff > cfg.MaxBackoff {
-						backoff = cfg.MaxBackoff
-					}
-					e.ExpiresAt = time.Now().Add(backoff)
-					log.Printf("REVERT %s: %s (%s), reverts total %d", dom, rep.Verdict, rep.Reason, e.Reverts)
-				}
-			}
-
-			st.put(netID, dom, e)
-
 			mu.Lock()
-			if !had || prev.Verdict != rep.Verdict {
-				changed = true
-				if rep.Verdict == probe.Clean {
-					// log the BEST measurements -- the very ones the decision
-					// is based on. The last pass may have been slow by chance,
-					// and showing it would be misleading
-					log.Printf("CLEAN %s (node %s, direct %s vs tunnel %s)",
-						dom, rep.TestedIP, msVal(rep.DirectMs, rep.Direct), msVal(rep.TunnelMs, rep.Tunnel))
-				} else if !had {
-					log.Printf("  %s %s: %s", rep.Verdict, dom, rep.Reason)
-				}
+			if noV6 && !reachedV6 {
+				v6Missed++
 			}
+			v6Reached = v6Reached || reachedV6
 			mu.Unlock()
+
+			if record(cfg, st, netID, dom, rep, eps, directDown, noV6) {
+				mu.Lock()
+				changed = true
+				mu.Unlock()
+			}
 		}(dom)
 	}
 	wg.Wait()
 
+	if until, now := st.learnV6(netID, v6Missed, v6Reached); now {
+		log.Printf("the direct path here has no IPv6: %d names in a row could not reach "+
+			"their IPv6 node direct. IPv6 nodes are not probed until %s",
+			v6Misses, until.Format("02.01 15:04"))
+	}
 	if err := st.save(); err != nil {
 		log.Printf("state not saved: %v", err)
 	}
@@ -316,6 +245,137 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	case changed:
 		applyList(cfg, a, st, netID) // observe mode: only logs
 	}
+}
+
+// record files one name's check in memory and reports whether its verdict
+// changed. rep is the name's worst port; directDown and noV6 are what the
+// probes found over all of its ports, eps the endpoints probed.
+func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []endpoint, directDown, noV6 bool) bool {
+	prev, had := st.get(netID, dom)
+
+	// INCONCLUSIVE says nothing about the direct path (usually the
+	// tunnel side failed, e.g. right after a Wi-Fi reconnect). It must
+	// not replace a definite verdict: a working direct site would be
+	// reverted into the tunnel because the TUNNEL was flaky. Keep the
+	// previous verdict and just retry later.
+	// One exception: an expired CLEAN is not extended. Being CLEAN
+	// means "goes direct", and a verdict that could not be confirmed
+	// once its term ran out is not evidence the direct path still
+	// works -- a false "clean" breaks a site, a false "blocked" only
+	// costs a detour. It drops out of the direct list until the next
+	// check, without counting as a revert.
+	expiredClean := had && prev.Verdict == probe.Clean && time.Now().After(prev.ExpiresAt)
+	// Keeping a verdict is for the tunnel side failing. When the
+	// DIRECT path itself failed, a CLEAN is not kept either: whatever
+	// this means about blocking, the host does not work direct now.
+	// On any TCP port it uses, not only the one the report came from --
+	// and not over QUIC, which most hosts simply do not have.
+	dropClean := had && prev.Verdict == probe.Clean && (expiredClean || directDown)
+	// Nor is a verdict kept against an IPv6 node the direct path does
+	// not reach: that is a finding about the direct path, and the
+	// BLOCKED it replaces was the old mislabel of the same thing.
+	if had && rep.Verdict == probe.Inconcl && prev.Verdict != probe.Inconcl && !dropClean && !noV6 {
+		kept := *prev
+		term := cfg.FailTTL
+		// A verdict the check measured and could not overturn -- the
+		// host fails the same on both paths, say -- backs off as a
+		// repeat does: e2cNN.gcp.gvt2.com names came back every hour
+		// to fail on both paths again. Not when our own side failed
+		// (the resolver, the tunnel): that says nothing about the host.
+		if prev.Verdict != probe.Clean && !rep.Unmeasured {
+			kept.Streak++
+			term = failTerm(cfg, kept.Streak, kept.Reverts)
+		}
+		kept.ExpiresAt = time.Now().Add(term)
+		kept.Endpoints = endpointStrings(eps)
+		st.put(netID, dom, &kept)
+		log.Printf("  %s inconclusive (%s), keeping %s, retry in %s",
+			dom, rep.Reason, prev.Verdict, term)
+		return false
+	}
+
+	// One slow measurement of a CLEAN name is often the network's
+	// moment, not the path's: at 00:37 on 24.09 four clean names went
+	// SLOWER within one minute while the tunnel's own checks failed.
+	// The CLEAN is kept and measured again after FailTTL; SLOWER the
+	// second time in a row reverts it. The direct path did work, so an
+	// expired CLEAN may be kept this way too.
+	if had && prev.Verdict == probe.Clean && rep.Verdict == probe.Slower && !prev.SlowOnce && !directDown {
+		kept := *prev
+		kept.SlowOnce = true
+		kept.ExpiresAt = time.Now().Add(cfg.FailTTL)
+		kept.Endpoints = endpointStrings(eps)
+		st.put(netID, dom, &kept)
+		log.Printf("  %s slower once (%s), keeping CLEAN, measuring again in %s",
+			dom, rep.Reason, cfg.FailTTL)
+		return false
+	}
+
+	e := &entry{
+		Verdict:    rep.Verdict,
+		Reason:     rep.Reason,
+		DecidedAt:  time.Now(),
+		TestedIP:   rep.TestedIP,
+		Endpoints:  endpointStrings(eps),
+		DirectDown: rep.Verdict == probe.Inconcl && directDown,
+	}
+	// A new name was just seen by the watcher. A known one keeps its
+	// own mark: the probe is not a use. It used to count as one, and
+	// every verdict re-checked hourly renewed itself -- names nothing
+	// had gone to for days were probed around the clock and never
+	// forgotten.
+	if had {
+		e.LastSeen = prev.lastSeen()
+	} else {
+		e.LastSeen = time.Now()
+	}
+	if had {
+		e.Reverts = prev.Reverts
+		// the same finding again: the wait before the next check grows
+		if rep.Verdict != probe.Clean && sameFinding(prev.Verdict, rep.Verdict) {
+			e.Streak = prev.Streak
+			if !rep.Unmeasured {
+				e.Streak++
+			}
+		}
+	}
+	if rep.Verdict == probe.Clean {
+		e.ExpiresAt = time.Now().Add(cfg.TTL)
+	} else {
+		e.ExpiresAt = time.Now().Add(failTerm(cfg, e.Streak, e.Reverts))
+	}
+	if had {
+		// the domain lost its direct path -- the more often this happens,
+		// the longer it waits before being re-checked
+		if dropClean && rep.Verdict == probe.Inconcl {
+			// not a revert: no blocking was shown, the direct path just
+			// could not be confirmed. Retry at the normal pace.
+			e.ExpiresAt = time.Now().Add(cfg.FailTTL)
+			log.Printf("  %s inconclusive (%s), CLEAN not confirmed -- "+
+				"through the tunnel until the next check in %s", dom, rep.Reason, cfg.FailTTL)
+		} else if prev.Verdict == probe.Clean && rep.Verdict != probe.Clean {
+			e.Reverts++
+			// from the blocked re-check up: the direct term (a week)
+			// hit the cap on the very first revert, so it never grew
+			e.ExpiresAt = time.Now().Add(failTerm(cfg, 0, e.Reverts))
+			log.Printf("REVERT %s: %s (%s), reverts total %d", dom, rep.Verdict, rep.Reason, e.Reverts)
+		}
+	}
+
+	st.put(netID, dom, e)
+	if had && prev.Verdict == rep.Verdict {
+		return false
+	}
+	if rep.Verdict == probe.Clean {
+		// log the BEST measurements -- the very ones the decision
+		// is based on. The last pass may have been slow by chance,
+		// and showing it would be misleading
+		log.Printf("CLEAN %s (node %s, direct %s vs tunnel %s)",
+			dom, rep.TestedIP, msVal(rep.DirectMs, rep.Direct), msVal(rep.TunnelMs, rep.Tunnel))
+	} else if !had {
+		log.Printf("  %s %s: %s", rep.Verdict, dom, rep.Reason)
+	}
+	return true
 }
 
 // candidates: what the watcher accumulated and we have not decided yet.
@@ -581,6 +641,40 @@ func directFailed(rep probe.Report) bool {
 func directDownOn(rep probe.Report) bool {
 	d, t := rep.Direct, rep.Tunnel
 	return directFailed(rep) && !(t.Err != "" && t.ErrStage == d.ErrStage)
+}
+
+// failTerm: how long a verdict other than CLEAN holds before it is checked
+// again. FailTTL doubles with each check in a row that found nothing new, up
+// to the cap: names blocked for good -- ad networks, sites on the registry --
+// were probed every hour, and made two thirds of all probes. A false
+// "blocked" only costs a detour, so noticing an unblock later is the cheap
+// side. A name reverted N times waits at least N*FailTTL.
+func failTerm(cfg Config, streak, reverts int) time.Duration {
+	limit := max(cfg.MaxBackoff, cfg.FailTTL)
+	d := cfg.FailTTL
+	for i := 0; i < streak && d < limit; i++ {
+		d *= 2
+	}
+	return min(max(d, time.Duration(reverts)*cfg.FailTTL), limit)
+}
+
+// sameFinding: whether a check found what the one before it did. The blocked
+// verdicts count as one: which of them a name gets depends on which of its
+// ports reported first.
+func sameFinding(a, b probe.Verdict) bool {
+	return a == b || (isBlocked(a) && isBlocked(b))
+}
+
+func isBlocked(v probe.Verdict) bool {
+	return v == probe.BlockedTCP || v == probe.BlockedTLS || v == probe.BlockedQUIC
+}
+
+// directReachedV6: the direct side of a probe got through to an IPv6 node --
+// the network has IPv6 after all, see learnV6.
+func directReachedV6(rep probe.Report) bool {
+	ip := net.ParseIP(rep.TestedIP)
+	return ip != nil && ip.To4() == nil && !rep.DirectNoV6 &&
+		rep.Verdict != probe.Inconcl && !directFailed(rep)
 }
 
 // withTCP adds plain TCP on every port seen only as QUIC. A mihomo rule

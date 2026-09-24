@@ -1,0 +1,49 @@
+package ctl
+
+import (
+	"log"
+	"time"
+)
+
+// gate holds probing back while the network is not itself. A probe then
+// measures the moment, not the path: after a wake from sleep the first cycle
+// ran before the network was up -- the direct resolver did not answer, a
+// direct name failed to resolve -- and at 00:37 on 24.09, while the tunnel's
+// own checks were failing, four clean names were measured SLOWER in a minute.
+type gate struct {
+	interval time.Duration
+	last     time.Time // the previous tick, by the wall clock
+	paused   bool
+}
+
+// allow: whether this tick's cycle may probe. now is the wall clock
+// (time.Now().Round(0)): the monotonic one need not run while the machine
+// sleeps. health is the tunnel as the core's own checks last found it.
+func (g *gate) allow(now time.Time, health func() (bool, string, error)) bool {
+	gap := now.Sub(g.last)
+	first := g.last.IsZero()
+	g.last = now
+	// ticks come every interval; a gap well past it is a sleep, or a pause
+	// with no network. The network comes back a little after the machine.
+	if !first && gap > 3*g.interval {
+		log.Printf("resumed after %s: probes wait a cycle for the network to settle",
+			gap.Round(time.Second))
+		return false
+	}
+	ok, note, err := health()
+	if err != nil {
+		ok, note = false, "core API not responding: "+err.Error()
+	}
+	if !ok {
+		if !g.paused {
+			log.Printf("probes paused: the tunnel does not answer (%s)", note)
+			g.paused = true
+		}
+		return false
+	}
+	if g.paused {
+		log.Printf("probes resumed: the tunnel answers (%s)", note)
+		g.paused = false
+	}
+	return true
+}

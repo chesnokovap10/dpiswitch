@@ -106,7 +106,11 @@ func Run(ctx context.Context, cfg Config) {
 	t := time.NewTicker(cfg.Interval)
 	offline := false // no gateway right now (see the tick below)
 	defer t.Stop()
-	cycle(cfg, a, st, netID, w)
+	g := &gate{interval: cfg.Interval}
+	health := func() (bool, string, error) { return a.tunnelHealth(cfg.ProxyName) }
+	if g.allow(time.Now().Round(0), health) {
+		cycle(cfg, a, st, netID, w)
+	}
 	for {
 		select {
 		case <-t.C:
@@ -145,6 +149,13 @@ func Run(ctx context.Context, cfg Config) {
 				if cfg.Apply {
 					applyList(cfg, a, st, netID)
 				}
+			}
+			if !g.allow(time.Now().Round(0), health) {
+				// the list still follows memory: verdicts expire all the same
+				if cfg.Apply {
+					syncList(cfg, a, st, netID, false)
+				}
+				continue
 			}
 			cycle(cfg, a, st, netID, w)
 		case <-ctx.Done():

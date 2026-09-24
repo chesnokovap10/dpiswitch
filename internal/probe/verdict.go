@@ -3,6 +3,7 @@ package probe
 import (
 	"fmt"
 	"net"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -37,7 +38,11 @@ type Report struct {
 	Aborted bool `json:"aborted,omitempty"`
 	// DirectNoV6: the node is IPv6 and the direct path did not reach it --
 	// see checkProto. No block was seen, but the host does not work direct.
-	DirectNoV6 bool       `json:"direct_no_v6,omitempty"`
+	DirectNoV6 bool `json:"direct_no_v6,omitempty"`
+	// Unmeasured: an INCONCLUSIVE because our own side of the check failed --
+	// the direct resolver did not answer, the tunnel did not get through. It
+	// says nothing about the host: the controller does not back off on it.
+	Unmeasured bool       `json:"unmeasured,omitempty"`
 	DirectMs   int64      `json:"direct_ms,omitempty"`
 	TunnelMs   int64      `json:"tunnel_ms,omitempty"`
 	Direct     PathResult `json:"direct"`
@@ -130,6 +135,7 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool,
 		}
 		if err != nil {
 			rep.Verdict, rep.Reason = Inconcl, "direct DNS did not answer: "+errText(err)
+			rep.Unmeasured = true
 			return rep
 		}
 		rep.DNSDirect = JoinIPs(ips)
@@ -139,6 +145,7 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool,
 		tunIPs, err := ResolveVia(tunnel, dom)
 		if err != nil || len(tunIPs) == 0 {
 			rep.Verdict, rep.Reason = Inconcl, "does not resolve even through the tunnel: "+errText(err)
+			rep.Unmeasured = true
 			return rep
 		}
 		rep.DNSTunnel = JoinIPs(tunIPs)
@@ -151,6 +158,13 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool,
 	// different CDN nodes are blocked differently
 	rep.TestedIP = ip
 	v6 := net.ParseIP(ip).To4() == nil
+	// a network whose direct path has reached no IPv6 node time after time:
+	// probing one more would only show that again (see the controller)
+	if v6 && direct.NoV6 {
+		rep.Verdict, rep.DirectNoV6 = Inconcl, true
+		rep.Reason = "IPv6 node, and the direct path here has no IPv6: not probed"
+		return rep
+	}
 
 	// take the best measurement across passes, not the last one: the minimum
 	// is more robust to random spikes than the average
@@ -171,6 +185,7 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool,
 		rep.Direct, rep.Tunnel = d, t
 		v, reason, noV6 := judgeNode(d, t, v6)
 		rep.DirectNoV6 = rep.DirectNoV6 || noV6
+		rep.Unmeasured = v == Inconcl && strings.HasPrefix(reason, tunnelDown)
 		// for QUIC the handshake is indivisible, so both "transport"
 		// failures mean the same thing -- packets did not get through
 		if udp && (v == BlockedTCP || v == BlockedTLS) {
@@ -244,9 +259,13 @@ func judgeNode(d, t PathResult, v6 bool) (Verdict, string, bool) {
 	return v, reason, false
 }
 
+// tunnelDown: the reason Judge gives when the tunnel side failed -- the
+// reference is missing, nothing was measured
+const tunnelDown = "tunnel path unavailable: "
+
 func Judge(d, t PathResult) (Verdict, string) {
 	if !t.TCPOk {
-		return Inconcl, "tunnel path unavailable: " + ClassifyErr(t)
+		return Inconcl, tunnelDown + ClassifyErr(t)
 	}
 	if !d.TCPOk {
 		return BlockedTCP, ClassifyErr(d)
@@ -268,7 +287,7 @@ func Judge(d, t PathResult) (Verdict, string) {
 			return BlockedTLS, ClassifyErr(d)
 		}
 		if !t.TLSOk {
-			return Inconcl, "tunnel path unavailable: " + ClassifyErr(t)
+			return Inconcl, tunnelDown + ClassifyErr(t)
 		}
 		// certificate fingerprints cannot be compared -- different CDN nodes serve
 		// different valid certificates. The sign of substitution: the direct path's

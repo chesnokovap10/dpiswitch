@@ -22,6 +22,9 @@ type Dialer struct {
 	// dial really went through. nil: not available (tests), fall back to
 	// watching the connection alone.
 	Established func(localPort int) (bool, error)
+	// NoV6: this network's direct path is known to have no IPv6, so an IPv6
+	// node is not probed on it -- see checkProto
+	NoV6 bool
 }
 
 // Alive: whether the core's listener itself accepts connections (not the site behind it)

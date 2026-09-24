@@ -29,6 +29,11 @@ Fallback groups: if `awg2` is down, its traffic goes through `awg`; if both are 
 - verdicts: `CLEAN`, `BLOCKED_TCP/TLS/QUIC`, `MITM`, `CONTENT_DIFF`, `SLOWER`, `INCONCLUSIVE`;
 - "clean" only if every attempt is clean: a false "clean" breaks a site,
   a false "blocked" only costs a detour through the tunnel;
+- a verdict other than `CLEAN` is re-checked after an hour; each check in a row
+  that finds the same doubles the wait, up to a day. A `CLEAN` found slower
+  once is measured again before it is reverted;
+- probes pause for a cycle after sleep and while the tunnel fails the core's
+  own health checks: measurements then say more about the moment than the path;
 - verdict memory is keyed by the ISP (ASN), not by the Wi-Fi network;
 - "whole domains": 3+ clean subdomains and no bad ones — new subdomains go
   direct right away and are verified afterwards.

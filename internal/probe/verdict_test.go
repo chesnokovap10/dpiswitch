@@ -1,6 +1,7 @@
 package probe
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -114,5 +115,49 @@ func TestJudgeNodeIPv6(t *testing.T) {
 	}
 	if v, _, noV6 := judgeNode(ok, ok, true); v != Clean || noV6 {
 		t.Errorf("IPv6 node that works: got %v %v, want CLEAN", v, noV6)
+	}
+}
+
+// On a network known to have no IPv6 direct, an IPv6 node is not dialled at
+// all: the result is the one probing would give, without the probe.
+func TestNoV6NotProbed(t *testing.T) {
+	// nothing listens on port 1: a dial would fail, not return this
+	direct := Dialer{Addr: "127.0.0.1:1", Timeout: time.Second, NoV6: true}
+	tunnel := Dialer{Addr: "127.0.0.1:1", Timeout: time.Second}
+	rep := checkProto(direct, tunnel, AddrPrefix+"2001:db8::1", 5228, 3, false, "")
+	if rep.Verdict != Inconcl || !rep.DirectNoV6 || rep.Unmeasured {
+		t.Fatalf("got %s (%s), no v6 %v, unmeasured %v", rep.Verdict, rep.Reason, rep.DirectNoV6, rep.Unmeasured)
+	}
+	if rep.Direct.TCPOk || rep.Tunnel.TCPOk || rep.Direct.Err != "" {
+		t.Fatalf("an IPv6 node was probed: %+v", rep.Direct)
+	}
+	// an IPv4 node is probed as ever
+	rep = checkProto(direct, tunnel, AddrPrefix+"192.0.2.1", 5228, 1, false, "")
+	if rep.DirectNoV6 {
+		t.Fatalf("an IPv4 node was skipped: %s", rep.Reason)
+	}
+}
+
+// The controller tells "the host did not answer" from "our tunnel did not"
+// by this prefix: every tunnel-side failure Judge reports must carry it.
+func TestTunnelDownReason(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		d, t PathResult
+	}{
+		{"no TCP through the tunnel", PathResult{TCPOk: true}, PathResult{Err: "timeout"}},
+		{"TLS failed only through the tunnel",
+			PathResult{TCPOk: true, TLSTried: true, TLSOk: true, CertValid: true},
+			PathResult{TCPOk: true, TLSTried: true, Err: "EOF", ErrStage: "tls"}},
+	} {
+		v, reason := Judge(tc.d, tc.t)
+		if v != Inconcl || !strings.HasPrefix(reason, tunnelDown) {
+			t.Errorf("%s: %s %q", tc.name, v, reason)
+		}
+	}
+	// the same failure on both paths is the host's, not ours
+	both := PathResult{TCPOk: true, TLSTried: true, Err: "EOF", ErrStage: "tls"}
+	if _, reason := Judge(both, both); strings.HasPrefix(reason, tunnelDown) {
+		t.Errorf("both paths failing read as the tunnel's: %q", reason)
 	}
 }

@@ -36,6 +36,13 @@ type entry struct {
 	// blocking, but the host does not work direct. A family must not sweep
 	// it direct.
 	DirectDown bool `json:"direct_down,omitempty"`
+	// Streak: checks in a row that found this same verdict other than CLEAN,
+	// or measured and could not overturn it. Each doubles the wait before
+	// the next one, see failTerm.
+	Streak int `json:"streak,omitempty"`
+	// SlowOnce: a CLEAN measured slower once. It is kept and looked at again
+	// after FailTTL; SLOWER a second time in a row reverts it.
+	SlowOnce bool `json:"slow_once,omitempty"`
 }
 
 // state is split per network: the key is the ISP (AS...), see asn.go;
@@ -49,7 +56,21 @@ type state struct {
 	// the network the controller currently works in: the UI reads it from here
 	// instead of computing it -- it cannot without access to the direct path
 	Current string `json:"current,omitempty"`
+	// V6: what probes have shown of IPv6 on each network's direct path
+	V6 map[string]*v6Memo `json:"v6,omitempty"`
 }
+
+type v6Memo struct {
+	// Misses: names in a row whose IPv6 node the direct path did not reach
+	Misses int `json:"misses,omitempty"`
+	// NoneUntil: until then the direct path is taken to have no IPv6
+	NoneUntil time.Time `json:"none_until,omitempty"`
+}
+
+const (
+	v6Misses = 3              // misses in a row that make "no IPv6 here"
+	v6Hold   = 24 * time.Hour // how long that holds before probes look again
+)
 
 func loadState(path string) *state {
 	s := &state{path: path, Networks: map[string]map[string]*entry{}}
@@ -362,6 +383,50 @@ func (s *state) quicOnly(id string, idle time.Duration) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// directNoV6: whether this network's direct path is known to have no IPv6.
+func (s *state) directNoV6(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m := s.V6[id]
+	return m != nil && time.Now().Before(m.NoneUntil)
+}
+
+// learnV6 takes what a cycle showed of IPv6 on the direct path: misses --
+// names whose IPv6 node it did not reach, reached -- whether it reached one.
+// On a network with no IPv6 every IPv6-only name was probed hourly only to
+// fail direct again; after v6Misses of them in a row such nodes are not
+// probed for v6Hold. It returns when that holds until, if it starts now.
+//
+// A host blocked by name on a network that does have IPv6 counts as a miss
+// too -- judgeNode cannot tell the two apart. The cost is a detour: an
+// IPv6-only name stays in the tunnel for the day.
+func (s *state) learnV6(id string, misses int, reached bool) (time.Time, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.V6 == nil {
+		s.V6 = map[string]*v6Memo{}
+	}
+	m := s.V6[id]
+	if m == nil {
+		m = &v6Memo{}
+		s.V6[id] = m
+	}
+	switch {
+	case reached:
+		*m = v6Memo{}
+		return time.Time{}, false
+	case misses == 0 || time.Now().Before(m.NoneUntil):
+		return time.Time{}, false
+	}
+	m.Misses += misses
+	if m.Misses < v6Misses {
+		return time.Time{}, false
+	}
+	m.Misses = 0
+	m.NoneUntil = time.Now().Add(v6Hold)
+	return m.NoneUntil, true
 }
 
 // drop removes the verdicts of the names that match.
