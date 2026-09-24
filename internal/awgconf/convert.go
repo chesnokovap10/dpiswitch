@@ -303,7 +303,7 @@ func (c *Conf) Render() (string, error) {
 	w("    proxies:")
 	w("      - awg")
 	w("      - DIRECT")
-	w("    url: 'http://cp.cloudflare.com/generate_204'")
+	w("    url: '%s'", ctl.HealthURL)
 	w("    interval: 30")
 	// the first check runs as the core starts, when the WireGuard
 	// handshake has not finished yet: DNS inside the tunnel is lost and retried
@@ -326,7 +326,7 @@ func (c *Conf) Render() (string, error) {
 	}
 	w("      - awg")
 	w("      - DIRECT")
-	w("    url: 'http://cp.cloudflare.com/generate_204'")
+	w("    url: '%s'", ctl.HealthURL)
 	w("    interval: 30")
 	w("    timeout: 15000")
 	w("    lazy: false")

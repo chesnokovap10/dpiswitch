@@ -147,7 +147,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	// a running service and a working tunnel are different things: TUN may
 	// be up with a dead peer, and then traffic goes nowhere
 	if st.ServiceRun {
-		st.TunnelAlive, st.TunnelNote = supervisor.TunnelAlive(
+		st.TunnelAlive, st.TunnelNote = ctl.TunnelHealth(
 			"127.0.0.1:9090", ctl.SecretFromConfig(paths.Config()), "awg")
 	}
 	st.NetworkUp = supervisor.NetworkUp()

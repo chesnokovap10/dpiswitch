@@ -14,7 +14,6 @@ import (
 	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/paths"
 	"dpiswitch/internal/presets"
-	"dpiswitch/internal/supervisor"
 	"dpiswitch/internal/winsvc"
 )
 
@@ -48,7 +47,7 @@ func (s *Server) handleAwg2(w http.ResponseWriter, r *http.Request) {
 			out["loaded"] = true
 			out["endpoint"] = c.Peer["Endpoint"]
 			if st, err := winsvc.State(); err == nil && st == svc.Running {
-				alive, note := supervisor.TunnelAlive("127.0.0.1:9090",
+				alive, note := ctl.TunnelHealth("127.0.0.1:9090",
 					ctl.SecretFromConfig(paths.Config()), "awg2")
 				out["alive"], out["note"] = alive, note
 			}

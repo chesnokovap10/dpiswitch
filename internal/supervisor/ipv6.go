@@ -103,7 +103,7 @@ func (s *Supervisor) checkIPv6(ctx context.Context) {
 // during the handshake everything is silent and every verdict would be false.
 func (s *Supervisor) waitTunnel(ctx context.Context, hc *healthChecker, name string) bool {
 	for i := 0; i < 12; i++ {
-		if ok, _ := hc.check(name, "http://cp.cloudflare.com/generate_204", 5000); ok {
+		if ok, _ := hc.check(name, ctl.HealthURL, 5000); ok {
 			return true
 		}
 		if !sleepCtx(ctx, 5*time.Second) {

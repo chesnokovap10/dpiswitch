@@ -15,6 +15,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"dpiswitch/internal/ctl"
 )
 
 // --- physical network presence ---
@@ -174,7 +176,7 @@ func newHealthChecker(apiAddr, secret, proxy string) *healthChecker {
 // an honest end-to-end check: TUN being up with a dead peer looks fine from
 // the outside while traffic goes nowhere.
 func (h *healthChecker) alive() (bool, string) {
-	return h.check(h.proxy, "http://cp.cloudflare.com/generate_204", 5000)
+	return h.check(h.proxy, ctl.HealthURL, 5000)
 }
 
 // check measures one proxy against one URL through the core's own API, so the
@@ -223,12 +225,6 @@ func trim(s string) string {
 // NetworkUp: whether a physical network exists. The UI uses it to tell
 // "the tunnel is broken" from "there is no network at all".
 func NetworkUp() bool { return physicalNetwork() }
-
-// TunnelAlive: a check from outside the service -- used by the tray,
-// which has no access to the supervisor's state.
-func TunnelAlive(apiAddr, secret, proxy string) (bool, string) {
-	return newHealthChecker(apiAddr, secret, proxy).alive()
-}
 
 // foreignTunnel: whether SOMEONE ELSE's tunnel adapter is up.
 //

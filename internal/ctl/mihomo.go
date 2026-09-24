@@ -6,11 +6,14 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"dpiswitch/internal/probe"
 )
 
 type api struct {
@@ -98,6 +101,67 @@ func (a *api) established(port int) (bool, error) {
 func (a *api) reloadProvider(name string) error {
 	_, err := a.do("PUT", "/providers/rules/"+name, nil)
 	return err
+}
+
+// HealthURL: what the tunnels are checked against -- by the core's proxy
+// groups, and by the supervisor's own liveness check
+const HealthURL = "http://cp.cloudflare.com/generate_204"
+
+// healthStale: a last check older than this is no answer. The groups check
+// every 30 seconds whether anything uses them or not.
+const healthStale = 3 * time.Minute
+
+type delayHistory []struct {
+	Time  time.Time `json:"time"`
+	Delay int       `json:"delay"`
+}
+
+// tunnelHealth reads what the core's own health checks last found for a
+// proxy, without making one more: the proxy groups check their members every
+// 30 seconds. A core just started has no check yet, and counts as up.
+func (a *api) tunnelHealth(proxy string) (bool, string, error) {
+	b, err := a.do("GET", "/proxies/"+url.PathEscape(proxy), nil)
+	if err != nil {
+		return false, "", err
+	}
+	var p struct {
+		History delayHistory `json:"history"`
+		// by test URL. The plain history holds every check, the supervisor's
+		// IPv6 one too -- which fails on a tunnel with no IPv6, and would
+		// read as the tunnel being down
+		Extra map[string]struct {
+			History delayHistory `json:"history"`
+		} `json:"extra"`
+	}
+	if err := json.Unmarshal(b, &p); err != nil {
+		return false, "", err
+	}
+	h := p.History
+	if x, ok := p.Extra[HealthURL]; ok {
+		h = x.History
+	}
+	if len(h) == 0 {
+		return true, "not checked yet", nil
+	}
+	last := h[len(h)-1]
+	switch {
+	case time.Since(last.Time) > healthStale:
+		return false, "no check since " + last.Time.Format("15:04:05"), nil
+	case last.Delay <= 0:
+		return false, "no answer at " + last.Time.Format("15:04:05"), nil
+	}
+	return true, fmt.Sprintf("%d ms", last.Delay), nil
+}
+
+// TunnelHealth: tunnelHealth for the tray and the UI. They used to test the
+// tunnel themselves, the tray every ten seconds: some 8,600 requests a day
+// through it for an icon, on top of the checks the core makes anyway.
+func TunnelHealth(apiAddr, secret, proxy string) (bool, string) {
+	ok, note, err := newAPI(apiAddr, secret).tunnelHealth(proxy)
+	if err != nil {
+		return false, "core API not responding: " + probe.Truncate(err.Error(), 90)
+	}
+	return ok, note
 }
 
 // domain name of a connection. sniffHost is filled when the domain was
