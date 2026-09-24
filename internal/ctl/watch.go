@@ -61,44 +61,49 @@ func (w *watcher) loop(ctx context.Context, cfg Config, a *api) {
 			continue
 		}
 		failed = 0
-		w.mu.Lock()
-		for _, c := range conns {
-			dom := c.domain()
-			if dom != "" {
-				w.live[dom] = true
-			}
-			// a nameless connection from an application (not from the probe,
-			// which dials from loopback through its own listeners)
-			if dom == "" && c.Metadata.SourceIP != "127.0.0.1" && c.Metadata.DestinationIP != "" {
-				w.bare[c.Metadata.DestinationIP] = true
-				if addrProbeable(c, cfg.ProxyName) {
-					ip := c.Metadata.DestinationIP
-					if w.addrPorts[ip] == nil {
-						w.addrPorts[ip] = map[endpoint]bool{}
-					}
-					w.addrPorts[ip][endpoint{port: c.port()}] = true
-				}
-			}
-			// the route is pinned by a list the detector does not write: a
-			// verdict would change nothing, probing is a waste -- and a CLEAN
-			// made here would count towards a family
-			if dom != "" && c.pinned() {
-				w.pinned[dom] = true
-				continue
-			}
-			// besides tunnelled ones, take those sent direct by our list:
-			// this way hosts admitted by a family without their own verdict
-			// get checked. Already decided ones are filtered by the state
-			if dom == "" || !c.probeable() ||
-				!(c.viaTunnel(cfg.ProxyName) || c.byProvider(cfg.Provider)) {
-				continue
-			}
-			if w.seen[dom] == nil {
-				w.seen[dom] = map[endpoint]bool{}
-			}
-			w.seen[dom][endpoint{udp: c.isUDP(), port: c.port()}] = true
+		w.observe(cfg, conns)
+	}
+}
+
+// observe takes in one look at the core's connections.
+func (w *watcher) observe(cfg Config, conns []connection) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, c := range conns {
+		dom := c.domain()
+		if dom != "" {
+			w.live[dom] = true
 		}
-		w.mu.Unlock()
+		// a nameless connection from an application (not from the probe,
+		// which dials from loopback through its own listeners)
+		if dom == "" && c.Metadata.SourceIP != "127.0.0.1" && c.Metadata.DestinationIP != "" {
+			w.bare[c.Metadata.DestinationIP] = true
+			if addrProbeable(c, cfg.ProxyName) {
+				ip := c.Metadata.DestinationIP
+				if w.addrPorts[ip] == nil {
+					w.addrPorts[ip] = map[endpoint]bool{}
+				}
+				w.addrPorts[ip][endpoint{port: c.port()}] = true
+			}
+		}
+		// the route is pinned by a list the detector does not write: a
+		// verdict would change nothing, probing is a waste -- and a CLEAN
+		// made here would count towards a family
+		if dom != "" && c.pinned() {
+			w.pinned[dom] = true
+			continue
+		}
+		// besides tunnelled ones, take those sent direct by our list:
+		// this way hosts admitted by a family without their own verdict
+		// get checked. Already decided ones are filtered by the state
+		if dom == "" || !c.probeable() ||
+			!(c.viaTunnel(cfg.ProxyName) || c.byProvider(cfg.Provider)) {
+			continue
+		}
+		if w.seen[dom] == nil {
+			w.seen[dom] = map[endpoint]bool{}
+		}
+		w.seen[dom][endpoint{udp: c.isUDP(), port: c.port()}] = true
 	}
 }
 

@@ -55,6 +55,9 @@ type Config struct {
 	PinnedLists []string
 }
 
+// checkProto runs one probe; the scenario tests put a script in its place.
+var checkProto = probe.CheckProto
+
 func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	conns, err := a.connections()
 	if err != nil {
@@ -174,7 +177,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			noV6 := false // see probe.Report.DirectNoV6
 			reachedV6 := false
 			for _, ep := range eps {
-				r := probe.CheckProto(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp, was)
+				r := checkProto(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp, was)
 				appendJSONL(cfg.JSONLPath, r)
 				if r.Aborted {
 					// leave memory alone: the domain stays queued
