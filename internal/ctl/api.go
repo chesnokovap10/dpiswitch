@@ -40,7 +40,12 @@ func Defaults() Config {
 		Workers:       4,
 		PerCycle:      20,
 		Apply:         false,
-		SkipSuffix:    []string{"in-addr.arpa", "local", "lan"},
+		// cloudflare-ech.com is the outer name of every Cloudflare site a
+		// browser reaches with Encrypted Client Hello: the sniffer sees only
+		// it. The probe sends a plain ClientHello, so its verdict would be
+		// about other traffic than the one it routes -- and while it was
+		// CLEAN, every ECH connection to Cloudflare went direct.
+		SkipSuffix: []string{"in-addr.arpa", "local", "lan", "cloudflare-ech.com"},
 	}
 }
 
@@ -94,7 +99,7 @@ func Run(ctx context.Context, cfg Config) {
 		select {
 		case <-t.C:
 			if ns, ok := readSettings(cfg); ok && (!haveSet || !ns.Equal(set)) {
-				if haveSet && !ns.SameCore(set) && cfg.OnCoreChange != nil {
+				if coreChanged(ns, set, haveSet) && cfg.OnCoreChange != nil {
 					log.Printf("core settings changed (DNS: direct %v, tunnel %v; IPv6 %v) -- restarting the core",
 						ns.DirectDNS, ns.TunnelDNS, ns.IPv6)
 					cfg.OnCoreChange()
@@ -189,6 +194,17 @@ func Load(statePath string) Snapshot {
 	st.mu.Unlock()
 	sort.Slice(s.Others, func(i, j int) bool { return s.Others[i].Domain < s.Others[j].Domain })
 	return s
+}
+
+// coreChanged: whether new settings need a core restart. The core runs on
+// what its config was built from -- while there was no settings file, the
+// defaults. The first save used to restart nothing, and the core kept the
+// default resolvers while the prober asked the new ones: other CDN nodes.
+func coreChanged(ns, set Settings, haveSet bool) bool {
+	if !haveSet {
+		set = DefaultSettings()
+	}
+	return !ns.SameCore(set)
 }
 
 func readSettings(cfg Config) (Settings, bool) {

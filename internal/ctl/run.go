@@ -78,6 +78,17 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	if n := st.forget(netID, 10*cfg.Idle); n > 0 {
 		log.Printf("forgot %d names nothing has gone to in %s", n, 10*cfg.Idle)
 	}
+	// Names a verdict must not exist for: skipped ones, and ones the user's
+	// own lists route (force-tunnel, presets). Filtering new candidates was
+	// not enough -- a verdict made before stayed, was re-checked while the
+	// name was in use, and a pinned host's CLEAN made its siblings a family.
+	pinned := map[string]bool{}
+	for _, d := range w.drainPinned() {
+		pinned[d] = true
+	}
+	if n := st.drop(netID, func(dom string) bool { return pinned[dom] || skipped(cfg, dom) }); n > 0 {
+		log.Printf("dropped %d verdicts for names that are skipped or pinned by a list", n)
+	}
 
 	// order matters: suspicious first, then expired,
 	// and only then new candidates -- rolling back is more urgent than expanding
@@ -86,6 +97,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 		st.expired(netID, cfg.Idle),
 		pickCandidates(cfg, st, netID, ports),
 	))
+	queue = slices.DeleteFunc(queue, func(dom string) bool { return pinned[dom] || skipped(cfg, dom) })
 	if len(queue) == 0 {
 		// verdicts expire with no probe running: the list follows anyway
 		if cfg.Apply {
@@ -232,7 +244,9 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 						"through the tunnel until the next check in %s", dom, rep.Reason, cfg.FailTTL)
 				} else if prev.Verdict == probe.Clean && rep.Verdict != probe.Clean {
 					e.Reverts++
-					backoff := time.Duration(e.Reverts) * cfg.TTL
+					// from the blocked re-check up: the direct term (a week)
+					// hit the cap on the very first revert, so it never grew
+					backoff := time.Duration(e.Reverts) * cfg.FailTTL
 					if backoff > cfg.MaxBackoff {
 						backoff = cfg.MaxBackoff
 					}

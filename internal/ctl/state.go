@@ -257,6 +257,20 @@ func (s *state) forget(id string, idle time.Duration) int {
 	return n
 }
 
+// drop removes the verdicts of the names that match.
+func (s *state) drop(id string, match func(dom string) bool) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for dom := range s.Networks[id] {
+		if match(dom) {
+			delete(s.Networks[id], dom)
+			n++
+		}
+	}
+	return n
+}
+
 // lastSeen falls back to the decision time for entries written before the
 // field existed, so an old one is not mistaken for freshly used.
 func (e *entry) lastSeen() time.Time {

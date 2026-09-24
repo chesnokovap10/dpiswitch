@@ -95,3 +95,30 @@ func TestTouchIPs(t *testing.T) {
 		t.Fatalf("after: got %v, want [kirov.qms.ru]", got)
 	}
 }
+
+// Names the user's lists route themselves, and skipped ones, keep no
+// verdict: a pinned host's CLEAN made its siblings a family.
+func TestDropPinnedAndSkipped(t *testing.T) {
+	live := time.Now().Add(time.Hour)
+	st := &state{Networks: map[string]map[string]*entry{"n": {
+		"cloudflare-ech.com": {Verdict: probe.Clean, ExpiresAt: live},
+		"a.ex.com":           {Verdict: probe.Clean, ExpiresAt: live},
+		"b.ex.com":           {Verdict: probe.Clean, ExpiresAt: live},
+		"c.ex.com":           {Verdict: probe.Clean, ExpiresAt: live},
+	}}}
+	cfg := Defaults()
+	pinned := map[string]bool{"c.ex.com": true}
+	if n := st.drop("n", func(d string) bool { return pinned[d] || skipped(cfg, d) }); n != 2 {
+		t.Fatalf("dropped %d, want 2", n)
+	}
+	if len(st.families("n")) != 0 {
+		t.Error("two CLEAN left after the pinned one went: no family")
+	}
+
+	force := connection{Rule: "RuleSet", RulePayload: "force-tunnel"}
+	preset := connection{Rule: "RuleSet", RulePayload: "preset-youtube"}
+	ours := connection{Rule: "RuleSet", RulePayload: "direct-verified"}
+	if !force.pinned() || !preset.pinned() || ours.pinned() {
+		t.Error("pinned: force-tunnel and presets yes, the detector's own list no")
+	}
+}

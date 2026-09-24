@@ -26,6 +26,8 @@ type watcher struct {
 	bare map[string]bool
 	// every name seen, whatever route it took -- see state.touch
 	live map[string]bool
+	// names routed by a list the detector does not write -- see pinned()
+	pinned map[string]bool
 	// nameless TCP connections that went to the tunnel, by address, and in
 	// how many cycles each was seen -- see addrCandidates
 	addrPorts  map[string]map[endpoint]bool
@@ -34,7 +36,8 @@ type watcher struct {
 
 func newWatcher(ctx context.Context, cfg Config, a *api) *watcher {
 	w := &watcher{seen: map[string]map[endpoint]bool{}, bare: map[string]bool{},
-		live: map[string]bool{}, addrPorts: map[string]map[endpoint]bool{}, addrCycles: map[string]int{}}
+		live: map[string]bool{}, pinned: map[string]bool{},
+		addrPorts: map[string]map[endpoint]bool{}, addrCycles: map[string]int{}}
 	go w.loop(ctx, cfg, a)
 	return w
 }
@@ -76,18 +79,18 @@ func (w *watcher) loop(ctx context.Context, cfg Config, a *api) {
 					w.addrPorts[ip][endpoint{port: c.port()}] = true
 				}
 			}
+			// the route is pinned by a list the detector does not write: a
+			// verdict would change nothing, probing is a waste -- and a CLEAN
+			// made here would count towards a family
+			if dom != "" && c.pinned() {
+				w.pinned[dom] = true
+				continue
+			}
 			// besides tunnelled ones, take those sent direct by our list:
 			// this way hosts admitted by a family without their own verdict
 			// get checked. Already decided ones are filtered by the state
 			if dom == "" || !c.probeable() ||
 				!(c.viaTunnel(cfg.ProxyName) || c.byProvider(cfg.Provider)) {
-				continue
-			}
-			// the route is pinned to the second tunnel (preset or custom list):
-			// a verdict would change nothing, probing is a waste. Without awg2
-			// such connections go through awg and would otherwise land here
-			if c.Rule == "RuleSet" && (strings.HasPrefix(c.RulePayload, "preset-") ||
-				c.RulePayload == "awg2-hosts") {
 				continue
 			}
 			if w.seen[dom] == nil {
@@ -179,6 +182,15 @@ func (w *watcher) drainLive() []string {
 	defer w.mu.Unlock()
 	out := keys(w.live)
 	w.live = map[string]bool{}
+	return out
+}
+
+// drainPinned: the pinned names accumulated since the last call.
+func (w *watcher) drainPinned() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	out := keys(w.pinned)
+	w.pinned = map[string]bool{}
 	return out
 }
 

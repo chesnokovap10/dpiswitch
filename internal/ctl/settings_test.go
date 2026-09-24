@@ -45,3 +45,28 @@ func TestSettingsRoundTrip(t *testing.T) {
 		t.Fatalf("clamp did not work: %+v", s)
 	}
 }
+
+// The core is built from the defaults while there is no settings file: the
+// first save with other resolvers or IPv6 needs a restart, one with only
+// controller values does not.
+func TestCoreChanged(t *testing.T) {
+	d := DefaultSettings()
+	ttl := d
+	ttl.CleanTTLMin = 60
+	if coreChanged(ttl, Settings{}, false) {
+		t.Error("first save of controller values only: no restart needed")
+	}
+	dns := d
+	dns.DirectDNS = []string{"tls://1.1.1.1"}
+	if !coreChanged(dns, Settings{}, false) {
+		t.Error("first save with other resolvers must restart the core")
+	}
+	if coreChanged(dns, dns, true) {
+		t.Error("nothing changed since the last read")
+	}
+	noV6 := dns
+	noV6.IPv6 = false
+	if !coreChanged(noV6, dns, true) {
+		t.Error("IPv6 switched off must restart the core")
+	}
+}

@@ -155,6 +155,15 @@ func (c connection) byProvider(name string) bool {
 	return c.Rule == "RuleSet" && c.RulePayload == name
 }
 
+// pinned: the connection was routed by a list the detector does not write --
+// a second-tunnel preset, the custom awg2 list, or the user's force-tunnel.
+// Those rules stand above the detector's, so its verdict changes nothing.
+// (force-direct connections go direct and never reach the watcher's filter.)
+func (c connection) pinned() bool {
+	return c.Rule == "RuleSet" && (strings.HasPrefix(c.RulePayload, "preset-") ||
+		c.RulePayload == "awg2-hosts" || c.RulePayload == "force-tunnel")
+}
+
 func (c connection) viaDirect() bool {
 	for _, ch := range c.Chains {
 		if ch == "DIRECT" {
