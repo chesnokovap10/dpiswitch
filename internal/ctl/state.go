@@ -217,6 +217,48 @@ func (s *state) verifiedAddrs(id string) []string {
 	return out
 }
 
+// onNode: the CLEAN verdicts an address rule for this node and TCP port
+// comes from -- a bare address's own, and those of names probed there.
+func (s *state) onNode(id, ip string, port int) []string {
+	node := net.ParseIP(ip)
+	if node == nil {
+		return nil
+	}
+	want := endpoint{port: port}.String()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	for dom, e := range s.Networks[id] {
+		if e.Verdict != probe.Clean || !node.Equal(net.ParseIP(e.TestedIP)) {
+			continue
+		}
+		for _, x := range e.Endpoints {
+			if x == want {
+				out = append(out, dom)
+				break
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// cleanAddrs: bare addresses whose own CLEAN verdict holds -- they go direct
+// by the address rules, the name list never shows them.
+func (s *state) cleanAddrs(id string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	now := time.Now()
+	for dom, e := range s.Networks[id] {
+		if _, bare := probe.AddrKey(dom); bare && e.Verdict == probe.Clean && now.Before(e.ExpiresAt) {
+			out = append(out, dom)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // addrRule: TCP to these ports of this node, from a connection with no name.
 func addrRule(ip net.IP, ports map[int]bool) string {
 	list := make([]int, 0, len(ports))

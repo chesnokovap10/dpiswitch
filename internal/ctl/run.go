@@ -344,8 +344,20 @@ func suspectDirect(cfg Config, st *state, netID string, conns []connection) []st
 		}
 	}
 	for _, c := range conns {
+		if !c.viaDirect() || c.Download > 0 {
+			continue
+		}
+		if ts, err := time.Parse(time.RFC3339, c.Start); err != nil || time.Since(ts) <= 10*time.Second {
+			continue
+		}
 		dom := c.domain()
-		if dom == "" || !c.viaDirect() || c.Download > 0 {
+		if dom == "" {
+			// a nameless connection the address rules sent direct: the
+			// verdicts behind that node and port. They used to wait out
+			// their whole term, however dead the direct path went
+			if c.byProvider(cfg.AddrProvider) {
+				out = append(out, st.onNode(netID, c.Metadata.DestinationIP, c.port())...)
+			}
 			continue
 		}
 		e, had := st.get(netID, dom)
@@ -361,9 +373,7 @@ func suspectDirect(cfg Config, st *state, netID string, conns []connection) []st
 		default:
 			continue
 		}
-		if ts, err := time.Parse(time.RFC3339, c.Start); err == nil && time.Since(ts) > 10*time.Second {
-			out = append(out, dom)
-		}
+		out = append(out, dom)
 	}
 	return dedupe(out)
 }

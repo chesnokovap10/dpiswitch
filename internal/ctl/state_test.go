@@ -157,3 +157,33 @@ func TestQuicOnly(t *testing.T) {
 		t.Fatalf("got %v, want [quic.example]", got)
 	}
 }
+
+// A nameless connection the address rules sent direct, open with nothing
+// back: the verdicts behind that node and port are re-checked at once.
+func TestSuspectAddress(t *testing.T) {
+	live := time.Now().Add(time.Hour)
+	st := &state{Networks: map[string]map[string]*entry{"n": {
+		"@192.0.2.4":   {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "192.0.2.4", Endpoints: []string{"tcp/20000"}},
+		"a.qms.ru":     {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "192.0.2.4", Endpoints: []string{"tcp/20000", "tcp/443"}},
+		"b.qms.ru":     {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "192.0.2.4", Endpoints: []string{"tcp/8080"}},
+		"other.qms.ru": {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "192.0.2.9", Endpoints: []string{"tcp/20000"}},
+	}}}
+	conn := func(port string, down int64, age time.Duration) connection {
+		c := connection{Chains: []string{"DIRECT"}, Rule: "RuleSet", RulePayload: "direct-verified-addr",
+			Download: down, Start: time.Now().Add(-age).Format(time.RFC3339Nano)}
+		c.Metadata.DestinationIP, c.Metadata.DestinationPort, c.Metadata.Network = "192.0.2.4", port, "tcp"
+		return c
+	}
+	cfg := Config{AddrProvider: "direct-verified-addr"}
+	got := suspectDirect(cfg, st, "n", []connection{conn("20000", 0, time.Minute)})
+	if want := []string{"@192.0.2.4", "a.qms.ru"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	// data came back, or it has only just opened: nothing suspicious
+	if got := suspectDirect(cfg, st, "n", []connection{conn("20000", 10, time.Minute), conn("20000", 0, time.Second)}); len(got) != 0 {
+		t.Fatalf("got %v, want nothing", got)
+	}
+	if got := st.cleanAddrs("n"); len(got) != 1 || got[0] != "@192.0.2.4" {
+		t.Fatalf("clean addresses for the UI: %v", got)
+	}
+}

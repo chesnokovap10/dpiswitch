@@ -430,6 +430,8 @@ const VCAT = {
 const VNAME = {BLOCKED_TCP: 'connection reset', BLOCKED_TLS: 'TLS cut (by site name)',
   BLOCKED_QUIC: 'QUIC blocked', MITM: 'certificate spoofed', CONTENT_DIFF: 'response tampered',
   SLOWER: 'slower than tunnel', INCONCLUSIVE: 'unverified'};
+// a bare address keeps its verdict under "@address": show it as what it is
+const dname = s => s.startsWith('@') ? s.slice(1) + ' (address, no name)' : s;
 let verdictsOpen = null;
 let lastVerdicts = null;
 
@@ -456,13 +458,13 @@ async function loadVerdicts(){
     head = '<th>domain</th><th>decided</th><th>re-check in</th><th>node</th>';
     rows = list.map(d => d.fam
       ? `<tr><td><b>${esc(d.domain)}</b></td><td colspan="3" class="muted">whole domain: ${d.fam} clean subdomains, none blocked</td></tr>`
-      : `<tr><td>${esc(d.domain)}</td><td>${fmtTime(d.decided_at)}</td>
+      : `<tr><td>${esc(dname(d.domain))}</td><td>${fmtTime(d.decided_at)}</td>
         <td>${fmtLeft(d.expires_at)}</td><td class="muted">${esc(d.tested_ip||'')}</td></tr>`);
   } else {
     const list = (r.others || []).filter(o => VCAT[verdictsOpen].match(o.verdict));
     note = list.length + ' domains — going through the tunnel';
     head = '<th>domain</th><th>reason</th><th>decided</th><th>re-check in</th>';
-    rows = list.map(d => `<tr><td>${esc(d.domain)}</td>
+    rows = list.map(d => `<tr><td>${esc(dname(d.domain))}</td>
       <td><span class="pill ${verdictsOpen==='blocked'?'bad':verdictsOpen==='slow'?'warn':''}">${esc(VNAME[d.verdict]||d.verdict)}</span>
         <div class="muted" style="font-size:12px">${esc(d.reason||'')}</div></td>
       <td>${fmtTime(d.decided_at)}</td><td>${fmtLeft(d.expires_at)}</td></tr>`);

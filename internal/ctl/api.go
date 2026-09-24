@@ -188,7 +188,9 @@ func Load(statePath string) Snapshot {
 		s.Counts[string(e.Verdict)]++
 	}
 	st.mu.Unlock()
-	s.Direct = st.verified(id)
+	// names, and bare addresses with a CLEAN of their own: both go direct,
+	// and the counts already held the addresses the list left out
+	s.Direct = append(st.verified(id), st.cleanAddrs(id)...)
 	if LoadSettings(paths.Settings()).Families {
 		s.Families = st.families(id)
 	}
