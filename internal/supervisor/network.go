@@ -34,6 +34,13 @@ func mustCIDR(s string) *net.IPNet {
 // physicalNetwork: whether there is at least one working interface besides
 // our TUN. After a reboot Wi-Fi comes up later than the service, and starting
 // the core into the void is pointless -- it would only burn retries.
+//
+// IPv4 only, on purpose: the question is whether the tunnels can come up,
+// and their servers are reached over IPv4. On a network with IPv6 alone
+// they cannot, and "no network, waiting" is the right answer there --
+// counting a global IPv6 address instead would restart the core every
+// minute and a half for a tunnel that has no way through. Should a .conf
+// give an IPv6 endpoint, this is the place to follow the endpoints' family.
 func physicalNetwork() bool {
 	ifaces, err := net.Interfaces()
 	if err != nil {

@@ -32,7 +32,16 @@ type Supervisor struct {
 	recheck chan struct{} // request to check the tunnel right away
 	job     windows.Handle
 	v6busy  atomic.Bool // an IPv6 check is already running for this start
+	// stopMu: one stop of the core at a time. A restart is asked for by the
+	// health check and by the controller (DNS or IPv6 settings changed), and
+	// the service's own stop may come on top: each used to shut the same
+	// process down at once -- TUN disabled twice, kill racing kill, and at
+	// worst a fresh core killed by a request meant for the one before it.
+	stopMu sync.Mutex
 }
+
+// apiAddr: the core's external controller, as awgconf writes it
+const apiAddr = "127.0.0.1:9090"
 
 func New() *Supervisor { return &Supervisor{recheck: make(chan struct{}, 1)} }
 
@@ -82,7 +91,7 @@ func (s *Supervisor) Run(ctx context.Context, apply bool) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if !s.waitAPI(ctx, 90*time.Second) {
+		if !s.waitAPI(ctx, apiAddr, 90*time.Second) {
 			log.Println("core did not come up in time, controller not started")
 			return
 		}
@@ -223,7 +232,9 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 	case <-ctx.Done():
 		// a clean shutdown is mandatory: a killed core leaves
 		// the system with TUN up and broken routes
+		s.stopMu.Lock()
 		s.stopCore(cmd, done)
+		s.stopMu.Unlock()
 		return nil
 	}
 }
@@ -242,7 +253,12 @@ func (s *Supervisor) stopCore(cmd *exec.Cmd, done <-chan struct{}) {
 	if cmd.Process == nil {
 		return
 	}
-	if err := disableTUN(); err != nil {
+	select {
+	case <-done:
+		return // already gone: a stop before this one got there
+	default:
+	}
+	if err := tunOff(); err != nil {
 		log.Printf("TUN not disabled via the API (%v) -- routes may need manual cleanup", err)
 	} else {
 		// the core needs time to remove the adapter and restore routes
@@ -257,10 +273,14 @@ func (s *Supervisor) stopCore(cmd *exec.Cmd, done <-chan struct{}) {
 	}
 }
 
+// tunOff: disableTUN; tests put a counter in its place -- the real one would
+// switch off the TUN of whatever core runs on this machine
+var tunOff = disableTUN
+
 // disableTUN asks the core to remove the tunnel adapter and restore routes
 func disableTUN() error {
 	body := strings.NewReader(`{"tun":{"enable":false}}`)
-	req, err := http.NewRequest(http.MethodPatch, "http://127.0.0.1:9090/configs", body)
+	req, err := http.NewRequest(http.MethodPatch, "http://"+apiAddr+"/configs", body)
 	if err != nil {
 		return err
 	}
@@ -279,20 +299,42 @@ func disableTUN() error {
 	return nil
 }
 
-func (s *Supervisor) waitAPI(ctx context.Context, limit time.Duration) bool {
+// waitAPI waits for the core's API to answer, not just for the process to
+// run. It used to give the process two seconds and call that ready; a core
+// slow to come up then met a controller whose first moves need it -- and on
+// a network whose ISP was not yet known, the controller fell back to an
+// empty memory by gateway and wrote the direct list empty until the ISP
+// was found.
+func (s *Supervisor) waitAPI(ctx context.Context, addr string, limit time.Duration) bool {
+	secret := ctl.SecretFromConfig(paths.Config())
 	deadline := time.Now().Add(limit)
 	for time.Now().Before(deadline) {
 		if ctx.Err() != nil {
 			return false
 		}
-		if s.running.Load() {
-			// the core needs time to open its listeners after the process starts
-			time.Sleep(2 * time.Second)
+		if s.running.Load() && apiReady(addr, secret) {
 			return true
 		}
-		time.Sleep(time.Second)
+		sleepCtx(ctx, time.Second)
 	}
 	return false
+}
+
+// apiReady: whether the core's API answers, and takes our secret.
+func apiReady(addr, secret string) bool {
+	req, err := http.NewRequest(http.MethodGet, "http://"+addr+"/version", nil)
+	if err != nil {
+		return false
+	}
+	if secret != "" {
+		req.Header.Set("Authorization", "Bearer "+secret)
+	}
+	resp, err := (&http.Client{Timeout: 2 * time.Second}).Do(req)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
 }
 
 var _ = io.Discard
@@ -369,7 +411,7 @@ func (s *Supervisor) keepHealthy(ctx context.Context) {
 		// requests a day through the tunnel. Each check counts once: a
 		// result read again says nothing new. One the core stopped renewing
 		// is a failure every time -- the core itself may be stuck.
-		c, err := ctl.LastTunnelCheck("127.0.0.1:9090", secret, "awg")
+		c, err := ctl.LastTunnelCheck(apiAddr, secret, "awg")
 		news, ok, detail := readCheck(c, err, seen)
 		if !news {
 			if !s.waitRecheck(ctx, period) {
@@ -444,8 +486,15 @@ func (s *Supervisor) waitRecheck(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-// restartCore stops the core; keepCore brings it back up by itself
+// restartCore stops the core; keepCore brings it back up by itself.
+// A restart already under way covers this one: the core it brings up is
+// started after the stop, from a config built afresh -- new settings in it.
 func (s *Supervisor) restartCore() {
+	if !s.stopMu.TryLock() {
+		log.Println("core restart already under way")
+		return
+	}
+	defer s.stopMu.Unlock()
 	s.mu.Lock()
 	cmd, done := s.cmd, s.done
 	s.mu.Unlock()
