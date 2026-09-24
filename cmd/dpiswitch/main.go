@@ -17,6 +17,7 @@ import (
 
 	"dpiswitch/internal/autostart"
 	"dpiswitch/internal/ctl"
+	"dpiswitch/internal/logfile"
 	"dpiswitch/internal/paths"
 	"dpiswitch/internal/session"
 	"dpiswitch/internal/supervisor"
@@ -58,8 +59,16 @@ func main() {
 	}
 }
 
+// logMax: the service and tray logs are rotated at start, the previous one
+// kept in .1. Not while running: the service log's handle is also the crash
+// output and stderr, which must stay valid for the life of the process --
+// and at ~100 KB a day, the restarts every update and reboot brings are
+// often enough.
+const logMax = 4 << 20
+
 func runService() {
 	_ = paths.EnsureDataDir()
+	_ = logfile.RotateIfOver(paths.ServiceLog(), logMax)
 	if f, err := os.OpenFile(paths.ServiceLog(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
 		log.SetOutput(f)
 		// A panic goes to stderr, and a service has nobody reading it: the
@@ -97,6 +106,8 @@ func runTray() {
 	// earlier, and exiting through it left no trace in the log --
 	// exactly the path that needed to be seen
 	_ = paths.EnsureDataDir()
+	// a second copy may hold the file open; then it is simply not renamed
+	_ = logfile.RotateIfOver(paths.ControllerLog(), logMax)
 	if f, err := os.OpenFile(paths.ControllerLog(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
 		log.SetOutput(f)
 	}

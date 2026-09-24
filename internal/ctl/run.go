@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"dpiswitch/internal/logfile"
 	"dpiswitch/internal/probe"
 )
 
@@ -513,17 +514,32 @@ func dedupe(in []string) []string {
 	return out
 }
 
+// reportsMax: the probe journal is kept to this size, the one before it in
+// .1 -- a week or two of reports. It grew by a megabyte a day with no bound.
+var reportsMax int64 = 8 << 20
+
+// reportsMu: the workers append concurrently, and a rotation must not rename
+// the file from under another's append
+var reportsMu sync.Mutex
+
 func appendJSONL(path string, rep probe.Report) {
 	if path == "" {
 		return
 	}
+	b, err := json.Marshal(rep)
+	if err != nil {
+		return
+	}
+	reportsMu.Lock()
+	defer reportsMu.Unlock()
+	// before opening: Windows will not rename an open file
+	_ = logfile.RotateIfOver(path, reportsMax)
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return
 	}
 	defer f.Close()
-	b, _ := json.Marshal(rep)
-	fmt.Fprintln(f, string(b))
+	_, _ = f.Write(append(b, '\n'))
 }
 
 func preview(d []string) string {

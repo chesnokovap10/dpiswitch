@@ -1,8 +1,10 @@
 package ctl
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -61,5 +63,32 @@ func TestWithTCP(t *testing.T) {
 	both := []endpoint{{port: 443}, {udp: true, port: 443}}
 	if got := withTCP(both); !reflect.DeepEqual(got, both) {
 		t.Fatalf("got %v, want %v", got, both)
+	}
+}
+
+// The probe journal is bounded: past its limit it moves to .1 and starts
+// over, and every line stays whole JSON.
+func TestReportsRotate(t *testing.T) {
+	old := reportsMax
+	reportsMax = 1000
+	defer func() { reportsMax = old }()
+	p := filepath.Join(t.TempDir(), "reports.jsonl")
+	line, _ := json.Marshal(probe.Report{Domain: "a.example", Verdict: probe.Clean})
+	for i := 0; i < 10; i++ {
+		appendJSONL(p, probe.Report{Domain: "a.example", Verdict: probe.Clean})
+	}
+	cur, _ := os.ReadFile(p)
+	prev, err := os.ReadFile(p + ".1")
+	if err != nil {
+		t.Fatalf("no .1 after going past the limit: %v", err)
+	}
+	// checked before each append, so a file may pass the limit by one line
+	if max := reportsMax + int64(len(line)) + 1; int64(len(cur)) > max || int64(len(prev)) > max {
+		t.Fatalf("current %d bytes, previous %d, limit %d", len(cur), len(prev), max)
+	}
+	for _, l := range strings.Split(strings.TrimSpace(string(cur)+string(prev)), "\n") {
+		if !json.Valid([]byte(l)) {
+			t.Fatalf("a broken line: %q", l)
+		}
 	}
 }
