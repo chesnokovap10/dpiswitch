@@ -5,9 +5,11 @@ package webui
 
 import (
 	"bufio"
+	"bytes"
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -153,7 +155,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	st.NetworkUp = supervisor.NetworkUp()
 
-	snap := ctl.Load(paths.State())
+	snap := ctl.LoadCached(paths.State())
 	st.NetworkID = snap.NetworkID
 	st.Counts = snap.Counts
 	st.DirectCount = len(snap.Direct)
@@ -433,7 +435,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleVerdicts(w http.ResponseWriter, r *http.Request) {
-	snap := ctl.Load(paths.State())
+	snap := ctl.LoadCached(paths.State())
 	writeJSON(w, snap)
 }
 
@@ -541,22 +543,43 @@ func (s *Server) handleLog(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(b))
 }
 
+// tailWindow: how much of a log's end tail reads. The log tab refreshes
+// every five seconds, and reading all of mihomo.log for 400 lines took
+// 4.4 ms and 8.7 MB each time; 400 lines are some 80 KB.
+const tailWindow = 256 << 10
+
+// tail: the last lines of a log, read from its end only.
 func tail(path string, lines int) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
 	defer f.Close()
-	var buf []string
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1<<20), 1<<20)
-	for sc.Scan() {
-		buf = append(buf, sc.Text())
-		if len(buf) > lines {
-			buf = buf[1:]
+	fi, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	off := max(fi.Size()-tailWindow, 0)
+	b := make([]byte, fi.Size()-off)
+	n, err := f.ReadAt(b, off)
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+	b = b[:n]
+	if off > 0 {
+		// the window starts mid-line
+		if i := bytes.IndexByte(b, '\n'); i >= 0 {
+			b = b[i+1:]
 		}
 	}
-	return strings.Join(buf, "\n"), nil
+	ls := strings.Split(strings.TrimRight(string(b), "\r\n"), "\n")
+	if len(ls) > lines {
+		ls = ls[len(ls)-lines:]
+	}
+	for i, l := range ls {
+		ls[i] = strings.TrimSuffix(l, "\r")
+	}
+	return strings.Join(ls, "\n"), nil
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

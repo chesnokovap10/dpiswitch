@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -250,5 +251,36 @@ func TestLastCheck(t *testing.T) {
 	c, err := LastTunnelCheck(strings.TrimPrefix(srv.URL, "http://"), "", "awg")
 	if err != nil || !c.At.Equal(at) || !c.Stale || c.OK {
 		t.Fatalf("%+v %v", c, err)
+	}
+}
+
+// Polling readers share one parse of the state until the file changes, or
+// a minute passes.
+func TestLoadCached(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "state.json")
+	st := &state{path: p, Current: "n", Networks: map[string]map[string]*entry{"n": {
+		"a.example": {Verdict: probe.Clean, ExpiresAt: time.Now().Add(time.Hour)}}}}
+	if err := st.save(); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(LoadCached(p).Direct); got != 1 {
+		t.Fatalf("first load: %d direct", got)
+	}
+	snapCache.Lock()
+	snapCache.snap.NetworkID = "cached"
+	snapCache.Unlock()
+	if LoadCached(p).NetworkID != "cached" {
+		t.Fatal("an unchanged file was parsed again")
+	}
+	st.Networks["n"]["b.example"] = &entry{Verdict: probe.Clean, ExpiresAt: time.Now().Add(time.Hour)}
+	st.save()
+	if got := LoadCached(p); got.NetworkID == "cached" || len(got.Direct) != 2 {
+		t.Fatalf("a changed file was not read again: %s, %d direct", got.NetworkID, len(got.Direct))
+	}
+	snapCache.Lock()
+	snapCache.snap.NetworkID, snapCache.at = "cached", time.Now().Add(-2*time.Minute)
+	snapCache.Unlock()
+	if LoadCached(p).NetworkID == "cached" {
+		t.Fatal("a snapshot older than a minute was kept")
 	}
 }

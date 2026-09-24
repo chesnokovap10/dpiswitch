@@ -7,6 +7,7 @@ import (
 	"context"
 	"dpiswitch/internal/probe"
 	"log"
+	"sync"
 	"time"
 
 	"dpiswitch/internal/paths"
@@ -234,6 +235,38 @@ func Load(statePath string) Snapshot {
 	st.mu.Unlock()
 	sort.Slice(s.Others, func(i, j int) bool { return s.Others[i].Domain < s.Others[j].Domain })
 	return s
+}
+
+// snapCache: see LoadCached
+var snapCache struct {
+	sync.Mutex
+	path string
+	mod  time.Time
+	size int64
+	at   time.Time
+	snap Snapshot
+}
+
+// LoadCached: Load for the readers that poll the same file -- the tray every
+// ten seconds, the UI every five and twice over. The state is a few hundred
+// KB and took 2.2 ms to parse each time. It is parsed again when the file
+// changes, or after a minute: the direct count follows the clock too, as
+// verdicts expire. The snapshot is shared: callers must not change it.
+func LoadCached(path string) Snapshot {
+	fi, err := os.Stat(path)
+	c := &snapCache
+	c.Lock()
+	defer c.Unlock()
+	if err == nil && c.path == path && fi.ModTime().Equal(c.mod) && fi.Size() == c.size &&
+		time.Since(c.at) < time.Minute {
+		return c.snap
+	}
+	c.snap, c.at, c.path = Load(path), time.Now(), path
+	c.mod, c.size = time.Time{}, 0
+	if err == nil {
+		c.mod, c.size = fi.ModTime(), fi.Size()
+	}
+	return c.snap
 }
 
 // coreChanged: whether new settings need a core restart. The core runs on

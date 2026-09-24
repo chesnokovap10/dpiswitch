@@ -10,7 +10,6 @@ import (
 	"runtime/debug"
 	"strings"
 	"syscall"
-	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -223,33 +222,9 @@ func status() (tray.State, string) {
 		}
 		return tray.StateError, "DPI Switch — tunnel not responding: " + note
 	}
-	snap := snapshot()
+	snap := ctl.LoadCached(paths.State())
 	return tray.StateOn, fmt.Sprintf("DPI Switch — tunnel up (%s)\n"+
 		"direct: %d, blocked: %d", note, len(snap.Direct), snap.Blocked())
-}
-
-// stateCache: the verdict summary the icon's tooltip shows. The state file
-// is a few hundred KB and was parsed every ten seconds; it is read again
-// when it changes, or once a minute -- the direct count depends on the clock
-// too, as verdicts expire. Only watchStatus uses it.
-var stateCache struct {
-	mod  time.Time
-	size int64
-	at   time.Time
-	snap ctl.Snapshot
-}
-
-func snapshot() ctl.Snapshot {
-	fi, err := os.Stat(paths.State())
-	c := &stateCache
-	if err == nil && fi.ModTime().Equal(c.mod) && fi.Size() == c.size && time.Since(c.at) < time.Minute {
-		return c.snap
-	}
-	c.snap, c.at = ctl.Load(paths.State()), time.Now()
-	if err == nil {
-		c.mod, c.size = fi.ModTime(), fi.Size()
-	}
-	return c.snap
 }
 
 // panic reset: clear verdicts, all traffic returns to the tunnel.
