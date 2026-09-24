@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -112,13 +114,32 @@ func (r Resolver) lookup(d Dialer, name string, qtype uint16) ([]string, error) 
 	return parseAnswer(resp, id, qtype)
 }
 
+// resolverRoots: the certificates a resolver's chain is verified against;
+// nil is the system's. Tests put their own server's here.
+var resolverRoots *x509.CertPool
+
 func (r Resolver) tlsConf() *tls.Config {
 	// for an address literal the certificate is verified by IP (Yandex and Google
 	// list their IPs in the certificate), for a name -- by name
-	return &tls.Config{ServerName: r.Host, NextProtos: []string{"h2", "http/1.1"}}
+	return &tls.Config{ServerName: r.Host, NextProtos: []string{"h2", "http/1.1"}, RootCAs: resolverRoots}
 }
 
-func (r Resolver) doh(d Dialer, q []byte) ([]byte, error) {
+// dohClients: one HTTP client per resolver and path, kept between queries.
+// Every query used to open a TCP and TLS connection of its own -- one per
+// probed port, some 350 in three hours to a single DoH server -- and
+// "direct DNS did not answer: tls: EOF" came from those handshakes. Over
+// HTTP/2 the queries of a cycle now share one connection, closed after
+// dohIdle unused.
+var dohClients sync.Map // "listener|timeout|host:port" -> *http.Client
+
+const dohIdle = 90 * time.Second
+
+func (r Resolver) dohClient(d Dialer) *http.Client {
+	server := net.JoinHostPort(r.Host, strconv.Itoa(r.Port))
+	key := d.Addr + "|" + d.Timeout.String() + "|" + server
+	if c, ok := dohClients.Load(key); ok {
+		return c.(*http.Client)
+	}
 	tr := &http.Transport{
 		DialTLSContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			c, err := d.dial(r.Host, r.Port)
@@ -136,18 +157,31 @@ func (r Resolver) doh(d Dialer, q []byte) ([]byte, error) {
 		},
 		// some servers (Yandex) only answer over HTTP/2
 		ForceAttemptHTTP2: true,
+		IdleConnTimeout:   dohIdle,
+		// a kept connection can die without a word -- the network changed
+		// under it -- and queries sent into it would wait out their timeout.
+		// A quiet connection is pinged, and dropped if the ping goes unanswered
+		HTTP2: &http.HTTP2Config{SendPingTimeout: 15 * time.Second, PingTimeout: 5 * time.Second},
 	}
-	defer tr.CloseIdleConnections()
-	cl := &http.Client{Transport: tr, Timeout: d.Timeout}
+	c, _ := dohClients.LoadOrStore(key, &http.Client{Transport: tr})
+	return c.(*http.Client)
+}
 
+func (r Resolver) doh(d Dialer, q []byte) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), d.Timeout)
+	defer cancel()
 	u := fmt.Sprintf("https://%s%s", net.JoinHostPort(r.Host, strconv.Itoa(r.Port)), r.Path)
-	req, err := http.NewRequest("POST", u, bytes.NewReader(q))
+	req, err := http.NewRequestWithContext(ctx, "POST", u, bytes.NewReader(q))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/dns-message")
 	req.Header.Set("Accept", "application/dns-message")
-	resp, err := cl.Do(req)
+	// a query is safe to send twice: marked so (the empty key is not sent),
+	// the transport may retry it on a new connection when the kept one
+	// breaks under it -- a core restart cuts every connection it carries
+	req.Header["Idempotency-Key"] = nil
+	resp, err := r.dohClient(d).Do(req)
 	if err != nil {
 		return nil, err
 	}

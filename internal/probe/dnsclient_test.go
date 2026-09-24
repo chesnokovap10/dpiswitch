@@ -1,6 +1,18 @@
 package probe
 
-import "testing"
+import (
+	"crypto/x509"
+	"encoding/binary"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+)
 
 func TestParseResolverIPv6(t *testing.T) {
 	cases := map[string][2]string{ // input -> {host, scheme}
@@ -65,4 +77,117 @@ func answerWith(q []byte, id uint16) []byte {
 	v6[2], v6[3] = 0x0d, 0xb8
 	rr(typeAAAA, v6)
 	return m
+}
+
+// socksStub: a SOCKS5 listener that forwards every CONNECT to target and
+// counts the connections -- the core's listener, as far as a resolver sees.
+type socksStub struct {
+	ln     net.Listener
+	conns  atomic.Int32
+	mu     sync.Mutex
+	opened []net.Conn
+}
+
+func newSocksStub(t *testing.T, target string) *socksStub {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &socksStub{ln: ln}
+	t.Cleanup(func() { ln.Close(); s.drop() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			s.conns.Add(1)
+			go s.serve(c, target)
+		}
+	}()
+	return s
+}
+
+func (s *socksStub) serve(c net.Conn, target string) {
+	buf := make([]byte, 262)
+	// greeting, then CONNECT with an address of any kind
+	if _, err := io.ReadFull(c, buf[:3]); err != nil {
+		c.Close()
+		return
+	}
+	c.Write([]byte{5, 0})
+	if _, err := io.ReadFull(c, buf[:4]); err != nil {
+		c.Close()
+		return
+	}
+	skip := map[byte]int{1: 4, 4: 16}[buf[3]]
+	if buf[3] == 3 {
+		io.ReadFull(c, buf[:1])
+		skip = int(buf[0])
+	}
+	io.ReadFull(c, buf[:skip+2])
+	up, err := net.Dial("tcp", target)
+	if err != nil {
+		c.Close()
+		return
+	}
+	c.Write([]byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0})
+	s.mu.Lock()
+	s.opened = append(s.opened, c, up)
+	s.mu.Unlock()
+	go io.Copy(up, c)
+	io.Copy(c, up)
+	c.Close()
+	up.Close()
+}
+
+// drop cuts every connection made so far, as a core restart does.
+func (s *socksStub) drop() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, c := range s.opened {
+		c.Close()
+	}
+	s.opened = nil
+}
+
+// The queries of a cycle share one connection to the resolver, and a kept
+// connection that died is replaced without losing the query after it.
+func TestDoHKeepsConnection(t *testing.T) {
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/dns-message")
+		w.Write(answerWith(q, binary.BigEndian.Uint16(q)))
+	}))
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	defer srv.Close()
+	roots := x509.NewCertPool()
+	roots.AddCert(srv.Certificate())
+	resolverRoots = roots
+	defer func() { resolverRoots = nil }()
+
+	socks := newSocksStub(t, srv.Listener.Addr().String())
+	r, err := ParseResolver("https://127.0.0.1:" + strconv.Itoa(srv.Listener.Addr().(*net.TCPAddr).Port) + "/dns-query")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := Dialer{Addr: socks.ln.Addr().String(), Timeout: 5 * time.Second}
+	for i := 0; i < 5; i++ {
+		ips, err := r.Lookup(d, "a.example.org")
+		if err != nil || len(ips) != 1 || ips[0] != "192.0.2.7" {
+			t.Fatalf("query %d: %v %v", i, ips, err)
+		}
+	}
+	if n := socks.conns.Load(); n != 1 {
+		t.Fatalf("five queries opened %d connections, want 1", n)
+	}
+
+	socks.drop()
+	if ips, err := r.Lookup(d, "a.example.org"); err != nil || len(ips) != 1 {
+		t.Fatalf("after the connection died: %v %v", ips, err)
+	}
+	if n := socks.conns.Load(); n != 2 {
+		t.Fatalf("%d connections after the drop, want 2", n)
+	}
 }
