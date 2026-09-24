@@ -49,6 +49,8 @@ type Config struct {
 	PerCycle     int
 	Apply        bool
 	SkipSuffix   []string
+	// rule-provider files whose names the detector leaves alone, see pinned.go
+	PinnedLists []string
 }
 
 func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
@@ -82,11 +84,17 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	// own lists route (force-tunnel, presets). Filtering new candidates was
 	// not enough -- a verdict made before stayed, was re-checked while the
 	// name was in use, and a pinned host's CLEAN made its siblings a family.
-	pinned := map[string]bool{}
+	// The lists as files, plus what connections showed: a preset's address
+	// ranges pin names no file spells out.
+	lists := loadPinned(cfg.PinnedLists)
+	seenPinned := map[string]bool{}
 	for _, d := range w.drainPinned() {
-		pinned[d] = true
+		seenPinned[d] = true
 	}
-	if n := st.drop(netID, func(dom string) bool { return pinned[dom] || skipped(cfg, dom) }); n > 0 {
+	leaveAlone := func(dom string) bool {
+		return seenPinned[dom] || lists.has(dom) || skipped(cfg, dom)
+	}
+	if n := st.drop(netID, leaveAlone); n > 0 {
 		log.Printf("dropped %d verdicts for names that are skipped or pinned by a list", n)
 	}
 
@@ -97,7 +105,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 		st.expired(netID, cfg.Idle),
 		pickCandidates(cfg, st, netID, ports),
 	))
-	queue = slices.DeleteFunc(queue, func(dom string) bool { return pinned[dom] || skipped(cfg, dom) })
+	queue = slices.DeleteFunc(queue, leaveAlone)
 	if len(queue) == 0 {
 		// verdicts expire with no probe running: the list follows anyway
 		if cfg.Apply {

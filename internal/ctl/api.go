@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"dpiswitch/internal/paths"
+	"dpiswitch/internal/presets"
 )
 
 // Defaults: default settings derived from the data directory.
@@ -45,8 +46,19 @@ func Defaults() Config {
 		// it. The probe sends a plain ClientHello, so its verdict would be
 		// about other traffic than the one it routes -- and while it was
 		// CLEAN, every ECH connection to Cloudflare went direct.
-		SkipSuffix: []string{"in-addr.arpa", "local", "lan", "cloudflare-ech.com"},
+		SkipSuffix:  []string{"in-addr.arpa", "local", "lan", "cloudflare-ech.com"},
+		PinnedLists: pinnedLists(),
 	}
+}
+
+// pinnedLists: the rule-provider files routing names above the detector.
+// A disabled preset is written empty, so every preset file is read.
+func pinnedLists() []string {
+	out := []string{paths.Awg2Hosts(), paths.ForceTunnel()}
+	for _, p := range presets.All {
+		out = append(out, paths.Preset(p.ID))
+	}
+	return out
 }
 
 // Run loops until the context is cancelled. It is the single
