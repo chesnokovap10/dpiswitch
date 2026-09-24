@@ -24,6 +24,8 @@ type watcher struct {
 	// bare destination addresses of connections that carry no name -- see
 	// state.touchIPs
 	bare map[string]bool
+	// every name seen, whatever route it took -- see state.touch
+	live map[string]bool
 	// nameless TCP connections that went to the tunnel, by address, and in
 	// how many cycles each was seen -- see addrCandidates
 	addrPorts  map[string]map[endpoint]bool
@@ -32,7 +34,7 @@ type watcher struct {
 
 func newWatcher(ctx context.Context, cfg Config, a *api) *watcher {
 	w := &watcher{seen: map[string]map[endpoint]bool{}, bare: map[string]bool{},
-		addrPorts: map[string]map[endpoint]bool{}, addrCycles: map[string]int{}}
+		live: map[string]bool{}, addrPorts: map[string]map[endpoint]bool{}, addrCycles: map[string]int{}}
 	go w.loop(ctx, cfg, a)
 	return w
 }
@@ -59,6 +61,9 @@ func (w *watcher) loop(ctx context.Context, cfg Config, a *api) {
 		w.mu.Lock()
 		for _, c := range conns {
 			dom := c.domain()
+			if dom != "" {
+				w.live[dom] = true
+			}
 			// a nameless connection from an application (not from the probe,
 			// which dials from loopback through its own listeners)
 			if dom == "" && c.Metadata.SourceIP != "127.0.0.1" && c.Metadata.DestinationIP != "" {
@@ -163,11 +168,25 @@ func endpointStrings(eps []endpoint) []string {
 func (w *watcher) drainBare() []string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	out := make([]string, 0, len(w.bare))
-	for ip := range w.bare {
-		out = append(out, ip)
-	}
+	out := keys(w.bare)
 	w.bare = map[string]bool{}
+	return out
+}
+
+// drainLive: the names accumulated since the last call.
+func (w *watcher) drainLive() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	out := keys(w.live)
+	w.live = map[string]bool{}
+	return out
+}
+
+func keys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
 	return out
 }
 

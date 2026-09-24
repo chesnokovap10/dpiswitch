@@ -3,6 +3,7 @@ package ctl
 import (
 	"sort"
 	"strings"
+	"time"
 
 	"golang.org/x/net/publicsuffix"
 
@@ -35,10 +36,18 @@ type family struct {
 }
 
 // badForFamily: verdicts showing the domain is NOT uniform.
-// INCONCLUSIVE says nothing about blocking and does not count.
 // SLOWER counts: some hosts are worse direct, so generalising is unsafe.
-func badForFamily(v probe.Verdict) bool {
-	return v != probe.Clean && v != probe.Inconcl
+// INCONCLUSIVE counts only when the host failed direct: it proves no
+// blocking, but a family would send that host direct all the same -- past
+// the very check that took its CLEAN away.
+func badForFamily(e *entry) bool {
+	switch e.Verdict {
+	case probe.Clean:
+		return false
+	case probe.Inconcl:
+		return e.DirectDown
+	}
+	return true
 }
 
 func familyOf(dom string) string {
@@ -58,16 +67,19 @@ func (s *state) families(id string) []family {
 	defer s.mu.Unlock()
 	clean := map[string]int{}
 	bad := map[string]bool{}
+	now := time.Now()
 	for dom, e := range s.Networks[id] {
 		f := familyOf(dom)
 		if f == "" {
 			continue
 		}
 		switch {
-		case e.Verdict == probe.Clean:
-			clean[f]++
-		case badForFamily(e.Verdict):
+		case badForFamily(e):
 			bad[f] = true
+		case e.Verdict == probe.Clean && now.Before(e.ExpiresAt):
+			// an expired CLEAN is out of the list itself; counting it kept
+			// the family -- and so the host -- direct past its term
+			clean[f]++
 		}
 	}
 	var out []family

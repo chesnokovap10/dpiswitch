@@ -7,6 +7,20 @@ func TestJudge(t *testing.T) {
 		return PathResult{TCPOk: true, TLSTried: true, TLSOk: ok, CertValid: ok, Err: "handshake failure"}
 	}
 	plain := func() PathResult { return PathResult{TCPOk: true} }
+	cut := func(r PathResult, stage string) PathResult {
+		r.Err, r.ErrStage = "read: connection reset by peer", stage
+		return r
+	}
+	answered := func(r PathResult, status int) PathResult {
+		r.Err, r.ErrStage = "", ""
+		r.HTTPStatus, r.BodyLen = status, 5000
+		return r
+	}
+	redirect := func(status int, to string) PathResult {
+		r := answered(plain(), status)
+		r.RedirectHost, r.BodyLen = to, 150
+		return r
+	}
 
 	cases := []struct {
 		name string
@@ -23,6 +37,16 @@ func TestJudge(t *testing.T) {
 		{"port without tls", plain(), plain(), Clean},
 		{"tcp fails direct", PathResult{}, tls(true), BlockedTCP},
 		{"tcp fails through tunnel", tls(true), PathResult{}, Inconcl},
+		// the handshake passes and the session is cut once data flows: it
+		// used to be CLEAN, the failure recorded and then ignored
+		{"cut after the handshake, direct", cut(tls(true), "http_read"), answered(tls(true), 200), ContentDiff},
+		{"body cut short, direct", cut(answered(tls(true), 200), "body"), answered(tls(true), 200), ContentDiff},
+		{"no http answer on both paths", cut(tls(true), "http_read"), cut(tls(true), "http_read"), Inconcl},
+		{"no http answer via tunnel only", answered(tls(true), 200), cut(tls(true), "http_read"), Clean},
+		// plain HTTP on 80: the ISP redirects a blocked Host to its own page
+		{"http reset after the request", cut(plain(), "http_read"), answered(plain(), 200), ContentDiff},
+		{"http redirect to a block page", redirect(302, "warning.rt.ru"), redirect(302, "example.com"), ContentDiff},
+		{"http same redirect", redirect(301, "example.com"), redirect(301, "example.com"), Clean},
 	}
 	for _, c := range cases {
 		if got, reason := Judge(c.d, c.t); got != c.want {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -59,9 +60,12 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 
 	ports := w.drain()
 
-	// everything the core is talking to right now, whatever route it takes:
-	// a name still in use keeps its verdict worth re-checking
-	var live []string
+	// everything the core has talked to, whatever route it took: a name
+	// still in use keeps its verdict worth re-checking. From the watcher's
+	// every-second look, not this snapshot alone -- the snapshot misses the
+	// short connections most names live on, and a name missed that way
+	// looked abandoned: its expired verdict was never re-checked
+	live := w.drainLive()
 	for _, c := range conns {
 		if d := c.domain(); d != "" {
 			live = append(live, d)
@@ -83,6 +87,10 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 		pickCandidates(cfg, st, netID, ports),
 	))
 	if len(queue) == 0 {
+		// verdicts expire with no probe running: the list follows anyway
+		if cfg.Apply {
+			syncList(cfg, a, st, netID, false)
+		}
 		return
 	}
 	total := len(queue)
@@ -125,10 +133,15 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 				if len(eps) == 0 {
 					return
 				}
-			} else if len(eps) == 0 {
-				eps = []endpoint{{port: 443}}
+			} else {
+				eps = withTCP(eps)
+				if len(eps) == 0 {
+					eps = []endpoint{{port: 443}}
+				}
 			}
 			var rep probe.Report
+			// the direct path failed on a TCP port -- see entry.DirectDown
+			directDown := false
 			for _, ep := range eps {
 				r := probe.CheckProto(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp)
 				appendJSONL(cfg.JSONLPath, r)
@@ -136,6 +149,11 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 					// leave memory alone: the domain stays queued
 					// and is re-checked once the core is back
 					return
+				}
+				// QUIC failing direct is left out: most hosts have no QUIC at
+				// all, and fail on both paths for that reason alone
+				if !ep.udp && directFailed(r) {
+					directDown = true
 				}
 				// INCONCLUSIVE means "could not measure" -- e.g. the host
 				// does not answer QUIC on either path. Such a result
@@ -181,13 +199,22 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			}
 
 			e := &entry{
-				Verdict:   rep.Verdict,
-				Reason:    rep.Reason,
-				DecidedAt: time.Now(),
-				TestedIP:  rep.TestedIP,
-				// a name being probed is a name in use right now
-				LastSeen:  time.Now(),
-				Endpoints: endpointStrings(eps),
+				Verdict:    rep.Verdict,
+				Reason:     rep.Reason,
+				DecidedAt:  time.Now(),
+				TestedIP:   rep.TestedIP,
+				Endpoints:  endpointStrings(eps),
+				DirectDown: rep.Verdict == probe.Inconcl && directDown,
+			}
+			// A new name was just seen by the watcher. A known one keeps its
+			// own mark: the probe is not a use. It used to count as one, and
+			// every verdict re-checked hourly renewed itself -- names nothing
+			// had gone to for days were probed around the clock and never
+			// forgotten.
+			if had {
+				e.LastSeen = prev.lastSeen()
+			} else {
+				e.LastSeen = time.Now()
 			}
 			if rep.Verdict == probe.Clean {
 				e.ExpiresAt = time.Now().Add(cfg.TTL)
@@ -237,8 +264,13 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	if err := st.save(); err != nil {
 		log.Printf("state not saved: %v", err)
 	}
-	if changed {
-		applyList(cfg, a, st, netID)
+	switch {
+	case cfg.Apply:
+		// not only when a verdict changed: a CLEAN expiring changes the list
+		// too, and one re-confirmed after it dropped out must come back
+		syncList(cfg, a, st, netID, false)
+	case changed:
+		applyList(cfg, a, st, netID) // observe mode: only logs
 	}
 }
 
@@ -295,9 +327,25 @@ func suspectDirect(cfg Config, st *state, netID string, conns []connection) []st
 
 // write verdicts to the rule-provider and have the core reload it
 func applyList(cfg Config, a *api, st *state, netID string) {
+	syncList(cfg, a, st, netID, true)
+}
+
+// syncList brings the rule-provider files in line with memory. Unless forced
+// it writes only when the rules differ from what is on disk: it runs every
+// cycle, because verdicts change the list without any verdict changing --
+// a CLEAN expires, or comes back after a re-check that found it the same.
+func syncList(cfg Config, a *api, st *state, netID string, force bool) {
 	doms, fams := directRules(cfg, st, netID)
 	if !cfg.Apply {
 		log.Printf("observe mode: %d domains would go DIRECT (%s)", len(doms), preview(doms))
+		return
+	}
+	var ips []string
+	if cfg.IPListPath != "" {
+		ips = st.verifiedIPs(netID)
+	}
+	if !force && slices.Equal(listRules(cfg.ListPath), doms) &&
+		(cfg.IPListPath == "" || slices.Equal(listRules(cfg.IPListPath), ips)) {
 		return
 	}
 	var b strings.Builder
@@ -317,7 +365,7 @@ func applyList(cfg Config, a *api, st *state, netID string) {
 		ib.WriteString("# generated by the controller, do not edit\n")
 		ib.WriteString("# the node each CLEAN name was probed on; matched only by\n")
 		ib.WriteString("# connections to a bare address (the rule carries no-resolve)\n")
-		for _, ip := range st.verifiedIPs(netID) {
+		for _, ip := range ips {
 			ib.WriteString(ip + "\n")
 		}
 		if err := replaceList(a, cfg.IPListPath, cfg.IPProvider, ib.String()); err != nil {
@@ -349,6 +397,22 @@ func clearList(cfg Config, a *api) {
 		}
 	}
 	log.Println("auto-switch disabled: direct path removed from all domains")
+}
+
+// listRules: the rules a list file holds now, comments and blank lines left
+// out. A missing file holds none.
+func listRules(path string) []string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, l := range strings.Split(string(b), "\n") {
+		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // replaceList writes a rule-provider file atomically and has the core reload it.
@@ -437,7 +501,26 @@ func msVal(best int64, last probe.PathResult) string {
 // a TLS handshake that was attempted and failed.
 func directFailed(rep probe.Report) bool {
 	d := rep.Direct
-	return !d.TCPOk || (d.TLSTried && !d.TLSOk)
+	return !d.TCPOk || (d.TLSTried && !d.TLSOk) || d.HTTPFailed()
+}
+
+// withTCP adds plain TCP on every port seen only as QUIC. A mihomo rule
+// covers the name on every protocol, and a browser falls back from QUIC to
+// TCP whenever it likes: a name seen only over QUIC (a remembered Alt-Svc
+// does that) used to go direct on TCP that nobody had checked.
+func withTCP(eps []endpoint) []endpoint {
+	has := map[endpoint]bool{}
+	for _, e := range eps {
+		has[e] = true
+	}
+	out := append([]endpoint(nil), eps...)
+	for _, e := range eps {
+		if tcp := (endpoint{port: e.port}); e.udp && !has[tcp] {
+			has[tcp] = true
+			out = append(out, tcp)
+		}
+	}
+	return out
 }
 
 // plainTCP keeps the endpoints an address can be probed on without a name.

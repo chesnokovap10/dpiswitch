@@ -1,6 +1,7 @@
 package probe
 
 import (
+	"bufio"
 	"net"
 	"testing"
 	"time"
@@ -64,6 +65,50 @@ func TestConfirmDial(t *testing.T) {
 		client.Close()
 		if (err == nil) != tc.ok {
 			t.Errorf("%s: err=%v, want ok=%v", tc.name, err, tc.ok)
+		}
+	}
+}
+
+// A body cut short counts as a failure where its length was announced; one
+// that simply ends with the connection cannot be told from a complete one.
+func TestHTTPGet(t *testing.T) {
+	cases := []struct {
+		name, reply  string
+		stage        string
+		redirectHost string
+	}{
+		{"content-length cut short", "HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n0123456789", "body", ""},
+		{"ends with the connection", "HTTP/1.1 200 OK\r\n\r\n0123456789", "", ""},
+		{"relative redirect", "HTTP/1.1 302 Found\r\nLocation: /ru/\r\nContent-Length: 0\r\n\r\n", "", "example.com"},
+		{"redirect elsewhere", "HTTP/1.1 302 Found\r\nLocation: http://Warning.RT.ru/?id=1\r\nContent-Length: 0\r\n\r\n", "", "warning.rt.ru"},
+	}
+	for _, tc := range cases {
+		client, server := pair(t)
+		go func() {
+			// read the request first: closing on unread data sends a reset,
+			// which may discard the reply before the client reads it
+			br := bufio.NewReader(server)
+			for {
+				l, err := br.ReadString('\n')
+				if err != nil || l == "\r\n" {
+					break
+				}
+			}
+			server.Write([]byte(tc.reply))
+			server.Close()
+		}()
+		_ = client.SetDeadline(time.Now().Add(5 * time.Second))
+		var r PathResult
+		httpGet(&r, client, "example.com")
+		client.Close()
+		if r.ErrStage != tc.stage {
+			t.Errorf("%s: stage %q (%s), want %q", tc.name, r.ErrStage, r.Err, tc.stage)
+		}
+		if r.HTTPFailed() != (tc.stage != "") {
+			t.Errorf("%s: HTTPFailed = %v", tc.name, r.HTTPFailed())
+		}
+		if r.RedirectHost != tc.redirectHost {
+			t.Errorf("%s: redirect host %q, want %q", tc.name, r.RedirectHost, tc.redirectHost)
 		}
 	}
 }

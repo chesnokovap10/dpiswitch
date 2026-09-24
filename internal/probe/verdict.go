@@ -79,7 +79,8 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool)
 	rep := Report{Domain: dom, Port: port, Proto: proto, Time: time.Now().Format(time.RFC3339), Attempts: attempts}
 
 	var ip string
-	if a, ok := AddrKey(dom); ok {
+	a, isAddr := AddrKey(dom)
+	if isAddr {
 		// an address seen with no name: there is nothing to resolve, and
 		// only plain TCP is probed this way (see the controller)
 		ip = a
@@ -133,6 +134,8 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool)
 			d, t = RunQUIC(direct, ip, port, dom), RunQUIC(tunnel, ip, port, dom)
 		case port == 443:
 			d, t = Run(direct, ip, dom), Run(tunnel, ip, dom)
+		case port == 80 && !isAddr:
+			d, t = RunHTTP(direct, ip, dom), RunHTTP(tunnel, ip, dom)
 		default:
 			d, t = RunTCP(direct, ip, port), RunTCP(tunnel, ip, port)
 		}
@@ -177,33 +180,43 @@ func Judge(d, t PathResult) (Verdict, string) {
 	if !d.TCPOk {
 		return BlockedTCP, ClassifyErr(d)
 	}
-	// a probe without TLS (not 443): nothing more to compare
-	if !d.TLSTried && !t.TLSTried {
-		return Clean, ""
+	if d.TLSTried || t.TLSTried {
+		// The handshake failing on BOTH paths the same way says nothing about
+		// blocking: the host does not speak TLS on this port at all, or is dead
+		// everywhere. Neither answer is right for it -- CLEAN sent a host that
+		// works nowhere direct (a Meta FNA node), and BLOCKED_TLS locked
+		// speedtest servers, which serve plain TCP on 20000 and nothing on 443,
+		// into the tunnel. INCONCLUSIVE lets another port decide, and a host with
+		// no definite verdict at all does not go direct.
+		if !d.TLSOk && !t.TLSOk {
+			return Inconcl, "fails the same on both paths: " + ClassifyErr(d)
+		}
+		// Only the direct path failing is blocking. A false "blocked" only
+		// costs a detour through the tunnel.
+		if !d.TLSOk {
+			return BlockedTLS, ClassifyErr(d)
+		}
+		if !t.TLSOk {
+			return Inconcl, "tunnel path unavailable: " + ClassifyErr(t)
+		}
+		// certificate fingerprints cannot be compared -- different CDN nodes serve
+		// different valid certificates. The sign of substitution: the direct path's
+		// chain fails verification while the tunnel's passes.
+		if t.CertValid && !d.CertValid {
+			return MITM, "direct path certificate fails chain verification (CN=" + d.CertCN + ")"
+		}
 	}
-	// The handshake failing on BOTH paths the same way says nothing about
-	// blocking: the host does not speak TLS on this port at all, or is dead
-	// everywhere. Neither answer is right for it -- CLEAN sent a host that
-	// works nowhere direct (a Meta FNA node), and BLOCKED_TLS locked
-	// speedtest servers, which serve plain TCP on 20000 and nothing on 443,
-	// into the tunnel. INCONCLUSIVE lets another port decide, and a host with
-	// no definite verdict at all does not go direct.
-	if !d.TLSOk && !t.TLSOk {
-		return Inconcl, "fails the same on both paths: " + ClassifyErr(d)
+	// The handshake going through is not the end of it: DPI may let the
+	// ClientHello pass and cut the session once data flows. Those failures
+	// used to be recorded and then ignored -- no status and no body on the
+	// direct path meant "nothing to compare", and the host came out CLEAN.
+	// The same failure on both paths is the server's doing, as with TLS.
+	dh, th := d.HTTPFailed(), t.HTTPFailed()
+	if dh && th {
+		return Inconcl, "no HTTP answer on either path: " + ClassifyErr(d)
 	}
-	// Only the direct path failing is blocking. A false "blocked" only
-	// costs a detour through the tunnel.
-	if !d.TLSOk {
-		return BlockedTLS, ClassifyErr(d)
-	}
-	if !t.TLSOk {
-		return Inconcl, "tunnel path unavailable: " + ClassifyErr(t)
-	}
-	// certificate fingerprints cannot be compared -- different CDN nodes serve
-	// different valid certificates. The sign of substitution: the direct path's
-	// chain fails verification while the tunnel's passes.
-	if t.CertValid && !d.CertValid {
-		return MITM, "direct path certificate fails chain verification (CN=" + d.CertCN + ")"
+	if dh {
+		return ContentDiff, "direct path cut after connecting: " + ClassifyErr(d)
 	}
 	if d.HTTPStatus != 0 && t.HTTPStatus != 0 && d.HTTPStatus != t.HTTPStatus {
 		// the tunnel is not an absolute reference. Its exit is in a data centre,
@@ -216,7 +229,15 @@ func Judge(d, t PathResult) (Verdict, string) {
 		}
 		return ContentDiff, fmt.Sprintf("HTTP %d direct vs %d via tunnel", d.HTTPStatus, t.HTTPStatus)
 	}
-	if d.BodyLen > 0 && t.BodyLen > 0 && !isChallenge(t.HTTPStatus) {
+	// plain HTTP: an ISP answers a blocked Host with a redirect to its own
+	// block page, often with the very status the site uses for its HTTPS
+	// redirect. Over TLS nobody in between can forge a redirect, and a
+	// different target there is the site's own geo choice.
+	if !d.TLSTried && d.RedirectHost != "" && t.RedirectHost != "" && d.RedirectHost != t.RedirectHost {
+		return ContentDiff, "redirected to " + d.RedirectHost + " direct vs " + t.RedirectHost + " via tunnel"
+	}
+	// a body the tunnel failed to finish is no reference for its size
+	if !th && d.BodyLen > 0 && t.BodyLen > 0 && !isChallenge(t.HTTPStatus) {
 		ratio := float64(d.BodyLen) / float64(t.BodyLen)
 		if ratio < 0.25 || ratio > 4 {
 			return ContentDiff, fmt.Sprintf("response size %d vs %d bytes", d.BodyLen, t.BodyLen)

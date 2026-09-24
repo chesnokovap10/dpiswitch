@@ -66,3 +66,40 @@ func TestFamilies(t *testing.T) {
 		t.Fatalf("disabled -- hosts only: %v", rules)
 	}
 }
+
+// A family must not send direct what the verdicts themselves took off the
+// list: an expired CLEAN, or a host that failed direct.
+func TestFamilyHonoursExpiryAndDirectFailure(t *testing.T) {
+	now := time.Now()
+	live, gone := now.Add(time.Hour), now.Add(-time.Hour)
+	fams := func(m map[string]*entry) []family {
+		st := &state{Networks: map[string]map[string]*entry{"n": m}}
+		return st.families("n")
+	}
+
+	// three CLEAN, one of them past its term: two are not a family
+	if f := fams(map[string]*entry{
+		"a.ex.com": {Verdict: probe.Clean, ExpiresAt: live},
+		"b.ex.com": {Verdict: probe.Clean, ExpiresAt: live},
+		"c.ex.com": {Verdict: probe.Clean, ExpiresAt: gone},
+	}); len(f) != 0 {
+		t.Errorf("an expired CLEAN counted: %v", f)
+	}
+
+	three := func(extra *entry) map[string]*entry {
+		return map[string]*entry{
+			"a.ex.com": {Verdict: probe.Clean, ExpiresAt: live},
+			"b.ex.com": {Verdict: probe.Clean, ExpiresAt: live},
+			"c.ex.com": {Verdict: probe.Clean, ExpiresAt: live},
+			"d.ex.com": extra,
+		}
+	}
+	// the tunnel failing says nothing: the host works direct
+	if f := fams(three(&entry{Verdict: probe.Inconcl, ExpiresAt: live})); len(f) != 1 {
+		t.Errorf("a tunnel-side INCONCLUSIVE broke the family: %v", f)
+	}
+	// failing on both paths: not blocking, but no reason to send it direct
+	if f := fams(three(&entry{Verdict: probe.Inconcl, ExpiresAt: live, DirectDown: true})); len(f) != 0 {
+		t.Errorf("a host failing direct kept the family: %v", f)
+	}
+}

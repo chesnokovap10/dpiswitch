@@ -32,11 +32,14 @@ type PathResult struct {
 	CertValid  bool          `json:"cert_valid"`
 	ALPN       string        `json:"alpn,omitempty"`
 	HTTPStatus int           `json:"http_status,omitempty"`
-	BodySHA256 string        `json:"body_sha256,omitempty"`
-	BodyLen    int           `json:"body_len"`
-	TTFB       time.Duration `json:"ttfb_ns"`
-	Err        string        `json:"err,omitempty"`
-	ErrStage   string        `json:"err_stage,omitempty"`
+	// RedirectHost: where a redirect points, the request's own host for a
+	// relative one. Plain HTTP only is judged by it -- see Judge.
+	RedirectHost string        `json:"redirect_host,omitempty"`
+	BodySHA256   string        `json:"body_sha256,omitempty"`
+	BodyLen      int           `json:"body_len"`
+	TTFB         time.Duration `json:"ttfb_ns"`
+	Err          string        `json:"err,omitempty"`
+	ErrStage     string        `json:"err_stage,omitempty"`
 }
 
 const bodyLimit = 64 << 10 // read at most 64 KB: we need a fingerprint, not the content
@@ -83,60 +86,109 @@ func Run(d Dialer, ip, host string) PathResult {
 		r.CertValid = verifyChain(host, st.PeerCertificates)
 	}
 
-	// a hand-written HTTP/1.1 request: http.Client on top of an existing
-	// conn would take timing out of our control
 	if st.NegotiatedProtocol == "h2" {
 		// h2 is not parsed; a successful TLS handshake is enough
 		return r
 	}
+	httpGet(&r, tc, host)
+	return r
+}
+
+// RunHTTP: plain HTTP on port 80. Blocking there works on the Host header,
+// once the connection is up -- the ISP answers with a redirect to its own
+// block page, or resets the session -- so a bare connect called such a host
+// clean.
+func RunHTTP(d Dialer, ip, host string) PathResult {
+	conn, r := dialConfirmed(d, ip, 80)
+	if conn == nil {
+		return r
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(d.Timeout))
+	httpGet(&r, conn, host)
+	return r
+}
+
+// httpGet sends GET / over an established connection and records the answer.
+// A hand-written HTTP/1.1 request: http.Client on top of an existing conn
+// would take timing out of our control.
+func httpGet(r *PathResult, conn net.Conn, host string) {
 	req := "GET / HTTP/1.1\r\nHost: " + host + "\r\n" +
 		"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36\r\n" +
 		"Accept: */*\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n"
 	t2 := time.Now()
-	if _, err := tc.Write([]byte(req)); err != nil {
+	if _, err := conn.Write([]byte(req)); err != nil {
 		r.Err, r.ErrStage = err.Error(), "http_write"
-		return r
+		return
 	}
-	br := bufio.NewReader(tc)
-	resp, err := http.ReadResponse(br, nil)
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
 	if err != nil {
 		r.Err, r.ErrStage = err.Error(), "http_read"
-		return r
+		return
 	}
 	r.TTFB = time.Since(t2)
 	r.HTTPStatus = resp.StatusCode
+	if u, err := resp.Location(); err == nil {
+		r.RedirectHost = strings.ToLower(u.Hostname())
+		if r.RedirectHost == "" {
+			r.RedirectHost = strings.ToLower(host) // relative: the same host
+		}
+	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, bodyLimit))
 	resp.Body.Close()
-	if err != nil && len(body) == 0 {
-		r.Err, r.ErrStage = err.Error(), "body"
-		return r
-	}
 	r.BodyLen = len(body)
 	sum := sha256.Sum256(body)
 	r.BodySHA256 = hex.EncodeToString(sum[:])
-	return r
+	// A body cut short is what DPI leaves when it lets a session start and
+	// stalls it after some kilobytes. With the length known (Content-Length
+	// or chunked) an error means exactly that; a body that ends with the
+	// connection cannot tell a cut from a server resetting instead of
+	// closing, so there it counts only when nothing arrived at all.
+	if err != nil && (len(body) == 0 || resp.ContentLength >= 0 || len(resp.TransferEncoding) > 0) {
+		r.Err, r.ErrStage = err.Error(), "body"
+	}
+}
+
+// HTTPFailed: the connection (and TLS, if any) went through, but the HTTP
+// exchange on top of it did not.
+func (r PathResult) HTTPFailed() bool {
+	switch r.ErrStage {
+	case "http_write", "http_read", "body":
+		return r.Err != ""
+	}
+	return false
 }
 
 // TCP-only probe for ports that may not speak TLS. A weaker signal --
 // no SNI, certificate or response body -- but DPI connection resets
 // still show up here.
 func RunTCP(d Dialer, ip string, port int) PathResult {
+	conn, r := dialConfirmed(d, ip, port)
+	if conn != nil {
+		conn.Close()
+	}
+	return r
+}
+
+// dialConfirmed: a connection the core has really dialled (see confirmDial),
+// or nil and the failure.
+func dialConfirmed(d Dialer, ip string, port int) (net.Conn, PathResult) {
 	var r PathResult
 	r.IP = ip
 	t0 := time.Now()
 	conn, err := d.dial(ip, port)
 	if err != nil {
 		r.Err, r.ErrStage = err.Error(), "tcp"
-		return r
+		return nil, r
 	}
-	defer conn.Close()
 	r.TCPTime = time.Since(t0)
 	if err := confirmDial(conn, d.Established); err != nil {
+		conn.Close()
 		r.Err, r.ErrStage = err.Error(), "tcp"
-		return r
+		return nil, r
 	}
 	r.TCPOk = true
-	return r
+	return conn, r
 }
 
 // AddrPrefix marks a verdict kept for a bare address rather than a name.

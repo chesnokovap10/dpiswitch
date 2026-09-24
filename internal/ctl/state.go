@@ -28,6 +28,10 @@ type entry struct {
 	// and have nothing on 443, could never be confirmed clean again.
 	Endpoints []string `json:"endpoints,omitempty"`
 	Reverts   int      `json:"reverts"` // how many times the domain has been reverted
+	// DirectDown: an INCONCLUSIVE whose direct side failed on some TCP port
+	// -- the tunnel failed too, so it is no proof of blocking, but the host
+	// does not work direct either. A family must not sweep it direct.
+	DirectDown bool `json:"direct_down,omitempty"`
 }
 
 // state is split per network: the key is the ISP (AS...), see asn.go;
