@@ -68,7 +68,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 		return
 	}
 
-	ports := w.drain()
+	ports, order := w.drain()
 
 	// everything the core has talked to, whatever route it took: a name
 	// still in use keeps its verdict worth re-checking. From the watcher's
@@ -112,7 +112,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 		suspectDirect(cfg, st, netID, conns),
 		st.quicOnly(netID, cfg.Idle),
 		st.expired(netID, cfg.Idle),
-		pickCandidates(cfg, st, netID, ports),
+		pickCandidates(cfg, st, netID, order),
 	))
 	queue = slices.DeleteFunc(queue, leaveAlone)
 	if len(queue) == 0 {
@@ -124,8 +124,21 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	}
 	total := len(queue)
 	if len(queue) > cfg.PerCycle {
+		// the new names without room this cycle wait for the next; the
+		// rest -- expired, suspect -- come back from memory by themselves
+		var wait []string
+		for _, d := range queue[cfg.PerCycle:] {
+			if _, had := st.get(netID, d); !had {
+				wait = append(wait, d)
+			}
+		}
+		dropped := w.requeue(wait, ports)
 		queue = queue[:cfg.PerCycle]
-		log.Printf("%d domains queued, taking %d this cycle", total, cfg.PerCycle)
+		log.Printf("%d domains queued, taking %d this cycle; %d new ones wait for the next",
+			total, cfg.PerCycle, len(wait)-dropped)
+		if dropped > 0 {
+			log.Printf("  candidate backlog full (%d): the %d oldest dropped", maxBacklog, dropped)
+		}
 	}
 
 	direct := probe.Dialer{Addr: cfg.DirectAddr, Timeout: cfg.Timeout, DNS: cfg.DirectDNS,
@@ -398,11 +411,12 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 	return true
 }
 
-// candidates: what the watcher accumulated and we have not decided yet.
-// protocol and route filters were already applied while collecting.
-func pickCandidates(cfg Config, st *state, netID string, seen map[string][]endpoint) []string {
+// candidates: what the watcher accumulated and we have not decided yet, in
+// the order it turned up. protocol and route filters were already applied
+// while collecting.
+func pickCandidates(cfg Config, st *state, netID string, order []string) []string {
 	var out []string
-	for dom := range seen {
+	for _, dom := range order {
 		if skipped(cfg, dom) {
 			continue
 		}

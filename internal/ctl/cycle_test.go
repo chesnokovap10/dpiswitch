@@ -573,3 +573,39 @@ func TestCycleFamilyMixed(t *testing.T) {
 		}
 	})
 }
+
+// More new names than a cycle takes: the rest wait for the next cycles, in
+// the order they turned up, and none is lost -- they used to be dropped,
+// and a name requested once was never probed.
+func TestCycleBacklog(t *testing.T) {
+	s := newScenario(t)
+	s.cfg.PerCycle = 5
+	var conns []connection
+	var names []string
+	for i := 1; i <= 12; i++ {
+		h := fmt.Sprintf("n%02d.backlog.org", i)
+		names = append(names, h)
+		conns = append(conns, tunnelled(h, 443))
+		s.script(h+" tcp/443", clean(fmt.Sprintf("192.0.2.%d", 100+i)))
+	}
+	s.see(conns...)
+	for c, want := range [][]string{names[0:5], names[5:10], names[10:12]} {
+		s.cycle()
+		s.see() // the connections are gone: only the backlog remembers them
+		s.mu.Lock()
+		got := make([]string, 0, len(s.probed))
+		for _, k := range s.probed {
+			got = append(got, strings.TrimSuffix(k, " tcp/443"))
+		}
+		s.mu.Unlock()
+		slices.Sort(got)
+		if !slices.Equal(got, want) {
+			t.Fatalf("cycle %d probed %v, want %v", c+1, got, want)
+		}
+	}
+	for _, h := range names {
+		if s.entry(h) == nil {
+			t.Fatalf("%s was never probed", h)
+		}
+	}
+}

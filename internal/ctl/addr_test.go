@@ -1,6 +1,8 @@
 package ctl
 
 import (
+	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -48,12 +50,50 @@ func TestAddrNeedsTwoCycles(t *testing.T) {
 	see := func() { w.addrPorts["91.204.108.4"] = map[endpoint]bool{{port: 20000}: true} }
 
 	see()
-	if out := w.drain(); len(out) != 0 {
+	if out, _ := w.drain(); len(out) != 0 {
 		t.Fatalf("first cycle: %v, want nothing yet", out)
 	}
 	see()
-	out := w.drain()
+	out, _ := w.drain()
 	if eps := out["@91.204.108.4"]; len(eps) != 1 || eps[0].port != 20000 {
 		t.Fatalf("second cycle: %v", out)
+	}
+}
+
+// drain hands names over as they first turned up, those given back first.
+func TestDrainOrder(t *testing.T) {
+	w := &watcher{seen: map[string]map[endpoint]bool{}, bare: map[string]bool{},
+		live: map[string]bool{}, pinned: map[string]bool{},
+		addrPorts: map[string]map[endpoint]bool{}, addrCycles: map[string]int{}}
+	cfg := Config{ProxyName: "awg"}
+	for _, h := range []string{"c.example", "a.example", "b.example", "a.example"} {
+		w.observe(cfg, []connection{tunnelled(h, 443)})
+	}
+	ports, order := w.drain()
+	if !slices.Equal(order, []string{"c.example", "a.example", "b.example"}) {
+		t.Fatalf("order %v", order)
+	}
+	w.observe(cfg, []connection{tunnelled("d.example", 443)})
+	w.requeue([]string{"a.example", "b.example"}, ports)
+	if _, order = w.drain(); !slices.Equal(order, []string{"a.example", "b.example", "d.example"}) {
+		t.Fatalf("after requeue: %v", order)
+	}
+}
+
+// The backlog is bounded; past it the oldest go.
+func TestRequeueBound(t *testing.T) {
+	w := &watcher{seen: map[string]map[endpoint]bool{}}
+	var doms []string
+	ports := map[string][]endpoint{}
+	for i := 0; i < maxBacklog+5; i++ {
+		d := fmt.Sprintf("n%d.example", i)
+		doms = append(doms, d)
+		ports[d] = []endpoint{{port: 443}}
+	}
+	if dropped := w.requeue(doms, ports); dropped != 5 {
+		t.Fatalf("dropped %d, want 5", dropped)
+	}
+	if len(w.order) != maxBacklog || w.order[0] != "n5.example" || len(w.seen) != maxBacklog {
+		t.Fatalf("kept %d, first %s, seen %d", len(w.order), w.order[0], len(w.seen))
 	}
 }

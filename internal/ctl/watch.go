@@ -21,6 +21,9 @@ import (
 type watcher struct {
 	mu   sync.Mutex
 	seen map[string]map[endpoint]bool
+	// order: the names in seen as they first turned up -- the order they
+	// are probed in, see drain and requeue
+	order []string
 	// bare destination addresses of connections that carry no name -- see
 	// state.touchIPs
 	bare map[string]bool
@@ -133,6 +136,7 @@ func (w *watcher) observe(cfg Config, conns []connection) {
 		}
 		if w.seen[dom] == nil {
 			w.seen[dom] = map[endpoint]bool{}
+			w.order = append(w.order, dom)
 		}
 		w.seen[dom][endpoint{udp: c.isUDP(), port: c.port()}] = true
 	}
@@ -260,25 +264,16 @@ func addrProbeable(c connection, tunnelProxy string) bool {
 		c.viaTunnel(tunnelProxy)
 }
 
-func (w *watcher) drain() map[string][]endpoint {
+// drain hands over what has been seen since the last call, with the order
+// to take it in: names as they first turned up -- those given back by
+// requeue first -- then the addresses that turned up often enough. A map
+// alone used to be handed over, and a cycle with more candidates than it
+// takes picked them in no order at all.
+func (w *watcher) drain() (map[string][]endpoint, []string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	out := make(map[string][]endpoint, len(w.seen))
-	// addresses: count the cycles, hand over the ones seen often enough
-	for ip, eps := range w.addrPorts {
-		w.addrCycles[ip]++
-		if w.addrCycles[ip] < minAddrCycles {
-			continue
-		}
-		key := probe.AddrPrefix + ip
-		for e := range eps {
-			out[key] = append(out[key], e)
-		}
-	}
-	w.addrPorts = map[string]map[endpoint]bool{}
-	if len(w.addrCycles) > 10000 {
-		w.addrCycles = map[string]int{} // bounded: a flood must not grow memory
-	}
+	order := append([]string(nil), w.order...)
 	for d, eps := range w.seen {
 		for e := range eps {
 			out[d] = append(out[d], e)
@@ -290,6 +285,72 @@ func (w *watcher) drain() map[string][]endpoint {
 			return !out[d][i].udp
 		})
 	}
+	// addresses: count the cycles, hand over the ones seen often enough
+	var addrs []string
+	for ip, eps := range w.addrPorts {
+		w.addrCycles[ip]++
+		if w.addrCycles[ip] < minAddrCycles {
+			continue
+		}
+		key := probe.AddrPrefix + ip
+		if _, given := out[key]; !given {
+			addrs = append(addrs, key)
+		}
+		for e := range eps {
+			out[key] = append(out[key], e)
+		}
+	}
+	sort.Strings(addrs)
+	order = append(order, addrs...)
+	w.addrPorts = map[string]map[endpoint]bool{}
+	if len(w.addrCycles) > 10000 {
+		w.addrCycles = map[string]int{} // bounded: a flood must not grow memory
+	}
 	w.seen = map[string]map[endpoint]bool{}
-	return out
+	w.order = nil
+	return out, order
+}
+
+// maxBacklog bounds the candidates kept between cycles: past it the oldest
+// go -- a flood of one-off names must not grow memory without end.
+const maxBacklog = 1000
+
+// requeue gives back the candidates a cycle had no room for, with the ports
+// they were seen on. drain handed over everything seen and forgot it, and a
+// cycle takes 20: the rest were dropped -- and a name requested once, as
+// many are, was never probed. On 24.09 the queue overflowed 21 times, up
+// to 181 names, 1,650 queued for 420 probed. They now go first next time,
+// in the order they came. It says how many the bound dropped.
+func (w *watcher) requeue(doms []string, ports map[string][]endpoint) int {
+	if len(doms) == 0 {
+		return 0
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	back := make(map[string]bool, len(doms))
+	for _, d := range doms {
+		back[d] = true
+		if w.seen[d] == nil {
+			w.seen[d] = map[endpoint]bool{}
+		}
+		for _, e := range ports[d] {
+			w.seen[d][e] = true
+		}
+	}
+	// a name seen again meanwhile keeps one place: the earlier one
+	order := append([]string(nil), doms...)
+	for _, d := range w.order {
+		if !back[d] {
+			order = append(order, d)
+		}
+	}
+	dropped := 0
+	if n := len(order) - maxBacklog; n > 0 {
+		for _, d := range order[:n] {
+			delete(w.seen, d)
+		}
+		order, dropped = order[n:], n
+	}
+	w.order = order
+	return dropped
 }
