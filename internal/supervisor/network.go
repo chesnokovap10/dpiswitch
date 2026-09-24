@@ -7,7 +7,9 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -67,47 +69,89 @@ func physicalNetwork() bool {
 // --- network change notifications ---
 
 var (
-	iphlpapi          = windows.NewLazySystemDLL("iphlpapi.dll")
-	pNotifyAddrChange = iphlpapi.NewProc("NotifyAddrChange")
+	iphlpapi              = windows.NewLazySystemDLL("iphlpapi.dll")
+	pNotifyAddrChange     = iphlpapi.NewProc("NotifyAddrChange")
+	pCancelIPChangeNotify = iphlpapi.NewProc("CancelIPChangeNotify")
+)
+
+// ctxPollMs: how often a wait for an address change looks at the context
+var ctxPollMs uint32 = 60000
+
+// abandoned: requests whose cancellation did not complete. The kernel may
+// still write into their OVERLAPPED and signal their event, so both are kept
+// for the life of the process.
+var (
+	abandonedMu sync.Mutex
+	abandoned   []*windows.Overlapped
 )
 
 // watchNetworkChanges signals when interface addresses change: Wi-Fi
 // connected, network switched, cable unplugged. No reason to wait for the
 // regular poll in such moments -- check right away.
 func watchNetworkChanges(ctx context.Context, notify func()) {
-	for {
-		if ctx.Err() != nil {
-			return
-		}
-		var handle windows.Handle
-		var ov windows.Overlapped
-		ev, err := windows.CreateEvent(nil, 1, 0, nil)
+	for ctx.Err() == nil {
+		fired, err := waitAddrChange(ctx)
 		if err != nil {
 			time.Sleep(10 * time.Second)
 			continue
 		}
-		ov.HEvent = ev
-
-		r, _, _ := pNotifyAddrChange.Call(
-			uintptr(unsafe.Pointer(&handle)), uintptr(unsafe.Pointer(&ov)))
-		// ERROR_IO_PENDING is the normal path: the notification comes later
-		if r != uintptr(syscall.ERROR_IO_PENDING) && r != 0 {
-			windows.CloseHandle(ev)
-			time.Sleep(10 * time.Second)
-			continue
-		}
-
-		// wait for the event, but no longer than a minute -- otherwise a
-		// context cancel would not wake us until the next address change
-		res, _ := windows.WaitForSingleObject(ev, 60000)
-		windows.CloseHandle(ev)
-		if ctx.Err() != nil {
-			return
-		}
-		if res == windows.WAIT_OBJECT_0 {
+		if fired {
 			notify()
 		}
 	}
+}
+
+// waitAddrChange issues one request and waits until it completes or ctx ends.
+//
+// The kernel writes the request's status into its OVERLAPPED when it
+// completes, however late that is, so the OVERLAPPED must outlive it. It used
+// to be dropped after a minute's wait with the request still pending, and a
+// new request issued: the GC reused the memory, and at the next address
+// change every request left behind -- one per quiet minute -- zeroed bytes
+// 0-3 and 8-15 of whatever lived there by then. Verdicts were saved with such
+// holes in addresses, names and times.
+func waitAddrChange(ctx context.Context) (bool, error) {
+	ev, err := windows.CreateEvent(nil, 1, 0, nil)
+	if err != nil {
+		return false, err
+	}
+	ov := &windows.Overlapped{HEvent: ev}
+	var handle windows.Handle // not to be closed, says the documentation
+	r, _, _ := pNotifyAddrChange.Call(
+		uintptr(unsafe.Pointer(&handle)), uintptr(unsafe.Pointer(ov)))
+	// ERROR_IO_PENDING is the normal path: the notification comes later
+	if r != uintptr(syscall.ERROR_IO_PENDING) && r != 0 {
+		windows.CloseHandle(ev)
+		return false, syscall.Errno(r)
+	}
+	for {
+		// the same request is waited for across the polls: only the
+		// context is looked at between them
+		res, err := windows.WaitForSingleObject(ev, ctxPollMs)
+		if res == windows.WAIT_OBJECT_0 {
+			// completed: the kernel is done with ov
+			runtime.KeepAlive(ov)
+			windows.CloseHandle(ev)
+			return ctx.Err() == nil, nil
+		}
+		if err != nil || ctx.Err() != nil {
+			cancelAddrChange(ov)
+			return false, err
+		}
+	}
+}
+
+// cancelAddrChange lets a pending request go only once the cancellation has
+// landed in its OVERLAPPED; if it does not, the request is kept forever.
+func cancelAddrChange(ov *windows.Overlapped) {
+	pCancelIPChangeNotify.Call(uintptr(unsafe.Pointer(ov)))
+	if res, _ := windows.WaitForSingleObject(ov.HEvent, 5000); res == windows.WAIT_OBJECT_0 {
+		windows.CloseHandle(ov.HEvent)
+		return
+	}
+	abandonedMu.Lock()
+	abandoned = append(abandoned, ov)
+	abandonedMu.Unlock()
 }
 
 // --- tunnel liveness check ---
