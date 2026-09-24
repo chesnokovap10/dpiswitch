@@ -124,7 +124,11 @@ func runTray() {
 	// so it cannot get "stuck" and needs no extra checks
 	if alreadyRunning() {
 		log.Println("tray: another copy is already running -- opening the UI and exiting")
-		browse(fmt.Sprintf("http://127.0.0.1:%d/", session.Port()))
+		addr := webui.Find()
+		if addr == "" {
+			addr = fmt.Sprintf("http://127.0.0.1:%d/", session.Port())
+		}
+		browse(addr)
 		return
 	}
 

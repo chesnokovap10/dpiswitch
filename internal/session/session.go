@@ -66,6 +66,19 @@ func Port() int {
 	return portBase + int(h.Sum32()%portSpan)
 }
 
+// Candidates: the ports Listen tries, in its order. A second instance looks
+// for the running one's UI among them: Listen steps past a taken port, and
+// the second instance used to open the first candidate whatever answered
+// there.
+func Candidates() []int {
+	start := Port() - portBase
+	out := make([]int, 64)
+	for i := range out {
+		out[i] = portBase + (start+i)%portSpan
+	}
+	return out
+}
+
 // Listen opens a listener on the port derived from the logon session.
 // If the port is taken (by another app or a hung copy), it steps forward
 // deterministically -- so the address stays predictable.
@@ -77,11 +90,9 @@ func Listen() (net.Listener, error) {
 		return net.Listen("tcp", "127.0.0.1:0")
 	}
 	_ = id
-	start := Port() - portBase
 
 	var lastErr error
-	for i := 0; i < 64; i++ {
-		port := portBase + (start+i)%portSpan
+	for _, port := range Candidates() {
 		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 		if err == nil {
 			return ln, nil

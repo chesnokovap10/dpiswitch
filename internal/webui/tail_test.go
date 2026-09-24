@@ -2,10 +2,13 @@ package webui
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // tail reads a log from its end: the last lines, whole, as they were.
@@ -50,5 +53,32 @@ func TestTail(t *testing.T) {
 	}
 	if _, err := tail(filepath.Join(dir, "missing.log"), 400); err == nil {
 		t.Error("a missing log gave no error")
+	}
+}
+
+// A second copy opens the UI that answers as DPI Switch, not whatever
+// holds the first candidate port.
+func TestAnswers(t *testing.T) {
+	ours := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/status" {
+			w.Write([]byte(`{"version":"1.0.7","data_dir":"C:/ProgramData/dpiswitch"}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer ours.Close()
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<html>someone else</html>`))
+	}))
+	defer other.Close()
+	cl := &http.Client{Timeout: time.Second}
+	if !answers(cl, strings.TrimPrefix(ours.URL, "http://")) {
+		t.Fatal("our UI not recognised")
+	}
+	if answers(cl, strings.TrimPrefix(other.URL, "http://")) {
+		t.Fatal("another program taken for our UI")
+	}
+	if answers(cl, "127.0.0.1:1") {
+		t.Fatal("a closed port answered")
 	}
 }

@@ -85,6 +85,36 @@ func (s *Server) Start() error {
 	return nil
 }
 
+// Find: the address of the running DPI Switch UI in this logon session, or
+// "" if none answers. It is on one of the session's candidate ports, not
+// necessarily the first: Listen steps past a taken one.
+func Find() string {
+	cl := &http.Client{Timeout: 700 * time.Millisecond}
+	for _, p := range session.Candidates() {
+		if addr := fmt.Sprintf("127.0.0.1:%d", p); answers(cl, addr) {
+			return "http://" + addr + "/"
+		}
+	}
+	return ""
+}
+
+// answers: whether a DPI Switch UI answers on addr -- its status carries a
+// version and a data directory; another program on the port does not.
+func answers(cl *http.Client, addr string) bool {
+	resp, err := cl.Get("http://" + addr + "/api/status")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	var st struct {
+		Version string `json:"version"`
+		DataDir string `json:"data_dir"`
+	}
+	return resp.StatusCode == http.StatusOK &&
+		json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&st) == nil &&
+		st.Version != "" && st.DataDir != ""
+}
+
 func (s *Server) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
