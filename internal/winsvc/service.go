@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -97,7 +98,10 @@ func Uninstall() error {
 		if _, err := s.Control(svc.Stop); err != nil {
 			log.Printf("warning: stop failed: %v", err)
 		}
-		waitState(s, svc.Stopped, 30*time.Second)
+		// removal goes ahead: a service still running is deleted once it stops
+		if err := waitState(query(s), svc.Stopped, 30*time.Second, 300*time.Millisecond); err != nil {
+			log.Printf("warning: %v", err)
+		}
 	}
 	return s.Delete()
 }
@@ -126,13 +130,23 @@ func BinPath() string {
 	return cfg.BinaryPathName
 }
 
-// PathMatches: whether the registration matches the current binary location
-func PathMatches() bool {
-	bp := BinPath()
-	if bp == "" {
+// PathMatches: whether the service is registered for this very binary.
+func PathMatches() bool { return samePath(BinPath(), paths.Exe()) }
+
+// samePath: whether a service command line runs exe. The path used to be
+// looked for in it as a substring, so a registration for dpiswitch.exe.bak
+// matched dpiswitch.exe too. The line is split the way Windows splits it --
+// the program is registered through EscapeArg, quoted when it has spaces --
+// and the program compared as a path.
+func samePath(cmdline, exe string) bool {
+	if strings.TrimSpace(cmdline) == "" {
 		return false
 	}
-	return strings.Contains(strings.ToLower(bp), strings.ToLower(paths.Exe()))
+	args, err := windows.DecomposeCommandLine(cmdline)
+	if err != nil || len(args) == 0 {
+		return false
+	}
+	return strings.EqualFold(filepath.Clean(args[0]), filepath.Clean(exe))
 }
 
 func State() (svc.State, error) {
@@ -157,8 +171,7 @@ func Start() error {
 	if err := s.Start(); err != nil {
 		return err
 	}
-	waitState(s, svc.Running, 30*time.Second)
-	return nil
+	return waitState(query(s), svc.Running, 30*time.Second, 300*time.Millisecond)
 }
 
 func Stop() error {
@@ -170,19 +183,52 @@ func Stop() error {
 	if _, err := s.Control(svc.Stop); err != nil {
 		return err
 	}
-	waitState(s, svc.Stopped, 30*time.Second)
-	return nil
+	return waitState(query(s), svc.Stopped, 30*time.Second, 300*time.Millisecond)
 }
 
-func waitState(s *mgr.Service, want svc.State, limit time.Duration) {
-	deadline := time.Now().Add(limit)
-	for time.Now().Before(deadline) {
+func query(s *mgr.Service) func() (svc.State, error) {
+	return func() (svc.State, error) {
 		st, err := s.Query()
-		if err != nil || st.State == want {
-			return
-		}
-		time.Sleep(300 * time.Millisecond)
+		return st.State, err
 	}
+}
+
+// waitState waits for the service to reach want. It used to return nothing,
+// and Start and Stop reported success whether the service got there or not:
+// the UI said "done" over a service still starting, or one that had died.
+func waitState(state func() (svc.State, error), want svc.State, limit, pause time.Duration) error {
+	deadline := time.Now().Add(limit)
+	for {
+		st, err := state()
+		if err != nil {
+			return fmt.Errorf("service state unknown: %w", err)
+		}
+		if st == want {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("the service is still %s after %s, not %s -- see service.log",
+				StateText(st), limit, StateText(want))
+		}
+		time.Sleep(pause)
+	}
+}
+
+// StateText: a service state in words.
+func StateText(s svc.State) string {
+	switch s {
+	case svc.Stopped:
+		return "stopped"
+	case svc.StartPending:
+		return "starting"
+	case svc.StopPending:
+		return "stopping"
+	case svc.Running:
+		return "running"
+	case svc.Paused:
+		return "paused"
+	}
+	return "unknown"
 }
 
 func sc(args ...string) (string, error) {

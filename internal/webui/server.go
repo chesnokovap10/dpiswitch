@@ -144,7 +144,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if st.Installed {
 		if state, err := winsvc.State(); err == nil {
 			st.ServiceRun = state == svc.Running
-			st.ServiceText = stateText(state)
+			st.ServiceText = winsvc.StateText(state)
 		}
 	}
 	// a running service and a working tunnel are different things: TUN may
@@ -161,22 +161,6 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	st.DirectCount = len(snap.Direct)
 	st.Blocked = snap.Blocked()
 	writeJSON(w, st)
-}
-
-func stateText(s svc.State) string {
-	switch s {
-	case svc.Stopped:
-		return "stopped"
-	case svc.StartPending:
-		return "starting"
-	case svc.StopPending:
-		return "stopping"
-	case svc.Running:
-		return "running"
-	case svc.Paused:
-		return "paused"
-	}
-	return "unknown"
 }
 
 func (s *Server) handleService(w http.ResponseWriter, r *http.Request) {
