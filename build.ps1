@@ -4,7 +4,10 @@
 param(
     [string]$Version = "",
     # build without the embedded core (development: mihomo.exe next to the exe)
-    [switch]$NoEmbed
+    [switch]$NoEmbed,
+    # debug build with the race detector into dist\dpiswitch-race.exe; needs
+    # cgo and gcc (winget install BrechtSanders.WinLibs.POSIX.UCRT)
+    [switch]$Race
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,6 +20,20 @@ $fileVer = "$Version.0"
 
 go vet ./...
 go test ./...
+
+if ($Race) {
+    $env:CGO_ENABLED = "1"
+    if (-not (Get-Command gcc -ErrorAction SilentlyContinue)) {
+        # a winget install reaches PATH only in shells opened after it
+        $gcc = Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.*\mingw64\bin\gcc.exe" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if (-not $gcc) { throw "-Race needs gcc for cgo: winget install BrechtSanders.WinLibs.POSIX.UCRT" }
+        $env:PATH = "$($gcc.DirectoryName);$env:PATH"
+    }
+    # the tests under the detector first: a race they reach is cheaper to find here
+    go test -race ./...
+    if ($LASTEXITCODE) { throw "go test -race failed" }
+}
 
 # Windows resources: icon, version info and manifest embedded into the exe
 go run github.com/tc-hib/go-winres@v0.3.3 simply --arch amd64 --out cmd/dpiswitch/rsrc `
@@ -40,11 +57,18 @@ if (-not $NoEmbed) {
 }
 
 $ld = "-H=windowsgui -s -w -X dpiswitch/internal/version.Version=$Version"
-New-Item -ItemType Directory -Force dist | Out-Null
-go build -trimpath -tags "$tags" -ldflags $ld -o dist\dpiswitch.exe ./cmd/dpiswitch
-$mb = (Get-Item dist\dpiswitch.exe).Length / 1MB
-if ($NoEmbed) {
-    Write-Host ("done: dist\dpiswitch.exe {0} ({1:N1} MB, core NOT embedded: mihomo.exe must sit next to it)" -f $Version, $mb)
-} else {
-    Write-Host ("done: dist\dpiswitch.exe {0} ({1:N1} MB, core embedded)" -f $Version, $mb)
+$exe = "dist\dpiswitch.exe"
+$flags = @("-trimpath")
+if ($Race) {
+    # symbols stay: a race report is read by function and line. The version
+    # says what it is, in the tray and in every log's first line
+    $ld = "-H=windowsgui -X dpiswitch/internal/version.Version=$Version-race"
+    $exe = "dist\dpiswitch-race.exe"
+    $flags += "-race"
 }
+New-Item -ItemType Directory -Force dist | Out-Null
+go build @flags -tags "$tags" -ldflags $ld -o $exe ./cmd/dpiswitch
+if ($LASTEXITCODE) { throw "go build failed" }
+$mb = (Get-Item $exe).Length / 1MB
+$what = if ($Race) { "race detector" } elseif ($NoEmbed) { "core NOT embedded: mihomo.exe must sit next to it" } else { "core embedded" }
+Write-Host ("done: {0} {1} ({2:N1} MB, {3})" -f $exe, $Version, $mb, $what)

@@ -63,6 +63,13 @@ That directory is writable by SYSTEM and Administrators only.
 For development, `.\build.ps1 -NoEmbed` builds without the core; then `mihomo.exe`
 must sit next to `dpiswitch.exe`.
 
+`.\build.ps1 -Race` makes a debug build with the Go race detector into
+`dist\dpiswitch-race.exe`, version `<version>-race`, symbols kept; it also runs the
+tests under the detector. It needs cgo and gcc (`winget install
+BrechtSanders.WinLibs.POSIX.UCRT`). The service sends its stderr, where race reports
+go, to `%ProgramData%\dpiswitch\logs\service.log`. Expect it to be several times
+slower and hungrier than the release build.
+
 ## Installation
 
 `dpiswitch.exe` is self-contained: there is nothing else to copy.
