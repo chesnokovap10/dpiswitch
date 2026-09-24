@@ -187,3 +187,20 @@ func TestSuspectAddress(t *testing.T) {
 		t.Fatalf("clean addresses for the UI: %v", got)
 	}
 }
+
+// The watcher looks less often as the connection table grows, never less
+// than every five steps.
+func TestWatchStep(t *testing.T) {
+	for _, tc := range []struct {
+		conns int
+		want  time.Duration
+	}{
+		{0, time.Second}, {44, time.Second}, {399, time.Second},
+		{400, 2 * time.Second}, {1000, 3 * time.Second},
+		{1599, 4 * time.Second}, {1600, 5 * time.Second}, {50000, 5 * time.Second},
+	} {
+		if got := watchStep(time.Second, tc.conns); got != tc.want {
+			t.Errorf("%d connections: %s, want %s", tc.conns, got, tc.want)
+		}
+	}
+}

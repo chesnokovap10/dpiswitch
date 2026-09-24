@@ -43,26 +43,57 @@ func newWatcher(ctx context.Context, cfg Config, a *api) *watcher {
 }
 
 func (w *watcher) loop(ctx context.Context, cfg Config, a *api) {
-	t := time.NewTicker(cfg.WatchInterval)
+	t := time.NewTimer(cfg.WatchInterval)
 	defer t.Stop()
 	var failed int
+	slowed := false
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
 		}
+		next := cfg.WatchInterval
 		conns, err := a.connections()
 		if err != nil {
 			// the core may have restarted -- don't log on every iteration
 			if failed++; failed%30 == 1 {
 				log.Printf("watcher: cannot read connections: %v", err)
 			}
-			continue
+		} else {
+			failed = 0
+			w.observe(cfg, conns)
+			next = watchStep(cfg.WatchInterval, len(conns))
+			// said once each way; coming back takes a clear drop, so a count
+			// hovering at the first step does not fill the log
+			switch n := len(conns); {
+			case !slowed && next > cfg.WatchInterval:
+				slowed = true
+				log.Printf("watcher: %d connections open, looking every %s", n, next)
+			case slowed && n < watchPerStep*3/4:
+				slowed = false
+				log.Printf("watcher: %d connections open, looking every %s again", n, next)
+			}
 		}
-		failed = 0
-		w.observe(cfg, conns)
+		t.Reset(next)
 	}
+}
+
+// watchPerStep, watchMaxStep: see watchStep
+const (
+	watchPerStep = 400
+	watchMaxStep = 5
+)
+
+// watchStep: how long to wait before the next look, by how many connections
+// the last one returned. Each look is the core's whole connection table,
+// serialised by the core and parsed here: 44 connections are 33 KB, a
+// torrent client's thousand are 730 KB and 3.7 ms to parse -- every second,
+// in both processes. Such a load is mostly peers no probe is for, and a web
+// name missed once is caught when it is requested again. Every 400
+// connections add a step, up to five.
+func watchStep(base time.Duration, conns int) time.Duration {
+	return base * time.Duration(min(1+conns/watchPerStep, watchMaxStep))
 }
 
 // observe takes in one look at the core's connections.
