@@ -163,6 +163,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			var rep probe.Report
 			// the direct path failed on a TCP port -- see entry.DirectDown
 			directDown := false
+			var downOn probe.Report
 			for _, ep := range eps {
 				r := probe.CheckProto(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp)
 				appendJSONL(cfg.JSONLPath, r)
@@ -173,8 +174,8 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 				}
 				// QUIC failing direct is left out: most hosts have no QUIC at
 				// all, and fail on both paths for that reason alone
-				if !ep.udp && directFailed(r) {
-					directDown = true
+				if !ep.udp && directDownOn(r) && !directDown {
+					directDown, downOn = true, r
 				}
 				// INCONCLUSIVE means "could not measure" -- e.g. the host
 				// does not answer QUIC on either path. Such a result
@@ -189,6 +190,17 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 				case rep.Verdict == probe.Clean && r.Verdict != probe.Clean:
 					rep = r
 				}
+			}
+			// A port whose direct side failed while the tunnel failed too is
+			// INCONCLUSIVE, and that must not override a definite verdict --
+			// but CLEAN is a promise that the name works direct on every port
+			// it uses, and on this one it does not. Clean on 443 plus dead
+			// direct on 5228 used to come out CLEAN.
+			if rep.Verdict == probe.Clean && directDown {
+				rep = downOn
+				rep.Verdict = probe.Inconcl
+				rep.Reason = fmt.Sprintf("direct path fails on %s/%d: %s",
+					downOn.Proto, downOn.Port, downOn.Reason)
 			}
 
 			prev, had := st.get(netID, dom)
@@ -208,7 +220,9 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			// Keeping a verdict is for the tunnel side failing. When the
 			// DIRECT path itself failed, a CLEAN is not kept either: whatever
 			// this means about blocking, the host does not work direct now.
-			dropClean := had && prev.Verdict == probe.Clean && (expiredClean || directFailed(rep))
+			// On any TCP port it uses, not only the one the report came from --
+			// and not over QUIC, which most hosts simply do not have.
+			dropClean := had && prev.Verdict == probe.Clean && (expiredClean || directDown)
 			if had && rep.Verdict == probe.Inconcl && prev.Verdict != probe.Inconcl && !dropClean {
 				kept := *prev
 				kept.ExpiresAt = time.Now().Add(cfg.FailTTL)
@@ -525,6 +539,16 @@ func msVal(best int64, last probe.PathResult) string {
 func directFailed(rep probe.Report) bool {
 	d := rep.Direct
 	return !d.TCPOk || (d.TLSTried && !d.TLSOk) || d.HTTPFailed()
+}
+
+// directDownOn: the direct side failed on this port, and not the way the
+// tunnel side failed too. The same failure on both paths is the server's --
+// no TLS on 443 for a speedtest server that works on 20000, a push protocol
+// that is not HTTP -- and says nothing about the direct path; counting it
+// sent speedtest servers back into the tunnel once already.
+func directDownOn(rep probe.Report) bool {
+	d, t := rep.Direct, rep.Tunnel
+	return directFailed(rep) && !(t.Err != "" && t.ErrStage == d.ErrStage)
 }
 
 // withTCP adds plain TCP on every port seen only as QUIC. A mihomo rule

@@ -3,6 +3,8 @@ package ctl
 import (
 	"reflect"
 	"testing"
+
+	"dpiswitch/internal/probe"
 )
 
 // A re-check made while the name is idle must still probe the ports it is
@@ -36,5 +38,31 @@ func TestMergeEndpoints(t *testing.T) {
 	}
 	if n := len(mergeEndpoints(many, nil)); n != maxEndpoints {
 		t.Fatalf("cap: got %d, want %d", n, maxEndpoints)
+	}
+}
+
+// The direct path counts as down on a port only when the tunnel did not fail
+// the same way: a speedtest server has no TLS on 443 on either path, and its
+// working 20000 must still decide.
+func TestDirectDownOn(t *testing.T) {
+	tlsFail := probe.PathResult{TCPOk: true, TLSTried: true, Err: "EOF", ErrStage: "tls"}
+	tlsOK := probe.PathResult{TCPOk: true, TLSTried: true, TLSOk: true}
+	noTunnel := probe.PathResult{Err: "socks connect: refused", ErrStage: "tcp"}
+	httpFail := probe.PathResult{TCPOk: true, TLSTried: true, TLSOk: true, Err: "malformed", ErrStage: "http_read"}
+	cases := []struct {
+		name string
+		d, t probe.PathResult
+		want bool
+	}{
+		{"no TLS on either path", tlsFail, tlsFail, false},
+		{"not HTTP on either path", httpFail, httpFail, false},
+		{"direct cut, tunnel unreachable", tlsFail, noTunnel, true},
+		{"direct fine, tunnel unreachable", tlsOK, noTunnel, false},
+		{"direct DNS gave nothing", probe.PathResult{}, probe.PathResult{}, true},
+	}
+	for _, c := range cases {
+		if got := directDownOn(probe.Report{Direct: c.d, Tunnel: c.t}); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
 	}
 }
