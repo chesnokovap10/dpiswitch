@@ -110,6 +110,12 @@ func runTray() {
 	_ = logfile.RotateIfOver(paths.ControllerLog(), logMax)
 	if f, err := os.OpenFile(paths.ControllerLog(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
 		log.SetOutput(f)
+		// the tray has no console either: as with the service, panics and
+		// stderr -- race reports in a -race build -- go here or nowhere
+		if err := debug.SetCrashOutput(f, debug.CrashOptions{}); err != nil {
+			log.Printf("crash output not redirected: %v", err)
+		}
+		_ = windows.SetStdHandle(windows.STD_ERROR_HANDLE, windows.Handle(f.Fd()))
 	}
 	log.Printf("tray %s starting: pid %d, args %v", version.Version, os.Getpid(), os.Args[1:])
 
