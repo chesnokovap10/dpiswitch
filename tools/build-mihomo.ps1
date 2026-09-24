@@ -28,10 +28,15 @@ $tags = "with_gvisor,no_tailscale,no_zerotier,no_easytier,no_fake_tcp"
 New-Item -ItemType Directory -Force (Join-Path $root dist) | Out-Null
 $out = Join-Path $root "dist\mihomo.exe"
 Push-Location $src
+# the caller's setting comes back after: build.ps1 -Race needs cgo for its
+# own build, and a first run builds the core in between
+$cgo = $env:CGO_ENABLED
 try {
     $env:CGO_ENABLED = "0"
     go build -trimpath -tags $tags -ldflags "-s -w" -o $out .
+    if ($LASTEXITCODE) { throw "the core did not build" }
 } finally {
+    $env:CGO_ENABLED = $cgo
     Pop-Location
 }
 Write-Host ("done: {0} ({1:N1} MB, tags: {2})" -f $out, ((Get-Item $out).Length / 1MB), $tags)
