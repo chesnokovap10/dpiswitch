@@ -224,9 +224,8 @@ func status() (tray.State, string) {
 		return tray.StateError, "DPI Switch — tunnel not responding: " + note
 	}
 	snap := snapshot()
-	blocked := snap.Counts["BLOCKED_TLS"] + snap.Counts["BLOCKED_TCP"] + snap.Counts["BLOCKED_QUIC"]
 	return tray.StateOn, fmt.Sprintf("DPI Switch — tunnel up (%s)\n"+
-		"direct: %d, blocked: %d", note, len(snap.Direct), blocked)
+		"direct: %d, blocked: %d", note, len(snap.Direct), snap.Blocked())
 }
 
 // stateCache: the verdict summary the icon's tooltip shows. The state file

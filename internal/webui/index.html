@@ -270,7 +270,7 @@ function renderStats(s){
         : (s.network_up ? '<span class="pill">off</span>'
                         : '<span class="pill warn">no network</span>')}</b><span>tunnel</span></div>
     <div class="stat"><b>${s.direct_count}</b><span>going direct</span></div>
-    <div class="stat"><b>${(s.counts&&s.counts.BLOCKED_TLS)||0}</b><span>blocked</span></div>
+    <div class="stat"><b>${s.blocked_count||0}</b><span>blocked</span></div>
     <div class="stat"><b>${pill(s.has_config,'loaded','none')}</b><span>config</span></div>
     <div class="stat"><b style="font-size:13px">${(s.network_id||'—').slice(0,10)}</b><span>network profile</span></div>`;
   $('#chk-autostart').checked = !!s.autostart;
@@ -437,7 +437,9 @@ let lastVerdicts = null;
 
 function updateVerdictCounts(r){
   const others = r.others || [];
-  const n = {direct: (r.details||[]).length + (r.families||[]).length};
+  // names and addresses, as the "going direct" card counts them: a whole
+  // domain is a row in the table, not one more name
+  const n = {direct: (r.details||[]).length};
   for (const k of ['blocked','slow','unknown']) n[k] = others.filter(o => VCAT[k].match(o.verdict)).length;
   for (const b of document.querySelectorAll('[data-vcat]')) {
     const k = b.dataset.vcat;

@@ -119,6 +119,7 @@ type status struct {
 	NetworkID   string         `json:"network_id"`
 	Counts      map[string]int `json:"counts"`
 	DirectCount int            `json:"direct_count"`
+	Blocked     int            `json:"blocked_count"`
 	TunnelAlive bool           `json:"tunnel_alive"`
 	TunnelNote  string         `json:"tunnel_note"`
 	NetworkUp   bool           `json:"network_up"`
@@ -156,6 +157,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	st.NetworkID = snap.NetworkID
 	st.Counts = snap.Counts
 	st.DirectCount = len(snap.Direct)
+	st.Blocked = snap.Blocked()
 	writeJSON(w, st)
 }
 

@@ -177,6 +177,21 @@ type Snapshot struct {
 	Others []DirectEntry `json:"others"`
 }
 
+// Blocked: the names the direct path was found tampered with -- cut at any
+// stage, a spoofed certificate, a changed answer. The UI's status card and
+// its "Blocked" tab, and the tray, all count by this: the card counted
+// BLOCKED_TLS alone, the tray three kinds, the tab five -- 31, 35 and 38.
+func (s Snapshot) Blocked() int {
+	n := 0
+	for v, c := range s.Counts {
+		switch probe.Verdict(v) {
+		case probe.BlockedTCP, probe.BlockedTLS, probe.BlockedQUIC, probe.MITM, probe.ContentDiff:
+			n += c
+		}
+	}
+	return n
+}
+
 // DirectEntry: a row of the verdict tables in the UI
 type DirectEntry struct {
 	Domain    string    `json:"domain"`

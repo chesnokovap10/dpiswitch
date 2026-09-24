@@ -228,3 +228,14 @@ func TestTunnelHealth(t *testing.T) {
 		t.Error("an unknown proxy gave no error")
 	}
 }
+
+// The status card, the "Blocked" tab and the tray count the same verdicts.
+func TestSnapshotBlocked(t *testing.T) {
+	s := Snapshot{Counts: map[string]int{
+		"CLEAN": 665, "BLOCKED_TLS": 32, "BLOCKED_TCP": 4, "BLOCKED_QUIC": 3,
+		"MITM": 1, "CONTENT_DIFF": 2, "SLOWER": 10, "INCONCLUSIVE": 46,
+	}}
+	if got := s.Blocked(); got != 42 {
+		t.Fatalf("got %d, want 42", got)
+	}
+}
