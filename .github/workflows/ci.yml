@@ -1,14 +1,17 @@
-# The repository is private: Actions minutes count against the account's
-# quota, a Windows runner's twice. So a push to main runs the fast checks
-# only (a few minutes); the race detector runs on a version tag or by hand,
-# and a tag also builds the release.
+# The repository is private and nothing is paid for: Actions get the free
+# monthly minutes and nothing beyond -- when they run out, runs stop until
+# the next month, nothing is charged. A Windows runner counts twice. So a
+# push runs go vet and the tests only, and only when Go code changed (about
+# four minutes of the quota). The race detector, and the release build on a
+# tag, run by hand only:
+#   gh workflow run CI                  go vet, tests, race tests
+#   gh workflow run CI --ref vX.Y.Z     the same, then a draft release
 name: CI
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
-    paths-ignore: ['**.md']
+    paths: ['**.go', 'go.mod', 'go.sum', '.github/workflows/**']
   workflow_dispatch:
 
 concurrency:
@@ -29,14 +32,14 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - name: go test -race
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'workflow_dispatch'
         env:
           CGO_ENABLED: '1'
         run: go test -race ./...
 
   release:
     needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v')
     runs-on: windows-latest
     permissions:
       contents: write

@@ -81,11 +81,12 @@ for it, copies with retries, starts both again and checks the hash. The
 replaced binary is kept beside it as `dpiswitch.last.exe` — `-Path` with it
 is the way back. No elevation is needed.
 
-CI (GitHub Actions, `.github/workflows/ci.yml`): a push to `main` runs
-`go vet` and the tests; a `v*` tag also runs the tests under the race
-detector, checks the tag against `version.go`, builds and attaches the zip
-and `SHA256SUMS.txt` to a draft release. The race tests alone can be run
-from the Actions tab.
+CI (GitHub Actions, `.github/workflows/ci.yml`) is kept within the free minutes:
+a push to `main` that changes Go code runs `go vet` and the tests. The race
+tests run by hand (`gh workflow run CI`); run on a `v*` tag
+(`gh workflow run CI --ref vX.Y.Z`) it also checks the tag against
+`version.go`, builds and attaches the zip and `SHA256SUMS.txt` to a draft
+release.
 
 ## Installation
 
