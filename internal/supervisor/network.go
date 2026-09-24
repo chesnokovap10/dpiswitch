@@ -15,8 +15,6 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
-
-	"dpiswitch/internal/ctl"
 )
 
 // --- physical network presence ---
@@ -161,22 +159,14 @@ func cancelAddrChange(ov *windows.Overlapped) {
 type healthChecker struct {
 	apiAddr string
 	secret  string
-	proxy   string
 	client  *http.Client
 }
 
-func newHealthChecker(apiAddr, secret, proxy string) *healthChecker {
+func newHealthChecker(apiAddr, secret string) *healthChecker {
 	return &healthChecker{
-		apiAddr: apiAddr, secret: secret, proxy: proxy,
+		apiAddr: apiAddr, secret: secret,
 		client: &http.Client{Timeout: 12 * time.Second},
 	}
-}
-
-// alive asks the core for a delay measured through the tunnel itself. This is
-// an honest end-to-end check: TUN being up with a dead peer looks fine from
-// the outside while traffic goes nowhere.
-func (h *healthChecker) alive() (bool, string) {
-	return h.check(h.proxy, ctl.HealthURL, 5000)
 }
 
 // check measures one proxy against one URL through the core's own API, so the

@@ -44,7 +44,7 @@ func (s *Supervisor) checkIPv6(ctx context.Context) {
 	if !ctl.LoadSettings(paths.Settings()).IPv6 {
 		return // IPv6 is off altogether: both tunnels are already ipv4
 	}
-	hc := newHealthChecker("127.0.0.1:9090", ctl.SecretFromConfig(paths.Config()), "awg")
+	hc := newHealthChecker("127.0.0.1:9090", ctl.SecretFromConfig(paths.Config()))
 
 	names := []string{"awg"}
 	if _, err := os.Stat(paths.SourceConf2()); err == nil {

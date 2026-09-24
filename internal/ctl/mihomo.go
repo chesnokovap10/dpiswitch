@@ -116,13 +116,33 @@ type delayHistory []struct {
 	Delay int       `json:"delay"`
 }
 
-// tunnelHealth reads what the core's own health checks last found for a
-// proxy, without making one more: the proxy groups check their members every
-// 30 seconds. A core just started has no check yet, and counts as up.
+// TunnelCheck: the core's last check of a proxy against HealthURL.
+type TunnelCheck struct {
+	OK    bool
+	At    time.Time // zero: none yet -- a core just started, which counts as up
+	Stale bool      // older than healthStale: the core stopped checking
+	Note  string
+}
+
+// tunnelHealth: lastCheck, in short.
 func (a *api) tunnelHealth(proxy string) (bool, string, error) {
+	c, err := a.lastCheck(proxy)
+	return c.OK, c.Note, err
+}
+
+// LastTunnelCheck: lastCheck for the supervisor, which restarts the core on
+// what it says.
+func LastTunnelCheck(apiAddr, secret, proxy string) (TunnelCheck, error) {
+	return newAPI(apiAddr, secret).lastCheck(proxy)
+}
+
+// lastCheck reads what the core's own health checks last found for a proxy,
+// without making one more: the proxy groups check their members every 30
+// seconds.
+func (a *api) lastCheck(proxy string) (TunnelCheck, error) {
 	b, err := a.do("GET", "/proxies/"+url.PathEscape(proxy), nil)
 	if err != nil {
-		return false, "", err
+		return TunnelCheck{}, err
 	}
 	var p struct {
 		History delayHistory `json:"history"`
@@ -134,23 +154,26 @@ func (a *api) tunnelHealth(proxy string) (bool, string, error) {
 		} `json:"extra"`
 	}
 	if err := json.Unmarshal(b, &p); err != nil {
-		return false, "", err
+		return TunnelCheck{}, err
 	}
 	h := p.History
 	if x, ok := p.Extra[HealthURL]; ok {
 		h = x.History
 	}
 	if len(h) == 0 {
-		return true, "not checked yet", nil
+		return TunnelCheck{OK: true, Note: "not checked yet"}, nil
 	}
 	last := h[len(h)-1]
+	c := TunnelCheck{At: last.Time}
 	switch {
 	case time.Since(last.Time) > healthStale:
-		return false, "no check since " + last.Time.Format("15:04:05"), nil
+		c.Stale, c.Note = true, "no check since "+last.Time.Format("15:04:05")
 	case last.Delay <= 0:
-		return false, "no answer at " + last.Time.Format("15:04:05"), nil
+		c.Note = "no answer at " + last.Time.Format("15:04:05")
+	default:
+		c.OK, c.Note = true, fmt.Sprintf("%d ms", last.Delay)
 	}
-	return true, fmt.Sprintf("%d ms", last.Delay), nil
+	return c, nil
 }
 
 // TunnelHealth: tunnelHealth for the tray and the UI. They used to test the

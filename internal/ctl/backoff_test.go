@@ -239,3 +239,16 @@ func TestSnapshotBlocked(t *testing.T) {
 		t.Fatalf("got %d, want 42", got)
 	}
 }
+
+// The check a reading came from is told by its time; a stale one says so.
+func TestLastCheck(t *testing.T) {
+	at := time.Now().Add(-5 * time.Minute).Truncate(time.Millisecond)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"history":[{"time":"` + at.Format(time.RFC3339Nano) + `","delay":64}]}`))
+	}))
+	defer srv.Close()
+	c, err := LastTunnelCheck(strings.TrimPrefix(srv.URL, "http://"), "", "awg")
+	if err != nil || !c.At.Equal(at) || !c.Stale || c.OK {
+		t.Fatalf("%+v %v", c, err)
+	}
+}

@@ -333,14 +333,16 @@ func (s *Supervisor) askRecheck() {
 // goes nowhere, and from the outside it looks like no internet at all.
 // It won't resolve itself until someone re-establishes the connection.
 func (s *Supervisor) keepHealthy(ctx context.Context) {
-	hc := newHealthChecker("127.0.0.1:9090",
-		ctl.SecretFromConfig(paths.Config()), "awg")
+	secret := ctl.SecretFromConfig(paths.Config())
 
 	const (
-		period   = 30 * time.Second
+		// the core checks every 30 seconds; reading twice as often keeps
+		// this from lagging a check behind
+		period   = 15 * time.Second
 		failsMax = 3 // three in a row: a single failure is not worth reacting to
 	)
 	var fails int
+	var seen time.Time // the core's check the last verdict here came from
 	// let the core come up before judging its health
 	if !sleepCtx(ctx, 25*time.Second) {
 		return
@@ -362,7 +364,20 @@ func (s *Supervisor) keepHealthy(ctx context.Context) {
 			continue
 		}
 
-		ok, detail := hc.alive()
+		// The core's proxy groups check the tunnel every 30 seconds; their
+		// last result is read here instead of a check of its own -- 2,880
+		// requests a day through the tunnel. Each check counts once: a
+		// result read again says nothing new. One the core stopped renewing
+		// is a failure every time -- the core itself may be stuck.
+		c, err := ctl.LastTunnelCheck("127.0.0.1:9090", secret, "awg")
+		news, ok, detail := readCheck(c, err, seen)
+		if !news {
+			if !s.waitRecheck(ctx, period) {
+				return
+			}
+			continue
+		}
+		seen = c.At
 		if ok {
 			if fails > 0 {
 				log.Printf("tunnel responding again (%s)", detail)
@@ -397,6 +412,22 @@ func (s *Supervisor) keepHealthy(ctx context.Context) {
 			return
 		}
 	}
+}
+
+// readCheck: whether a reading of the core's last tunnel check is news, and
+// what it says. The same check read again is not; one the core stopped
+// renewing, or an API that does not answer, is a failure every time.
+func readCheck(c ctl.TunnelCheck, err error, seen time.Time) (news, ok bool, detail string) {
+	switch {
+	case err != nil:
+		// the core itself is unreachable -- a separate problem, but cured the same way
+		return true, false, "core API not responding: " + trim(err.Error())
+	case c.Stale || c.At.IsZero():
+		return true, c.OK, c.Note
+	case c.At.Equal(seen):
+		return false, c.OK, c.Note
+	}
+	return true, c.OK, c.Note
 }
 
 // wait for either the period or a network change signal
