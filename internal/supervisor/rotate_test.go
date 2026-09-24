@@ -1,6 +1,8 @@
 package supervisor
 
 import (
+	"bytes"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,5 +36,22 @@ func TestRotatingFile(t *testing.T) {
 	// the newest three lines survive (80 in .1, 40 current), the oldest two go
 	if len(cur) != 40 || len(old) != 80 || strings.Contains(string(old), "x") {
 		t.Fatalf("expected 40 current and 80 previous bytes of new data: current %d, previous %d", len(cur), len(old))
+	}
+}
+
+// A core log that cannot be opened still takes the core's output -- an
+// error would stop the copying and hang the core -- and says so once.
+func TestRotatingFileLost(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+	r := &rotatingFile{path: filepath.Join(t.TempDir(), "no-such-dir", "mihomo.log"), max: 1 << 20}
+	for i := 0; i < 3; i++ {
+		if n, err := r.Write([]byte("line\n")); n != 5 || err != nil {
+			t.Fatalf("write %d: %d, %v", i, n, err)
+		}
+	}
+	if got := strings.Count(buf.String(), "unavailable"); got != 1 {
+		t.Fatalf("said %d times: %q", got, buf.String())
 	}
 }

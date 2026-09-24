@@ -1,6 +1,7 @@
 package supervisor
 
 import (
+	"log"
 	"os"
 	"sync"
 )
@@ -18,6 +19,7 @@ type rotatingFile struct {
 	max     int64
 	f       *os.File
 	written int64
+	lost    bool // the log could not be opened, and that was said
 }
 
 func openRotating(path string, max int64) (*rotatingFile, error) {
@@ -55,23 +57,42 @@ func (r *rotatingFile) rotate() {
 	}
 }
 
+// Write takes the core's output. What cannot be written is dropped, and
+// reported as written: this is the core's stdout, and an error here stops
+// the copying from its pipe -- the core would then hang on its next log
+// line. The loss is said once in the service log, and again only after the
+// log came back.
 func (r *rotatingFile) Write(p []byte) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.f == nil {
 		if err := r.open(); err != nil {
+			r.drop(err)
 			return len(p), nil
 		}
 	}
 	if r.written+int64(len(p)) > r.max {
 		r.rotate()
 		if r.f == nil {
+			r.drop(nil)
 			return len(p), nil
 		}
 	}
+	r.lost = false
 	n, err := r.f.Write(p)
 	r.written += int64(n)
 	return n, err
+}
+
+func (r *rotatingFile) drop(err error) {
+	if r.lost {
+		return
+	}
+	r.lost = true
+	if err == nil {
+		err = os.ErrClosed
+	}
+	log.Printf("core log %s unavailable (%v): its output is dropped until it opens again", r.path, err)
 }
 
 func (r *rotatingFile) Close() error {
