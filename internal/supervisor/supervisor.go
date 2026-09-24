@@ -31,7 +31,9 @@ type Supervisor struct {
 	running atomic.Bool
 	recheck chan struct{} // request to check the tunnel right away
 	job     windows.Handle
-	v6busy  atomic.Bool // an IPv6 check is already running for this start
+	// v6mu: the start of a core, which resets what the IPv6 check found, and
+	// a check writing what it found, one at a time -- see commitV6
+	v6mu sync.Mutex
 	// stopMu: one stop of the core at a time. A restart is asked for by the
 	// health check and by the controller (DNS or IPv6 settings changed), and
 	// the service's own stop may come on top: each used to shut the same
@@ -159,6 +161,7 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 	// away from the one that cannot carry it. Keeping the previous answer here
 	// would be a one-way door -- an outbound pinned to ip-version: ipv4 refuses
 	// IPv6 targets outright, so the check could never see IPv6 come back.
+	s.v6mu.Lock()
 	if err := (ctl.TunnelIPv6{}).Save(paths.TunnelIPv6()); err != nil {
 		log.Printf("IPv6 state not reset: %v", err)
 	}
@@ -169,6 +172,7 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 			log.Println("config rebuilt")
 		}
 	}
+	s.v6mu.Unlock()
 
 	// the core is embedded into dpiswitch.exe: make sure the extracted copy
 	// is present and untampered before every start (see internal/core)
@@ -216,13 +220,14 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 	log.Printf("core started, pid %d", cmd.Process.Pid)
 
 	// one-shot per core start: find out whether IPv6 gets through each
-	// tunnel (see ipv6.go). It waits for the tunnels, so it runs aside.
-	go func() {
-		if s.v6busy.CompareAndSwap(false, true) {
-			defer s.v6busy.Store(false)
-			s.checkIPv6(ctx)
-		}
-	}()
+	// tunnel (see ipv6.go). It waits for the tunnels, so it runs aside --
+	// under a context of this core's own, ended when this core is. It ran
+	// under the service's, and a check that outlived its core (waiting for
+	// a tunnel can take minutes) blocked the next core's own check and wrote
+	// what it had measured on the dying one into the config of the new one.
+	coreCtx, coreDone := context.WithCancel(ctx)
+	defer coreDone()
+	go s.checkIPv6(coreCtx)
 
 	go func() { waitErr = cmd.Wait(); close(done) }()
 

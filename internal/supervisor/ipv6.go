@@ -80,23 +80,41 @@ func (s *Supervisor) checkIPv6(ctx context.Context) {
 	if found.Same(old) {
 		return
 	}
-	if err := found.Save(paths.TunnelIPv6()); err != nil {
-		log.Printf("IPv6 state not saved: %v", err)
-		return
+	s.commitV6(ctx, func() {
+		if err := found.Save(paths.TunnelIPv6()); err != nil {
+			log.Printf("IPv6 state not saved: %v", err)
+			return
+		}
+		changed, err := awgconf.Regenerate()
+		if err != nil {
+			log.Printf("config not rebuilt after the IPv6 check: %v", err)
+			return
+		}
+		if !changed {
+			return
+		}
+		if err := reloadCoreConfig(hc); err != nil {
+			log.Printf("core did not re-read the config after the IPv6 check: %v", err)
+			return
+		}
+		log.Println("config re-read after the IPv6 check")
+	})
+}
+
+// commitV6 writes what a check found -- the state file, the config, the
+// core's reload -- only while the core it measured still runs: ctx ends
+// with it. Under v6mu, which the next core's start holds while it resets
+// IPv6 for everyone, the check either finishes before that start or sees
+// its core gone and writes nothing.
+func (s *Supervisor) commitV6(ctx context.Context, commit func()) bool {
+	s.v6mu.Lock()
+	defer s.v6mu.Unlock()
+	if ctx.Err() != nil {
+		log.Println("IPv6 check outlived its core: the new core's own check will answer")
+		return false
 	}
-	changed, err := awgconf.Regenerate()
-	if err != nil {
-		log.Printf("config not rebuilt after the IPv6 check: %v", err)
-		return
-	}
-	if !changed {
-		return
-	}
-	if err := reloadCoreConfig(hc); err != nil {
-		log.Printf("core did not re-read the config after the IPv6 check: %v", err)
-		return
-	}
-	log.Println("config re-read after the IPv6 check")
+	commit()
+	return true
 }
 
 // waitTunnel: an IPv6 answer means nothing until the tunnel itself is up --

@@ -109,3 +109,30 @@ func TestAPIReady(t *testing.T) {
 		t.Fatal("waitAPI took a running process for a ready API")
 	}
 }
+
+// An IPv6 check writes what it found only while its core runs; one whose
+// core ended -- even while the next core's start held the lock -- writes
+// nothing.
+func TestCommitV6(t *testing.T) {
+	s := New()
+	ran := 0
+	ctx, cancel := context.WithCancel(context.Background())
+	if !s.commitV6(ctx, func() { ran++ }) || ran != 1 {
+		t.Fatal("a check of a running core did not write")
+	}
+	cancel()
+	if s.commitV6(ctx, func() { ran++ }) || ran != 1 {
+		t.Fatal("a check whose core is gone wrote")
+	}
+
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	s.v6mu.Lock() // the next core starting: resetting IPv6 for everyone
+	done := make(chan bool)
+	go func() { done <- s.commitV6(ctx2, func() { ran++ }) }()
+	time.Sleep(50 * time.Millisecond)
+	cancel2() // its core ended meanwhile
+	s.v6mu.Unlock()
+	if <-done || ran != 1 {
+		t.Fatal("a check wrote over the start of the next core")
+	}
+}
