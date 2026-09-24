@@ -488,3 +488,88 @@ func TestSettingsMoveTerms(t *testing.T) {
 		t.Fatalf("a CLEAN measured slower once lost its short term: %s", e.ExpiresAt.Sub(now))
 	}
 }
+
+// Families on a mixed CDN: three clean hosts make the domain go direct
+// whole only when no host of it is known bad.
+func TestCycleFamilyMixed(t *testing.T) {
+	// three CLEAN hosts of a domain, and one more with what it is given
+	build := func(t *testing.T, domain string, fourth probe.Report) *scenario {
+		t.Helper()
+		s := newScenario(t)
+		var conns []connection
+		for i := 1; i <= 3; i++ {
+			h := fmt.Sprintf("h%d.%s", i, domain)
+			conns = append(conns, tunnelled(h, 443))
+			s.script(h+" tcp/443", clean(fmt.Sprintf("192.0.2.%d", 30+i)))
+		}
+		h4 := "h4." + domain
+		conns = append(conns, tunnelled(h4, 443))
+		s.script(h4+" tcp/443", fourth)
+		s.see(conns...)
+		s.cycle()
+		return s
+	}
+	family := func(s *scenario, domain string) bool {
+		return slices.Contains(listRules(s.cfg.ListPath), "+."+domain)
+	}
+
+	t.Run("a blocked host", func(t *testing.T) {
+		s := build(t, "cdn-a.net", blockedTLS("192.0.2.40"))
+		if family(s, "cdn-a.net") {
+			t.Fatal("a family with a blocked host")
+		}
+		if slices.Contains(listRules(s.cfg.ListPath), "h4.cdn-a.net") {
+			t.Fatal("the blocked host went direct")
+		}
+	})
+	t.Run("an IPv6-only host", func(t *testing.T) {
+		s := build(t, "cdn-b.net", probe.Report{Verdict: probe.Inconcl, DirectNoV6: true,
+			TestedIP: "2001:db8::40", Reason: "IPv6 node the direct path does not reach",
+			Direct: tlsCut, Tunnel: pathOK})
+		if family(s, "cdn-b.net") {
+			t.Fatal("a family swept an IPv6-only host direct")
+		}
+	})
+	t.Run("a host dead on both paths", func(t *testing.T) {
+		// the server's own failure says nothing about the direct path: the
+		// family holds, and the host fails direct as it fails everywhere
+		s := build(t, "cdn-c.net", probe.Report{Verdict: probe.Inconcl, TestedIP: "192.0.2.41",
+			Reason: "fails the same on both paths: tls: EOF", Direct: tlsCut, Tunnel: tlsCut})
+		if !family(s, "cdn-c.net") {
+			t.Fatal("a host dead everywhere broke the family")
+		}
+	})
+	t.Run("a clean host past its term", func(t *testing.T) {
+		s := build(t, "cdn-d.net", clean("192.0.2.42"))
+		if !family(s, "cdn-d.net") {
+			t.Fatal("setup: no family from four clean hosts")
+		}
+		// two of them past their term and no longer in use, so not re-checked
+		s.see()
+		for _, h := range []string{"h1.cdn-d.net", "h2.cdn-d.net"} {
+			e := s.entry(h)
+			e.ExpiresAt = time.Now().Add(-time.Minute)
+			e.LastSeen = time.Now().Add(-48 * time.Hour)
+		}
+		s.cycle()
+		if family(s, "cdn-d.net") {
+			t.Fatal("expired CLEANs kept the family")
+		}
+	})
+	t.Run("a host sent direct by the family turns out blocked", func(t *testing.T) {
+		s := build(t, "cdn-e.net", clean("192.0.2.43"))
+		if !family(s, "cdn-e.net") {
+			t.Fatal("setup: no family")
+		}
+		// a new host, direct by the family rule alone, gets its own check
+		s.see(via("h9.cdn-e.net", 443, "tcp", "DIRECT", "RuleSet", "direct-verified"))
+		s.script("h9.cdn-e.net tcp/443", blockedTLS("192.0.2.49"))
+		s.cycle()
+		if family(s, "cdn-e.net") {
+			t.Fatal("the family held after a host of it was found blocked")
+		}
+		if slices.Contains(listRules(s.cfg.ListPath), "h9.cdn-e.net") {
+			t.Fatal("the blocked host is still direct")
+		}
+	})
+}
