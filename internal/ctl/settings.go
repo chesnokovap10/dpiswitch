@@ -106,19 +106,29 @@ func SaveSettings(path string, s Settings) error {
 	return os.Rename(tmp, path)
 }
 
+// the bounds of the numeric settings, in minutes and percent: the UI's
+// Validate refuses a value outside them, and clamp replaces one read from
+// a file -- a hand-edited one included
+const (
+	cleanTTLMin, cleanTTLMax = 10, 30 * 24 * 60
+	failTTLMin, failTTLMax   = 5, 7 * 24 * 60
+	maxBackoffMax            = 30 * 24 * 60
+	slowPctMax               = 500
+)
+
 func (s Settings) Validate() error {
 	switch {
-	case s.CleanTTLMin < 10 || s.CleanTTLMin > 30*24*60:
+	case s.CleanTTLMin < cleanTTLMin || s.CleanTTLMin > cleanTTLMax:
 		return fmt.Errorf("direct TTL: from 10 minutes to 30 days")
-	case s.FailTTLMin < 5 || s.FailTTLMin > 7*24*60:
+	case s.FailTTLMin < failTTLMin || s.FailTTLMin > failTTLMax:
 		return fmt.Errorf("blocked re-check: from 5 minutes to 7 days")
 	// the pause cap limits re-checking of BLOCKED domains after a revert,
 	// it is unrelated to the direct TTL: 7 days direct and a 1 day
 	// cap is a valid combination. It used to be compared against it,
 	// and such a save was silently rejected
-	case s.MaxBackoffMin < s.FailTTLMin || s.MaxBackoffMin > 30*24*60:
+	case s.MaxBackoffMin < s.FailTTLMin || s.MaxBackoffMin > maxBackoffMax:
 		return fmt.Errorf("pause cap: no less than the blocked re-check and no more than 30 days")
-	case s.SlowPct < 0 || s.SlowPct > 500:
+	case s.SlowPct < 0 || s.SlowPct > slowPctMax:
 		return fmt.Errorf("latency tolerance: from 0 to 500%%")
 	case s.Attempts < 1 || s.Attempts > 10:
 		return fmt.Errorf("attempts: from 1 to 10")
@@ -141,19 +151,25 @@ func (s Settings) Validate() error {
 }
 
 // clamp repairs a hand-broken file instead of refusing to work:
-// the service must not fail over a typo in the settings
+// the service must not fail over a typo in the settings. Only the lower
+// bounds used to be enforced here -- Validate guards the UI, not the file
+// -- and a hand-edited 999999999 minutes overflowed time.Duration into a
+// negative term.
 func (s *Settings) clamp() {
 	d := DefaultSettings()
-	if s.CleanTTLMin < 10 {
+	if s.CleanTTLMin < cleanTTLMin || s.CleanTTLMin > cleanTTLMax {
 		s.CleanTTLMin = d.CleanTTLMin
 	}
-	if s.FailTTLMin < 5 {
+	if s.FailTTLMin < failTTLMin || s.FailTTLMin > failTTLMax {
 		s.FailTTLMin = d.FailTTLMin
+	}
+	if s.MaxBackoffMin > maxBackoffMax {
+		s.MaxBackoffMin = d.MaxBackoffMin
 	}
 	if s.MaxBackoffMin < s.FailTTLMin {
 		s.MaxBackoffMin = s.FailTTLMin
 	}
-	if s.SlowPct < 0 {
+	if s.SlowPct < 0 || s.SlowPct > slowPctMax {
 		s.SlowPct = d.SlowPct
 	}
 	if s.Attempts < 1 || s.Attempts > 10 {

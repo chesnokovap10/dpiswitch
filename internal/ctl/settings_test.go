@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"dpiswitch/internal/probe"
 )
 
 func TestSettingsRoundTrip(t *testing.T) {
@@ -69,4 +71,25 @@ func TestCoreChanged(t *testing.T) {
 	if !coreChanged(noV6, dns, true) {
 		t.Error("IPv6 switched off must restart the core")
 	}
+}
+
+// A settings file edited by hand past the bounds is put back within them:
+// 999999999 minutes used to overflow into a negative term.
+func TestClampUpperBounds(t *testing.T) {
+	s := Settings{CleanTTLMin: 999999999, FailTTLMin: 999999999, MaxBackoffMin: 999999999,
+		SlowPct: 999999999, Attempts: 3}
+	s.clamp()
+	d := DefaultSettings()
+	if s.CleanTTLMin != d.CleanTTLMin || s.FailTTLMin != d.FailTTLMin ||
+		s.MaxBackoffMin != d.MaxBackoffMin || s.SlowPct != d.SlowPct {
+		t.Fatalf("got %+v", s)
+	}
+	if err := s.Validate(); err != nil {
+		t.Fatalf("clamped settings do not validate: %v", err)
+	}
+	cfg := s.apply(Config{})
+	if cfg.TTL <= 0 || cfg.FailTTL <= 0 || cfg.MaxBackoff <= 0 {
+		t.Fatalf("terms %s %s %s", cfg.TTL, cfg.FailTTL, cfg.MaxBackoff)
+	}
+	probe.SetSlowFactor(1.2)
 }

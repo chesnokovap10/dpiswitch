@@ -453,3 +453,38 @@ func TestCycleTooManyPorts(t *testing.T) {
 		t.Fatalf("a CLEAN with an unprobed port was kept: %s", e.Reason)
 	}
 }
+
+// A changed blocked re-check reaches verdicts already made; a save that
+// changes something else moves no term -- a CLEAN measured slower once
+// keeps its short one.
+func TestSettingsMoveTerms(t *testing.T) {
+	s := newScenario(t)
+	now := time.Now()
+	s.st.put("n", "blocked.example.org", &entry{Verdict: probe.BlockedTLS,
+		DecidedAt: now, ExpiresAt: now.Add(time.Hour)})
+	s.st.put("n", "slow.example.org", &entry{Verdict: probe.Clean, SlowOnce: true,
+		DecidedAt: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour)})
+
+	set := DefaultSettings()
+	set.AutoSwitch = true
+	cfg := set.apply(s.cfg)
+
+	// something else changed: nothing moves
+	other := set
+	other.Attempts = 5
+	cfg = onSettingsChanged(cfg, other, s.api, s.st, "n")
+	if e := s.entry("blocked.example.org"); !e.ExpiresAt.Equal(now.Add(time.Hour)) {
+		t.Fatalf("an unrelated save moved a blocked term to %s", e.ExpiresAt)
+	}
+
+	// the blocked re-check shortened: the waiting verdict follows
+	short := other
+	short.FailTTLMin = 5
+	onSettingsChanged(cfg, short, s.api, s.st, "n")
+	if e := s.entry("blocked.example.org"); !e.ExpiresAt.Equal(now.Add(5 * time.Minute)) {
+		t.Fatalf("blocked term %s, want the new five minutes", e.ExpiresAt.Sub(now))
+	}
+	if e := s.entry("slow.example.org"); !e.ExpiresAt.Equal(now.Add(time.Hour)) {
+		t.Fatalf("a CLEAN measured slower once lost its short term: %s", e.ExpiresAt.Sub(now))
+	}
+}

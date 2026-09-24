@@ -298,16 +298,27 @@ func readSettings(cfg Config) (Settings, bool) {
 // onSettingsChanged applies new settings to verdicts already made,
 // not only to future ones: if the TTL was shortened there is no need to wait out the old one
 func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) Config {
-	was := cfg.Apply
+	was, old := cfg.Apply, cfg
 	cfg = s.apply(cfg)
 	log.Printf("settings: auto-switch %v, direct TTL %s, blocked TTL %s, cap %s, tolerance +%d%%, attempts %d",
 		cfg.Apply, cfg.TTL, cfg.FailTTL, cfg.MaxBackoff, s.SlowPct, cfg.Attempts)
 
+	// Terms follow the setting they come from, and only when it changed.
+	// The other verdicts' terms were left as they were -- a blocked re-check
+	// shortened to 5 minutes still waited out the old hour -- and every
+	// save, whatever it changed, reset the CLEAN ones, a CLEAN measured
+	// slower once among them (see entry.SlowOnce).
+	failChanged := cfg.FailTTL != old.FailTTL || cfg.MaxBackoff != old.MaxBackoff
 	st.mu.Lock()
 	for _, m := range st.Networks {
 		for _, e := range m {
-			if e.Verdict == probe.Clean {
-				e.ExpiresAt = e.DecidedAt.Add(cfg.TTL)
+			switch {
+			case e.Verdict == probe.Clean:
+				if cfg.TTL != old.TTL && !e.SlowOnce {
+					e.ExpiresAt = e.DecidedAt.Add(cfg.TTL)
+				}
+			case failChanged:
+				e.ExpiresAt = e.DecidedAt.Add(failTerm(cfg, e.Streak, e.Reverts))
 			}
 		}
 	}
