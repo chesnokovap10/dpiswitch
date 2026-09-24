@@ -171,17 +171,26 @@ func (r Resolver) doh(d Dialer, q []byte) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), d.Timeout)
 	defer cancel()
 	u := fmt.Sprintf("https://%s%s", net.JoinHostPort(r.Host, strconv.Itoa(r.Port)), r.Path)
-	req, err := http.NewRequestWithContext(ctx, "POST", u, bytes.NewReader(q))
-	if err != nil {
-		return nil, err
+	post := func() (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, "POST", u, bytes.NewReader(q))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/dns-message")
+		req.Header.Set("Accept", "application/dns-message")
+		return r.dohClient(d).Do(req)
 	}
-	req.Header.Set("Content-Type", "application/dns-message")
-	req.Header.Set("Accept", "application/dns-message")
-	// a query is safe to send twice: marked so (the empty key is not sent),
-	// the transport may retry it on a new connection when the kept one
-	// breaks under it -- a core restart cuts every connection it carries
-	req.Header["Idempotency-Key"] = nil
-	resp, err := r.dohClient(d).Do(req)
+	resp, err := post()
+	if err != nil && ctx.Err() == nil {
+		// The kept connection may be dead by the time a query is written
+		// into it -- a core restart cuts every connection it carries -- and
+		// the transport does not always notice first: it fails the query
+		// with the write error and retries nothing, a POST over HTTP/2 (CI
+		// caught it, about once in 300 runs of the test). A query is safe to
+		// send twice: once more, on a fresh connection.
+		r.dohClient(d).CloseIdleConnections()
+		resp, err = post()
+	}
 	if err != nil {
 		return nil, err
 	}
