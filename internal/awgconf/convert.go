@@ -198,11 +198,26 @@ func (c *Conf) Render() (string, error) {
 	w("")
 	w("# recovers the domain from the ClientHello for software that")
 	w("# resolves around us (browsers with their own DoH)")
+	w("#")
+	w("# The destination is replaced by the name on every protocol, HTTP too:")
+	w("# the route is chosen by that name, so the dial must follow it through")
+	w("# the path's own resolver -- the very node the detector probed. HTTP used")
+	w("# to keep the address the program chose, and a browser with its own DoH")
+	w("# picks IPv6: a dual-stack name verified clean went direct to an IPv6")
+	w("# address the ISP does not carry, and every http:// request to it broke.")
+	w("# A Host that is an address is never taken (the core refuses it).")
 	w("sniffer:")
 	w("  enable: true")
 	w("  override-destination: true")
 	w("  skip-src-address:")
 	w("    - 127.0.0.1/32")
+	w("  # the local network stays addressed as dialled: a public name pointing")
+	w("  # at a LAN box (plex.direct, nip.io) would otherwise lose the address the")
+	w("  # local-network rules match on and be sent into a tunnel")
+	w("  skip-dst-address:")
+	for _, cidr := range localCIDRs {
+		w("    - %s", cidr)
+	}
 	w("  sniff:")
 	w("    TLS:")
 	w("      ports: [443, 8443]")
@@ -210,7 +225,6 @@ func (c *Conf) Render() (string, error) {
 	w("      ports: [443]")
 	w("    HTTP:")
 	w("      ports: [80, 8080, 8880]")
-	w("      override-destination: false")
 	w("")
 	w("dns:")
 	w("  enable: true")
@@ -474,6 +488,9 @@ var (
 	}
 	// exact names only: the rest of the domain is an ordinary website
 	localExact = []string{"router.asus.com"}
+	// the unicast ranges of the local-network rules, for the sniffer to skip
+	localCIDRs = []string{"127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+		"169.254.0.0/16", "100.64.0.0/10", "::1/128", "fe80::/10", "fc00::/7"}
 )
 
 // localPatterns: what fake-ip and the DNS policy match on.
