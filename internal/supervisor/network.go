@@ -41,7 +41,23 @@ func mustCIDR(s string) *net.IPNet {
 // counting a global IPv6 address instead would restart the core every
 // minute and a half for a tunnel that has no way through. Should a .conf
 // give an IPv6 endpoint, this is the place to follow the endpoints' family.
+//
+// An interface counts only with a default route out through it: see
+// hasUplink.
 func physicalNetwork() bool {
+	ads, err := adapters()
+	if err == nil {
+		var routes map[uint32]bool
+		if routes, err = defaultRoutes4(); err == nil {
+			return hasUplink(ads, routes)
+		}
+	}
+	// the tables not read: an address, as before, rather than no core
+	return anyAddress4()
+}
+
+// anyAddress4: an IPv4 address besides the TUN's and link-local ones.
+func anyAddress4() bool {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return false
@@ -223,38 +239,20 @@ func trim(s string) string {
 // "the tunnel is broken" from "there is no network at all".
 func NetworkUp() bool { return physicalNetwork() }
 
-// foreignTunnel: whether SOMEONE ELSE's tunnel adapter is up.
+// foreignTunnel: whether SOMEONE ELSE's WireGuard-type tunnel is up.
 //
 // If another WireGuard client with the same key runs in parallel, the server
 // keeps stealing the session: our tunnel drops, we restart the core, the
 // session is stolen again -- round and round. A restart does not help here,
 // it hurts, so in this situation we leave the core alone.
+//
+// Such a client is told by its adapter's description (see foreignWG). Any
+// point-to-point adapter used to count -- a mobile modem's, another kind of
+// VPN's -- and with one up the tunnel's death never restarted the core.
 func foreignTunnel() (bool, string) {
-	ifaces, err := net.Interfaces()
+	ads, err := adapters()
 	if err != nil {
 		return false, ""
 	}
-	for _, ifc := range ifaces {
-		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		name := ifc.Name
-		if name == "Meta" || strings.EqualFold(name, "Meta") {
-			continue // our own
-		}
-		addrs, _ := ifc.Addrs()
-		for _, a := range addrs {
-			n, ok := a.(*net.IPNet)
-			if !ok || n.IP.To4() == nil || tunRange.Contains(n.IP.To4()) {
-				continue
-			}
-			// tunnel interfaces have no broadcast and no gateway:
-			// a point-to-point sign, like WireGuard
-			if ifc.Flags&net.FlagPointToPoint != 0 ||
-				(ifc.Flags&net.FlagBroadcast == 0 && ifc.Flags&net.FlagMulticast == 0) {
-				return true, name
-			}
-		}
-	}
-	return false, ""
+	return foreignWG(ads)
 }
