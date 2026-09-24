@@ -650,9 +650,9 @@ func (c *Conf) writeProxy(w func(string, ...any), name string, tunDNS []string, 
 //
 // The config is fully generated, so a new program version must
 // deliver its changes (rules, providers) to an existing installation
-// by itself, without reloading the .conf. The file is rewritten in
-// place rather than replaced: this keeps the ACL that protects
-// the private key. Returns true if anything changed.
+// by itself, without reloading the .conf. The file holds the private
+// keys: it is replaced whole, keeping its own permissions (see
+// paths.ReplaceSecret). Returns true if anything changed.
 func Regenerate() (bool, error) {
 	c, err := ParseFile(paths.SourceConf())
 	if err != nil {
@@ -665,15 +665,12 @@ func Regenerate() (bool, error) {
 	if old, err := os.ReadFile(paths.Config()); err == nil && string(old) == out {
 		return false, nil
 	}
-	f, err := os.OpenFile(paths.Config(), os.O_WRONLY|os.O_TRUNC, 0)
-	if err != nil {
+	// replaced whole, keeping its permissions -- it holds the private keys;
+	// it used to be truncated first and left empty by a failed write
+	if err := paths.ReplaceSecret(paths.Config(), []byte(out)); err != nil {
 		return false, err
 	}
-	if _, err := f.WriteString(out); err != nil {
-		f.Close()
-		return false, err
-	}
-	return true, f.Close()
+	return true, nil
 }
 
 // EnsureLists creates missing list files: a provider without

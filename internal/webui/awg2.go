@@ -3,7 +3,6 @@ package webui
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -110,12 +109,10 @@ func (s *Server) handleConfig2(w http.ResponseWriter, r *http.Request) {
 			writeResult(w, fmt.Errorf("this is the same config as the first tunnel"))
 			return
 		}
-		if err := os.WriteFile(paths.SourceConf2(), []byte(body.Text), 0o600); err != nil {
+		// the second tunnel's private key: written locked down, or not at all
+		if err := paths.WriteSecret(paths.SourceConf2(), []byte(body.Text)); err != nil {
 			writeResult(w, err)
 			return
-		}
-		if err := paths.Restrict(paths.SourceConf2()); err != nil {
-			log.Printf("warning: permissions on %s not restricted: %v", paths.SourceConf2(), err)
 		}
 	case http.MethodDelete:
 		if err := os.Remove(paths.SourceConf2()); err != nil && !os.IsNotExist(err) {

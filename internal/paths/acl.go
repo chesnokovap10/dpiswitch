@@ -47,13 +47,17 @@ func prefix(flag string, items []string) []string {
 // neither reset verdicts with the panic button nor edit the lists -- and it
 // fails silently, at the worst possible moment.
 //
-// The config holding the private key is unaffected: its inheritance is
-// removed by a separate Restrict call.
+// The files holding a private key are unaffected: they are created with
+// protected permissions of their own (see WriteSecret) and inherit nothing.
+// Hence no /T: the grant is inherited by new files and flows to existing
+// ones that inherit anyway, and /T only put this safety at the mercy of how
+// icacls treats inheritance flags on files -- an outside review read it as
+// opening the keys to every user, and a test had to show it did not.
 func GrantUsersModify(dir string) error {
 	// S-1-5-32-545 -- BUILTIN\Users; (OI)(CI) -- inherit to files and
 	// subfolders; (M) -- modify without changing permissions
 	if out, err := winexec.CombinedOutput("icacls.exe", dir,
-		"/grant", "*S-1-5-32-545:(OI)(CI)(M)", "/T", "/C"); err != nil {
+		"/grant", "*S-1-5-32-545:(OI)(CI)(M)", "/C"); err != nil {
 		return fmt.Errorf("icacls: %v (%s)", err, out)
 	}
 	return nil

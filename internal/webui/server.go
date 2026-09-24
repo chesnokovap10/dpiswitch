@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -400,18 +399,16 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, err)
 		return
 	}
-	// both files contain the WireGuard private key, so after
-	// writing they are locked down by ACL: mode 0600 means nothing on Windows
+	// both files contain the WireGuard private key: they are written locked
+	// down from the start (mode 0600 means nothing on Windows), and not at
+	// all if that cannot be done
 	for _, f := range []struct {
 		path string
 		data string
 	}{{paths.SourceConf(), body.Text}, {paths.Config(), out}} {
-		if err := os.WriteFile(f.path, []byte(f.data), 0o600); err != nil {
+		if err := paths.WriteSecret(f.path, []byte(f.data)); err != nil {
 			writeResult(w, err)
 			return
-		}
-		if err := paths.Restrict(f.path); err != nil {
-			log.Printf("warning: permissions on %s not restricted: %v", f.path, err)
 		}
 	}
 	awgconf.EnsureLists()
