@@ -417,3 +417,39 @@ func TestCycleResetFromTray(t *testing.T) {
 	s.cycle()
 	check("a cycle later")
 }
+
+// A name on more ports than a check takes is not called clean -- the ports
+// beyond the cap were never probed -- and a CLEAN it had is not kept.
+func TestCycleTooManyPorts(t *testing.T) {
+	s := newScenario(t)
+	var conns []connection
+	for p := 1; p <= maxEndpoints+1; p++ {
+		port := 5000 + p
+		conns = append(conns, tunnelled("many.example.org", port))
+		s.script(fmt.Sprintf("many.example.org tcp/%d", port), cleanTCP("192.0.2.20"))
+	}
+	s.see(conns...)
+	s.cycle()
+	if e := s.entry("many.example.org"); e.Verdict != probe.Inconcl {
+		t.Fatalf("verdict %s (%s)", e.Verdict, e.Reason)
+	}
+	if got := listRules(s.cfg.ListPath); len(got) != 0 {
+		t.Fatalf("list %v", got)
+	}
+
+	// a CLEAN from before, due again, now seen on one port more
+	var stored []string
+	for p := 1; p <= maxEndpoints; p++ {
+		stored = append(stored, fmt.Sprintf("tcp/%d", 6000+p))
+		s.script(fmt.Sprintf("was.example.org tcp/%d", 6000+p), cleanTCP("192.0.2.21"))
+	}
+	s.st.put("n", "was.example.org", &entry{Verdict: probe.Clean, TestedIP: "192.0.2.21",
+		DecidedAt: time.Now().Add(-8 * 24 * time.Hour), ExpiresAt: time.Now().Add(-time.Minute),
+		LastSeen: time.Now(), Endpoints: stored})
+	s.see(tunnelled("was.example.org", 7000))
+	s.script("was.example.org tcp/7000", cleanTCP("192.0.2.21"))
+	s.cycle()
+	if e := s.entry("was.example.org"); e.Verdict == probe.Clean {
+		t.Fatalf("a CLEAN with an unprobed port was kept: %s", e.Reason)
+	}
+}

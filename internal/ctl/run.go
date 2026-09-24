@@ -159,7 +159,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			if prev, ok := st.get(netID, dom); ok {
 				stored, was = prev.Endpoints, prev.Verdict
 			}
-			eps := mergeEndpoints(ports[dom], stored)
+			eps, unprobed := mergeEndpoints(ports[dom], stored)
 			if _, addr := probe.AddrKey(dom); addr {
 				// an address is judged by plain TCP only -- 443 would need the
 				// name the sniffer could not find (see addrProbeable)
@@ -226,7 +226,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			v6Reached = v6Reached || reachedV6
 			mu.Unlock()
 
-			if record(cfg, st, netID, dom, rep, eps, directDown, noV6) {
+			if record(cfg, st, netID, dom, rep, eps, checkFacts{directDown, noV6, unprobed}) {
 				mu.Lock()
 				changed = true
 				mu.Unlock()
@@ -253,10 +253,24 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	}
 }
 
+// checkFacts: what the probes of one name showed over all of its ports.
+type checkFacts struct {
+	directDown bool // the direct side failed on a TCP port, see entry.DirectDown
+	noV6       bool // see probe.Report.DirectNoV6
+	unprobed   int  // ports the name was seen on beyond maxEndpoints
+}
+
 // record files one name's check in memory and reports whether its verdict
-// changed. rep is the name's worst port; directDown and noV6 are what the
-// probes found over all of its ports, eps the endpoints probed.
-func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []endpoint, directDown, noV6 bool) bool {
+// changed. rep is the name's worst port, eps the endpoints probed.
+func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []endpoint, f checkFacts) bool {
+	directDown, noV6 := f.directDown, f.noV6
+	// A name used on more ports than a check takes cannot be promised clean:
+	// CLEAN sends it direct on all of them, and the ones beyond the cap were
+	// never probed. It used to come out CLEAN all the same.
+	if rep.Verdict == probe.Clean && f.unprobed > 0 {
+		rep.Verdict = probe.Inconcl
+		rep.Reason = fmt.Sprintf("used on %d more ports than a check takes (%d)", f.unprobed, maxEndpoints)
+	}
 	prev, had := st.get(netID, dom)
 
 	// INCONCLUSIVE says nothing about the direct path (usually the
@@ -276,7 +290,7 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 	// this means about blocking, the host does not work direct now.
 	// On any TCP port it uses, not only the one the report came from --
 	// and not over QUIC, which most hosts simply do not have.
-	dropClean := had && prev.Verdict == probe.Clean && (expiredClean || directDown)
+	dropClean := had && prev.Verdict == probe.Clean && (expiredClean || directDown || f.unprobed > 0)
 	// Nor is a verdict kept against an IPv6 node the direct path does
 	// not reach: that is a finding about the direct path, and the
 	// BLOCKED it replaces was the old mislabel of the same thing.

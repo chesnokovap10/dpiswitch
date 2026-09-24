@@ -13,21 +13,21 @@ func TestMergeEndpoints(t *testing.T) {
 	stored := []string{"tcp/20000", "tcp/443", "garbage", "quic/443"}
 
 	// idle this minute: only what was remembered, the junk entry skipped
-	got := mergeEndpoints(nil, stored)
+	got, _ := mergeEndpoints(nil, stored)
 	want := []endpoint{{port: 20000}, {port: 443}, {udp: true, port: 443}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("idle: got %v, want %v", got, want)
 	}
 
 	// seen now on a new port: it comes first, duplicates are dropped
-	got = mergeEndpoints([]endpoint{{port: 8080}, {port: 443}}, stored)
+	got, _ = mergeEndpoints([]endpoint{{port: 8080}, {port: 443}}, stored)
 	want = []endpoint{{port: 8080}, {port: 443}, {port: 20000}, {udp: true, port: 443}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("merged: got %v, want %v", got, want)
 	}
 
 	// round trip through the state file
-	if back := mergeEndpoints(nil, endpointStrings(want)); !reflect.DeepEqual(back, want) {
+	if back, _ := mergeEndpoints(nil, endpointStrings(want)); !reflect.DeepEqual(back, want) {
 		t.Fatalf("round trip: got %v", back)
 	}
 
@@ -36,8 +36,9 @@ func TestMergeEndpoints(t *testing.T) {
 	for p := 1; p <= 20; p++ {
 		many = append(many, endpoint{port: p})
 	}
-	if n := len(mergeEndpoints(many, nil)); n != maxEndpoints {
-		t.Fatalf("cap: got %d, want %d", n, maxEndpoints)
+	// and says how many it left out: see TestCycleTooManyPorts
+	if eps, dropped := mergeEndpoints(many, nil); len(eps) != maxEndpoints || dropped != 20-maxEndpoints {
+		t.Fatalf("cap: kept %d, dropped %d; want %d and %d", len(eps), dropped, maxEndpoints, 20-maxEndpoints)
 	}
 }
 

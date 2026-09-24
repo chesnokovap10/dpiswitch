@@ -174,14 +174,19 @@ func parseEndpoint(s string) (endpoint, bool) {
 const maxEndpoints = 8
 
 // mergeEndpoints: the ports seen now plus the ones remembered, most recent
-// first, without duplicates.
-func mergeEndpoints(now []endpoint, stored []string) []endpoint {
+// first, without duplicates -- and how many more there were than the cap
+// let in. A name on more ports than that cannot be called clean: see cycle.
+func mergeEndpoints(now []endpoint, stored []string) (out []endpoint, dropped int) {
 	seen := map[endpoint]bool{}
-	var out []endpoint
 	add := func(e endpoint) {
-		if !seen[e] && len(out) < maxEndpoints {
-			seen[e] = true
+		if seen[e] {
+			return
+		}
+		seen[e] = true
+		if len(out) < maxEndpoints {
 			out = append(out, e)
+		} else {
+			dropped++
 		}
 	}
 	for _, e := range now {
@@ -192,7 +197,7 @@ func mergeEndpoints(now []endpoint, stored []string) []endpoint {
 			add(e)
 		}
 	}
-	return out
+	return out, dropped
 }
 
 func endpointStrings(eps []endpoint) []string {

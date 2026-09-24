@@ -60,7 +60,7 @@ func TestRecordStreak(t *testing.T) {
 	blocked := probe.Report{Verdict: probe.BlockedTLS, Reason: "tls: EOF", TestedIP: "192.0.2.1"}
 	step := func(what string, rep probe.Report, wantVerdict probe.Verdict, wantStreak int, want time.Duration) {
 		t.Helper()
-		record(cfg, st, "n", "a.example", rep, eps, false, false)
+		record(cfg, st, "n", "a.example", rep, eps, checkFacts{})
 		e, _ := st.get("n", "a.example")
 		if e.Verdict != wantVerdict || e.Streak != wantStreak {
 			t.Fatalf("%s: %s streak %d, want %s streak %d", what, e.Verdict, e.Streak, wantVerdict, wantStreak)
@@ -89,7 +89,7 @@ func TestRecordInconclusiveRepeat(t *testing.T) {
 	st := &state{Networks: map[string]map[string]*entry{}}
 	rep := probe.Report{Verdict: probe.Inconcl, DirectNoV6: true, TestedIP: "2001:db8::1"}
 	for i, want := range []time.Duration{time.Hour, 2 * time.Hour, 4 * time.Hour} {
-		record(cfg, st, "n", "v6.example", rep, []endpoint{{port: 443}}, true, true)
+		record(cfg, st, "n", "v6.example", rep, []endpoint{{port: 443}}, checkFacts{directDown: true, noV6: true})
 		e, _ := st.get("n", "v6.example")
 		if e.Streak != i || !e.DirectDown {
 			t.Fatalf("check %d: streak %d, direct down %v", i, e.Streak, e.DirectDown)
@@ -106,8 +106,8 @@ func TestRecordSlowOnce(t *testing.T) {
 	clean := probe.Report{Verdict: probe.Clean, TestedIP: "192.0.2.1"}
 	slower := probe.Report{Verdict: probe.Slower, Reason: "direct path is slower"}
 
-	record(cfg, st, "n", "a.example", clean, eps, false, false)
-	if record(cfg, st, "n", "a.example", slower, eps, false, false) {
+	record(cfg, st, "n", "a.example", clean, eps, checkFacts{})
+	if record(cfg, st, "n", "a.example", slower, eps, checkFacts{}) {
 		t.Fatal("the first SLOWER changed the verdict")
 	}
 	e, _ := st.get("n", "a.example")
@@ -117,13 +117,13 @@ func TestRecordSlowOnce(t *testing.T) {
 	wantTerm(t, "kept CLEAN", e, cfg.FailTTL)
 
 	// clean on the next look: the mark goes
-	record(cfg, st, "n", "a.example", clean, eps, false, false)
+	record(cfg, st, "n", "a.example", clean, eps, checkFacts{})
 	if e, _ := st.get("n", "a.example"); e.SlowOnce {
 		t.Fatal("a CLEAN check left the slow mark")
 	}
 
-	record(cfg, st, "n", "a.example", slower, eps, false, false)
-	if !record(cfg, st, "n", "a.example", slower, eps, false, false) {
+	record(cfg, st, "n", "a.example", slower, eps, checkFacts{})
+	if !record(cfg, st, "n", "a.example", slower, eps, checkFacts{}) {
 		t.Fatal("the second SLOWER in a row did not change the verdict")
 	}
 	if e, _ := st.get("n", "a.example"); e.Verdict != probe.Slower || e.Reverts != 1 {
@@ -132,8 +132,8 @@ func TestRecordSlowOnce(t *testing.T) {
 
 	// the direct path failing somewhere is not a slow moment: no second chance
 	st2 := &state{Networks: map[string]map[string]*entry{}}
-	record(cfg, st2, "n", "b.example", clean, eps, false, false)
-	record(cfg, st2, "n", "b.example", slower, eps, true, false)
+	record(cfg, st2, "n", "b.example", clean, eps, checkFacts{})
+	record(cfg, st2, "n", "b.example", slower, eps, checkFacts{directDown: true})
 	if e, _ := st2.get("n", "b.example"); e.Verdict == probe.Clean {
 		t.Fatal("a SLOWER with the direct path down elsewhere kept CLEAN")
 	}
