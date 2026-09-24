@@ -75,6 +75,18 @@ BrechtSanders.WinLibs.POSIX.UCRT`). The service sends its stderr, where race rep
 go, to `%ProgramData%\dpiswitch\logs\service.log`. Expect it to be several times
 slower and hungrier than the release build.
 
+`.\tools\deploy.ps1` (`-Race` for the debug build, `-Path <exe>` for any other)
+replaces the installed binary: it closes the tray, stops the service and waits
+for it, copies with retries, starts both again and checks the hash. The
+replaced binary is kept beside it as `dpiswitch.last.exe` — `-Path` with it
+is the way back. No elevation is needed.
+
+CI (GitHub Actions, `.github/workflows/ci.yml`): a push to `main` runs
+`go vet` and the tests; a `v*` tag also runs the tests under the race
+detector, checks the tag against `version.go`, builds and attaches the zip
+and `SHA256SUMS.txt` to a draft release. The race tests alone can be run
+from the Actions tab.
+
 ## Installation
 
 `dpiswitch.exe` is self-contained: there is nothing else to copy.
