@@ -26,12 +26,18 @@ func LoadTunnelIPv6(path string) TunnelIPv6 {
 	return t
 }
 
+// Save replaces the file whole: written in place, a write cut short left
+// it broken, and LoadTunnelIPv6 then read it as "nothing known".
 func (t TunnelIPv6) Save(path string) error {
 	b, err := json.MarshalIndent(t, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(b, '\n'), 0o644)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, append(b, '\n'), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // Dead reports a tunnel the check has found IPv6 broken on. An unknown
