@@ -122,3 +122,18 @@ func TestDropPinnedAndSkipped(t *testing.T) {
 		t.Error("pinned: force-tunnel and presets yes, the detector's own list no")
 	}
 }
+
+// CLEAN verdicts made on QUIC alone are re-checked now, not a week later.
+func TestQuicOnly(t *testing.T) {
+	now := time.Now()
+	live := now.Add(time.Hour)
+	st := &state{Networks: map[string]map[string]*entry{"n": {
+		"quic.example":  {Verdict: probe.Clean, ExpiresAt: live, LastSeen: now, Endpoints: []string{"quic/443"}},
+		"both.example":  {Verdict: probe.Clean, ExpiresAt: live, LastSeen: now, Endpoints: []string{"quic/443", "tcp/443"}},
+		"idle.example":  {Verdict: probe.Clean, ExpiresAt: live, LastSeen: now.Add(-72 * time.Hour), Endpoints: []string{"quic/443"}},
+		"block.example": {Verdict: probe.BlockedQUIC, ExpiresAt: live, LastSeen: now, Endpoints: []string{"quic/443"}},
+	}}}
+	if got := st.quicOnly("n", 24*time.Hour); len(got) != 1 || got[0] != "quic.example" {
+		t.Fatalf("got %v, want [quic.example]", got)
+	}
+}

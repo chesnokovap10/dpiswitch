@@ -102,6 +102,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	// and only then new candidates -- rolling back is more urgent than expanding
 	queue := dedupe(concat(
 		suspectDirect(cfg, st, netID, conns),
+		st.quicOnly(netID, cfg.Idle),
 		st.expired(netID, cfg.Idle),
 		pickCandidates(cfg, st, netID, ports),
 	))

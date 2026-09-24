@@ -257,6 +257,33 @@ func (s *state) forget(id string, idle time.Duration) int {
 	return n
 }
 
+// quicOnly: CLEAN names still in use whose TCP was never probed on a port
+// they were only seen on over QUIC. Verdicts made before withTCP existed go
+// direct on TCP unchecked; they are re-checked now instead of when their
+// term runs out, a week later.
+func (s *state) quicOnly(id string, idle time.Duration) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	now := time.Now()
+	for dom, e := range s.Networks[id] {
+		if e.Verdict != probe.Clean || !now.Before(e.ExpiresAt) || !e.lastSeen().After(now.Add(-idle)) {
+			continue
+		}
+		var eps []endpoint
+		for _, x := range e.Endpoints {
+			if ep, ok := parseEndpoint(x); ok {
+				eps = append(eps, ep)
+			}
+		}
+		if len(withTCP(eps)) > len(eps) {
+			out = append(out, dom)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // drop removes the verdicts of the names that match.
 func (s *state) drop(id string, match func(dom string) bool) int {
 	s.mu.Lock()
