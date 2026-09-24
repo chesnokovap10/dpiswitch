@@ -74,3 +74,6 @@ func TunnelIPv6() string      { return Data("tunnel-ipv6.json") }
 func ServiceLog() string      { return filepath.Join(LogDir(), "service.log") }
 func MihomoLog() string       { return filepath.Join(LogDir(), "mihomo.log") }
 func ControllerLog() string   { return filepath.Join(LogDir(), "controller.log") }
+
+// ResetRequest: left by the tray to have the service drop every verdict
+func ResetRequest() string { return Data("reset-verdicts.request") }

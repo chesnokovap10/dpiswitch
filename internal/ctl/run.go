@@ -4,6 +4,7 @@
 package ctl
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -53,6 +54,8 @@ type Config struct {
 	SkipSuffix   []string
 	// rule-provider files whose names the detector leaves alone, see pinned.go
 	PinnedLists []string
+	// where the tray leaves a request to drop every verdict, see takeReset
+	ResetPath string
 }
 
 // checkProto runs one probe; the scenario tests put a script in its place.
@@ -452,6 +455,8 @@ func applyList(cfg Config, a *api, st *state, netID string) {
 // cycle, because verdicts change the list without any verdict changing --
 // a CLEAN expires, or comes back after a re-check that found it the same.
 func syncList(cfg Config, a *api, st *state, netID string, force bool) {
+	listMu.Lock()
+	defer listMu.Unlock()
 	doms, fams := directRules(cfg, st, netID)
 	if !cfg.Apply {
 		log.Printf("observe mode: %d domains would go DIRECT (%s)", len(doms), preview(doms))
@@ -502,6 +507,8 @@ func syncList(cfg Config, a *api, st *state, netID string, force bool) {
 }
 
 func clearList(cfg Config, a *api) {
+	listMu.Lock()
+	defer listMu.Unlock()
 	b := "# auto-switch disabled -- everything goes through the tunnel\n"
 	if err := replaceList(a, cfg.ListPath, cfg.Provider, b); err != nil {
 		log.Print(err)
@@ -514,6 +521,62 @@ func clearList(cfg Config, a *api) {
 		}
 	}
 	log.Println("auto-switch disabled: direct path removed from all domains")
+}
+
+// listMu: one writer of the rule files at a time. A reset asked for from
+// the tray must not be overtaken by a cycle's sync that read memory before
+// it and would write the dropped rules back.
+var listMu sync.Mutex
+
+// takeReset carries out a reset asked for from the tray ("Everything via
+// tunnel"). The tray used to do it itself: it emptied the name list and
+// deleted the state file -- and the controller, holding its memory in RAM,
+// wrote every DIRECT rule back within a minute; the address list it never
+// touched. The tray now leaves a request; the controller drops its own
+// memory, empties both lists, and removes the request once done.
+func takeReset(cfg Config, a *api, st *state) bool {
+	if cfg.ResetPath == "" {
+		return false
+	}
+	if _, err := os.Stat(cfg.ResetPath); err != nil {
+		return false
+	}
+	listMu.Lock()
+	n := st.resetVerdicts()
+	if err := st.save(); err != nil {
+		log.Printf("state not saved: %v", err)
+	}
+	body := "# verdicts reset from the tray -- everything goes through the tunnel\n"
+	if err := replaceList(a, cfg.ListPath, cfg.Provider, body); err != nil {
+		log.Print(err)
+	}
+	if cfg.AddrListPath != "" {
+		if err := replaceList(a, cfg.AddrListPath, cfg.AddrProvider, body); err != nil {
+			log.Print(err)
+		}
+	}
+	listMu.Unlock()
+	// the tray waits for the request to go: it goes last
+	if err := os.Remove(cfg.ResetPath); err != nil {
+		log.Printf("reset request not removed: %v", err)
+	}
+	log.Printf("verdicts reset from the tray: %d dropped, everything goes through the tunnel", n)
+	return true
+}
+
+// watchReset looks for a reset request every second: the tray waits for it
+// to be taken.
+func watchReset(ctx context.Context, cfg Config, a *api, st *state) {
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			takeReset(cfg, a, st)
+		}
+	}
 }
 
 // listRules: the rules a list file holds now, comments and blank lines left

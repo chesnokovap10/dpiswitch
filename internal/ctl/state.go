@@ -429,6 +429,20 @@ func (s *state) learnV6(id string, misses int, reached bool) (time.Time, bool) {
 	return m.NoneUntil, true
 }
 
+// resetVerdicts drops every verdict of every network. What memory knows of
+// the networks themselves -- which ISP is behind which gateway, IPv6 on the
+// direct path -- is not a verdict and stays.
+func (s *state) resetVerdicts() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for id, m := range s.Networks {
+		n += len(m)
+		s.Networks[id] = map[string]*entry{}
+	}
+	return n
+}
+
 // drop removes the verdicts of the names that match.
 func (s *state) drop(id string, match func(dom string) bool) int {
 	s.mu.Lock()

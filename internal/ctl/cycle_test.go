@@ -375,3 +375,45 @@ func TestCycleAbortedLeavesMemory(t *testing.T) {
 		t.Fatalf("an aborted probe was remembered: %s", e.Verdict)
 	}
 }
+
+// "Everything via tunnel" from the tray drops every verdict and empties both
+// lists -- and the next cycle does not write the old rules back, as it did
+// when the tray emptied a file behind the controller's back.
+func TestCycleResetFromTray(t *testing.T) {
+	s := newScenario(t)
+	s.cfg.ResetPath = filepath.Join(t.TempDir(), "reset.request")
+	s.see(tunnelled("a.example.org", 443), tunnelled("speed.example.org", 20000))
+	s.script("a.example.org tcp/443", clean("192.0.2.1"))
+	s.script("speed.example.org tcp/20000", cleanTCP("192.0.2.4"))
+	s.cycle()
+	if len(listRules(s.cfg.ListPath)) == 0 || len(listRules(s.cfg.AddrListPath)) == 0 {
+		t.Fatal("setup: the lists were not written")
+	}
+	if takeReset(s.cfg, s.api, s.st) {
+		t.Fatal("a reset without a request")
+	}
+	if err := os.WriteFile(s.cfg.ResetPath, []byte("now"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !takeReset(s.cfg, s.api, s.st) {
+		t.Fatal("the request was not taken")
+	}
+	if _, err := os.Stat(s.cfg.ResetPath); !os.IsNotExist(err) {
+		t.Fatal("the request was left behind: the tray would wait in vain")
+	}
+	check := func(when string) {
+		t.Helper()
+		if got := listRules(s.cfg.ListPath); len(got) != 0 {
+			t.Fatalf("%s: names %v", when, got)
+		}
+		if got := listRules(s.cfg.AddrListPath); len(got) != 0 {
+			t.Fatalf("%s: addresses %v", when, got)
+		}
+		if e := s.entry("a.example.org"); e != nil {
+			t.Fatalf("%s: memory kept %s", when, e.Verdict)
+		}
+	}
+	check("after the reset")
+	s.cycle()
+	check("a cycle later")
+}

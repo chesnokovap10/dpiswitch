@@ -49,6 +49,7 @@ func Defaults() Config {
 		// CLEAN, every ECH connection to Cloudflare went direct.
 		SkipSuffix:  []string{"in-addr.arpa", "local", "lan", "cloudflare-ech.com"},
 		PinnedLists: pinnedLists(),
+		ResetPath:   paths.ResetRequest(),
 	}
 }
 
@@ -103,6 +104,10 @@ func Run(ctx context.Context, cfg Config) {
 	}
 
 	w := newWatcher(ctx, cfg, a)
+
+	// a reset asked for while the controller was not running is taken now
+	takeReset(cfg, a, st)
+	go watchReset(ctx, cfg, a, st)
 
 	t := time.NewTicker(cfg.Interval)
 	offline := false // no gateway right now (see the tick below)

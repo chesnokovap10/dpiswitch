@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -171,7 +172,7 @@ func runTray() {
 		}
 		items = append(items,
 			tray.Item{ID: 5, Text: "Everything via tunnel (reset verdicts)", Grayed: !running,
-				Do: panicTunnel},
+				Do: func() { go panicTunnel() }},
 			tray.Item{Sep: true},
 			tray.Item{ID: 6, Text: "Start with Windows", Checked: autostart.Enabled(),
 				Do: func() { _ = autostart.Set(!autostart.Enabled()) }},
@@ -229,12 +230,26 @@ func status() (tray.State, string) {
 
 // panic reset: clear verdicts, all traffic returns to the tunnel.
 // for when the detector made a mistake and something stopped opening.
+//
+// The service does it: it holds the verdicts in memory, and emptying the
+// files from here was undone by its next sync within a minute (see
+// ctl.takeReset). The tray leaves a request and waits for it to be taken.
 func panicTunnel() {
-	_ = os.WriteFile(paths.Verified(),
-		[]byte("# reset manually from the tray\n"), 0o644)
-	_ = os.Remove(paths.State())
-	msgBox("DPI Switch", "Verdicts reset, all traffic goes through the tunnel.\n"+
-		"The detector will start picking domains again.", 0x40)
+	req := paths.ResetRequest()
+	if err := os.WriteFile(req, []byte(time.Now().Format(time.RFC3339)+"\n"), 0o644); err != nil {
+		msgBox("DPI Switch", "The reset was not requested:\n\n"+err.Error(), 0x10)
+		return
+	}
+	for i := 0; i < 40; i++ {
+		if _, err := os.Stat(req); os.IsNotExist(err) {
+			msgBox("DPI Switch", "Verdicts reset, all traffic goes through the tunnel.\n"+
+				"The detector will start picking domains again.", 0x40)
+			return
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	msgBox("DPI Switch", "The reset is requested, but the service has not taken it yet:\n"+
+		"it will as soon as its controller runs.", 0x30)
 }
 
 // installing and removing the service needs administrator rights: a normal
