@@ -78,3 +78,41 @@ func TestLatency(t *testing.T) {
 		}
 	}
 }
+
+// A name at the threshold must not flip on every check: leaving CLEAN takes
+// clearly slower, coming back from SLOWER clearly faster.
+func TestSlowerHysteresis(t *testing.T) {
+	ms := time.Millisecond
+	tunnel := 112 * ms // threshold: 112*1.2+10 = 144.4 ms
+	cases := []struct {
+		direct time.Duration
+		prev   Verdict
+		want   bool
+	}{
+		{150 * ms, "", true},      // a new name: the plain threshold
+		{150 * ms, Clean, false},  // CLEAN holds up to 158.8
+		{160 * ms, Clean, true},   // clearly slower
+		{135 * ms, Slower, true},  // SLOWER holds down to 130
+		{125 * ms, Slower, false}, // clearly faster
+	}
+	for _, c := range cases {
+		if got := slower(c.direct, tunnel, c.prev); got != c.want {
+			t.Errorf("direct %v, prev %q: got %v, want %v", c.direct, c.prev, got, c.want)
+		}
+	}
+}
+
+// An IPv6 node the direct path does not reach is no block the probe saw.
+func TestJudgeNodeIPv6(t *testing.T) {
+	cut := PathResult{TCPOk: true, TLSTried: true, Err: "EOF", ErrStage: "tls"}
+	ok := PathResult{TCPOk: true, TLSTried: true, TLSOk: true, CertValid: true}
+	if v, _, noV6 := judgeNode(cut, ok, true); v != Inconcl || !noV6 {
+		t.Errorf("IPv6 node: got %v %v, want INCONCLUSIVE and the flag", v, noV6)
+	}
+	if v, _, noV6 := judgeNode(cut, ok, false); v != BlockedTLS || noV6 {
+		t.Errorf("IPv4 node: got %v %v, want BLOCKED_TLS", v, noV6)
+	}
+	if v, _, noV6 := judgeNode(ok, ok, true); v != Clean || noV6 {
+		t.Errorf("IPv6 node that works: got %v %v, want CLEAN", v, noV6)
+	}
+}

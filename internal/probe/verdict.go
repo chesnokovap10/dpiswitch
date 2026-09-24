@@ -2,6 +2,7 @@ package probe
 
 import (
 	"fmt"
+	"net"
 	"sync/atomic"
 	"time"
 )
@@ -33,11 +34,14 @@ type Report struct {
 	Note      string  `json:"note,omitempty"`
 	// Aborted: the check failed on our side (the core was restarting);
 	// the result says nothing about the site and must not be remembered
-	Aborted  bool       `json:"aborted,omitempty"`
-	DirectMs int64      `json:"direct_ms,omitempty"`
-	TunnelMs int64      `json:"tunnel_ms,omitempty"`
-	Direct   PathResult `json:"direct"`
-	Tunnel   PathResult `json:"tunnel"`
+	Aborted bool `json:"aborted,omitempty"`
+	// DirectNoV6: the node is IPv6 and the direct path did not reach it --
+	// see checkProto. No block was seen, but the host does not work direct.
+	DirectNoV6 bool       `json:"direct_no_v6,omitempty"`
+	DirectMs   int64      `json:"direct_ms,omitempty"`
+	TunnelMs   int64      `json:"tunnel_ms,omitempty"`
+	Direct     PathResult `json:"direct"`
+	Tunnel     PathResult `json:"tunnel"`
 }
 
 // Probing: N passes in a row, CLEAN only if all of them are clean.
@@ -54,13 +58,36 @@ var slowFactorMilli atomic.Int64
 
 func init() { slowFactorMilli.Store(1200) }
 
+// slowBand: hysteresis around the SLOWER threshold. A direct path hovering
+// at it flipped CLEAN and SLOWER from one check to the next, and every flip
+// to SLOWER counted as a revert: cloudflare-ech.com went 147, 153 and 159 ms
+// against a threshold of 144, clean in between.
+const slowBand = 0.1
+
+// slower: whether the direct path is too slow to switch to. A CLEAN name
+// must get clearly slower to leave, a SLOWER one clearly faster to come back.
+func slower(direct, tunnel time.Duration, prev Verdict) bool {
+	if tunnel <= 0 {
+		return false
+	}
+	limit := float64(tunnel)*slowFactor() + float64(slowMargin)
+	switch prev {
+	case Clean:
+		limit *= 1 + slowBand
+	case Slower:
+		limit *= 1 - slowBand
+	}
+	return float64(direct) > limit
+}
+
 func SetSlowFactor(f float64) { slowFactorMilli.Store(int64(f * 1000)) }
 
 func slowFactor() float64 { return float64(slowFactorMilli.Load()) / 1000 }
 
-// CheckProto: udp=true means a QUIC probe on this port.
-func CheckProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool) Report {
-	rep := checkProto(direct, tunnel, dom, port, attempts, udp)
+// CheckProto: udp=true means a QUIC probe on this port. prev is the name's
+// current verdict, if any: the latency threshold holds a band around it.
+func CheckProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool, prev Verdict) Report {
+	rep := checkProto(direct, tunnel, dom, port, attempts, udp, prev)
 	// a failure while the core restarts looks like blocking: the prober's
 	// listeners simply don't answer. Counting it would revert a working
 	// site into the tunnel and postpone its re-check
@@ -71,7 +98,7 @@ func CheckProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool)
 	return rep
 }
 
-func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool) Report {
+func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool, prev Verdict) Report {
 	proto := "tcp"
 	if udp {
 		proto = "quic"
@@ -123,6 +150,7 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool)
 	// both sides are tested on the SAME node, otherwise the comparison is meaningless:
 	// different CDN nodes are blocked differently
 	rep.TestedIP = ip
+	v6 := net.ParseIP(ip).To4() == nil
 
 	// take the best measurement across passes, not the last one: the minimum
 	// is more robust to random spikes than the average
@@ -141,7 +169,8 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool)
 			d, t = RunTCP(direct, ip, port), RunTCP(tunnel, ip, port)
 		}
 		rep.Direct, rep.Tunnel = d, t
-		v, reason := Judge(d, t)
+		v, reason, noV6 := judgeNode(d, t, v6)
+		rep.DirectNoV6 = rep.DirectNoV6 || noV6
 		// for QUIC the handshake is indivisible, so both "transport"
 		// failures mean the same thing -- packets did not get through
 		if udp && (v == BlockedTCP || v == BlockedTLS) {
@@ -170,7 +199,7 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool)
 	rep.DirectMs = bestDirect.Milliseconds()
 	rep.TunnelMs = bestTunnel.Milliseconds()
 
-	if bestTunnel > 0 && bestDirect > time.Duration(float64(bestTunnel)*slowFactor())+slowMargin {
+	if slower(bestDirect, bestTunnel, prev) {
 		rep.Verdict = Slower
 		rep.Reason = fmt.Sprintf("direct path is slower: %d ms vs %d via tunnel",
 			bestDirect.Milliseconds(), bestTunnel.Milliseconds())
@@ -200,6 +229,19 @@ func latency(r PathResult) (time.Duration, bool) {
 		return r.TTFB, true
 	}
 	return 0, false
+}
+
+// judgeNode: Judge, knowing whether the node is IPv6. An IPv6 node the
+// direct path cannot reach is no block the probe saw: the network may have no
+// IPv6 at all (this one has none), and the failure then says only that. It
+// used to read BLOCKED_TLS with "tls: EOF" -- and a revert. The host still
+// must not go direct: the controller counts the direct side as down.
+func judgeNode(d, t PathResult, v6 bool) (Verdict, string, bool) {
+	v, reason := Judge(d, t)
+	if v6 && (v == BlockedTCP || v == BlockedTLS) {
+		return Inconcl, "IPv6 node the direct path does not reach (no IPv6 here?): " + reason, true
+	}
+	return v, reason, false
 }
 
 func Judge(d, t PathResult) (Verdict, string) {

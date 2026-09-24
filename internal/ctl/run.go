@@ -143,8 +143,9 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			// by TTL often runs while the name is idle, and must still probe
 			// the ports it is really used on
 			var stored []string
+			var was probe.Verdict
 			if prev, ok := st.get(netID, dom); ok {
-				stored = prev.Endpoints
+				stored, was = prev.Endpoints, prev.Verdict
 			}
 			eps := mergeEndpoints(ports[dom], stored)
 			if _, addr := probe.AddrKey(dom); addr {
@@ -164,8 +165,9 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			// the direct path failed on a TCP port -- see entry.DirectDown
 			directDown := false
 			var downOn probe.Report
+			noV6 := false // see probe.Report.DirectNoV6
 			for _, ep := range eps {
-				r := probe.CheckProto(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp)
+				r := probe.CheckProto(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp, was)
 				appendJSONL(cfg.JSONLPath, r)
 				if r.Aborted {
 					// leave memory alone: the domain stays queued
@@ -177,6 +179,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 				if !ep.udp && directDownOn(r) && !directDown {
 					directDown, downOn = true, r
 				}
+				noV6 = noV6 || r.DirectNoV6
 				// INCONCLUSIVE means "could not measure" -- e.g. the host
 				// does not answer QUIC on either path. Such a result
 				// must not override a definite verdict, otherwise the domain
@@ -223,7 +226,10 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			// On any TCP port it uses, not only the one the report came from --
 			// and not over QUIC, which most hosts simply do not have.
 			dropClean := had && prev.Verdict == probe.Clean && (expiredClean || directDown)
-			if had && rep.Verdict == probe.Inconcl && prev.Verdict != probe.Inconcl && !dropClean {
+			// Nor is a verdict kept against an IPv6 node the direct path does
+			// not reach: that is a finding about the direct path, and the
+			// BLOCKED it replaces was the old mislabel of the same thing.
+			if had && rep.Verdict == probe.Inconcl && prev.Verdict != probe.Inconcl && !dropClean && !noV6 {
 				kept := *prev
 				kept.ExpiresAt = time.Now().Add(cfg.FailTTL)
 				kept.Endpoints = endpointStrings(eps)
