@@ -61,7 +61,7 @@ func SourceConf() string      { return Data("source.conf") }
 func State() string           { return Data("controller-state.json") }
 func Reports() string         { return Data("reports.jsonl") }
 func Verified() string        { return Data("direct-verified.txt") }
-func VerifiedIP() string      { return Data("direct-verified-ip.txt") }
+func VerifiedAddr() string    { return Data("direct-verified-addr.txt") }
 func ForceDirect() string     { return Data("force-direct.txt") }
 func ForceDirectApps() string { return Data("force-direct-apps.txt") }
 

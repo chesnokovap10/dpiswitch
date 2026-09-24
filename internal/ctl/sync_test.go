@@ -27,7 +27,7 @@ func TestSyncListFollowsExpiry(t *testing.T) {
 
 	dir := t.TempDir()
 	cfg := Config{Apply: true, Provider: "p", ListPath: filepath.Join(dir, "d.txt"),
-		IPProvider: "pi", IPListPath: filepath.Join(dir, "ip.txt")}
+		AddrProvider: "pi", AddrListPath: filepath.Join(dir, "ip.txt")}
 	e := &entry{Verdict: probe.Clean, ExpiresAt: time.Now().Add(time.Hour), TestedIP: "192.0.2.1"}
 	st := &state{Networks: map[string]map[string]*entry{"n": {"a.example": e}}}
 

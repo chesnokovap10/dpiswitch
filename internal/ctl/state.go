@@ -2,9 +2,12 @@ package ctl
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -154,7 +157,7 @@ func (s *state) verified(id string) []string {
 	now := time.Now()
 	for dom, e := range s.Networks[id] {
 		if _, addr := probe.AddrKey(dom); addr {
-			continue // goes to the address list, see verifiedIPs
+			continue // goes to the address list, see verifiedAddrs
 		}
 		if e.Verdict == probe.Clean && now.Before(e.ExpiresAt) {
 			out = append(out, dom)
@@ -164,22 +167,29 @@ func (s *state) verified(id string) []string {
 	return out
 }
 
-// verifiedIPs: the node each CLEAN name was probed on, as /32 or /128.
+// verifiedAddrs: rules for connections that carry no name at all, one per
+// node a CLEAN verdict was probed on, limited to what the probe really showed.
 //
 // Some clients take a server list with addresses from their own service and
 // connect to the bare IP: the speedtest client does, on port 20000, with a
 // protocol that is neither TLS nor HTTP, so no name can be recovered and the
 // name rules never match -- a verified server went through the tunnel at
-// 126 Mbit/s instead of 700. Only the address the probe itself reached
-// directly is listed, and the rule using it carries no-resolve, so a
-// connection that has a name is still decided by the name.
-func (s *state) verifiedIPs(id string) []string {
+// 126 Mbit/s instead of 700.
+//
+// A bare /32 used to send everything nameless to that node direct: any port,
+// UDP, and 443 too. But a name's 443 is probed as TLS with that name and its
+// 80 as HTTP with that Host -- neither says anything about other traffic to
+// the node, and a plain connect to one port says nothing about another (a
+// Telegram DC reached on 80 would take MTProto on 443 along). So a rule holds
+// the TCP ports probed by plain connect only, and fires only for a connection
+// without a name: an HTTP one keeps its address beside the sniffed Host, and
+// another name on a shared CDN node must not ride on this one's verdict.
+func (s *state) verifiedAddrs(id string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
-	seen := map[string]bool{}
-	var out []string
-	for _, e := range s.Networks[id] {
+	ports := map[string]map[int]bool{}
+	for dom, e := range s.Networks[id] {
 		if e.Verdict != probe.Clean || !now.Before(e.ExpiresAt) {
 			continue
 		}
@@ -187,17 +197,44 @@ func (s *state) verifiedIPs(id string) []string {
 		if ip == nil {
 			continue
 		}
-		cidr := ip.String() + "/128"
-		if ip.To4() != nil {
-			cidr = ip.String() + "/32"
+		_, bare := probe.AddrKey(dom)
+		for _, x := range e.Endpoints {
+			ep, ok := parseEndpoint(x)
+			if !ok || ep.udp || (!bare && (ep.port == 443 || ep.port == 80)) {
+				continue
+			}
+			if ports[ip.String()] == nil {
+				ports[ip.String()] = map[int]bool{}
+			}
+			ports[ip.String()][ep.port] = true
 		}
-		if !seen[cidr] {
-			seen[cidr] = true
-			out = append(out, cidr)
-		}
+	}
+	out := make([]string, 0, len(ports))
+	for ip, ps := range ports {
+		out = append(out, addrRule(net.ParseIP(ip), ps))
 	}
 	sort.Strings(out)
 	return out
+}
+
+// addrRule: TCP to these ports of this node, from a connection with no name.
+func addrRule(ip net.IP, ports map[int]bool) string {
+	list := make([]int, 0, len(ports))
+	for p := range ports {
+		list = append(list, p)
+	}
+	sort.Ints(list)
+	ps := make([]string, len(list))
+	for i, p := range list {
+		ps[i] = strconv.Itoa(p)
+	}
+	kind, cidr := "IP-CIDR", ip.String()+"/32"
+	if ip.To4() == nil {
+		kind, cidr = "IP-CIDR6", ip.String()+"/128"
+	}
+	// DOMAIN-REGEX matches the sniffed name or the host: "." fails on an empty one
+	return fmt.Sprintf("AND,((NETWORK,TCP),(DST-PORT,%s),(%s,%s,no-resolve),(NOT,((DOMAIN-REGEX,.))))",
+		strings.Join(ps, "/"), kind, cidr)
 }
 
 // touch marks names seen in the core's connections right now.

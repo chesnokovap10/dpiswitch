@@ -22,13 +22,13 @@ func TestAddressVerdicts(t *testing.T) {
 
 	live := time.Now().Add(time.Hour)
 	st := &state{Networks: map[string]map[string]*entry{"net": {
-		"@91.204.108.4": {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "91.204.108.4"},
-		"tula.qms.ru":   {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "212.12.2.243"},
+		"@91.204.108.4": {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "91.204.108.4", Endpoints: []string{"tcp/20000"}},
+		"tula.qms.ru":   {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "212.12.2.243", Endpoints: []string{"tcp/20000"}},
 	}}}
 	if got := st.verified("net"); len(got) != 1 || got[0] != "tula.qms.ru" {
 		t.Errorf("the name list must hold names only, got %v", got)
 	}
-	if got := st.verifiedIPs("net"); len(got) != 2 {
+	if got := st.verifiedAddrs("net"); len(got) != 2 {
 		t.Errorf("both nodes belong in the address list, got %v", got)
 	}
 }

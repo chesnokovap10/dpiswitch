@@ -1,6 +1,9 @@
 package ctl
 
 import (
+	"reflect"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,23 +59,40 @@ func TestForgetDropsUnusedOnly(t *testing.T) {
 	}
 }
 
-// The tested node of each live CLEAN name, as a host route, for connections
-// that reach a bare address (a speedtest client does).
-func TestVerifiedIPs(t *testing.T) {
+// The tested node of each live CLEAN verdict, for connections that reach a
+// bare address (a speedtest client does) -- only on the TCP ports probed by
+// plain connect, and only for a connection that carries no name.
+func TestVerifiedAddrs(t *testing.T) {
 	now := time.Now()
 	live := now.Add(time.Hour)
 	st := &state{Networks: map[string]map[string]*entry{"net": {
-		"tula.qms.ru":  {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "212.12.2.243"},
-		"alias.qms.ru": {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "212.12.2.243"}, // same node once
-		"v6.example":   {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "2001:db8::1"},
-		"blocked.ru":   {Verdict: probe.BlockedTLS, ExpiresAt: live, TestedIP: "192.0.2.1"},
-		"stale.ru":     {Verdict: probe.Clean, ExpiresAt: now.Add(-time.Hour), TestedIP: "192.0.2.2"},
-		"noip.ru":      {Verdict: probe.Clean, ExpiresAt: live},
+		"tula.qms.ru": {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "212.12.2.243",
+			Endpoints: []string{"tcp/20000", "tcp/443", "quic/443"}},
+		// the same node under another name: one rule, the ports joined
+		"alias.qms.ru": {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "212.12.2.243",
+			Endpoints: []string{"tcp/8080"}},
+		"v6.example": {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "2001:db8::1",
+			Endpoints: []string{"tcp/5228"}},
+		// a name's 443 and 80 are TLS and HTTP with that name: no rule
+		"web.example": {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "192.0.2.3",
+			Endpoints: []string{"tcp/443", "tcp/80"}},
+		// a bare address was probed by plain connect on every port it has
+		"@192.0.2.4": {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "192.0.2.4", Endpoints: []string{"tcp/80"}},
+		"blocked.ru": {Verdict: probe.BlockedTLS, ExpiresAt: live, TestedIP: "192.0.2.1", Endpoints: []string{"tcp/20000"}},
+		"stale.ru":   {Verdict: probe.Clean, ExpiresAt: now.Add(-time.Hour), TestedIP: "192.0.2.2", Endpoints: []string{"tcp/20000"}},
+		"noip.ru":    {Verdict: probe.Clean, ExpiresAt: live, Endpoints: []string{"tcp/20000"}},
+		"legacy.ru":  {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "192.0.2.5"}, // probed on 443 before ports were kept
 	}}}
-	got := st.verifiedIPs("net")
-	want := []string{"2001:db8::1/128", "212.12.2.243/32"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
-		t.Fatalf("got %v, want %v", got, want)
+	got := st.verifiedAddrs("net")
+	nameless := ",(NOT,((DOMAIN-REGEX,.))))"
+	want := []string{
+		"AND,((NETWORK,TCP),(DST-PORT,8080/20000),(IP-CIDR,212.12.2.243/32,no-resolve)" + nameless,
+		"AND,((NETWORK,TCP),(DST-PORT,5228),(IP-CIDR6,2001:db8::1/128,no-resolve)" + nameless,
+		"AND,((NETWORK,TCP),(DST-PORT,80),(IP-CIDR,192.0.2.4/32,no-resolve)" + nameless,
+	}
+	sort.Strings(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
 
