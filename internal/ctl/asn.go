@@ -21,9 +21,11 @@ import (
 // The gateway remains the "attachment address": it shows that the network
 // changed, and the discovered ISP is cached by it.
 
-// asnCacheTTL: how often to re-check the ISP behind the same gateway
-// (the router may have been switched to another uplink)
-const asnCacheTTL = 24 * time.Hour
+// asnCacheTTL: how often to re-check the ISP behind the same gateway: the
+// router may have been switched to another uplink. It was a day, and for a
+// day the old ISP's verdicts sent names direct on the new one, where they
+// may be blocked. Two small requests to RIPE an hour cost nothing.
+const asnCacheTTL = time.Hour
 
 type attachment struct {
 	Net     string    `json:"net"` // AS12389
