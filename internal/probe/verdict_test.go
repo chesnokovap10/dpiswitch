@@ -1,6 +1,9 @@
 package probe
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestJudge(t *testing.T) {
 	tls := func(ok bool) PathResult {
@@ -51,6 +54,27 @@ func TestJudge(t *testing.T) {
 	for _, c := range cases {
 		if got, reason := Judge(c.d, c.t); got != c.want {
 			t.Errorf("%s: got %v (%s), want %v", c.name, got, reason, c.want)
+		}
+	}
+}
+
+// Only what was really timed counts: the SOCKS reply is loopback's.
+func TestLatency(t *testing.T) {
+	ms := time.Millisecond
+	cases := []struct {
+		name string
+		r    PathResult
+		want time.Duration
+		ok   bool
+	}{
+		{"tls: dial and handshake", PathResult{TCPOk: true, TCPTime: ms, TLSTried: true, TLSOk: true, TLSTime: 40 * ms}, 41 * ms, true},
+		{"tls failed", PathResult{TCPOk: true, TLSTried: true}, 0, false},
+		{"plain http: first byte", PathResult{TCPOk: true, TCPTime: ms, HTTPStatus: 200, TTFB: 30 * ms}, 30 * ms, true},
+		{"plain tcp: nothing to time", PathResult{TCPOk: true, TCPTime: ms}, 0, false},
+	}
+	for _, c := range cases {
+		if got, ok := latency(c.r); got != c.want || ok != c.ok {
+			t.Errorf("%s: got %v %v, want %v %v", c.name, got, ok, c.want, c.ok)
 		}
 	}
 }

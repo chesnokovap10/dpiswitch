@@ -127,6 +127,7 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool)
 	// take the best measurement across passes, not the last one: the minimum
 	// is more robust to random spikes than the average
 	var bestDirect, bestTunnel time.Duration
+	measured := false
 	for i := 0; i < attempts; i++ {
 		var d, t PathResult
 		switch {
@@ -150,12 +151,21 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool)
 		if v != Clean {
 			return rep // the first non-clean pass decides
 		}
-		if dt := d.TCPTime + d.TLSTime; bestDirect == 0 || dt < bestDirect {
+		dt, dok := latency(d)
+		tt, tok := latency(t)
+		if !dok || !tok {
+			continue
+		}
+		if !measured || dt < bestDirect {
 			bestDirect = dt
 		}
-		if tt := t.TCPTime + t.TLSTime; bestTunnel == 0 || tt < bestTunnel {
+		if !measured || tt < bestTunnel {
 			bestTunnel = tt
 		}
+		measured = true
+	}
+	if !measured {
+		return rep // plain TCP: nothing to time, see latency
 	}
 	rep.DirectMs = bestDirect.Milliseconds()
 	rep.TunnelMs = bestTunnel.Milliseconds()
@@ -171,6 +181,25 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool)
 	// resolvers apply EDNS Client Subnet, and from the VPS address the same google
 	// returns a different CDN node than from home. Verified on example.com.
 	return rep
+}
+
+// latency: how long a path took, by what the probe can time on it.
+//
+// The SOCKS reply arrives before the core even dials (see confirmDial), so
+// TCPTime is the loopback's, not the path's. Over TLS and QUIC the dial and
+// the handshake land in TLSTime. Plain HTTP times the request to the first
+// byte of the answer -- one round trip over the established path. Plain TCP
+// has nothing to time: it used to compare two loopback replies, and the
+// 10 ms margin covered them, so SLOWER could never fire there while the log
+// showed figures that looked measured.
+func latency(r PathResult) (time.Duration, bool) {
+	switch {
+	case r.TLSTried:
+		return r.TCPTime + r.TLSTime, r.TLSOk
+	case r.HTTPStatus != 0:
+		return r.TTFB, true
+	}
+	return 0, false
 }
 
 func Judge(d, t PathResult) (Verdict, string) {
