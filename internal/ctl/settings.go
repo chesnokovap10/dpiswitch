@@ -91,6 +91,19 @@ func LoadSettings(path string) Settings {
 	return s
 }
 
+// PatchSettings saves what a UI form sent over what the file holds: a field
+// the form does not carry keeps its value. The settings form has no second
+// tunnel presets -- they live in their own block -- and saving it used to
+// write them empty. The preset files stayed as they were until the next
+// service start rebuilt them from the file: Stop-Start turned every preset off.
+func PatchSettings(path string, body []byte) error {
+	s := LoadSettings(path)
+	if err := json.Unmarshal(body, &s); err != nil {
+		return err
+	}
+	return SaveSettings(path, s)
+}
+
 func SaveSettings(path string, s Settings) error {
 	if err := s.Validate(); err != nil {
 		return err

@@ -466,8 +466,8 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			"conf_dns": confDNS,
 		})
 	case http.MethodPost:
-		var set ctl.Settings
-		if err := json.NewDecoder(r.Body).Decode(&set); err != nil {
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
 			writeResult(w, err)
 			return
 		}
@@ -475,7 +475,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			writeResult(w, err)
 			return
 		}
-		writeResult(w, ctl.SaveSettings(paths.Settings(), set))
+		writeResult(w, ctl.PatchSettings(paths.Settings(), body))
 	default:
 		http.Error(w, "GET or POST required", 405)
 	}

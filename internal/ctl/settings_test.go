@@ -93,3 +93,33 @@ func TestClampUpperBounds(t *testing.T) {
 	}
 	probe.SetSlowFactor(1.2)
 }
+
+// The settings form carries no presets: saving it must keep the ones the
+// second tunnel block turned on, and the other way round.
+func TestPatchSettingsKeepsOtherFields(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "settings.json")
+	s := DefaultSettings()
+	s.Awg2Presets = []string{"youtube", "ai"}
+	if err := SaveSettings(p, s); err != nil {
+		t.Fatal(err)
+	}
+	form := `{"auto_switch":false,"families":true,"ipv6":true,"clean_ttl_min":480,
+		"fail_ttl_min":60,"max_backoff_min":1440,"slow_pct":20,"attempts":3,
+		"direct_dns":["tls://77.88.8.1"],"tunnel_dns":[]}`
+	if err := PatchSettings(p, []byte(form)); err != nil {
+		t.Fatal(err)
+	}
+	got := LoadSettings(p)
+	if got.AutoSwitch || got.CleanTTLMin != 480 {
+		t.Fatalf("the form was not applied: %+v", got)
+	}
+	if len(got.Awg2Presets) != 2 || got.Awg2Presets[0] != "youtube" || got.Awg2Presets[1] != "ai" {
+		t.Fatalf("presets lost: %v", got.Awg2Presets)
+	}
+	if PatchSettings(p, []byte(`{"attempts":99}`)) == nil {
+		t.Fatal("an invalid value must be rejected")
+	}
+	if LoadSettings(p).Attempts != 3 {
+		t.Fatal("a rejected save must leave the file as it was")
+	}
+}
