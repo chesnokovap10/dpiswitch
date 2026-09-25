@@ -191,3 +191,78 @@ func TestDoHKeepsConnection(t *testing.T) {
 		t.Fatalf("%d connections after the drop, want 2", n)
 	}
 }
+
+// udpSocksStub: a SOCKS5 listener that takes UDP ASSOCIATE only and answers
+// every DNS query that reaches its relay -- after dropping the first few,
+// as a lossy network does.
+func udpSocksStub(t *testing.T, drop int) (addr string, asked *atomic.Int32) {
+	relay, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close(); relay.Close() })
+	asked = new(atomic.Int32)
+	go func() {
+		buf := make([]byte, 64<<10)
+		for {
+			n, from, err := relay.ReadFromUDP(buf)
+			if err != nil {
+				return
+			}
+			if n < 10 || buf[3] != 1 || int(asked.Add(1)) <= drop {
+				continue
+			}
+			q := buf[10:n]
+			out := append(append([]byte(nil), buf[:10]...), answerWith(q, binary.BigEndian.Uint16(q))...)
+			relay.WriteToUDP(out, from)
+		}
+	}()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				b := make([]byte, 10)
+				if _, err := io.ReadFull(c, b[:3]); err != nil {
+					return
+				}
+				c.Write([]byte{5, 0})
+				if _, err := io.ReadFull(c, b); err != nil || b[1] != 3 {
+					return // not an ASSOCIATE: no TCP here
+				}
+				p := relay.LocalAddr().(*net.UDPAddr).Port
+				c.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, byte(p >> 8), byte(p)})
+				io.Copy(io.Discard, c) // the association lives while this does
+			}(c)
+		}
+	}()
+	return ln.Addr().String(), asked
+}
+
+// udp:// is asked over UDP, as the core asks it -- it used to go over TCP,
+// and a network dropping UDP/53 had the resolver pass -- and a lost
+// datagram is sent again.
+func TestLookupOverUDP(t *testing.T) {
+	old := udpResend
+	udpResend = 100 * time.Millisecond
+	defer func() { udpResend = old }()
+	addr, asked := udpSocksStub(t, 1)
+	r, err := ParseResolver("udp://192.0.2.53")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.Lookup(Dialer{Addr: addr, Timeout: 3 * time.Second}, "example.com")
+	if err != nil || len(got) != 1 || got[0] != "192.0.2.7" {
+		t.Fatalf("got %v, %v", got, err)
+	}
+	if n := asked.Load(); n != 2 {
+		t.Fatalf("%d datagrams, want the lost one sent again", n)
+	}
+}

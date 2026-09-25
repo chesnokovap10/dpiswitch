@@ -128,9 +128,17 @@ func runTray() {
 	}
 	if alreadyRunning() {
 		log.Println("tray: another copy is already running -- opening the UI and exiting")
+		// the first copy may still be starting its UI
 		addr := webui.Find(key)
+		for i := 0; addr == "" && i < 10; i++ {
+			time.Sleep(500 * time.Millisecond)
+			addr = webui.Find(key)
+		}
 		if addr == "" {
-			addr = webui.WithKey(fmt.Sprintf("http://127.0.0.1:%d/", session.Port()), key)
+			// no UI proved itself ours: the address without the key --
+			// whatever holds the port must not be handed it
+			log.Println("tray: the running copy's UI did not answer")
+			addr = fmt.Sprintf("http://127.0.0.1:%d/", session.Port())
 		}
 		browse(addr)
 		return

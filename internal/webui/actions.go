@@ -370,12 +370,9 @@ func (s *Server) actPreset(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown preset", http.StatusBadRequest)
 		return
 	}
-	// the preset files follow the settings in the same order: two quick
-	// clicks could otherwise write their files the other way round
-	s.presetMu.Lock()
-	set, err := ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
+	toggle := func(cur []string) []string {
 		ids := []string{}
-		for _, x := range set.Awg2Presets {
+		for _, x := range cur {
 			if x != id {
 				ids = append(ids, x)
 			}
@@ -383,11 +380,25 @@ func (s *Server) actPreset(w http.ResponseWriter, r *http.Request) {
 		if on {
 			ids = append(ids, id)
 		}
-		set.Awg2Presets = ids
-		return nil
-	})
+		return ids
+	}
+	// the preset files follow the settings in the same order: two quick
+	// clicks could otherwise write their files the other way round. The
+	// files go first: settings saved before a file that then failed said
+	// the preset was on while its file said off. On any failure the files
+	// are put back to what the settings say.
+	s.presetMu.Lock()
+	err := presets.Write(toggle(ctl.LoadSettings(paths.Settings()).Awg2Presets))
 	if err == nil {
-		err = presets.Write(set.Awg2Presets)
+		_, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
+			set.Awg2Presets = toggle(set.Awg2Presets)
+			return nil
+		})
+	}
+	if err != nil {
+		if werr := presets.Write(ctl.LoadSettings(paths.Settings()).Awg2Presets); werr != nil {
+			log.Printf("ui: preset files not put back after a failed change: %v", werr)
+		}
 	}
 	s.presetMu.Unlock()
 	n := 0

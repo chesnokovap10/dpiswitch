@@ -85,8 +85,10 @@ func ParseResolver(s string) (Resolver, error) {
 }
 
 // Lookup: A records of a name via this resolver, over the dialer's path.
-// Plain udp:// is checked over TCP to the same server: the prober's
-// SOCKS listener is TCP, and the server and answers are the same.
+// Plain udp:// is asked over UDP, through the listener's UDP ASSOCIATE, as
+// the core asks it: it used to go over TCP to the same server, and a network
+// that passes TCP/53 and drops UDP/53 had the resolver checked as working
+// while the core could not resolve through it.
 func (r Resolver) Lookup(d Dialer, name string) ([]string, error) {
 	return r.lookup(d, name, typeA)
 }
@@ -105,6 +107,8 @@ func (r Resolver) lookup(d Dialer, name string, qtype uint16) ([]string, error) 
 	switch r.Scheme {
 	case "https":
 		resp, err = r.doh(d, q)
+	case "udp":
+		resp, err = r.datagram(d, q, id)
 	default:
 		resp, err = r.stream(d, q)
 	}
@@ -225,6 +229,64 @@ func (r Resolver) stream(d Dialer, q []byte) ([]byte, error) {
 	out := make([]byte, binary.BigEndian.Uint16(l[:]))
 	_, err = io.ReadFull(c, out)
 	return out, err
+}
+
+// udpResend: a datagram may be lost; the query goes again after this long,
+// until the dialer's timeout
+var udpResend = 2 * time.Second
+
+// datagram asks over UDP through the listener. A truncated answer is asked
+// again over TCP, as a resolver client does. A resolver given by name is
+// asked over TCP as before: a datagram goes to an address, and resolving the
+// name here would ask the system, not the path under test.
+func (r Resolver) datagram(d Dialer, q []byte, id uint16) ([]byte, error) {
+	ip := net.ParseIP(r.Host)
+	if ip == nil {
+		return r.stream(d, q)
+	}
+	u, err := d.DialUDP()
+	if err != nil {
+		return nil, err
+	}
+	defer u.Close()
+	to := &net.UDPAddr{IP: ip, Port: r.Port}
+	deadline := time.Now().Add(d.Timeout)
+	buf := make([]byte, 64<<10)
+	for {
+		if _, err := u.WriteTo(q, to); err != nil {
+			return nil, err
+		}
+		resend := time.Now().Add(udpResend)
+		_ = u.SetReadDeadline(minTime(resend, deadline))
+		for {
+			n, _, err := u.ReadFrom(buf)
+			var ne net.Error
+			if errors.As(err, &ne) && ne.Timeout() {
+				break
+			}
+			if err != nil {
+				return nil, err
+			}
+			m := buf[:n]
+			if len(m) < 12 || binary.BigEndian.Uint16(m) != id || m[2]&0x80 == 0 {
+				continue // not the answer to this query
+			}
+			if m[2]&0x02 != 0 {
+				return r.stream(d, q) // truncated
+			}
+			return append([]byte(nil), m...), nil
+		}
+		if !time.Now().Before(deadline) {
+			return nil, fmt.Errorf("udp: no answer in %s", d.Timeout)
+		}
+	}
+}
+
+func minTime(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
 }
 
 // LookupAny queries resolvers concurrently and takes the first answer --

@@ -152,6 +152,8 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	// the verdicts are filed under netID: a probe made after the machine
 	// moved to another network measured that one
 	guard := guardNetwork()
+	// and a reset from the tray while they run leaves memory empty
+	epoch := st.resetEpoch()
 	var (
 		wg  sync.WaitGroup
 		sem = make(chan struct{}, cfg.Workers)
@@ -266,12 +268,21 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 		log.Printf("the network changed during the cycle: %d results dropped", len(results))
 		return
 	}
+	// filed under listMu: a reset takes it too, so it comes wholly before
+	// this or wholly after
+	listMu.Lock()
+	if st.resetEpoch() != epoch {
+		listMu.Unlock()
+		log.Printf("verdicts were reset during the cycle: %d results dropped", len(results))
+		return
+	}
 	changed := false
 	for _, r := range results {
 		if record(cfg, st, netID, r.dom, r.rep, r.eps, r.facts) {
 			changed = true
 		}
 	}
+	listMu.Unlock()
 
 	if until, now := st.learnV6(netID, v6Missed, v6Reached); now {
 		log.Printf("the direct path here has no IPv6: %d names in a row could not reach "+

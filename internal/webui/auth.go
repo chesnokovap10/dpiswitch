@@ -12,10 +12,13 @@ package webui
 // sent on to the same page without it.
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -84,6 +87,10 @@ func (s *Server) auth(h http.Handler) http.Handler {
 		return h
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == helloPath {
+			h.ServeHTTP(w, r)
+			return
+		}
 		if k := r.URL.Query().Get(keyParam); k != "" && s.keyOK(k) {
 			http.SetCookie(w, &http.Cookie{Name: cookieName(r.Host), Value: s.Key, Path: "/",
 				MaxAge: 400 * 24 * 3600, HttpOnly: true, SameSite: http.SameSiteStrictMode})
@@ -103,6 +110,32 @@ func (s *Server) auth(h http.Handler) http.Handler {
 		w.Write([]byte(`<!doctype html><meta charset="utf-8"><title>DPI Switch</title>
 <p>Open DPI Switch from its tray icon.</p><p>Откройте DPI Switch через значок в трее.</p>`))
 	})
+}
+
+// helloPath: where a second copy asks whether this is its UI (see answers).
+// Open without the key: it gives out nothing but a proof of holding it.
+const helloPath = "/api/hello"
+
+// helloProof: how a UI holding key answers the challenge nonce on port. The
+// port is the one the UI itself listens on: a process of another account
+// sitting on a candidate port cannot pass on a real UI's answer as its own,
+// since that one names the real UI's port.
+func helloProof(key, port, nonce string) string {
+	m := hmac.New(sha256.New, []byte(key))
+	m.Write([]byte("dpiswitch-hello|" + port + "|" + nonce))
+	return hex.EncodeToString(m.Sum(nil))
+}
+
+func (s *Server) handleHello(w http.ResponseWriter, r *http.Request) {
+	nonce := r.URL.Query().Get("n")
+	la, ok := r.Context().Value(http.LocalAddrContextKey).(net.Addr)
+	if !ok || len(nonce) < 16 || len(nonce) > 128 {
+		http.Error(w, "bad challenge", http.StatusBadRequest)
+		return
+	}
+	_, port, _ := net.SplitHostPort(la.String())
+	w.Header().Set("Content-Type", "text/plain")
+	w.Write([]byte(helloProof(s.Key, port, nonce)))
 }
 
 func (s *Server) keyOK(k string) bool {

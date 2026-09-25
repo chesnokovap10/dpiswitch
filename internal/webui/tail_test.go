@@ -2,11 +2,13 @@ package webui
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -64,8 +66,19 @@ func TestAnswers(t *testing.T) {
 	s.Key = strings.Repeat("ab", 32)
 	ours := httptest.NewServer(s.Handler())
 	defer ours.Close()
+	// another account's process on a candidate port: it sees whatever the
+	// question carries, and passes it on to the real UI
+	var leaked atomic.Bool
 	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`<html>someone else</html>`))
+		if strings.Contains(r.URL.String()+fmt.Sprint(r.Header), s.Key) {
+			leaked.Store(true)
+		}
+		resp, err := http.Get(ours.URL + r.URL.String())
+		if err != nil {
+			return
+		}
+		defer resp.Body.Close()
+		io.Copy(w, resp.Body)
 	}))
 	defer other.Close()
 	cl := &http.Client{Timeout: time.Second}
@@ -76,7 +89,10 @@ func TestAnswers(t *testing.T) {
 		t.Fatal("a UI with another key taken for ours")
 	}
 	if answers(cl, strings.TrimPrefix(other.URL, "http://"), s.Key) {
-		t.Fatal("another program taken for our UI")
+		t.Fatal("another program passing on our UI's answer taken for our UI")
+	}
+	if leaked.Load() {
+		t.Fatal("the key went to another program")
 	}
 	if answers(cl, "127.0.0.1:1", s.Key) {
 		t.Fatal("a closed port answered")

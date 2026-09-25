@@ -644,6 +644,25 @@ func TestCycleNetworkChangesMidway(t *testing.T) {
 	}
 }
 
+// The verdicts are reset from the tray while a cycle's probes run: what they
+// found does not come back into the memory the reset emptied.
+func TestCycleResetMidway(t *testing.T) {
+	s := newScenario(t)
+	s.see(tunnelled("reset.example.org", 443))
+	s.script("reset.example.org tcp/443", clean("192.0.2.62"))
+	checkProto = func(direct, tunnel probe.Dialer, dom string, port, att int, udp bool, was probe.Verdict) probe.Report {
+		s.st.resetVerdicts() // the reset lands while the probe runs
+		return s.check(direct, tunnel, dom, port, att, udp, was)
+	}
+	s.cycle()
+	if e := s.entry("reset.example.org"); e != nil {
+		t.Fatalf("a probe started before the reset filed %s after it", e.Verdict)
+	}
+	if got := listRules(s.cfg.ListPath); len(got) != 0 {
+		t.Fatalf("list %v", got)
+	}
+}
+
 // The prober's own connections -- from loopback, through its listeners --
 // are no use of a name: a re-check renewed LastSeen, and a name nothing went
 // to was never forgotten. Nor are they candidates, or suspect direct ones.

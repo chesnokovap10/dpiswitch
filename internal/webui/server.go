@@ -6,6 +6,9 @@ package webui
 import (
 	"bufio"
 	"bytes"
+	"crypto/hmac"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -80,6 +83,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/favicon.ico", s.handleIcon)
 	mux.HandleFunc("/lang", s.handleLang)
 	mux.HandleFunc("/api/status", s.handleStatus)
+	mux.HandleFunc(helloPath, s.handleHello)
 	for path, h := range map[string]http.HandlerFunc{
 		"/act/auto":      s.actAuto,
 		"/act/service":   s.actService,
@@ -123,26 +127,24 @@ func Find(key string) string {
 	return ""
 }
 
-// answers: whether our DPI Switch UI answers on addr -- its status carries
-// a version and a data directory; another program on the port does not.
+// answers: whether our DPI Switch UI answers on addr. It is asked to prove
+// it holds the key (see helloProof), and the key itself is never sent: it
+// used to go in a header to every candidate port before anything was known
+// of what listened there, and a process of another account holding the
+// first one got it -- and with it the real UI.
 func answers(cl *http.Client, addr, key string) bool {
-	req, err := http.NewRequest("GET", "http://"+addr+"/api/status", nil)
-	if err != nil {
-		return false
-	}
-	req.Header.Set(keyHeader, key)
-	resp, err := cl.Do(req)
+	var b [16]byte
+	rand.Read(b[:])
+	nonce := hex.EncodeToString(b[:])
+	resp, err := cl.Get("http://" + addr + helloPath + "?n=" + nonce)
 	if err != nil {
 		return false
 	}
 	defer resp.Body.Close()
-	var st struct {
-		Version string `json:"version"`
-		DataDir string `json:"data_dir"`
-	}
-	return resp.StatusCode == http.StatusOK &&
-		json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&st) == nil &&
-		st.Version != "" && st.DataDir != ""
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 256))
+	_, port, _ := net.SplitHostPort(addr)
+	return err == nil && resp.StatusCode == http.StatusOK &&
+		hmac.Equal(bytes.TrimSpace(body), []byte(helloProof(key, port, nonce)))
 }
 
 func (s *Server) Close() {

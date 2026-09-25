@@ -58,6 +58,8 @@ type state struct {
 	Current string `json:"current,omitempty"`
 	// V6: what probes have shown of IPv6 on each network's direct path
 	V6 map[string]*v6Memo `json:"v6,omitempty"`
+	// resets: how many times the verdicts were reset, see resetEpoch
+	resets int
 }
 
 type v6Memo struct {
@@ -457,7 +459,17 @@ func (s *state) resetVerdicts() int {
 		n += len(m)
 		s.Networks[id] = map[string]*entry{}
 	}
+	s.resets++
 	return n
+}
+
+// resetEpoch: changes with every reset. A cycle notes it before its probes,
+// and files nothing if it changed meanwhile: probes started before a reset
+// used to put their verdicts back into the memory it had just emptied.
+func (s *state) resetEpoch() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.resets
 }
 
 // drop removes the verdicts of the names that match.
