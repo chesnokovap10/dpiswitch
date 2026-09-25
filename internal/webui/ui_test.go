@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 
 	"dpiswitch/internal/ctl"
@@ -241,5 +242,74 @@ func TestLang(t *testing.T) {
 		if c := w.Result().Cookies(); len(c) != 1 || c[0].Value != "ru" {
 			t.Errorf("cookie %v", c)
 		}
+	}
+}
+
+// Changes sent at once all land: each control is its own request, and
+// two served together used to read the same file, the second save undoing
+// the first. The preset files follow the settings.
+func TestSettingsAtOnce(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	var wg sync.WaitGroup
+	send := func(path, field, value string) {
+		defer wg.Done()
+		if w := do(t, h, "POST", path, url.Values{"field": {field}, "value": {value}}, nil); w.Code != 200 {
+			t.Errorf("%s %s=%s: %d", path, field, value, w.Code)
+		}
+	}
+	for i := 0; i < 20; i++ {
+		wg.Add(4)
+		go send("/act/set", "attempts", "5")
+		go send("/act/set", "slow_pct", "30")
+		go send("/act/set", "families", "0")
+		go send("/act/preset", presets.All[i%len(presets.All)].ID, "1")
+	}
+	wg.Wait()
+	got := ctl.LoadSettings(paths.Settings())
+	if got.Attempts != 5 || got.SlowPct != 30 || got.Families || len(got.Awg2Presets) != len(presets.All) {
+		t.Fatalf("changes lost: %+v", got)
+	}
+	for _, p := range presets.All {
+		b, err := os.ReadFile(paths.Preset(p.ID))
+		if err != nil || !strings.Contains(string(b), ",") {
+			t.Fatalf("preset %s: file %q, %v", p.ID, b, err)
+		}
+	}
+}
+
+// With a key, nothing is served to a request without it: another account
+// on the machine reaches 127.0.0.1 too. The key in the address is traded
+// for a cookie and taken out of the address.
+func TestKey(t *testing.T) {
+	s, _ := testServer(t)
+	s.Key = strings.Repeat("ab", 32)
+	h := s.Handler()
+	form := url.Values{"field": {"attempts"}, "value": {"7"}}
+	if w := do(t, h, "GET", "/overview", nil, nil); w.Code != 403 {
+		t.Errorf("a page without the key: %d", w.Code)
+	}
+	if w := do(t, h, "POST", "/act/set", form, nil); w.Code != 403 {
+		t.Errorf("a form without the key: %d", w.Code)
+	}
+	if w := do(t, h, "GET", "/overview?k="+strings.Repeat("cd", 32), nil, nil); w.Code != 403 {
+		t.Errorf("a wrong key: %d", w.Code)
+	}
+	if ctl.LoadSettings(paths.Settings()).Attempts == 7 {
+		t.Fatal("a request without the key changed the settings")
+	}
+	w := do(t, h, "GET", "/verdicts?q=x&k="+s.Key, nil, nil)
+	c := w.Result().Cookies()
+	if w.Code != 303 || w.Header().Get("Location") != "/verdicts?q=x" || len(c) != 1 || c[0].Value != s.Key || !c[0].HttpOnly {
+		t.Fatalf("the key in the address: %d, to %q, cookies %v", w.Code, w.Header().Get("Location"), c)
+	}
+	if w := do(t, h, "GET", "/overview", nil, map[string]string{"Cookie": c[0].Name + "=" + s.Key}); w.Code != 200 {
+		t.Errorf("a page with the cookie: %d", w.Code)
+	}
+	if w := do(t, h, "POST", "/act/set", form, map[string]string{"Cookie": c[0].Name + "=" + s.Key}); w.Code != 200 {
+		t.Errorf("a form with the cookie: %d", w.Code)
+	}
+	if w := do(t, h, "GET", "/api/status", nil, map[string]string{keyHeader: s.Key}); w.Code != 200 {
+		t.Errorf("the status with the key header: %d", w.Code)
 	}
 }

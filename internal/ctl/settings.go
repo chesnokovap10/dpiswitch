@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"dpiswitch/internal/presets"
@@ -97,14 +99,37 @@ func LoadSettings(path string) Settings {
 // write them empty. The preset files stayed as they were until the next
 // service start rebuilt them from the file: Stop-Start turned every preset off.
 func PatchSettings(path string, body []byte) error {
+	_, err := UpdateSettings(path, func(s *Settings) error {
+		return json.Unmarshal(body, s)
+	})
+	return err
+}
+
+// settingsMu makes a read-modify-write of the file one step. The UI sends
+// every control the moment it changes, so two changes in quick succession
+// are two requests served at once: both read the old file and the second
+// save wrote the first change back out.
+var settingsMu sync.Mutex
+
+// UpdateSettings reads the file, lets change edit it and saves the result,
+// with no other save in between. Nothing is written if change fails.
+func UpdateSettings(path string, change func(*Settings) error) (Settings, error) {
+	settingsMu.Lock()
+	defer settingsMu.Unlock()
 	s := LoadSettings(path)
-	if err := json.Unmarshal(body, &s); err != nil {
-		return err
+	if err := change(&s); err != nil {
+		return s, err
 	}
-	return SaveSettings(path, s)
+	return s, saveSettings(path, s)
 }
 
 func SaveSettings(path string, s Settings) error {
+	settingsMu.Lock()
+	defer settingsMu.Unlock()
+	return saveSettings(path, s)
+}
+
+func saveSettings(path string, s Settings) error {
 	if err := s.Validate(); err != nil {
 		return err
 	}
@@ -112,11 +137,21 @@ func SaveSettings(path string, s Settings) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	// a temporary file of its own: two writers sharing one name could
+	// interleave into a broken file
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
 		return err
 	}
-	return renameRetry(tmp, path)
+	_, err = f.Write(b)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(f.Name())
+		return err
+	}
+	return renameRetry(f.Name(), path)
 }
 
 // renameRetry: Windows refuses to replace a file someone has open, and the

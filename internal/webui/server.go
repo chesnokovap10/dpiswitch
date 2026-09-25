@@ -29,9 +29,15 @@ type Server struct {
 	// and cannot elevate itself
 	Elevate func(verb string) error
 
+	// Key: the secret every request must carry (see auth.go); empty in
+	// tests, where the UI is open
+	Key string
+
 	flashes map[string]flash
 	// statusFn replaces collectStatus in tests
 	statusFn func() status
+	// presetMu: a preset's settings and its files are written as one step
+	presetMu sync.Mutex
 }
 
 func (s *Server) Addr() string {
@@ -87,26 +93,38 @@ func (s *Server) Handler() http.Handler {
 	} {
 		mux.HandleFunc(path, post(h))
 	}
-	return guard(mux)
+	return guard(s.auth(mux))
 }
 
-// Find: the address of the running DPI Switch UI in this logon session, or
-// "" if none answers. It is on one of the session's candidate ports, not
-// necessarily the first: Listen steps past a taken one.
-func Find() string {
+// URL: the address to open the UI at, with the key a browser trades for
+// its cookie on the first request.
+func (s *Server) URL() string {
+	return WithKey(s.Addr()+"/", s.Key)
+}
+
+// Find: the address of the running DPI Switch UI in this logon session,
+// key included, or "" if none answers. It is on one of the session's
+// candidate ports, not necessarily the first: Listen steps past a taken
+// one. Another user's UI does not answer: it has another key.
+func Find(key string) string {
 	cl := &http.Client{Timeout: 700 * time.Millisecond}
 	for _, p := range session.Candidates() {
-		if addr := fmt.Sprintf("127.0.0.1:%d", p); answers(cl, addr) {
-			return "http://" + addr + "/"
+		if addr := fmt.Sprintf("127.0.0.1:%d", p); answers(cl, addr, key) {
+			return WithKey("http://"+addr+"/", key)
 		}
 	}
 	return ""
 }
 
-// answers: whether a DPI Switch UI answers on addr -- its status carries a
-// version and a data directory; another program on the port does not.
-func answers(cl *http.Client, addr string) bool {
-	resp, err := cl.Get("http://" + addr + "/api/status")
+// answers: whether our DPI Switch UI answers on addr -- its status carries
+// a version and a data directory; another program on the port does not.
+func answers(cl *http.Client, addr, key string) bool {
+	req, err := http.NewRequest("GET", "http://"+addr+"/api/status", nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set(keyHeader, key)
+	resp, err := cl.Do(req)
 	if err != nil {
 		return false
 	}

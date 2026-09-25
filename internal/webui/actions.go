@@ -358,21 +358,26 @@ func (s *Server) actPreset(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown preset", http.StatusBadRequest)
 		return
 	}
-	set := ctl.LoadSettings(paths.Settings())
-	ids := []string{}
-	for _, x := range set.Awg2Presets {
-		if x != id {
-			ids = append(ids, x)
+	// the preset files follow the settings in the same order: two quick
+	// clicks could otherwise write their files the other way round
+	s.presetMu.Lock()
+	set, err := ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
+		ids := []string{}
+		for _, x := range set.Awg2Presets {
+			if x != id {
+				ids = append(ids, x)
+			}
 		}
-	}
-	if on {
-		ids = append(ids, id)
-	}
-	set.Awg2Presets = ids
-	err := ctl.SaveSettings(paths.Settings(), set)
+		if on {
+			ids = append(ids, id)
+		}
+		set.Awg2Presets = ids
+		return nil
+	})
 	if err == nil {
-		err = presets.Write(ids)
+		err = presets.Write(set.Awg2Presets)
 	}
+	s.presetMu.Unlock()
 	n := 0
 	if err == nil {
 		n = closeMoved(presetMatch(*p))
@@ -431,7 +436,6 @@ func saved(r *http.Request, err error, moved int) (bool, string) {
 // picks it up within a second (see ctl.watchSettings).
 func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 	field, val := r.FormValue("field"), strings.TrimSpace(r.FormValue("value"))
-	set := ctl.LoadSettings(paths.Settings())
 	num := func() (int, error) {
 		n, err := strconv.Atoi(val)
 		if err != nil {
@@ -439,41 +443,44 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 		}
 		return n, nil
 	}
-	var err error
-	note := "Saved"
 	switch field {
-	case "auto_switch":
-		set.AutoSwitch = val == "1"
-	case "families":
-		set.Families = val == "1"
-	case "ipv6":
-		set.IPv6 = val == "1"
-		note = "Saved: the core restarts, the tunnel drops for a couple of seconds"
-	case "clean_ttl_min":
-		set.CleanTTLMin, err = num()
-	case "fail_ttl_min":
-		set.FailTTLMin, err = num()
-		// the pause cap cannot be below the re-check: it follows it up
-		// instead of the save being refused
-		if err == nil && set.MaxBackoffMin < set.FailTTLMin {
-			set.MaxBackoffMin = set.FailTTLMin
-			note = "Saved; the pause cap was raised to match"
-		}
-	case "max_backoff_min":
-		set.MaxBackoffMin, err = num()
-	case "slow_pct":
-		set.SlowPct, err = num()
-	case "attempts":
-		set.Attempts, err = num()
+	case "auto_switch", "families", "ipv6", "clean_ttl_min", "fail_ttl_min", "max_backoff_min", "slow_pct", "attempts":
 	default:
 		http.Error(w, "unknown setting", http.StatusBadRequest)
 		return
 	}
+	note := "Saved"
+	err := paths.EnsureDataDir()
 	if err == nil {
-		err = paths.EnsureDataDir()
-	}
-	if err == nil {
-		err = ctl.SaveSettings(paths.Settings(), set)
+		_, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
+			var err error
+			switch field {
+			case "auto_switch":
+				set.AutoSwitch = val == "1"
+			case "families":
+				set.Families = val == "1"
+			case "ipv6":
+				set.IPv6 = val == "1"
+				note = "Saved: the core restarts, the tunnel drops for a couple of seconds"
+			case "clean_ttl_min":
+				set.CleanTTLMin, err = num()
+			case "fail_ttl_min":
+				set.FailTTLMin, err = num()
+				// the pause cap cannot be below the re-check: it follows it
+				// up instead of the save being refused
+				if err == nil && set.MaxBackoffMin < set.FailTTLMin {
+					set.MaxBackoffMin = set.FailTTLMin
+					note = "Saved; the pause cap was raised to match"
+				}
+			case "max_backoff_min":
+				set.MaxBackoffMin, err = num()
+			case "slow_pct":
+				set.SlowPct, err = num()
+			case "attempts":
+				set.Attempts, err = num()
+			}
+			return err
+		})
 	}
 	ok, msg := done(r, err, note)
 	s.partField(w, r, field, ok, msg)
@@ -490,15 +497,16 @@ func (s *Server) partField(w http.ResponseWriter, r *http.Request, field string,
 }
 
 func (s *Server) actDNS(w http.ResponseWriter, r *http.Request) {
-	set := ctl.LoadSettings(paths.Settings())
-	set.DirectDNS = splitLines(r.FormValue("direct_dns"))
-	set.TunnelDNS = splitLines(r.FormValue("tunnel_dns"))
-	if set.TunnelDNS == nil {
-		set.TunnelDNS = []string{}
-	}
 	err := paths.EnsureDataDir()
 	if err == nil {
-		err = ctl.SaveSettings(paths.Settings(), set)
+		_, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
+			set.DirectDNS = splitLines(r.FormValue("direct_dns"))
+			set.TunnelDNS = splitLines(r.FormValue("tunnel_dns"))
+			if set.TunnelDNS == nil {
+				set.TunnelDNS = []string{}
+			}
+			return nil
+		})
 	}
 	ok, msg := done(r, err, "Saved: the core restarts, the tunnel drops for a couple of seconds")
 	s.part(w, r, "settings", "dns", ok, msg)
@@ -507,12 +515,14 @@ func (s *Server) actDNS(w http.ResponseWriter, r *http.Request) {
 // actDefaults puts every setting back to its default -- the second
 // tunnel's presets aside: they are not on this page.
 func (s *Server) actDefaults(w http.ResponseWriter, r *http.Request) {
-	cur := ctl.LoadSettings(paths.Settings())
-	d := ctl.DefaultSettings()
-	d.Awg2Presets = cur.Awg2Presets
 	err := paths.EnsureDataDir()
 	if err == nil {
-		err = ctl.SaveSettings(paths.Settings(), d)
+		_, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
+			d := ctl.DefaultSettings()
+			d.Awg2Presets = set.Awg2Presets
+			*set = d
+			return nil
+		})
 	}
 	s.redirect(w, r, err, "Settings reset to defaults")
 }

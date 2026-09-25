@@ -78,7 +78,9 @@ bad subdomain removes the rule. It helps services with pools of servers: CDNs, s
 <h4>Auto-switch and observe only</h4>
 <p><b>On</b>: the verdicts are applied. <b>Observe only</b>: everything goes through the tunnel, the
 detector keeps checking and recording, and the log shows what would go direct. Switching applies within
-a second, open connections included. The verdicts are kept either way.</p>
+a second. Turning it off closes the open connections the detector sent direct, and the programs
+reconnect through the tunnel. Turning it on leaves open connections in the tunnel; new ones go direct.
+The verdicts are kept either way.</p>
 
 <h4>Networks</h4>
 <p>Verdicts are kept per ISP (its AS number), not per Wi-Fi network: another network of the same ISP

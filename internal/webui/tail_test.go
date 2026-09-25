@@ -56,29 +56,29 @@ func TestTail(t *testing.T) {
 	}
 }
 
-// A second copy opens the UI that answers as DPI Switch, not whatever
-// holds the first candidate port.
+// A second copy opens the UI that answers as DPI Switch with its key, not
+// whatever holds the first candidate port -- another program, or another
+// user's DPI Switch.
 func TestAnswers(t *testing.T) {
-	ours := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			w.Write([]byte(`{"version":"1.0.7","data_dir":"C:/ProgramData/dpiswitch"}`))
-			return
-		}
-		http.NotFound(w, r)
-	}))
+	s, _ := testServer(t)
+	s.Key = strings.Repeat("ab", 32)
+	ours := httptest.NewServer(s.Handler())
 	defer ours.Close()
 	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<html>someone else</html>`))
 	}))
 	defer other.Close()
 	cl := &http.Client{Timeout: time.Second}
-	if !answers(cl, strings.TrimPrefix(ours.URL, "http://")) {
+	if !answers(cl, strings.TrimPrefix(ours.URL, "http://"), s.Key) {
 		t.Fatal("our UI not recognised")
 	}
-	if answers(cl, strings.TrimPrefix(other.URL, "http://")) {
+	if answers(cl, strings.TrimPrefix(ours.URL, "http://"), strings.Repeat("cd", 32)) {
+		t.Fatal("a UI with another key taken for ours")
+	}
+	if answers(cl, strings.TrimPrefix(other.URL, "http://"), s.Key) {
 		t.Fatal("another program taken for our UI")
 	}
-	if answers(cl, "127.0.0.1:1") {
+	if answers(cl, "127.0.0.1:1", s.Key) {
 		t.Fatal("a closed port answered")
 	}
 }

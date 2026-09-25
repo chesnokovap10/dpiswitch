@@ -122,11 +122,15 @@ func runTray() {
 
 	// the mutex is a kernel object: it is released when the process dies,
 	// so it cannot get "stuck" and needs no extra checks
+	key, err := webui.LoadKey()
+	if err != nil {
+		log.Printf("UI key not kept, an open tab will not outlive a restart: %v", err)
+	}
 	if alreadyRunning() {
 		log.Println("tray: another copy is already running -- opening the UI and exiting")
-		addr := webui.Find()
+		addr := webui.Find(key)
 		if addr == "" {
-			addr = fmt.Sprintf("http://127.0.0.1:%d/", session.Port())
+			addr = webui.WithKey(fmt.Sprintf("http://127.0.0.1:%d/", session.Port()), key)
 		}
 		browse(addr)
 		return
@@ -135,7 +139,7 @@ func runTray() {
 	// the window loop must live on the same thread as the window
 	runtime.LockOSThread()
 
-	srv := &webui.Server{Elevate: elevate}
+	srv := &webui.Server{Elevate: elevate, Key: key}
 	if err := srv.Start(); err != nil {
 		report("dpiswitch", fmt.Errorf("the UI failed to start: %w", err))
 		return
@@ -146,7 +150,7 @@ func runTray() {
 		report("dpiswitch", fmt.Errorf("the tray icon was not created: %w", err))
 		return
 	}
-	openUI := func() { browse(srv.Addr()) }
+	openUI := func() { browse(srv.URL()) }
 	t.OnOpen = openUI
 
 	t.Menu = func() []tray.Item {

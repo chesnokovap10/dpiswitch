@@ -5,13 +5,41 @@
 // element with data-poll="url" refreshes itself every data-every seconds.
 'use strict';
 
-async function swap(url, body, target) {
+// Answers can come back out of order: a refresh started before a change
+// may land after it and show the state before. Each element keeps the
+// number of its latest request, and only that one's answer is shown.
+const latest = new WeakMap();
+function ticket(el) {
+  const n = (latest.get(el) || 0) + 1;
+  latest.set(el, n);
+  return () => latest.get(el) === n;
+}
+
+// Requests to one part go one at a time. Two quick changes sent together
+// were served together: the one sent last could be saved first, and its
+// answer -- the one shown -- lacked the other change, though the file had
+// both. In a queue the last answer comes after every save before it.
+const queues = new Map();
+function swap(url, body, target) {
+  const run = () => send(url, body, target);
+  const p = (queues.get(target) || Promise.resolve()).then(run, run);
+  queues.set(target, p);
+  return p;
+}
+
+async function send(url, body, target) {
   const el = document.getElementById(target);
+  const current = el ? ticket(el) : () => false;
   try {
     const r = await fetch(url, {method: 'POST', body});
-    if (el) el.innerHTML = await r.text();
+    const html = await r.text();
+    if (current()) el.innerHTML = html;
   } catch (e) {
-    if (el) el.insertAdjacentHTML('beforeend', '<div class="msg bad">' + e + '</div>');
+    if (!current()) return;
+    const m = document.createElement('div');
+    m.className = 'msg bad';
+    m.textContent = String(e);
+    el.append(m);
   }
 }
 
@@ -55,28 +83,61 @@ document.addEventListener('click', e => {
   if (c) c.closest('dialog').close();
 });
 
-// a .conf dropped on its field is read into it
+// A .conf form has a text field and a file picker, and the server takes
+// the file first. What the field shows must be what is sent: a file picked
+// is shown in the field, and a file dropped on the field, or the field
+// edited, drops the file picked before -- it used to be sent instead of
+// the text on screen.
+function confFile(f) { return f && f.querySelector('input[type=file]'); }
+function readInto(t, file) {
+  const fr = new FileReader();
+  fr.onload = () => { t.value = fr.result; };
+  fr.readAsText(file);
+}
 document.addEventListener('dragover', e => { if (e.target.closest('[data-drop]')) e.preventDefault(); });
 document.addEventListener('drop', e => {
   const t = e.target.closest('[data-drop]');
   if (!t || !e.dataTransfer.files[0]) return;
   e.preventDefault();
-  const fr = new FileReader();
-  fr.onload = () => { t.value = fr.result; };
-  fr.readAsText(e.dataTransfer.files[0]);
+  const p = confFile(t.form);
+  if (p) p.value = '';
+  readInto(t, e.dataTransfer.files[0]);
+});
+document.addEventListener('change', e => {
+  const p = e.target;
+  if (p.type !== 'file' || !p.form || !p.files[0]) return;
+  const t = p.form.querySelector('[data-drop]');
+  if (t) readInto(t, p.files[0]);
+});
+document.addEventListener('input', e => {
+  const t = e.target.closest('[data-drop]');
+  const p = t && confFile(t.form);
+  if (p) p.value = '';
 });
 
 // --- polling ---
 const due = new Map();
+// a refresh still under way: the timer does not start another beside it
+const busy = new WeakSet();
 async function poll(el) {
   // a field being edited is not replaced under the user's hands
   if (el.contains(document.activeElement) && document.activeElement !== el) return;
-  const r = await fetch(el.dataset.poll).catch(() => null);
-  if (!r || !r.ok) return;
-  const html = await r.text();
-  const top = el.scrollTop;
-  el.innerHTML = html;
-  el.scrollTop = el.dataset.follow !== undefined && followOn() ? el.scrollHeight : top;
+  // a newer request -- the filter's, typed meanwhile -- wins over this one
+  const current = ticket(el);
+  busy.add(el);
+  try {
+    const r = await fetch(el.dataset.poll, {signal: AbortSignal.timeout(15000)}).catch(() => null);
+    if (!r || !r.ok) return;
+    const html = await r.text();
+    if (!current()) return;
+    const top = el.scrollTop;
+    el.innerHTML = html;
+    el.scrollTop = el.dataset.follow !== undefined && followOn() ? el.scrollHeight : top;
+  } catch (e) {
+    // the body cut off by the timeout: the next period tries again
+  } finally {
+    if (current()) busy.delete(el);
+  }
 }
 setInterval(() => {
   const now = Date.now();
@@ -84,7 +145,7 @@ setInterval(() => {
     const every = (+el.dataset.every || 5) * 1000;
     // the page came rendered: the first refresh is one period away
     if (!due.has(el)) { due.set(el, now + every); continue; }
-    if (due.get(el) <= now) { due.set(el, now + every); poll(el); }
+    if (due.get(el) <= now && !busy.has(el)) { due.set(el, now + every); poll(el); }
   }
 }, 500);
 
