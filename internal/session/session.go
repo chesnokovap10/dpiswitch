@@ -9,7 +9,12 @@ package session
 import (
 	"fmt"
 	"hash/fnv"
+	"log"
 	"net"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -66,10 +71,7 @@ func Port() int {
 	return portBase + int(h.Sum32()%portSpan)
 }
 
-// Candidates: the ports Listen tries, in its order. A second instance looks
-// for the running one's UI among them: Listen steps past a taken port, and
-// the second instance used to open the first candidate whatever answered
-// there.
+// Candidates: the ports Listen tries, in its order.
 func Candidates() []int {
 	start := Port() - portBase
 	out := make([]int, 64)
@@ -79,28 +81,62 @@ func Candidates() []int {
 	return out
 }
 
+// Ports: where a running UI of this session may be -- the candidates, and
+// last the port Listen fell back to when none of them was free. A second
+// instance looks for the running one's UI among them: Listen steps past a
+// taken port, and the second instance used to open the first candidate
+// whatever answered there.
+func Ports() []int {
+	out := Candidates()
+	if p, ok := fallbackPort(); ok {
+		out = append(out, p)
+	}
+	return out
+}
+
+// fallbackFile: where Listen notes a port it took outside the candidates.
+// Per user (the temp directory is) and per logon session (Port is).
+func fallbackFile() string {
+	return filepath.Join(os.TempDir(), fmt.Sprintf("dpiswitch-ui-%d.port", Port()))
+}
+
+func fallbackPort() (int, bool) {
+	b, err := os.ReadFile(fallbackFile())
+	if err != nil {
+		return 0, false
+	}
+	p, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	return p, err == nil && p > 0 && p <= 65535
+}
+
 // Listen opens a listener on the port derived from the logon session.
 // If the port is taken (by another app or a hung copy), it steps forward
-// deterministically -- so the address stays predictable.
+// deterministically -- so the address stays predictable. With every
+// candidate taken, or no session id to derive them from, any free port
+// does, and it is noted for Ports: a second instance could not find the UI
+// on it, and opened the first candidate instead.
 func Listen() (net.Listener, error) {
-	id, err := LogonID()
-	if err != nil {
-		// no reason to fail without a session id: take any free port,
-		// we just lose the stable address
-		return net.Listen("tcp", "127.0.0.1:0")
-	}
-	_ = id
-
 	var lastErr error
-	for _, port := range Candidates() {
-		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-		if err == nil {
-			return ln, nil
+	if _, err := LogonID(); err == nil {
+		for _, port := range Candidates() {
+			ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+			if err == nil {
+				os.Remove(fallbackFile()) // a note left by an earlier run
+				return ln, nil
+			}
+			lastErr = err
 		}
-		lastErr = err
 	}
-	if ln, err := net.Listen("tcp", "127.0.0.1:0"); err == nil {
-		return ln, nil
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		if lastErr == nil {
+			lastErr = err
+		}
+		return nil, fmt.Errorf("could not bind a port: %w", lastErr)
 	}
-	return nil, fmt.Errorf("could not bind a port: %w", lastErr)
+	port := ln.Addr().(*net.TCPAddr).Port
+	if err := os.WriteFile(fallbackFile(), []byte(strconv.Itoa(port)+"\n"), 0o644); err != nil {
+		log.Printf("UI port %d not noted, a second copy will not find it: %v", port, err)
+	}
+	return ln, nil
 }

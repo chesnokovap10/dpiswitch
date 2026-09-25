@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"dpiswitch/internal/logfile"
+	"dpiswitch/internal/paths"
 	"dpiswitch/internal/probe"
 )
 
@@ -80,7 +81,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	// looked abandoned: its expired verdict was never re-checked
 	live := w.drainLive()
 	for _, c := range conns {
-		if d := c.domain(); d != "" {
+		if d := c.domain(); d != "" && !c.fromProbe() {
 			live = append(live, d)
 		}
 	}
@@ -148,11 +149,16 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 		Established: a.established, NoV6: st.directNoV6(netID)}
 	tunnel := probe.Dialer{Addr: cfg.TunnelAddr, Timeout: cfg.Timeout, Established: a.established}
 
+	// the verdicts are filed under netID: a probe made after the machine
+	// moved to another network measured that one
+	guard := guardNetwork()
 	var (
-		wg      sync.WaitGroup
-		sem     = make(chan struct{}, cfg.Workers)
-		mu      sync.Mutex
-		changed bool
+		wg  sync.WaitGroup
+		sem = make(chan struct{}, cfg.Workers)
+		mu  sync.Mutex
+		// filed only once every probe is done and the network is known to
+		// have stayed the same, see guardNetwork
+		results []checked
 		// what this cycle showed of IPv6 on the direct path, see learnV6
 		v6Missed  int
 		v6Reached bool
@@ -163,6 +169,9 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
+			if guard.moved() {
+				return // the whole cycle is dropped: no use probing on
+			}
 
 			// mihomo rules are per domain, so a decision applies
 			// to all ports at once. Hence every port seen must be checked,
@@ -242,14 +251,27 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			v6Reached = v6Reached || reachedV6
 			mu.Unlock()
 
-			if record(cfg, st, netID, dom, rep, eps, checkFacts{directDown, noV6, unprobed}) {
-				mu.Lock()
-				changed = true
-				mu.Unlock()
-			}
+			mu.Lock()
+			results = append(results, checked{dom, rep, eps, checkFacts{directDown, noV6, unprobed}})
+			mu.Unlock()
 		}(dom)
 	}
 	wg.Wait()
+
+	if !guard.done() {
+		// the probes measured another network than the one their verdicts
+		// would be filed under. Memory is left alone: the main loop
+		// switches to the new network at its next tick, and the names come
+		// back to be checked there.
+		log.Printf("the network changed during the cycle: %d results dropped", len(results))
+		return
+	}
+	changed := false
+	for _, r := range results {
+		if record(cfg, st, netID, r.dom, r.rep, r.eps, r.facts) {
+			changed = true
+		}
+	}
 
 	if until, now := st.learnV6(netID, v6Missed, v6Reached); now {
 		log.Printf("the direct path here has no IPv6: %d names in a row could not reach "+
@@ -267,6 +289,14 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	case changed:
 		applyList(cfg, a, st, netID) // observe mode: only logs
 	}
+}
+
+// checked: one name's probes, waiting to be filed.
+type checked struct {
+	dom   string
+	rep   probe.Report
+	eps   []endpoint
+	facts checkFacts
 }
 
 // checkFacts: what the probes of one name showed over all of its ports.
@@ -442,7 +472,8 @@ func suspectDirect(cfg Config, st *state, netID string, conns []connection) []st
 		}
 	}
 	for _, c := range conns {
-		if !c.viaDirect() || c.Download > 0 {
+		// a probe still waiting on its answer is not a cut
+		if !c.viaDirect() || c.Download > 0 || c.fromProbe() {
 			continue
 		}
 		if ts, err := time.Parse(time.RFC3339, c.Start); err != nil || time.Since(ts) <= 10*time.Second {
@@ -488,6 +519,10 @@ func applyList(cfg Config, a *api, st *state, netID string) {
 func syncList(cfg Config, a *api, st *state, netID string, force bool) {
 	listMu.Lock()
 	defer listMu.Unlock()
+	// a file already written whose reload failed: the comparison below
+	// finds it in line with memory, and without this the core kept the old
+	// rules until it restarted
+	retryReloads(a)
 	doms, fams := directRules(cfg, st, netID)
 	if !cfg.Apply || cfg.off() {
 		log.Printf("observe mode: %d domains would go DIRECT (%s)", len(doms), preview(doms))
@@ -542,6 +577,23 @@ func syncList(cfg Config, a *api, st *state, netID string, force bool) {
 // it and would write the dropped rules back.
 var listMu sync.Mutex
 
+// reloadPending: the rule-providers whose file was replaced but whose reload
+// failed, under listMu. The file on disk is the new one, so a later sync
+// finds nothing to write -- the reload has to be asked for again by itself.
+var reloadPending = map[string]bool{}
+
+// retryReloads asks the core again to reload the providers a failed reload
+// left behind; listMu held.
+func retryReloads(a *api) {
+	for p := range reloadPending {
+		if err := a.reloadProvider(p); err != nil {
+			continue // the next sync tries again; logged when it first failed
+		}
+		delete(reloadPending, p)
+		log.Printf("provider %s reloaded on retry", p)
+	}
+}
+
 // takeReset carries out a reset asked for from the tray ("Everything via
 // tunnel"). The tray used to do it itself: it emptied the name list and
 // deleted the state file -- and the controller, holding its memory in RAM,
@@ -588,7 +640,13 @@ func watchReset(ctx context.Context, cfg Config, a *api, st *state) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			takeReset(cfg, a, st)
+			if !takeReset(cfg, a, st) {
+				// a reload left pending -- by a reset, say, which removed
+				// its request all the same -- is not left for the next cycle
+				listMu.Lock()
+				retryReloads(a)
+				listMu.Unlock()
+			}
 		}
 	}
 }
@@ -609,18 +667,18 @@ func listRules(path string) []string {
 	return out
 }
 
-// replaceList writes a rule-provider file atomically and has the core reload it.
+// replaceList writes a rule-provider file atomically and has the core reload
+// it; listMu held. A failed reload is remembered and retried, see
+// reloadPending.
 func replaceList(a *api, path, provider, body string) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(body), 0644); err != nil {
+	if err := paths.ReplaceFile(path, []byte(body)); err != nil {
 		return fmt.Errorf("list %s not written: %w", path, err)
 	}
-	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("list %s not replaced: %w", path, err)
-	}
 	if err := a.reloadProvider(provider); err != nil {
-		return fmt.Errorf("provider %s not reloaded: %w", provider, err)
+		reloadPending[provider] = true
+		return fmt.Errorf("provider %s not reloaded, will retry: %w", provider, err)
 	}
+	delete(reloadPending, provider)
 	return nil
 }
 
@@ -713,14 +771,59 @@ func directFailed(rep probe.Report) bool {
 	return !d.TCPOk || (d.TLSTried && !d.TLSOk) || d.HTTPFailed()
 }
 
-// directDownOn: the direct side failed on this port, and not the way the
-// tunnel side failed too. The same failure on both paths is the server's --
-// no TLS on 443 for a speedtest server that works on 20000, a push protocol
-// that is not HTTP -- and says nothing about the direct path; counting it
-// sent speedtest servers back into the tunnel once already.
+// directDownOn: the direct side failed on this port at a stage the tunnel
+// side got past. The same failure on both paths is the server's -- no TLS on
+// 443 for a speedtest server that works on 20000, a push protocol that is
+// not HTTP -- and says nothing about the direct path; counting it sent
+// speedtest servers back into the tunnel once already. Nor does a tunnel
+// that failed EARLIER: direct reset at TLS while the tunnel never got a TCP
+// connection shows nothing about the server either -- only the stages were
+// compared, and such a CLEAN name came out INCONCLUSIVE, sent back to the
+// tunnel.
 func directDownOn(rep probe.Report) bool {
-	d, t := rep.Direct, rep.Tunnel
-	return directFailed(rep) && !(t.Err != "" && t.ErrStage == d.ErrStage)
+	d := rep.Direct
+	if !directFailed(rep) {
+		return false
+	}
+	// never dialled: the direct resolver gave nothing, and direct traffic
+	// would have nothing to go to whatever the tunnel shows
+	if d.Err == "" && !d.TCPOk {
+		return true
+	}
+	return reached(rep.Tunnel) > failedAt(d)
+}
+
+// probe stages in the order a check goes through them
+var stageRank = map[string]int{"tcp": 1, "tls": 2, "http_write": 3, "http_read": 4, "body": 5}
+
+// stageDone: past every stage
+const stageDone = 6
+
+// failedAt: the stage a failed side stopped at; an unknown one counts as the
+// first, so any tunnel that got anywhere is past it.
+func failedAt(r probe.PathResult) int {
+	if n, ok := stageRank[r.ErrStage]; ok && r.Err != "" {
+		return n
+	}
+	if r.TCPOk && r.TLSTried && !r.TLSOk {
+		return stageRank["tls"]
+	}
+	return stageRank["tcp"]
+}
+
+// reached: the stage a side stopped at, stageDone past all of them; 0 for
+// a side that shows no progress at all.
+func reached(r probe.PathResult) int {
+	if r.Err != "" {
+		if n, ok := stageRank[r.ErrStage]; ok {
+			return n
+		}
+		return 0
+	}
+	if !r.TCPOk || (r.TLSTried && !r.TLSOk) {
+		return 0
+	}
+	return stageDone
 }
 
 // failTerm: how long a verdict other than CLEAN holds before it is checked

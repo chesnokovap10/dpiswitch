@@ -42,13 +42,16 @@ func TestMergeEndpoints(t *testing.T) {
 	}
 }
 
-// The direct path counts as down on a port only when the tunnel did not fail
-// the same way: a speedtest server has no TLS on 443 on either path, and its
-// working 20000 must still decide.
+// The direct path counts as down on a port only when the tunnel got past the
+// stage it failed at: a speedtest server has no TLS on 443 on either path,
+// and its working 20000 must still decide; a tunnel that never got a TCP
+// connection shows nothing of what the server does at TLS.
 func TestDirectDownOn(t *testing.T) {
 	tlsFail := probe.PathResult{TCPOk: true, TLSTried: true, Err: "EOF", ErrStage: "tls"}
 	tlsOK := probe.PathResult{TCPOk: true, TLSTried: true, TLSOk: true}
 	noTunnel := probe.PathResult{Err: "socks connect: refused", ErrStage: "tcp"}
+	tcpFail := probe.PathResult{Err: "i/o timeout", ErrStage: "tcp"}
+	tcpOK := probe.PathResult{TCPOk: true}
 	httpFail := probe.PathResult{TCPOk: true, TLSTried: true, TLSOk: true, Err: "malformed", ErrStage: "http_read"}
 	cases := []struct {
 		name string
@@ -57,9 +60,15 @@ func TestDirectDownOn(t *testing.T) {
 	}{
 		{"no TLS on either path", tlsFail, tlsFail, false},
 		{"not HTTP on either path", httpFail, httpFail, false},
-		{"direct cut, tunnel unreachable", tlsFail, noTunnel, true},
+		{"direct cut at TLS, tunnel failed at TCP", tlsFail, noTunnel, false},
 		{"direct fine, tunnel unreachable", tlsOK, noTunnel, false},
 		{"direct DNS gave nothing", probe.PathResult{}, probe.PathResult{}, true},
+		{"direct cut at TLS, tunnel through", tlsFail, tlsOK, true},
+		{"direct cut at TLS, tunnel cut at HTTP", tlsFail, httpFail, true},
+		{"direct cut at HTTP, tunnel cut at TLS", httpFail, tlsFail, false},
+		{"direct no TCP, tunnel cut at TLS", tcpFail, tlsFail, true},
+		{"direct no TCP, plain TCP through the tunnel", tcpFail, tcpOK, true},
+		{"no TCP on either path", tcpFail, tcpFail, false},
 	}
 	for _, c := range cases {
 		if got := directDownOn(probe.Report{Direct: c.d, Tunnel: c.t}); got != c.want {

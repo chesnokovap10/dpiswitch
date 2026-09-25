@@ -117,3 +117,60 @@ func TestMatchDomainRule(t *testing.T) {
 		}
 	}
 }
+
+// A reload that failed after the file was written is asked for again: the
+// file already matches memory, and the comparison alone left the core on
+// the old rules until it restarted. A reset's failed reload too, though its
+// request is gone.
+func TestSyncListRetriesReload(t *testing.T) {
+	var reloads, failing atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			if failing.Load() > 0 {
+				http.Error(w, "busy", http.StatusServiceUnavailable)
+				return
+			}
+			reloads.Add(1)
+		}
+	}))
+	defer srv.Close()
+	a := newAPI(strings.TrimPrefix(srv.URL, "http://"), "")
+	t.Cleanup(func() { reloadPending = map[string]bool{} })
+
+	dir := t.TempDir()
+	cfg := Config{Apply: true, Provider: "p", ListPath: filepath.Join(dir, "d.txt"),
+		ResetPath: filepath.Join(dir, "reset"), StatePath: filepath.Join(dir, "state.json")}
+	e := &entry{Verdict: probe.Clean, ExpiresAt: time.Now().Add(time.Hour), TestedIP: "192.0.2.1"}
+	st := &state{Networks: map[string]map[string]*entry{"n": {"a.example": e}}, path: cfg.StatePath}
+
+	failing.Store(1)
+	syncList(cfg, a, st, "n", false)
+	if got := listRules(cfg.ListPath); !reflect.DeepEqual(got, []string{"a.example"}) {
+		t.Fatalf("list %v", got)
+	}
+	failing.Store(0)
+	syncList(cfg, a, st, "n", false)
+	if got := reloads.Load(); got != 1 {
+		t.Fatalf("%d reloads after the core came back, want 1", got)
+	}
+	syncList(cfg, a, st, "n", false)
+	if got := reloads.Load(); got != 1 {
+		t.Fatalf("%d reloads once done, want still 1", got)
+	}
+
+	// a reset whose reload fails: the request goes, the reload is retried
+	if err := os.WriteFile(cfg.ResetPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	failing.Store(1)
+	if !takeReset(cfg, a, st) {
+		t.Fatal("reset not taken")
+	}
+	failing.Store(0)
+	listMu.Lock()
+	retryReloads(a)
+	listMu.Unlock()
+	if got := reloads.Load(); got != 2 {
+		t.Fatalf("%d reloads, want the reset's retried", got)
+	}
+}

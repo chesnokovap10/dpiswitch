@@ -104,13 +104,17 @@ func (w *watcher) observe(cfg Config, conns []connection) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	for _, c := range conns {
+		// the prober's own connections are neither a use of the name nor a
+		// candidate: see fromProbe
+		if c.fromProbe() {
+			continue
+		}
 		dom := c.domain()
 		if dom != "" {
 			w.live[dom] = true
 		}
-		// a nameless connection from an application (not from the probe,
-		// which dials from loopback through its own listeners)
-		if dom == "" && c.Metadata.SourceIP != "127.0.0.1" && c.Metadata.DestinationIP != "" {
+		// a nameless connection from an application
+		if dom == "" && c.Metadata.DestinationIP != "" {
 			w.bare[c.Metadata.DestinationIP] = true
 			if addrProbeable(c, cfg.ProxyName) {
 				ip := c.Metadata.DestinationIP
@@ -258,7 +262,7 @@ const minAddrCycles = 2
 // probe without it would test something other than the real traffic. UDP
 // (STUN and the like) cannot be judged without knowing its protocol.
 func addrProbeable(c connection, tunnelProxy string) bool {
-	return c.Metadata.SourceIP != "127.0.0.1" &&
+	return !c.fromProbe() &&
 		strings.EqualFold(c.Metadata.Network, "tcp") &&
 		c.port() > 0 && c.port() != 443 &&
 		c.viaTunnel(tunnelProxy)

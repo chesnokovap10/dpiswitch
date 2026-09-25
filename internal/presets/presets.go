@@ -112,11 +112,7 @@ func Write(enabled []string) error {
 		if old, err := os.ReadFile(path); err == nil && string(old) == b.String() {
 			continue // avoid needless writes: the core reloads the file on every change
 		}
-		tmp := path + ".tmp"
-		if err := os.WriteFile(tmp, []byte(b.String()), 0o644); err != nil {
-			return err
-		}
-		if err := os.Rename(tmp, path); err != nil {
+		if err := paths.ReplaceFile(path, []byte(b.String())); err != nil {
 			return err
 		}
 	}

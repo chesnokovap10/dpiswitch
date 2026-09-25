@@ -141,6 +141,7 @@ var ru = map[string]string{
 	"Add":                                "Добавить",
 	"Pick a program from the list first": "Сначала выберите программу в списке",
 	"Saved; %d open connections moved":   "Сохранено; перенесено открытых соединений: %d",
+	"Saved, but the open connections were not moved: they keep their old route until they reconnect": "Сохранено, но открытые соединения не перенесены: они идут прежним маршрутом, пока не переподключатся",
 
 	// second tunnel
 	"attached":     "подключён",

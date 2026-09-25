@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -35,6 +36,7 @@ type scenario struct {
 	results map[string]probe.Report // "name tcp/443" -> what the probe says
 	probed  []string
 	noV6    map[string]bool // what the direct dialer said of IPv6, by probe
+	where   atomic.Value    // the network the machine is attached to, see attachmentNow
 }
 
 func newScenario(t *testing.T) *scenario {
@@ -77,6 +79,10 @@ func newScenario(t *testing.T) *scenario {
 	old := checkProto
 	checkProto = s.check
 	t.Cleanup(func() { checkProto = old })
+	s.where.Store("wifi-a")
+	oldAt := attachmentNow
+	attachmentNow = func() string { return s.where.Load().(string) }
+	t.Cleanup(func() { attachmentNow = oldAt })
 	return s
 }
 
@@ -607,5 +613,68 @@ func TestCycleBacklog(t *testing.T) {
 		if s.entry(h) == nil {
 			t.Fatalf("%s was never probed", h)
 		}
+	}
+}
+
+// The machine moves to another network while a cycle's probes run: what
+// they measured is the new network's, and is not filed under the old one.
+func TestCycleNetworkChangesMidway(t *testing.T) {
+	s := newScenario(t)
+	s.see(tunnelled("moved.example.org", 443))
+	s.script("moved.example.org tcp/443", clean("192.0.2.60"))
+	checkProto = func(direct, tunnel probe.Dialer, dom string, port, att int, udp bool, was probe.Verdict) probe.Report {
+		s.where.Store("wifi-b") // the switch happens while the probe runs
+		return s.check(direct, tunnel, dom, port, att, udp, was)
+	}
+	s.cycle()
+	if e := s.entry("moved.example.org"); e != nil {
+		t.Fatalf("a verdict measured on another network was filed: %s", e.Verdict)
+	}
+	if got := listRules(s.cfg.ListPath); len(got) != 0 {
+		t.Fatalf("list %v", got)
+	}
+
+	// back on the first network, and staying there: the name is checked and filed
+	checkProto = s.check
+	s.where.Store("wifi-a")
+	s.see(tunnelled("moved.example.org", 443))
+	s.cycle()
+	if e := s.entry("moved.example.org"); e == nil || e.Verdict != probe.Clean {
+		t.Fatalf("verdict %v", e)
+	}
+}
+
+// The prober's own connections -- from loopback, through its listeners --
+// are no use of a name: a re-check renewed LastSeen, and a name nothing went
+// to was never forgotten. Nor are they candidates, or suspect direct ones.
+func TestCycleProbeIsNoUse(t *testing.T) {
+	s := newScenario(t)
+	s.see(tunnelled("old.example.org", 443))
+	s.script("old.example.org tcp/443", clean("192.0.2.61"))
+	s.cycle()
+	e := s.entry("old.example.org")
+	if e == nil {
+		t.Fatal("no verdict")
+	}
+	seen := time.Now().Add(-48 * time.Hour)
+	e.LastSeen = seen
+
+	byProbe := func(inbound, src string) connection {
+		c := via("old.example.org", 443, "tcp", "DIRECT", "", "")
+		c.Download = 0
+		c.Metadata.SourceIP, c.Metadata.InboundName = src, inbound
+		return c
+	}
+	s.see(byProbe("probe-direct", "127.0.0.1"), byProbe("", "127.0.0.1"), byProbe("probe-tunnel", "198.18.0.1"))
+	if live := s.w.drainLive(); len(live) != 0 {
+		t.Fatalf("probe connections counted as use: %v", live)
+	}
+	s.see(byProbe("probe-direct", "127.0.0.1"))
+	s.cycle()
+	if s.wasProbed("old.example.org tcp/443") {
+		t.Fatal("a probe connection made its name suspect")
+	}
+	if got := s.entry("old.example.org").LastSeen; !got.Equal(seen) {
+		t.Fatalf("LastSeen renewed by the probe: %s", got)
 	}
 }

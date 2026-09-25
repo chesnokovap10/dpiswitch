@@ -233,16 +233,18 @@ func (s *Server) actReset(w http.ResponseWriter, r *http.Request) {
 // closeMoved closes the open connections a list change moves to another
 // route: the core routes a connection once, when it opens, and a browser
 // holds its connections for minutes. Not an error if the core is not up --
-// then there is nothing open.
-func closeMoved(match func(ctl.Conn) bool) int {
+// then there is nothing open (see ctl.CloseConns). Any other failure is
+// reported: the error used to be dropped, and the UI said "Saved" while the
+// connections already open kept their old route.
+func closeMoved(match func(ctl.Conn) bool) (int, error) {
 	n, err := ctl.CloseConns(apiAddr, ctl.SecretFromConfig(paths.Config()), match)
 	if err != nil {
-		return 0
+		log.Printf("ui: open connections a list change moved not closed: %v", err)
 	}
 	if n > 0 {
 		log.Printf("ui: closed %d connections a list change moved", n)
 	}
-	return n
+	return n, err
 }
 
 // changed: the entries in one of two lists and not the other
@@ -290,13 +292,19 @@ func splitLines(s string) []string {
 	return out
 }
 
-// saveDomains writes a domain list and closes what the change moved.
-func saveDomains(path, kind string, entries []string) (int, error) {
+// saveDomains writes a domain list and closes what the change moved. err is
+// the list's own, closeErr the connections'.
+func (s *Server) saveDomains(path, kind string, entries []string) (n int, err, closeErr error) {
+	s.listMu.Lock()
 	old := readList(path)
-	if err := writeList(path, kind, entries); err != nil {
-		return 0, err
+	err = writeList(path, kind, entries)
+	cur := readList(path)
+	s.listMu.Unlock()
+	if err != nil {
+		return 0, err, nil
 	}
-	return closeMoved(domainMatch(changed(old, readList(path)))), nil
+	n, closeErr = closeMoved(domainMatch(changed(old, cur)))
+	return n, nil, closeErr
 }
 
 func (s *Server) actList(w http.ResponseWriter, r *http.Request) {
@@ -306,8 +314,8 @@ func (s *Server) actList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "kind must be direct or tunnel", http.StatusBadRequest)
 		return
 	}
-	n, err := saveDomains(path, kind, splitLines(r.FormValue("hosts")))
-	ok, msg := saved(r, err, n)
+	n, err, cerr := s.saveDomains(path, kind, splitLines(r.FormValue("hosts")))
+	ok, msg := saved(r, err, n, cerr)
 	s.part(w, r, "lists", "list-"+kind, ok, msg)
 }
 
@@ -324,12 +332,16 @@ func (s *Server) actApps(w http.ResponseWriter, r *http.Request) {
 		}
 		apps = append(apps, a)
 	}
+	s.listMu.Lock()
 	old := readApps()
 	err := writeApps(paths.ForceDirectApps(), apps)
+	cur := readApps()
+	s.listMu.Unlock()
 	n := 0
+	var cerr error
 	if err == nil {
-		moved := changed(old, readApps())
-		n = closeMoved(func(c ctl.Conn) bool {
+		moved := changed(old, cur)
+		n, cerr = closeMoved(func(c ctl.Conn) bool {
 			for _, a := range moved {
 				if strings.EqualFold(a, c.Process) || strings.EqualFold(a, c.ProcessPath) {
 					return true
@@ -338,7 +350,7 @@ func (s *Server) actApps(w http.ResponseWriter, r *http.Request) {
 			return false
 		})
 	}
-	ok, msg := saved(r, err, n)
+	ok, msg := saved(r, err, n, cerr)
 	s.part(w, r, "lists", "list-apps", ok, msg)
 }
 
@@ -379,10 +391,11 @@ func (s *Server) actPreset(w http.ResponseWriter, r *http.Request) {
 	}
 	s.presetMu.Unlock()
 	n := 0
+	var cerr error
 	if err == nil {
-		n = closeMoved(presetMatch(*p))
+		n, cerr = closeMoved(presetMatch(*p))
 	}
-	ok, msg := saved(r, err, n)
+	ok, msg := saved(r, err, n, cerr)
 	s.part(w, r, "awg2", "presets", ok, msg)
 }
 
@@ -416,14 +429,19 @@ func presetMatch(p presets.Preset) func(ctl.Conn) bool {
 }
 
 func (s *Server) actAwg2Hosts(w http.ResponseWriter, r *http.Request) {
-	n, err := saveDomains(paths.Awg2Hosts(), "via the second tunnel", splitLines(r.FormValue("hosts")))
-	ok, msg := saved(r, err, n)
+	n, err, cerr := s.saveDomains(paths.Awg2Hosts(), "via the second tunnel", splitLines(r.FormValue("hosts")))
+	ok, msg := saved(r, err, n, cerr)
 	s.part(w, r, "awg2", "hosts", ok, msg)
 }
 
 // saved: the result of a list saved, with the connections it moved when
-// there were any
-func saved(r *http.Request, err error, moved int) (bool, string) {
+// there were any. A list written whose open connections could not be closed
+// is not a plain "Saved": those connections keep their old route.
+func saved(r *http.Request, err error, moved int, closeErr error) (bool, string) {
+	if err == nil && closeErr != nil {
+		return false, tr(lang(r), "Saved, but the open connections were not moved: "+
+			"they keep their old route until they reconnect")
+	}
 	if err == nil && moved > 0 {
 		return done(r, nil, "Saved; %d open connections moved", moved)
 	}

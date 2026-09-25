@@ -65,7 +65,22 @@ type connection struct {
 		Network         string `json:"network"`
 		Process         string `json:"process"`
 		ProcessPath     string `json:"processPath"`
+		InboundName     string `json:"inboundName"`
 	} `json:"metadata"`
+}
+
+// fromProbe: a connection the prober made through its own listeners (see
+// the listeners in awgconf). The TUN brings nothing from loopback, so a
+// loopback source is the prober too, on a core that names no inbound.
+// Such a connection is no use of the name: counting it renewed LastSeen with
+// every re-check, and a name nothing went to was never forgotten.
+func (c connection) fromProbe() bool {
+	switch c.Metadata.InboundName {
+	case "probe-direct", "probe-tunnel":
+		return true
+	}
+	ip := net.ParseIP(c.Metadata.SourceIP)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (a *api) connections() ([]connection, error) {

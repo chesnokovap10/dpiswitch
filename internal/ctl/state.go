@@ -106,13 +106,24 @@ func (s *state) attached(gw string) (attachment, bool) {
 	return a, ok
 }
 
-func (s *state) attach(gw, asn string) {
+func (s *state) attach(gw, asn, ip string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.Attach == nil {
 		s.Attach = map[string]attachment{}
 	}
-	s.Attach[gw] = attachment{Net: asn, Checked: time.Now()}
+	now := time.Now()
+	s.Attach[gw] = attachment{Net: asn, Checked: now, IP: ip, IPChecked: now}
+}
+
+// sawIP: the public address behind gw was found the same again.
+func (s *state) sawIP(gw string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if a, ok := s.Attach[gw]; ok {
+		a.IPChecked = time.Now()
+		s.Attach[gw] = a
+	}
 }
 
 func (s *state) setCurrent(id string) {

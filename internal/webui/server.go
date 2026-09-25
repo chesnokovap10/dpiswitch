@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"dpiswitch/internal/paths"
 	"dpiswitch/internal/session"
 )
 
@@ -38,6 +39,10 @@ type Server struct {
 	statusFn func() status
 	// presetMu: a preset's settings and its files are written as one step
 	presetMu sync.Mutex
+	// listMu: a list's save -- read the old one, write, read back what moved
+	// -- is one step. Two tabs saving at once shared one ".tmp" file, and
+	// one's change could be lost or its rename fail.
+	listMu sync.Mutex
 }
 
 func (s *Server) Addr() string {
@@ -106,10 +111,11 @@ func (s *Server) URL() string {
 // Find: the address of the running DPI Switch UI in this logon session,
 // key included, or "" if none answers. It is on one of the session's
 // candidate ports, not necessarily the first: Listen steps past a taken
-// one. Another user's UI does not answer: it has another key.
+// one -- or on the port it fell back to past all of them. Another user's UI
+// does not answer: it has another key.
 func Find(key string) string {
 	cl := &http.Client{Timeout: 700 * time.Millisecond}
-	for _, p := range session.Candidates() {
+	for _, p := range session.Ports() {
 		if addr := fmt.Sprintf("127.0.0.1:%d", p); answers(cl, addr, key) {
 			return WithKey("http://"+addr+"/", key)
 		}
@@ -199,11 +205,7 @@ func writeList(path, kind string, hosts []string) error {
 	for _, h := range clean {
 		b.WriteString(h + "\n")
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(b.String()), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return paths.ReplaceFile(path, []byte(b.String()))
 }
 
 // excluded programs. The file holds ready classical core rules:
@@ -243,11 +245,7 @@ func writeApps(path string, apps []string) error {
 	for _, r := range rules {
 		b.WriteString(r + "\n")
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(b.String()), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return paths.ReplaceFile(path, []byte(b.String()))
 }
 
 // tailWindow: how much of a log's end tail reads. The log tab refreshes

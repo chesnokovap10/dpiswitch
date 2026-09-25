@@ -3,6 +3,7 @@ package ctl
 import (
 	"dpiswitch/internal/winexec"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"crypto/sha256"
@@ -145,4 +146,52 @@ func localNets() []string {
 		}
 	}
 	return out
+}
+
+// attachmentNow: the network the machine is attached to right now, not the
+// cached networkID; the tests put a script in its place.
+var attachmentNow = computeNetworkID
+
+// netPoll: how often a cycle looks whether the network changed under it
+var netPoll = 5 * time.Second
+
+// netGuard watches the network through one cycle. The main loop looks for a
+// new network only between cycles, and a cycle -- a few ports, a few
+// attempts, an 8-second timeout each -- runs for minutes: after a switch
+// from Wi-Fi A to B its probes went out through B, and their verdicts were
+// filed under A, to be trusted there on the way back.
+type netGuard struct {
+	start string
+	flag  atomic.Bool
+	stop  chan struct{}
+}
+
+func guardNetwork() *netGuard {
+	g := &netGuard{start: attachmentNow(), stop: make(chan struct{})}
+	go func() {
+		t := time.NewTicker(netPoll)
+		defer t.Stop()
+		for {
+			select {
+			case <-g.stop:
+				return
+			case <-t.C:
+				if attachmentNow() != g.start {
+					g.flag.Store(true)
+					return
+				}
+			}
+		}
+	}()
+	return g
+}
+
+// moved: the network was seen to change since the cycle began.
+func (g *netGuard) moved() bool { return g.flag.Load() }
+
+// done stops the watch and says whether the network stayed the same all
+// through: the last look is made now, after the last probe finished.
+func (g *netGuard) done() bool {
+	close(g.stop)
+	return !g.flag.Load() && attachmentNow() == g.start
 }
