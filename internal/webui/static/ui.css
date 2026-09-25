@@ -1,0 +1,152 @@
+:root{--bg:#f3f4f6;--panel:#fff;--side:#fafbfc;--fg:#1b1f24;--muted:#6b7280;--line:#e3e6ea;
+  --accent:#2563eb;--accent-bg:#e8efff;--ok:#127a3d;--ok-bg:#e6f4ea;--bad:#b3261e;--bad-bg:#fdecea;
+  --warn:#8a5a00;--warn-bg:#fff4dc}
+@media (prefers-color-scheme:dark){:root{--bg:#121418;--panel:#1b1e24;--side:#171a1f;--fg:#e7eaee;
+  --muted:#9aa3ad;--line:#2b313a;--accent:#5b8cff;--accent-bg:#1e2a45;--ok:#4ccb7f;--ok-bg:#15301f;
+  --bad:#ff7a70;--bad-bg:#3a1a18;--warn:#e0b050;--warn-bg:#352a12}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:13px/1.45 "Segoe UI",system-ui,sans-serif;min-width:1024px}
+a{color:var(--accent);text-decoration:none}
+code{font:12px Consolas,monospace;background:var(--bg);padding:0 3px;border-radius:3px}
+.app{display:grid;grid-template-rows:46px minmax(0,1fr);grid-template-columns:200px minmax(0,1fr);height:100vh}
+
+/* header */
+#header{grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:0 14px;
+  background:var(--panel);border-bottom:1px solid var(--line);white-space:nowrap}
+.brand{font-weight:600;font-size:14px;width:176px}
+.brand small{color:var(--muted);font-weight:400;margin-left:4px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:99px;background:var(--bg)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.dot.ok{background:var(--ok)}.dot.bad{background:var(--bad)}.dot.warn{background:var(--warn)}
+.spacer{flex:1}
+.lang{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;font-size:12px}
+.lang a{padding:2px 7px;color:var(--muted)}
+.lang a.on{background:var(--accent-bg);color:var(--accent);font-weight:600}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{border:0;border-radius:0;padding:5px 11px}
+.seg button.on{background:var(--accent);color:#fff;cursor:default}
+header form{margin:0;display:inline-flex}
+
+/* controls */
+button,.btn{font:inherit;padding:5px 12px;border-radius:7px;border:1px solid var(--line);background:var(--panel);
+  color:var(--fg);cursor:pointer;display:inline-block;line-height:1.45}
+button:hover,.btn:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.danger{color:var(--bad)}
+button:disabled{opacity:.5;cursor:default}
+button.link{border:0;background:none;padding:0;color:var(--muted)}
+button.link:hover{color:var(--accent)}
+textarea::placeholder{color:var(--muted);opacity:.55}
+textarea{width:100%;font:12px/1.5 Consolas,monospace;background:var(--bg);color:var(--fg);
+  border:1px solid var(--line);border-radius:7px;padding:8px;resize:none}
+select,input[type=number],input[type=search],input[type=text]{font:inherit;padding:4px 7px;border-radius:6px;
+  border:1px solid var(--line);background:var(--panel);color:var(--fg)}
+input[type=checkbox]{margin:0;width:15px;height:15px;accent-color:var(--accent)}
+label.cb{display:flex;gap:7px;align-items:center;cursor:pointer}
+
+/* nav */
+nav{background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:10px 8px;min-height:0}
+nav .items a{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-radius:7px;
+  color:var(--fg);margin-bottom:1px}
+nav .items a:hover{background:var(--bg)}
+nav .items a.on{background:var(--accent-bg);color:var(--accent);font-weight:600}
+nav .items a .n{color:var(--muted);font-size:12px;font-weight:400}
+nav .items hr{border:0;border-top:1px solid var(--line);margin:8px 4px}
+#svcbox{margin-top:auto;border-top:1px solid var(--line);padding:10px 6px 0;display:flex;flex-direction:column;gap:7px}
+#svcbox form{margin:0}
+#svcbox .muted{font-size:12px}
+
+/* main */
+main{overflow:auto;padding:16px 18px;display:flex;flex-direction:column;min-height:0}
+.page{display:flex;flex-direction:column;flex:1;min-height:0;gap:12px}
+/* a page taller than the window scrolls as a whole instead of squeezing its boxes */
+.page.scroll{flex:none}
+.page.scroll .box{flex:none}
+h3{font-size:12px;margin:0 0 8px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 14px;
+  display:flex;flex-direction:column;min-height:0}
+.box > form{display:flex;flex-direction:column;flex:1;min-height:0;margin:0}
+.actions form{margin:0}
+.grow{flex:1;min-height:0}
+.box textarea.grow{min-height:120px}
+.actions{margin-top:auto;padding-top:10px;display:flex;gap:8px;align-items:center;min-height:40px}
+.hint{color:var(--muted);font-size:12px;margin:0 0 8px}
+.muted{color:var(--muted)}
+.ok-t{color:var(--ok)}.bad-t{color:var(--bad)}.warn-t{color:var(--warn)}
+.cols2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.cols3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.fill{flex:1;min-height:0}
+.row{display:flex;gap:8px;align-items:center}
+.pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;background:var(--bg)}
+.pill.ok{background:var(--ok-bg);color:var(--ok)}.pill.bad{background:var(--bad-bg);color:var(--bad)}
+.pill.warn{background:var(--warn-bg);color:var(--warn)}
+.msg{font-size:12px}
+.msg.ok{color:var(--ok)}.msg.bad{color:var(--bad)}
+.flash{padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel)}
+.flash.ok{border-color:var(--ok);color:var(--ok)}.flash.bad{border-color:var(--bad);color:var(--bad)}
+
+/* overview */
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px 14px;color:var(--fg)}
+.tile:hover{border-color:var(--accent)}
+.tile b{font-size:22px;font-weight:600;display:block;font-variant-numeric:tabular-nums}
+.tile span{color:var(--muted)}
+.kv{display:grid;grid-template-columns:110px minmax(0,1fr);gap:4px 10px;margin-bottom:6px}
+.kv > span{color:var(--muted)}
+pre{font:12px/1.5 Consolas,monospace;margin:0;white-space:pre;overflow:auto}
+pre.fill{background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:8px 10px}
+
+/* verdicts */
+.bar{display:flex;gap:10px;align-items:center}
+.tabs{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:var(--panel)}
+.tabs a{padding:5px 12px;color:var(--fg);border-right:1px solid var(--line)}
+.tabs a:last-child{border-right:0}
+.tabs a.on{background:var(--accent-bg);color:var(--accent);font-weight:600}
+.tablebox{background:var(--panel);border:1px solid var(--line);border-radius:9px;overflow:auto;flex:1;min-height:0}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:4px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:500;position:sticky;top:0;background:var(--panel);white-space:nowrap}
+td.nw{white-space:nowrap}
+td small{display:block;color:var(--muted)}
+.empty{padding:14px;color:var(--muted)}
+
+/* settings */
+.form{display:grid;grid-template-columns:230px 200px minmax(0,1fr);background:var(--panel);
+  border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.form > div{padding:7px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;min-height:40px}
+.form > div:nth-last-child(-n+3){border-bottom:0}
+.form .g{grid-column:1/-1;background:var(--bg);font-weight:600;color:var(--muted);font-size:12px;
+  text-transform:uppercase;letter-spacing:.04em;min-height:0;padding:6px 14px}
+.form .h{color:var(--muted)}
+/* the result sits at the row's end without reflowing the hint */
+.form .h{position:relative;padding-right:130px}
+.form .h .msg{position:absolute;right:14px;max-width:120px;text-align:right}
+.form select,.form input{width:100%}
+.presets .p{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.presets .p:last-child{border-bottom:0}
+.presets .p span{flex:1}
+.presets .p small{display:block;color:var(--muted)}
+/* DNS: the two columns share rows, so their buttons line up whatever the hints' length */
+.dnsgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:14px;row-gap:6px;align-items:start}
+.dnsgrid .hint{margin:0}
+.dnsres{font-size:12px;line-height:1.7;min-height:1px}
+
+/* logs */
+.logtools{display:flex;gap:10px;align-items:center}
+
+/* help */
+.help{max-width:900px;line-height:1.6;font-size:13.5px}
+.help h2{font-size:17px;margin:4px 0 8px}
+.help h4{font-size:14px;margin:18px 0 6px}
+.help table{margin:6px 0 10px;background:var(--panel);border:1px solid var(--line);border-radius:8px}
+.help td,.help th{padding:5px 10px}
+.help ol,.help ul{padding-left:22px;margin:6px 0}
+.help li{margin:3px 0}
+.help .note{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);padding:8px 12px;margin:10px 0}
+
+/* dialogs */
+dialog{border:1px solid var(--line);border-radius:10px;padding:16px;width:580px;background:var(--panel);color:var(--fg)}
+dialog::backdrop{background:rgba(0,0,0,.35)}
+dialog h2{font-size:15px;margin:0 0 8px}
+dialog form{margin:0}

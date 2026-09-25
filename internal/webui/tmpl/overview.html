@@ -1,0 +1,67 @@
+{{define "content"}}
+<div class="page">
+  {{if not .St.HasConfig}}
+  <div class="box">
+    <h3>{{.T "Getting started"}}</h3>
+    <p class="hint">{{.T "Load the AmneziaWG .conf your VPN provider gave you. Keys stay on this machine."}}</p>
+    <form method="post" action="/act/config" enctype="multipart/form-data">
+      <textarea name="text" rows="9" data-drop placeholder="[Interface]&#10;PrivateKey = ...&#10;Address = ...&#10;[Peer]&#10;Endpoint = ..."></textarea>
+      <div class="actions"><input type="file" name="file" accept=".conf,text/plain"><span class="spacer"></span>
+        <button class="primary" data-busy="{{.T "Applying…"}}">{{.T "Load and apply"}}</button></div>
+    </form>
+  </div>
+  {{end}}
+  <div id="summary" data-poll="/frag/overview/summary" data-every="10" style="display:flex;flex-direction:column;gap:12px">{{template "summary" .}}</div>
+  <div class="box fill">
+    <div class="row" style="margin-bottom:8px"><h3 style="margin:0;flex:1">{{.T "Recent events"}}</h3><a href="/logs">{{.T "Full log"}} →</a></div>
+    <pre class="fill" id="events" data-poll="/frag/overview/events" data-every="5" data-follow>{{template "events" .}}</pre>
+  </div>
+</div>
+{{template "confdialog" .Dlg "config"}}
+{{template "confdialog" .Dlg "config2"}}
+{{end}}
+
+{{define "summary"}}{{$s := .St}}
+  <div class="tiles">
+    <a class="tile" href="/verdicts?cat=direct"><b class="ok-t">{{$s.DirectCount}}</b><span>{{.T "going direct"}}{{if $s.Families}} · {{.Tf "%d whole domains" $s.Families}}{{end}}</span></a>
+    <a class="tile" href="/verdicts?cat=blocked"><b class="bad-t">{{$s.Blocked}}</b><span>{{.T "blocked"}}</span></a>
+    <a class="tile" href="/verdicts?cat=slow"><b>{{$s.Slower}}</b><span>{{.T "slower than tunnel"}}</span></a>
+    <a class="tile" href="/verdicts?cat=unknown"><b>{{$s.Unverified}}</b><span>{{.T "could not verify"}}</span></a>
+  </div>
+  <div class="cols2">
+    <div class="box">
+      <h3>{{.T "Main tunnel"}} · awg</h3>
+      {{if $s.HasConfig}}
+      <div class="kv">
+        <span>{{.T "State"}}</span><div>{{template "tunstate" (tun . $s.TunnelAlive $s.TunnelNote)}}</div>
+        <span>Endpoint</span><div>{{$s.Endpoint}}</div>
+        <span>DNS</span><div>{{with .Data.DNS}}{{.}}{{else}}<span class="muted">—</span>{{end}}</div>
+        <span>{{.T "Carries"}}</span><div>{{.T "everything not sent direct or to awg2"}}</div>
+      </div>
+      <div class="actions"><button type="button" data-open="dlg-config">{{.T "Replace config…"}}</button></div>
+      {{else}}<p class="hint">{{.T "No config loaded yet."}}</p>{{end}}
+    </div>
+    <div class="box">
+      <h3>{{.T "Second tunnel"}} · awg2</h3>
+      {{if $s.Awg2}}
+      <div class="kv">
+        <span>{{.T "State"}}</span><div>{{template "tunstate" (tun . $s.Awg2Alive $s.Awg2Note)}}</div>
+        <span>Endpoint</span><div>{{$s.Endpoint2}}</div>
+        <span>{{.T "Carries"}}</span><div><a href="/awg2">{{.Tf "%d presets, %d custom sites" $s.Presets $s.Awg2Hosts}}</a></div>
+        <span>{{.T "If it is down"}}</span><div>{{.T "its sites go through awg"}}</div>
+      </div>
+      <div class="actions">
+        <button type="button" data-open="dlg-config2">{{.T "Replace config…"}}</button>
+        <form method="post" action="/act/detach2" data-confirm="{{.T "Detach the second tunnel? Its presets and sites go through the first tunnel. The service restarts."}}"><button class="danger" data-busy="{{.T "Applying…"}}">{{.T "Detach"}}</button></form>
+      </div>
+      {{else}}
+      <p class="hint">{{.T "Not attached. A second server for chosen services only: YouTube, Telegram, AI services, your own sites. Until it is attached, they go through the first tunnel."}}</p>
+      <div class="actions"><button type="button" data-open="dlg-config2">{{.T "Attach…"}}</button></div>
+      {{end}}
+    </div>
+  </div>
+{{end}}
+
+
+{{define "events"}}{{range .Data.Events}}{{.}}
+{{else}}—{{end}}{{end}}

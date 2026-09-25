@@ -135,10 +135,7 @@ func runTray() {
 	// the window loop must live on the same thread as the window
 	runtime.LockOSThread()
 
-	srv := &webui.Server{
-		Elevate: elevate,
-		Reload:  func() error { return nil },
-	}
+	srv := &webui.Server{Elevate: elevate}
 	if err := srv.Start(); err != nil {
 		report("dpiswitch", fmt.Errorf("the UI failed to start: %w", err))
 		return

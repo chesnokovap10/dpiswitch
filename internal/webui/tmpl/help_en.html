@@ -1,0 +1,123 @@
+{{define "help_en"}}
+<div class="help">
+<h2>How DPI Switch works</h2>
+<p>All traffic of the computer goes through the AmneziaWG tunnel by default. Alongside, a detector
+checks, site by site, whether your ISP interferes with the direct path. A site that works direct,
+and is not slower there, is switched to a direct connection and remembered: it opens faster and
+sees your real ISP. Everything else stays in the tunnel.</p>
+<div class="note">The detector only ever <b>takes sites out</b> of the tunnel, one at a time, after checking
+them. When in doubt a site stays in the tunnel: a wrong "clean" breaks a site, a wrong "blocked"
+only costs a detour.</div>
+
+<h4>Where a connection goes</h4>
+<p>Every new connection is matched against these rules from the top; the first one that fits decides.</p>
+<table>
+<tr><th>#</th><th>Rule</th><th>Route</th></tr>
+<tr><td>1</td><td>The tunnel servers themselves</td><td>direct (otherwise the tunnel would loop into itself)</td></tr>
+<tr><td>2</td><td>Addresses inside the tunnels (their DNS server)</td><td>that tunnel</td></tr>
+<tr><td>3</td><td>Local networks: the router, printers, shares, <code>.local</code> and <code>.lan</code> names</td><td>direct</td></tr>
+<tr><td>4</td><td><a href="/lists">Programs bypassing the tunnel</a></td><td>direct, all their traffic</td></tr>
+<tr><td>5</td><td><a href="/awg2">Second tunnel</a>: presets and your sites</td><td>awg2; if it is down, awg; if both are down, direct</td></tr>
+<tr><td>6</td><td><a href="/lists">Always via tunnel</a></td><td>awg</td></tr>
+<tr><td>7</td><td><a href="/lists">Always direct</a></td><td>direct</td></tr>
+<tr><td>8</td><td>Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name)</td><td>direct</td></tr>
+<tr><td>9</td><td>Everything else</td><td>awg; if it is down, direct</td></tr>
+</table>
+<p>The core decides once, when a connection opens. When you change a list or a preset here, the
+open connections the change moves are closed, and the programs reconnect over the new route. Turning
+auto-switch off closes the connections the detector sent direct.</p>
+
+<h4>How a site is checked</h4>
+<ol>
+<li>The detector watches the connections the core carries and picks up the names in them
+(the name is read from the connection itself, so programs with their own DNS count too).</li>
+<li>The name is resolved through the <a href="/settings">DNS for direct sites</a>: the node that
+traffic would really go to.</li>
+<li>That <b>same node</b> is contacted twice: directly and through the tunnel. On each path:
+TCP connection, TLS handshake with the name in it (SNI) and a full certificate check, an HTTP
+request and its answer. A name seen on UDP 443 is also tried over QUIC (HTTP/3). The ports the
+name was really used on are the ones probed.</li>
+<li>This is repeated several times (<a href="/settings">attempts per probe</a>). The name is clean only if
+every attempt is clean, and the direct path is not slower than the tunnel by more than the
+tolerance.</li>
+</ol>
+<p>Up to 20 names are checked a minute. The checks pause while the tunnel fails the core's own health
+checks, and for a cycle after sleep or a network change: the measurements would say more about that
+moment than about the path.</p>
+
+<h4>Verdicts</h4>
+<table>
+<tr><th>Verdict</th><th>What was seen</th><th>Route</th></tr>
+<tr><td><span class="pill ok">CLEAN</span></td><td>Every attempt passed directly just as through the tunnel, not slower</td><td>direct</td></tr>
+<tr><td><span class="pill bad">BLOCKED_TCP</span></td><td>The connection is refused, reset or times out directly, and works through the tunnel</td><td>tunnel</td></tr>
+<tr><td><span class="pill bad">BLOCKED_TLS</span></td><td>TCP connects, but the TLS handshake is cut once the site's name is seen: the typical DPI block</td><td>tunnel</td></tr>
+<tr><td><span class="pill bad">BLOCKED_QUIC</span></td><td>QUIC (UDP 443) is blocked directly. TCP may work, but a name goes one way as a whole</td><td>tunnel</td></tr>
+<tr><td><span class="pill bad">MITM</span></td><td>The certificate on the direct path is not the site's, or does not verify: someone answers in the site's place</td><td>tunnel</td></tr>
+<tr><td><span class="pill bad">CONTENT_DIFF</span></td><td>The answer on the direct path differs from the tunnel's: most likely a block page</td><td>tunnel</td></tr>
+<tr><td><span class="pill warn">SLOWER</span></td><td>Not blocked, but slower direct than through the tunnel beyond the tolerance</td><td>tunnel</td></tr>
+<tr><td><span class="pill">INCONCLUSIVE</span></td><td>Nothing to compare: the tunnel failed too, the site answers nowhere, or its IPv6 node is out of reach directly</td><td>keeps the previous verdict; a new name stays in the tunnel</td></tr>
+</table>
+
+<h4>Terms and re-checks</h4>
+<ul>
+<li>A clean site goes direct for the <a href="/settings">term</a> set (7 days by default), then it is checked
+again. If the check cannot confirm it, it goes through the tunnel until the next one.</li>
+<li>A site found slower once is not reverted at once: it is measured again after the re-check
+interval, and only a second "slower" in a row sends it back to the tunnel.</li>
+<li>A blocked site is tried again after the re-check interval (1 hour by default). Each check in a
+row that finds the same doubles the wait, up to the pause cap (1 day).</li>
+<li>Names are re-checked only while something still goes to them. One nothing has used for a day is
+left alone, and after ten days it is forgotten.</li>
+</ul>
+
+<h4>Whole domains</h4>
+<p>When a domain has 3 or more clean subdomains and none blocked, slower or failing directly, the whole
+domain (<code>+.example.com</code>) goes direct: new subdomains do not wait for a check. The first
+bad subdomain removes the rule. It helps services with pools of servers: CDNs, speed tests, updates.</p>
+
+<h4>Auto-switch and observe only</h4>
+<p><b>On</b>: the verdicts are applied. <b>Observe only</b>: everything goes through the tunnel, the
+detector keeps checking and recording, and the log shows what would go direct. Switching applies within
+a second, open connections included. The verdicts are kept either way.</p>
+
+<h4>Networks</h4>
+<p>Verdicts are kept per ISP (its AS number), not per Wi-Fi network: another network of the same ISP
+shares them, another ISP starts its own. Without a network the checks pause and the memory is kept.</p>
+
+<h4>DNS</h4>
+<ul>
+<li><b>Direct sites</b> are resolved by the resolvers for direct sites, asked outside the tunnel: CDNs
+then answer with nodes near your ISP. The detector uses the same resolvers, so it tests the node the
+traffic will go to. DoH or DoT by address is the safe choice: many ISPs block or tamper with plain DNS.</li>
+<li><b>Tunnelled sites</b> are resolved inside the tunnel, by its DNS (from the <code>.conf</code> unless set).</li>
+<li>Programs get stand-in addresses from the core (<code>198.18.0.0/16</code>, <code>2001:2::/48</code>) and
+the core resolves the real one on the chosen route. That is why a name, not an address, decides the route.</li>
+</ul>
+
+<h4>IPv6</h4>
+<p>With IPv6 on, the computer gets IPv6 even where the ISP has none: it goes through the tunnel. Sites
+going direct use IPv4. If the tunnel's server has no working IPv6, the program finds out and resolves
+IPv4 only for it.</p>
+
+<h4>The second tunnel</h4>
+<p>A second AmneziaWG server for chosen services only: YouTube, Telegram, AI services, social networks
+and your own list. It stands above every other list, the detector leaves its names alone. If it is down,
+its sites go through the first tunnel; if both are down, direct. Until it is attached, its presets use the
+first tunnel.</p>
+
+<h4>When a site does not open</h4>
+<ol>
+<li>Look it up on the <a href="/verdicts">Verdicts</a> page with the filter. If it goes direct and should not,
+add it to <a href="/lists">Always via tunnel</a> (<code>+.example.com</code> for the whole domain).</li>
+<li>If many sites broke at once (a new block by the ISP), <a href="/verdicts">reset all verdicts</a>: everything
+goes through the tunnel and the detector starts over.</li>
+<li>If a site must see your real address (a bank, government services), add it to <a href="/lists">Always direct</a>.</li>
+<li>The <a href="/logs">logs</a> show every verdict with its reason.</li>
+</ol>
+
+<h4>Files</h4>
+<p>Everything is kept in <code>{{.St.DataDir}}</code>: the configs (locked to administrators and you, they
+hold private keys), the lists, the settings, the verdicts (<code>controller-state.json</code>), every probe
+(<code>reports.jsonl</code>) and the logs.</p>
+</div>
+{{end}}

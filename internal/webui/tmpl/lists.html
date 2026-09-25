@@ -1,0 +1,39 @@
+{{define "content"}}
+<div class="page">
+  <div class="cols3 fill">
+    <div class="box" id="list-direct">{{template "list-direct" .}}</div>
+    <div class="box" id="list-tunnel">{{template "list-tunnel" .}}</div>
+    <div class="box" id="list-apps">{{template "list-apps" .}}</div>
+  </div>
+</div>
+{{end}}
+
+{{define "domainlist"}}{{$v := .V}}
+  <h3>{{.Title}}</h3>
+  <p class="hint">{{.Hint}}</p>
+  <form method="post" action="/act/list" data-swap="list-{{.Kind}}">
+    <input type="hidden" name="kind" value="{{.Kind}}">
+    <textarea name="hosts" class="grow" spellcheck="false" placeholder="example.com&#10;+.example.org">{{lines .Hosts}}</textarea>
+    <div class="actions"><button class="primary">{{$v.T "Save"}}</button>{{template "msg" $v}}<span class="spacer"></span><span class="muted">{{$v.Tf "%d entries" (len .Hosts)}}</span></div>
+  </form>
+{{end}}
+
+
+{{define "list-direct"}}{{template "domainlist" (dl . "direct" (.T "Always direct") (.T "These sites never go through a tunnel, whatever the detector finds. For banks, government services and whatever must see your real address.") .Data.Direct)}}{{end}}
+{{define "list-tunnel"}}{{template "domainlist" (dl . "tunnel" (.T "Always via tunnel") (.T "These sites always go through the first tunnel: the detector's verdicts and \"Always direct\" do not apply to them.") .Data.Tunnel)}}{{end}}
+
+{{define "list-apps"}}{{$v := .}}
+  <h3>{{.T "Programs bypassing the tunnel"}}</h3>
+  <p class="hint">{{.T "All traffic of these programs goes direct, above every list. A name (qbittorrent.exe) matches the program wherever it is installed; a full path matches that copy only."}}</p>
+  <form method="post" action="/act/apps" data-swap="list-apps">
+    <div class="row" style="margin-bottom:8px">
+      <select name="add" style="flex:1;min-width:0">
+        <option value="">{{.Tf "Online now: %d programs" (len .Data.Online)}}</option>
+        {{range .Data.Online}}<option value="{{.Name}}" title="{{.Path}}">{{.Name}} · {{$v.Tf "%d conn." .Conns}}</option>{{end}}
+      </select>
+      <button name="op" value="add">{{.T "Add"}}</button>
+    </div>
+    <textarea name="apps" class="grow" spellcheck="false" placeholder="qbittorrent.exe&#10;C:\Games\Steam\steam.exe">{{lines .Data.Apps}}</textarea>
+    <div class="actions"><button class="primary" name="op" value="save">{{.T "Save"}}</button>{{template "msg" .}}<span class="spacer"></span><span class="muted">{{.Tf "%d entries" (len .Data.Apps)}}</span></div>
+  </form>
+{{end}}

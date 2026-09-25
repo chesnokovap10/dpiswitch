@@ -1,0 +1,81 @@
+{{define "content"}}
+<div class="page scroll">
+  <div id="sform">{{template "form" .}}</div>
+  <div class="box" id="dns">{{template "dns" .}}</div>
+  <div class="actions" style="padding-top:0">
+    <form method="post" action="/act/defaults" data-confirm="{{.T "Put every setting on this page back to its default? DNS included. Presets and lists are not touched."}}">
+      <button>{{.T "Reset to defaults…"}}</button>
+    </form>
+    <span class="muted">{{.T "Every change applies at once: the detector picks it up within a second."}}</span>
+  </div>
+</div>
+{{end}}
+
+{{define "rowmsg"}}{{with .}}<span class="msg {{if .OK}}ok{{else}}bad{{end}}">{{.Text}}</span>{{end}}{{end}}
+
+{{define "form"}}{{$d := .Data}}{{$s := $d.S}}
+<form method="post" action="/act/set" data-swap="sform" data-instant="1" class="form" onsubmit="return false">
+  <div class="g">{{.T "Detector"}}</div>
+
+  <div>{{.T "Auto-switch"}}</div>
+  <div><select name="auto_switch"><option value="1" {{if $s.AutoSwitch}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.AutoSwitch}}selected{{end}}>{{.T "Observe only"}}</option></select></div>
+  <div class="h">{{.T "On: unblocked sites go direct. Observe only: everything goes through the tunnel, the detector only records verdicts."}}{{template "rowmsg" ($d.MsgFor "auto_switch")}}</div>
+
+  <div>{{.T "Whole domains"}}</div>
+  <div><select name="families"><option value="1" {{if $s.Families}}selected{{end}}>{{.T "Extend to the domain"}}</option><option value="0" {{if not $s.Families}}selected{{end}}>{{.T "Checked names only"}}</option></select></div>
+  <div class="h">{{.T "3+ clean subdomains and none blocked: new subdomains go direct at once, checked afterwards."}}{{template "rowmsg" ($d.MsgFor "families")}}</div>
+
+  <div>{{.T "Latency tolerance, %"}}</div>
+  <div><input type="number" name="slow_pct" min="0" max="500" step="5" value="{{$s.SlowPct}}"></div>
+  <div class="h">{{.T "How much slower than the tunnel the direct path may be and still be used. 0: only if not slower."}}{{template "rowmsg" ($d.MsgFor "slow_pct")}}</div>
+
+  <div>{{.T "Attempts per probe"}}</div>
+  <div><input type="number" name="attempts" min="1" max="10" value="{{$s.Attempts}}"></div>
+  <div class="h">{{.T "A site is clean only if every attempt is. More: surer verdicts, longer checks."}}{{template "rowmsg" ($d.MsgFor "attempts")}}</div>
+
+  <div class="g">{{.T "Terms"}}</div>
+
+  <div>{{.T "Keep direct for"}}</div>
+  <div><select name="clean_ttl_min">{{template "durs" (dur . ($d.DurOpts $s.CleanTTLMin) $s.CleanTTLMin)}}</select></div>
+  <div class="h">{{.T "How long a clean site goes direct before it is checked again."}}{{template "rowmsg" ($d.MsgFor "clean_ttl_min")}}</div>
+
+  <div>{{.T "Re-check blocked after"}}</div>
+  <div><select name="fail_ttl_min">{{template "durs" (dur . ($d.DurOpts $s.FailTTLMin) $s.FailTTLMin)}}</select></div>
+  <div class="h">{{.T "Blocks get lifted: a blocked site is tried again after this, then less and less often."}}{{template "rowmsg" ($d.MsgFor "fail_ttl_min")}}</div>
+
+  <div>{{.T "Pause cap"}}</div>
+  <div><select name="max_backoff_min">{{template "durs" (dur . ($d.DurOpts $s.MaxBackoffMin) $s.MaxBackoffMin)}}</select></div>
+  <div class="h">{{.T "The longest wait between checks of a site that keeps failing. Not less than the re-check above."}}{{template "rowmsg" ($d.MsgFor "max_backoff_min")}}</div>
+
+  <div class="g">{{.T "Network"}}</div>
+
+  <div>IPv6</div>
+  <div><select name="ipv6"><option value="1" {{if $s.IPv6}}selected{{end}}>{{.T "Through the tunnel"}}</option><option value="0" {{if not $s.IPv6}}selected{{end}}>{{.T "Off"}}</option></select></div>
+  <div class="h">{{.T "Gives IPv6 even where the ISP has none. Changing it restarts the core."}}{{template "rowmsg" ($d.MsgFor "ipv6")}}</div>
+</form>
+{{end}}
+
+{{define "dns"}}{{$d := .Data}}
+  <h3>DNS</h3>
+  <form method="post" action="/act/dns" data-swap="dns">
+    <div class="dnsgrid">
+      <b>{{.T "For direct sites"}}</b>
+      <b>{{.T "Inside the tunnel"}}</b>
+      <p class="hint">{{.T "Asked outside the tunnel, so CDNs pick nodes near your ISP. The detector asks it too: it tests the node the traffic will go to."}}</p>
+      <p class="hint">{{.T "For the sites that go through the tunnel. Empty: the DNS from the .conf"}}{{with $d.ConfDNS}} ({{.}}){{end}}.</p>
+      <textarea name="direct_dns" rows="3" spellcheck="false">{{lines $d.S.DirectDNS}}</textarea>
+      <textarea name="tunnel_dns" rows="3" spellcheck="false" placeholder="{{$d.ConfDNS}}">{{lines $d.S.TunnelDNS}}</textarea>
+      <div><button formaction="/act/dnstest?path=direct" data-target="dnsres-direct" data-busy="{{.T "Testing…"}}">{{.T "Test"}}</button></div>
+      <div><button formaction="/act/dnstest?path=tunnel" data-target="dnsres-tunnel" data-busy="{{.T "Testing…"}}">{{.T "Test"}}</button></div>
+      <div class="dnsres" id="dnsres-direct"></div>
+      <div class="dnsres" id="dnsres-tunnel"></div>
+    </div>
+    <p class="hint" style="margin-top:8px">{{.TH "One per line: <code>https://IP/dns-query</code> (DoH), <code>tls://IP</code> (DoT), <code>IP</code> (plain DNS, often blocked by ISPs). An address, not a name, where possible."}}</p>
+    <div class="actions"><button class="primary">{{.T "Save DNS"}}</button>{{template "msg" .}}<span class="muted">{{.T "Saving restarts the core: the tunnel drops for a couple of seconds."}}</span></div>
+  </form>
+{{end}}
+
+{{define "dnsres"}}{{$v := .}}{{range .Data}}
+  {{if .OK}}<span class="pill ok">{{.Ms}} ms</span>{{else}}<span class="pill bad">{{$v.T "error"}}</span>{{end}}
+  {{.Kind}} {{.Server}} {{if .OK}}<span class="muted">→ {{$v.T "resolved by"}} {{join .IPs ", "}}</span>{{else}}<span class="muted">{{.Error}}</span>{{end}}<br>
+{{else}}<span class="muted">{{$v.T "Nothing to test"}}</span>{{end}}{{end}}

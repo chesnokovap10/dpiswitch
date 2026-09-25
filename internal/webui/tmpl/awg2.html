@@ -1,0 +1,50 @@
+{{define "content"}}{{$s := .St}}
+<div class="page">
+  <div class="box" id="awg2state" data-poll="/frag/awg2/awg2state" data-every="10">{{template "awg2state" .}}</div>
+  <div class="cols2 fill">
+    <div class="box" id="presets">{{template "presets" .}}</div>
+    <div class="box" id="hosts">{{template "hosts" .}}</div>
+  </div>
+</div>
+{{template "confdialog" .Dlg "config2"}}
+{{end}}
+
+{{define "awg2state"}}{{$s := .St}}
+  <div class="row">
+    {{if $s.Awg2}}
+      <span class="pill ok">{{.T "attached"}}</span><span>{{$s.Endpoint2}}</span>
+      {{template "tunstate" (tun . $s.Awg2Alive $s.Awg2Note)}}
+      <span class="spacer"></span>
+      <button type="button" data-open="dlg-config2">{{.T "Replace config…"}}</button>
+      <form method="post" action="/act/detach2" data-confirm="{{.T "Detach the second tunnel? Its presets and sites go through the first tunnel. The service restarts."}}"><button class="danger" data-busy="{{.T "Applying…"}}">{{.T "Detach"}}</button></form>
+    {{else}}
+      <span class="pill warn">{{.T "not attached"}}</span>
+      <span class="muted">{{.T "Until a second server is attached, the presets and sites below go through the first tunnel."}}</span>
+      <span class="spacer"></span>
+      <button type="button" class="primary" data-open="dlg-config2">{{.T "Attach…"}}</button>
+    {{end}}
+  </div>
+{{end}}
+
+
+{{define "presets"}}{{$v := .}}
+  <h3>{{.T "Presets"}}</h3>
+  <p class="hint">{{.T "Always through the second tunnel, above every other list. If awg2 is down, through awg; if both are down, direct. A switch applies at once, open connections included."}}</p>
+  <form method="post" action="/act/preset" data-swap="presets" data-instant="1" class="presets">
+    {{range .Data.Presets}}
+    <label class="p"><input type="checkbox" name="{{.ID}}" {{if .On}}checked{{end}}>
+      <span>{{$v.T .Title}}<small>{{$v.T .Note}} · {{$v.Tf "%d rules" .Rules}}</small></span></label>
+    {{end}}
+  </form>
+  <div class="actions">{{template "msg" .}}</div>
+{{end}}
+
+
+{{define "hosts"}}
+  <h3>{{.T "Your sites via the second tunnel"}}</h3>
+  <p class="hint">{{.T "One per line: example.com for that name only, +.example.com for the domain and everything under it."}}</p>
+  <form method="post" action="/act/awg2hosts" data-swap="hosts">
+    <textarea name="hosts" class="grow" spellcheck="false" placeholder="+.example.com">{{lines .Data.Hosts}}</textarea>
+    <div class="actions"><button class="primary">{{.T "Save"}}</button>{{template "msg" .}}<span class="spacer"></span><span class="muted">{{.Tf "%d entries" (len .Data.Hosts)}}</span></div>
+  </form>
+{{end}}

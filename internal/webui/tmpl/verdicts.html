@@ -1,0 +1,42 @@
+{{define "content"}}{{$d := .Data}}
+<div class="page">
+  <div class="bar">
+    <div class="tabs" id="vtabs" data-poll="/frag/verdicts/tabs?cat={{$d.Cat}}&q={{$d.Q}}" data-every="10">{{template "tabs" .}}</div>
+    <input type="search" placeholder="{{.T "Filter by name"}}" value="{{$d.Q}}" data-filter="vtable vtabs" style="width:240px">
+    <span class="spacer"></span>
+    <form method="post" action="/act/reset" data-confirm="{{.T "Reset every verdict? All traffic goes through the tunnel until the detector checks the sites again. For when a site broke after going direct."}}">
+      <button class="danger" data-busy="{{.T "Resetting…"}}">{{.T "Reset all verdicts…"}}</button>
+    </form>
+  </div>
+  <div class="tablebox" id="vtable" data-poll="/frag/verdicts/table?cat={{$d.Cat}}&q={{$d.Q}}" data-every="10">{{template "table" .}}</div>
+</div>
+{{end}}
+
+{{define "tabs"}}{{$d := .Data}}
+  <a href="/verdicts?cat=direct&q={{$d.Q}}" class="{{if eq $d.Cat "direct"}}on{{end}}">{{.T "Direct"}} {{index $d.Counts "direct"}}</a>
+  <a href="/verdicts?cat=blocked&q={{$d.Q}}" class="{{if eq $d.Cat "blocked"}}on{{end}}">{{.T "Blocked"}} {{index $d.Counts "blocked"}}</a>
+  <a href="/verdicts?cat=slow&q={{$d.Q}}" class="{{if eq $d.Cat "slow"}}on{{end}}">{{.T "Slower"}} {{index $d.Counts "slow"}}</a>
+  <a href="/verdicts?cat=unknown&q={{$d.Q}}" class="{{if eq $d.Cat "unknown"}}on{{end}}">{{.T "Unverified"}} {{index $d.Counts "unknown"}}</a>
+{{end}}
+
+{{define "table"}}{{$d := .Data}}{{$v := .}}
+{{if not $d.Rows}}<div class="empty">{{if $d.Q}}{{.T "Nothing matches the filter."}}{{else if eq $d.Cat "direct"}}{{.T "No site goes direct yet: the detector checks the sites you open and moves the unblocked ones here."}}{{else}}{{.T "None."}}{{end}}</div>
+{{else if eq $d.Cat "direct"}}
+<table>
+  <thead><tr><th>{{.T "Name"}}</th><th>{{.T "Decided"}}</th><th>{{.T "Checked again in"}}</th><th>{{.T "Node probed"}}</th></tr></thead>
+  <tbody>{{range $d.Rows}}
+    {{if .Fam}}<tr><td><b>{{.Domain}}</b></td><td colspan="3" class="muted">{{$v.Tf "whole domain: %d clean subdomains, none blocked" .Fam}}</td></tr>
+    {{else}}<tr><td>{{.Domain}}{{if .Addr}} <span class="muted">({{$v.T "address, no name"}})</span>{{end}}</td><td class="nw">{{$v.Time .Decided}}</td><td class="nw">{{$v.Left .Expires}}</td><td class="muted nw">{{.Node}}</td></tr>{{end}}
+  {{end}}</tbody>
+</table>
+{{else}}
+<table>
+  <thead><tr><th>{{.T "Name"}}</th><th>{{.T "Why"}}</th><th>{{.T "Decided"}}</th><th>{{.T "Checked again in"}}</th></tr></thead>
+  <tbody>{{range $d.Rows}}
+    <tr><td>{{.Domain}}{{if .Addr}} <span class="muted">({{$v.T "address, no name"}})</span>{{end}}</td>
+      <td><span class="pill {{if eq $d.Cat "blocked"}}bad{{else if eq $d.Cat "slow"}}warn{{end}}">{{$v.VName .Verdict}}</span><small>{{.Reason}}</small></td>
+      <td class="nw">{{$v.Time .Decided}}</td><td class="nw">{{$v.Left .Expires}}</td></tr>
+  {{end}}</tbody>
+</table>
+{{end}}
+{{end}}

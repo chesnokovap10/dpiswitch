@@ -1,0 +1,107 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="{{.Lang}}">
+<head>
+<meta charset="utf-8">
+<title>DPI Switch</title>
+<link rel="stylesheet" href="/static/ui.css">
+</head>
+<body>
+<div class="app">
+<header id="header" data-poll="/frag/{{.Page}}/header" data-every="5">{{template "header" .}}</header>
+<nav>
+  <div class="items" id="navitems" data-poll="/frag/{{.Page}}/navitems" data-every="10">{{template "navitems" .}}</div>
+  <div id="svcbox" data-poll="/frag/{{.Page}}/svcbox" data-every="5">{{template "svcbox" .}}</div>
+</nav>
+<main>
+{{if .Flash}}<div class="flash {{if .Flash.OK}}ok{{else}}bad{{end}}" style="margin-bottom:12px">{{.Flash.Text}}</div>{{end}}
+{{template "content" .}}
+</main>
+</div>
+<script src="/static/ui.js"></script>
+</body>
+</html>{{end}}
+
+{{define "header"}}{{$s := .St}}
+  <div class="brand">DPI Switch<small>v{{$s.Version}}</small></div>
+  {{if not $s.Installed}}
+    <span class="chip"><span class="dot"></span>{{.T "Service not installed"}}</span>
+  {{else if $s.Pending}}
+    <span class="chip"><span class="dot warn"></span>{{.T $s.ServiceText}}…</span>
+  {{else if $s.ServiceRun}}
+    <span class="chip"><span class="dot ok"></span>{{.T "Service running"}}</span>
+    <span class="chip" title="{{$s.Endpoint}}"><span class="dot {{if $s.TunnelAlive}}ok{{else}}bad{{end}}"></span>awg {{if $s.TunnelAlive}}{{$s.TunnelNote}}{{else}}{{.T "not responding"}}{{end}}</span>
+    {{if $s.Awg2}}<span class="chip" title="{{$s.Endpoint2}}"><span class="dot {{if $s.Awg2Alive}}ok{{else}}bad{{end}}"></span>awg2 {{if $s.Awg2Alive}}{{$s.Awg2Note}}{{else}}{{.T "not responding"}}{{end}}</span>{{end}}
+  {{else}}
+    <span class="chip"><span class="dot"></span>{{.T "Service stopped"}}</span>
+    {{if not $s.NetworkUp}}<span class="chip"><span class="dot warn"></span>{{.T "no network"}}</span>{{end}}
+  {{end}}
+  {{if $s.NetworkID}}<span class="chip muted" title="{{.T "Verdicts are kept per ISP"}}">{{.T "network"}} {{$s.NetworkID}}</span>{{end}}
+  {{if .Msg}}<span class="msg {{if .Msg.OK}}ok{{else}}bad{{end}}">{{.Msg.Text}}</span>{{end}}
+  <span class="spacer"></span>
+  <span class="lang"><a href="/lang?to=en&back={{.Path}}" class="{{if eq .Lang "en"}}on{{end}}">EN</a><a href="/lang?to=ru&back={{.Path}}" class="{{if eq .Lang "ru"}}on{{end}}">RU</a></span>
+  <span class="muted">{{.T "Auto-switch"}}</span>
+  <form method="post" action="/act/auto" data-swap="header">
+    <span class="seg">
+      <button name="value" value="on" class="{{if $s.AutoSwitch}}on{{end}}" title="{{.T "Sites the detector found unblocked go direct"}}">{{.T "On"}}</button>
+      <button name="value" value="off" class="{{if not $s.AutoSwitch}}on{{end}}" title="{{.T "Everything goes through the tunnel; the detector only records verdicts"}}">{{.T "Observe only"}}</button>
+    </span>
+  </form>
+  {{if $s.Installed}}
+  <form method="post" action="/act/service" data-swap="header">
+    {{if $s.ServiceRun}}<button name="do" value="stop" data-busy="{{.T "Stopping…"}}" title="{{.T "Stops the tunnel: traffic goes out directly"}}">{{.T "Stop"}}</button>
+    {{else}}<button name="do" value="start" class="primary" data-busy="{{.T "Starting…"}}" {{if $s.Pending}}disabled{{end}}>{{.T "Start"}}</button>{{end}}
+  </form>
+  {{end}}
+{{end}}
+
+{{define "navitems"}}{{$s := .St}}
+  <a href="/overview" class="{{if eq .Page "overview"}}on{{end}}">{{.T "Overview"}}</a>
+  <a href="/verdicts" class="{{if eq .Page "verdicts"}}on{{end}}">{{.T "Verdicts"}} <span class="n">{{$s.DirectCount}} · {{$s.Blocked}}</span></a>
+  <a href="/lists" class="{{if eq .Page "lists"}}on{{end}}">{{.T "Routing lists"}}</a>
+  <a href="/awg2" class="{{if eq .Page "awg2"}}on{{end}}">{{.T "Second tunnel"}} <span class="n">{{if $s.Awg2}}{{$s.Presets}} · {{$s.Awg2Hosts}}{{else}}{{.T "off"}}{{end}}</span></a>
+  <a href="/settings" class="{{if eq .Page "settings"}}on{{end}}">{{.T "Settings"}}</a>
+  <a href="/logs" class="{{if eq .Page "logs"}}on{{end}}">{{.T "Logs"}}</a>
+  <hr>
+  <a href="/help" class="{{if eq .Page "help"}}on{{end}}">{{.T "Help"}}</a>
+{{end}}
+
+{{define "svcbox"}}{{$s := .St}}
+  {{if not $s.Installed}}
+    <span class="muted">{{.T "The service runs the tunnel. Installing it asks for administrator rights once."}}</span>
+    <form method="post" action="/act/service"><button name="do" value="install" class="primary">{{.T "Install service"}}</button></form>
+  {{else}}
+    {{if not $s.PathOK}}
+      <span class="warn-t">{{.T "The service is registered for another copy of the program:"}} <code>{{$s.BinPath}}</code></span>
+      <form method="post" action="/act/service"><button name="do" value="reinstall" class="primary">{{.T "Reinstall service"}}</button></form>
+    {{end}}
+    <form method="post" action="/act/autostart" data-swap="svcbox" data-instant="1">
+      <label class="cb"><input type="checkbox" name="autostart" {{if $s.Autostart}}checked{{end}}> {{.T "Start tray with Windows"}}</label>
+    </form>
+    <form method="post" action="/act/service" data-confirm="{{.T "Remove the service? The tunnel stops and does not start with Windows until it is installed again. Settings and lists stay."}}">
+      <button name="do" value="uninstall" class="link">{{.T "Remove service…"}}</button>
+    </form>
+  {{end}}
+  {{if .Msg}}<span class="msg {{if .Msg.OK}}ok{{else}}bad{{end}}">{{.Msg.Text}}</span>{{end}}
+{{end}}
+
+{{define "confdialog"}}
+<dialog id="dlg-{{.Name}}">
+  <form method="post" action="/act/{{.Name}}" enctype="multipart/form-data">
+    <h2>{{.Title}}</h2>
+    <p class="hint">{{.Hint}}</p>
+    <textarea name="text" rows="11" data-drop placeholder="[Interface]&#10;PrivateKey = ...&#10;Address = ...&#10;[Peer]&#10;Endpoint = ..."></textarea>
+    <div class="actions">
+      <input type="file" name="file" accept=".conf,text/plain">
+      <span class="spacer"></span>
+      <button type="button" data-close>{{.Cancel}}</button>
+      <button class="primary" data-busy="{{.Busy}}">{{.Load}}</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
+
+{{define "msg"}}{{if .Msg}}<span class="msg {{if .Msg.OK}}ok{{else}}bad{{end}}">{{.Msg.Text}}</span>{{end}}{{end}}
+
+{{define "tunstate"}}{{$v := .V}}{{with .S}}{{if not .ServiceRun}}<span class="pill">{{$v.T "service stopped"}}</span>{{else if $.Alive}}<span class="pill ok">{{$v.T "responding"}} · {{$.Note}}</span>{{else}}<span class="pill bad">{{$v.T "not responding"}}</span> <span class="muted">{{$.Note}}</span>{{end}}{{end}}{{end}}
+
+{{define "durs"}}{{$v := .V}}{{range .Opts}}<option value="{{.Min}}" {{if eq .Min $.Cur}}selected{{end}}>{{if .Label}}{{$v.T .Label}}{{else}}{{$v.Tf "%d min" .Min}}{{end}}</option>{{end}}{{end}}

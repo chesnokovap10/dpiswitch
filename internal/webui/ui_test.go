@@ -1,0 +1,245 @@
+package webui
+
+import (
+	"io/fs"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"regexp"
+	"strings"
+	"testing"
+
+	"dpiswitch/internal/ctl"
+	"dpiswitch/internal/paths"
+	"dpiswitch/internal/presets"
+)
+
+// testServer: the UI over an empty data directory, with a fixed status --
+// the real one asks the service manager and the core.
+func testServer(t *testing.T) (*Server, string) {
+	t.Helper()
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{statusFn: func() status {
+		return status{Installed: true, PathOK: true, ServiceRun: true, TunnelAlive: true, TunnelNote: "60 ms",
+			Awg2: true, Version: "test", DataDir: paths.DataDir(), NetworkID: "AS1", AutoSwitch: true}
+	}}
+	return s, paths.DataDir()
+}
+
+func do(t *testing.T, h http.Handler, method, target string, form url.Values, hdr map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	var r *http.Request
+	if form != nil {
+		r = httptest.NewRequest(method, target, strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	} else {
+		r = httptest.NewRequest(method, target, nil)
+	}
+	r.Host = "127.0.0.1:8080"
+	r.Header.Set("Referer", "http://127.0.0.1:8080/settings")
+	for k, v := range hdr {
+		r.Header.Set(k, v)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	return w
+}
+
+// Every page and every part a page refreshes renders in both languages.
+func TestPagesRender(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	frags := map[string][]string{
+		"overview": {"summary", "events"},
+		"verdicts": {"tabs", "table"},
+		"lists":    {"list-direct", "list-tunnel", "list-apps"},
+		"awg2":     {"awg2state", "presets", "hosts"},
+		"settings": {"form", "dns"},
+		"logs":     {"log"},
+	}
+	for _, lang := range []string{"en", "ru"} {
+		cookie := map[string]string{"Cookie": "lang=" + lang}
+		for _, p := range pageNames {
+			for _, target := range []string{"/" + p, "/verdicts?cat=blocked&q=x"} {
+				if target != "/"+p && p != "verdicts" {
+					continue
+				}
+				w := do(t, h, "GET", target, nil, cookie)
+				body := w.Body.String()
+				if w.Code != 200 || strings.Contains(body, `class="msg bad"`) || !strings.Contains(body, "</html>") {
+					t.Errorf("%s %s: %d\n%s", lang, target, w.Code, body)
+				}
+			}
+			for _, f := range append(frags[p], "header", "navitems", "svcbox") {
+				w := do(t, h, "GET", "/frag/"+p+"/"+f, nil, cookie)
+				if w.Code != 200 || strings.Contains(w.Body.String(), `class="msg bad"`) {
+					t.Errorf("%s %s/%s: %d %s", lang, p, f, w.Code, w.Body.String())
+				}
+			}
+		}
+	}
+	if w := do(t, h, "GET", "/nope", nil, nil); w.Code != 404 {
+		t.Errorf("an unknown page: %d", w.Code)
+	}
+}
+
+// Every string the UI shows has its Russian: in the templates, the Go code
+// that answers the forms, and the preset names.
+func TestTranslations(t *testing.T) {
+	var keys []string
+	add := func(re *regexp.Regexp, text string) {
+		for _, m := range re.FindAllStringSubmatch(text, -1) {
+			for _, k := range m[1:] {
+				if k != "" {
+					keys = append(keys, strings.ReplaceAll(k, `\"`, `"`))
+				}
+			}
+		}
+	}
+	tmplKey := regexp.MustCompile(`\.(?:T|TH|Tf) "((?:[^"\\]|\\.)*)"`)
+	err := fs.WalkDir(uiFS, "tmpl", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := uiFS.ReadFile(path)
+		add(tmplKey, string(b))
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	goKey := regexp.MustCompile(`(?:v\.Tf?\(|tr\(lang\(r\), |done\(r, [a-z]+, |redirect\(w, r, [^,"]+, )"([^"]+)"|note = "([^"]+)"|return "(Config[^"]+)"|\{\d+, "([^"]+)"\}`)
+	for _, f := range []string{"actions.go", "ui.go", "pages.go"} {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		add(goKey, string(b))
+	}
+	for _, p := range presets.All {
+		keys = append(keys, p.Title, p.Note)
+	}
+	if len(keys) < 150 {
+		t.Fatalf("only %d strings found: the patterns no longer match the code", len(keys))
+	}
+	for _, k := range keys {
+		if _, ok := ru[k]; !ok {
+			t.Errorf("no Russian for %q", k)
+		}
+	}
+}
+
+// A setting applies the moment its control changes, one field at a time:
+// the others -- the presets among them -- stay as they were.
+func TestSettingInstant(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	set := ctl.DefaultSettings()
+	set.Awg2Presets = []string{"youtube"}
+	if err := ctl.SaveSettings(paths.Settings(), set); err != nil {
+		t.Fatal(err)
+	}
+	post := func(field, value string) string {
+		w := do(t, h, "POST", "/act/set", url.Values{"field": {field}, "value": {value}}, nil)
+		if w.Code != 200 {
+			t.Fatalf("%s=%s: %d %s", field, value, w.Code, w.Body.String())
+		}
+		return w.Body.String()
+	}
+	post("attempts", "5")
+	post("auto_switch", "0")
+	got := ctl.LoadSettings(paths.Settings())
+	if got.Attempts != 5 || got.AutoSwitch || len(got.Awg2Presets) != 1 {
+		t.Fatalf("after two changes: %+v", got)
+	}
+	// a re-check past the pause cap raises the cap instead of being refused
+	post("fail_ttl_min", "4320")
+	if got := ctl.LoadSettings(paths.Settings()); got.FailTTLMin != 4320 || got.MaxBackoffMin != 4320 {
+		t.Fatalf("the cap did not follow: %+v", got)
+	}
+	// a cap below the re-check is refused, and the file keeps its value
+	if body := post("max_backoff_min", "60"); !strings.Contains(body, `msg bad`) {
+		t.Fatalf("a cap below the re-check was not refused:\n%s", body)
+	}
+	if got := ctl.LoadSettings(paths.Settings()); got.MaxBackoffMin != 4320 {
+		t.Fatalf("a refused change was saved: %+v", got)
+	}
+	if w := do(t, h, "POST", "/act/set", url.Values{"field": {"nope"}, "value": {"1"}}, nil); w.Code != 400 {
+		t.Fatalf("an unknown setting: %d", w.Code)
+	}
+}
+
+// A list is saved as the core reads it: lower case, names only, once each.
+func TestListSave(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	w := do(t, h, "POST", "/act/list", url.Values{"kind": {"tunnel"},
+		"hosts": {"Example.com\nhttps://sub.example.org/path\n\n+.example.net\nexample.com"}}, nil)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "msg ok") {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	want := []string{"+.example.net", "example.com", "sub.example.org"}
+	if got := readList(paths.ForceTunnel()); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	// a program is added by name and saved at once
+	w = do(t, h, "POST", "/act/apps", url.Values{"apps": {"a.exe"}, "add": {"b.exe"}, "op": {"add"}}, nil)
+	if got := readApps(); strings.Join(got, ",") != "a.exe,b.exe" {
+		t.Fatalf("apps %v: %s", got, w.Body.String())
+	}
+	w = do(t, h, "POST", "/act/apps", url.Values{"apps": {"a.exe"}, "add": {""}, "op": {"add"}}, nil)
+	if !strings.Contains(w.Body.String(), "msg bad") {
+		t.Fatalf("an empty pick was not refused: %s", w.Body.String())
+	}
+}
+
+// Another web page cannot drive the UI: a form it sends to 127.0.0.1 names
+// it in Origin, and DNS rebinding shows as another Host.
+func TestGuard(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	form := url.Values{"field": {"attempts"}, "value": {"7"}}
+	if w := do(t, h, "POST", "/act/set", form, map[string]string{"Origin": "https://evil.example"}); w.Code != 403 {
+		t.Errorf("a cross-origin form: %d", w.Code)
+	}
+	if w := do(t, h, "POST", "/act/set", form, map[string]string{"Sec-Fetch-Site": "cross-site"}); w.Code != 403 {
+		t.Errorf("a cross-site fetch: %d", w.Code)
+	}
+	r := httptest.NewRequest("GET", "/overview", nil)
+	r.Host = "rebound.example:8080"
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != 403 {
+		t.Errorf("another host: %d", w.Code)
+	}
+	if got := ctl.LoadSettings(paths.Settings()); got.Attempts == 7 {
+		t.Error("a refused request changed the settings")
+	}
+	if w := do(t, h, "POST", "/act/set", form, map[string]string{"Origin": "http://127.0.0.1:8080"}); w.Code != 200 {
+		t.Errorf("our own page: %d", w.Code)
+	}
+}
+
+// The language switch goes back to the page it was pressed on, and nowhere
+// else.
+func TestLang(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	for back, want := range map[string]string{
+		"/verdicts?cat=slow":   "/verdicts?cat=slow",
+		"https://evil.example": "/overview",
+		"//evil.example/x":     "/overview",
+	} {
+		w := do(t, h, "GET", "/lang?to=ru&back="+url.QueryEscape(back), nil, nil)
+		if loc := w.Header().Get("Location"); loc != want {
+			t.Errorf("back %q: went to %q, want %q", back, loc, want)
+		}
+		if c := w.Result().Cookies(); len(c) != 1 || c[0].Value != "ru" {
+			t.Errorf("cookie %v", c)
+		}
+	}
+}
