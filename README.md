@@ -5,8 +5,6 @@ All traffic goes through the tunnel by default, while a detector checks in paral
 the ISP interferes with the direct path to each site. Sites that are not blocked are switched
 to a direct connection and remembered.
 
-Version: **1.0.8**
-
 ## Routing
 
 Rules are evaluated top to bottom:
@@ -57,9 +55,12 @@ Requires Go 1.26+.
 
 The result is a single `dist\dpiswitch.exe` with the mihomo core embedded inside
 (gzip-compressed, ~24 MB in total). On the first build the core is built by
-`tools\build-mihomo.ps1` into `dist\mihomo.exe` and reused afterwards; it pins the
-tested mihomo commit and drops what DPI Switch does not use (embedded Tailscale,
-ZeroTier, EasyTier, Hysteria fake-TCP, debug symbols): ~39 MB instead of ~80 MB.
+`tools\build-mihomo.ps1` into `dist\mihomo.exe` and reused afterwards (delete it
+to rebuild). It pins the tested mihomo commit and keeps only what DPI Switch uses:
+the WireGuard outbound (AmneziaWG) and the TUN and SOCKS inbounds; every other
+protocol, gVisor, the embedded Tailscale, ZeroTier and EasyTier and the debug
+symbols are left out: ~30 MB instead of ~80 MB. The TUN runs on the Windows
+network stack (`stack: system`).
 
 At startup the service extracts the core to `%ProgramData%\dpiswitch\core\mihomo.exe`
 and verifies its SHA-256 before every start, re-extracting it if it does not match.
@@ -81,12 +82,11 @@ for it, copies with retries, starts both again and checks the hash. The
 replaced binary is kept beside it as `dpiswitch.last.exe` — `-Path` with it
 is the way back. No elevation is needed.
 
-CI (GitHub Actions, `.github/workflows/ci.yml`) is kept within the free minutes:
-a push to `main` that changes Go code runs `go vet` and the tests. The race
-tests run by hand (`gh workflow run CI`); run on a `v*` tag
-(`gh workflow run CI --ref vX.Y.Z`) it also checks the tag against
-`version.go`, builds and attaches the zip and `SHA256SUMS.txt` to a draft
-release.
+CI (GitHub Actions, `.github/workflows/ci.yml`) is disabled; checks run locally
+before a push: `go vet ./...`, `go test ./...` and, for `internal/ctl`,
+`go test -race`. `gh workflow enable CI` turns it back on: then a push to `main`
+that changes Go code runs `go vet` and the tests, and `gh workflow run CI --ref
+vX.Y.Z` also builds a tag into a draft release.
 
 ## Installation
 
