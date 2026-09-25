@@ -42,7 +42,9 @@ func CloseConns(apiAddr, secret string, match func(Conn) bool) (int, error) {
 		if c.Rule == "RuleSet" {
 			v.RulePayload = c.RulePayload
 		}
-		if c.ID == "" || !match(v) {
+		// the prober's own connections are routed by their listener, not by
+		// any list: closing one only broke a probe running at the time
+		if c.ID == "" || c.fromProbe() || !match(v) {
 			continue
 		}
 		if err := a.closeConnection(c.ID); err != nil {
@@ -55,6 +57,27 @@ func CloseConns(apiAddr, secret string, match func(Conn) bool) (int, error) {
 		return n, fmt.Errorf("%d connections not closed: %w", failed, lastErr)
 	}
 	return n, nil
+}
+
+// ReloadProviders has the core read these rule-providers now. It watches
+// their files by itself, but when it gets to it is its own affair: a list
+// written and its connections closed at once, the client reconnected before
+// the core had the new rules -- and the new connection took the old route,
+// to keep it. A core that is not listening reads the files when it starts:
+// no error.
+func ReloadProviders(apiAddr, secret string, names ...string) error {
+	a := newAPI(apiAddr, secret)
+	for _, n := range names {
+		err := a.reloadProvider(n)
+		var op *net.OpError
+		if errors.As(err, &op) && op.Op == "dial" {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("provider %s not reloaded: %w", n, err)
+		}
+	}
+	return nil
 }
 
 // MatchDomainRule: whether host matches one line of a domain rule-provider,

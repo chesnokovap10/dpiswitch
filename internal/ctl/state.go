@@ -1,6 +1,8 @@
 package ctl
 
 import (
+	"dpiswitch/internal/paths"
+
 	"encoding/json"
 	"fmt"
 	"net"
@@ -94,11 +96,9 @@ func (s *state) save() error {
 	if err != nil {
 		return err
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.path) // atomic: both the controller and humans read this file
+	// atomic: both the controller and humans read this file -- the UI and
+	// the tray every few seconds, which on Windows fails a plain rename
+	return paths.ReplaceFile(s.path, b)
 }
 
 func (s *state) attached(gw string) (attachment, bool) {

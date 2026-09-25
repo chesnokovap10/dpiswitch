@@ -73,6 +73,7 @@ func Run(ctx context.Context, cfg Config) {
 	}
 	a := newAPI(cfg.APIAddr, secret)
 	cfg.autoOff = new(atomic.Bool)
+	cfg.stop = ctx.Done()
 	st := loadState(cfg.StatePath)
 	netID := resolveNetwork(cfg, st)
 	st.setCurrent(netID)

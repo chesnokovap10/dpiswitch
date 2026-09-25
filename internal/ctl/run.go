@@ -60,6 +60,18 @@ type Config struct {
 	ResetPath string
 	// auto-switch turned off since the lists were last written, see autooff.go
 	autoOff *atomic.Bool
+	// closed when the controller is stopping: a cycle starts no more probes
+	stop <-chan struct{}
+}
+
+// stopping: the controller is being stopped.
+func (cfg Config) stopping() bool {
+	select {
+	case <-cfg.stop:
+		return true
+	default:
+		return false
+	}
 }
 
 // checkProto runs one probe; the scenario tests put a script in its place.
@@ -171,7 +183,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			if guard.moved() {
+			if guard.moved() || cfg.stopping() {
 				return // the whole cycle is dropped: no use probing on
 			}
 
@@ -260,6 +272,12 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	}
 	wg.Wait()
 
+	if cfg.stopping() {
+		// the service is stopping: its stop waits for this cycle, and the
+		// core is going away under the probes
+		guard.done()
+		return
+	}
 	if !guard.done() {
 		// the probes measured another network than the one their verdicts
 		// would be filed under. Memory is left alone: the main loop

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -236,8 +237,15 @@ func (s *Server) actReset(w http.ResponseWriter, r *http.Request) {
 // then there is nothing open (see ctl.CloseConns). Any other failure is
 // reported: the error used to be dropped, and the UI said "Saved" while the
 // connections already open kept their old route.
-func closeMoved(match func(ctl.Conn) bool) (int, error) {
-	n, err := ctl.CloseConns(apiAddr, ctl.SecretFromConfig(paths.Config()), match)
+//
+// The provider is reloaded first: see ctl.ReloadProviders.
+func closeMoved(provider string, match func(ctl.Conn) bool) (int, error) {
+	secret := ctl.SecretFromConfig(paths.Config())
+	if err := ctl.ReloadProviders(apiAddr, secret, provider); err != nil {
+		log.Printf("ui: %v", err)
+		return 0, err
+	}
+	n, err := ctl.CloseConns(apiAddr, secret, match)
 	if err != nil {
 		log.Printf("ui: open connections a list change moved not closed: %v", err)
 	}
@@ -245,6 +253,12 @@ func closeMoved(match func(ctl.Conn) bool) (int, error) {
 		log.Printf("ui: closed %d connections a list change moved", n)
 	}
 	return n, err
+}
+
+// providerOf: the rule-provider a list file is, as the core config names
+// it -- the file's name without .txt
+func providerOf(path string) string {
+	return strings.TrimSuffix(filepath.Base(path), ".txt")
 }
 
 // changed: the entries in one of two lists and not the other
@@ -303,7 +317,7 @@ func (s *Server) saveDomains(path, kind string, entries []string) (n int, err, c
 	if err != nil {
 		return 0, err, nil
 	}
-	n, closeErr = closeMoved(domainMatch(changed(old, cur)))
+	n, closeErr = closeMoved(providerOf(path), domainMatch(changed(old, cur)))
 	return n, nil, closeErr
 }
 
@@ -341,7 +355,7 @@ func (s *Server) actApps(w http.ResponseWriter, r *http.Request) {
 	var cerr error
 	if err == nil {
 		moved := changed(old, cur)
-		n, cerr = closeMoved(func(c ctl.Conn) bool {
+		n, cerr = closeMoved("force-direct-apps", func(c ctl.Conn) bool {
 			for _, a := range moved {
 				if strings.EqualFold(a, c.Process) || strings.EqualFold(a, c.ProcessPath) {
 					return true
@@ -404,7 +418,7 @@ func (s *Server) actPreset(w http.ResponseWriter, r *http.Request) {
 	n := 0
 	var cerr error
 	if err == nil {
-		n, cerr = closeMoved(presetMatch(*p))
+		n, cerr = closeMoved("preset-"+p.ID, presetMatch(*p))
 	}
 	ok, msg := saved(r, err, n, cerr)
 	s.part(w, r, "awg2", "presets", ok, msg)

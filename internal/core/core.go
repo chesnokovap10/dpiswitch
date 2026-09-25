@@ -26,6 +26,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
 
 	"dpiswitch/internal/paths"
 	"dpiswitch/internal/winexec"
@@ -75,23 +78,29 @@ func Ensure() (bool, error) {
 	ensureMu.Lock()
 	defer ensureMu.Unlock()
 
-	if err := os.MkdirAll(Dir(), 0o755); err != nil {
-		return false, err
-	}
-	if err := lockDown(Dir()); err != nil {
-		return false, fmt.Errorf("core directory permissions: %w", err)
+	if err := secureDir(Dir()); err != nil {
+		return false, fmt.Errorf("core directory: %w", err)
 	}
 	target := Path()
-	if h, err := fileHash(target); err == nil && h == embeddedHash {
-		return false, nil
+	// A file someone else owns is not trusted whatever its hash: its owner
+	// may grant itself write access again at any moment, and change the
+	// file between the check and the start -- and SYSTEM runs it.
+	if trusted(target) {
+		if h, err := fileHash(target); err == nil && h == embeddedHash {
+			return false, nil
+		}
 	}
 
 	zr, err := gzip.NewReader(bytes.NewReader(embedded))
 	if err != nil {
 		return false, fmt.Errorf("embedded core: %w", err)
 	}
+	// a file of our own making: one left in its place is not written into
 	tmp := target + ".new"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
+	if err := os.Remove(tmp); err != nil && !os.IsNotExist(err) {
+		return false, fmt.Errorf("extracting the core: %w", err)
+	}
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755)
 	if err != nil {
 		return false, err
 	}
@@ -128,6 +137,61 @@ func fileHash(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// coreSDDL: the core directory's permissions -- owner SYSTEM, no
+// inheritance; SYSTEM and Administrators full control, Users read and
+// execute, for the directory and everything made in it.
+const coreSDDL = "O:SYD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;GRGX;;;BU)"
+
+// secureDir makes sure the core directory is ours. One made by someone
+// else -- the data directory lets every user create files, and one could
+// make "core" before the service did -- is not locked down in place: its
+// owner may take the permissions back, or hold a handle opened while it
+// could write. It is taken over, removed, and made anew, locked down from
+// its first moment: made and then locked, there was a window in which it
+// inherited the data directory's Users-modify.
+func secureDir(dir string) error {
+	fi, err := os.Lstat(dir)
+	switch {
+	case err == nil && fi.IsDir() && trusted(dir):
+		return lockDown(dir)
+	case err == nil:
+		// SYSTEM may lack the rights a stranger's objects grant: it takes
+		// ownership first, and ownership brings the right to set them
+		_, _ = winexec.CombinedOutput("icacls.exe", dir, "/setowner", "*S-1-5-18", "/T", "/C", "/Q")
+		_, _ = winexec.CombinedOutput("icacls.exe", dir, "/grant", "*S-1-5-18:(OI)(CI)F", "/T", "/C", "/Q")
+		if err := os.RemoveAll(dir); err != nil {
+			return fmt.Errorf("%s is not the service's and cannot be removed: %w", dir, err)
+		}
+	case !os.IsNotExist(err):
+		return err
+	}
+	sd, err := windows.SecurityDescriptorFromString(coreSDDL)
+	if err != nil {
+		return err
+	}
+	name, err := windows.UTF16PtrFromString(dir)
+	if err != nil {
+		return err
+	}
+	sa := &windows.SecurityAttributes{SecurityDescriptor: sd}
+	sa.Length = uint32(unsafe.Sizeof(*sa))
+	return windows.CreateDirectory(name, sa)
+}
+
+// trusted: path is owned by SYSTEM or the Administrators -- nobody else can
+// change what it lets them do.
+func trusted(path string) bool {
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		return false
+	}
+	o, _, err := sd.Owner()
+	if err != nil || o == nil {
+		return false
+	}
+	return o.IsWellKnown(windows.WinLocalSystemSid) || o.IsWellKnown(windows.WinBuiltinAdministratorsSid)
 }
 
 // lockDown: no inheritance; SYSTEM and Administrators full control,

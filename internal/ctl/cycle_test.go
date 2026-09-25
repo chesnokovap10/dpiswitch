@@ -697,3 +697,21 @@ func TestCycleProbeIsNoUse(t *testing.T) {
 		t.Fatalf("LastSeen renewed by the probe: %s", got)
 	}
 }
+
+// The controller is stopping: a cycle starts no more probes, and files
+// nothing -- the service's stop waits for it.
+func TestCycleStopping(t *testing.T) {
+	s := newScenario(t)
+	stop := make(chan struct{})
+	close(stop)
+	s.cfg.stop = stop
+	s.see(tunnelled("stop.example.org", 443))
+	s.script("stop.example.org tcp/443", clean("192.0.2.63"))
+	s.cycle()
+	if s.wasProbed("stop.example.org tcp/443") {
+		t.Fatal("probed while stopping")
+	}
+	if e := s.entry("stop.example.org"); e != nil {
+		t.Fatalf("filed %s while stopping", e.Verdict)
+	}
+}

@@ -1,6 +1,8 @@
 package ctl
 
 import (
+	"dpiswitch/internal/paths"
+
 	"encoding/json"
 	"os"
 )
@@ -33,11 +35,7 @@ func (t TunnelIPv6) Save(path string) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(b, '\n'), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return paths.ReplaceFile(path, append(b, '\n'))
 }
 
 // Dead reports a tunnel the check has found IPv6 broken on. An unknown

@@ -261,18 +261,42 @@ func (h *handler) Execute(args []string, r <-chan svc.ChangeRequest, s chan<- sv
 			case svc.Stop, svc.Shutdown:
 				// report StopPending early: a clean core shutdown
 				// takes seconds, otherwise the SCM considers the service hung
-				s <- svc.Status{State: svc.StopPending}
 				cancel()
-				select {
-				case <-done:
-				case <-time.After(20 * time.Second):
-				}
+				waitStopped(s, done)
 				s <- svc.Status{State: svc.Stopped}
 				return false, 0
 			}
 		case <-done:
 			s <- svc.Status{State: svc.Stopped}
 			return false, 0
+		}
+	}
+}
+
+// stopLimit: how long a stop waits for the supervisor to return. A probe
+// that is already running is not cut short -- it ends on its own timeouts,
+// a few tens of seconds at worst.
+const stopLimit = 90 * time.Second
+
+// waitStopped reports StopPending with a growing checkpoint until the
+// supervisor has returned: STOPPED used to go out after 20 seconds whatever
+// it was doing, while a cycle's probes ran on. The checkpoint keeps the SCM
+// from taking a long stop for a hung one. Past stopLimit the process ends
+// anyway once it returns, taking what is left with it -- the core by its
+// job object.
+func waitStopped(s chan<- svc.Status, done <-chan struct{}) {
+	t := time.NewTicker(5 * time.Second)
+	defer t.Stop()
+	limit := time.After(stopLimit)
+	for cp := uint32(1); ; cp++ {
+		s <- svc.Status{State: svc.StopPending, CheckPoint: cp, WaitHint: 10000}
+		select {
+		case <-done:
+			return
+		case <-limit:
+			log.Printf("the supervisor did not stop in %s", stopLimit)
+			return
+		case <-t.C:
 		}
 	}
 }
