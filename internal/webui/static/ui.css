@@ -53,7 +53,8 @@ nav .items hr{border:0;border-top:1px solid var(--line);margin:8px 4px}
 #svcbox{margin-top:auto;border-top:1px solid var(--line);padding:10px 6px 0;display:flex;flex-direction:column;gap:7px}
 #svcbox form{margin:0}
 #svcbox .muted{font-size:12px}
-.langs{display:flex;align-items:center;gap:6px;font-size:12px}
+/* the very bottom of the sidebar, under the service box */
+.langs{display:flex;align-items:center;gap:6px;font-size:12px;border-top:1px solid var(--line);margin-top:10px;padding:8px 6px 0}
 .langs svg{width:14px;height:14px;fill:none;stroke:var(--muted);stroke-width:1.2}
 /* one weight for both: a bold current one was wider and moved the other */
 .langs a,.langs b{font-weight:600}

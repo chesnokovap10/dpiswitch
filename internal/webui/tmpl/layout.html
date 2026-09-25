@@ -12,6 +12,7 @@
 <nav>
   <div class="items" id="navitems" data-poll="/frag/{{.Page}}/navitems" data-every="10">{{template "navitems" .}}</div>
   <div id="svcbox" data-poll="/frag/{{.Page}}/svcbox" data-every="5">{{template "svcbox" .}}</div>
+  {{template "langs" .}}
 </nav>
 <main>
 {{if .Flash}}<div class="flash {{if .Flash.OK}}ok{{else}}bad{{end}}" style="margin-bottom:12px">{{.Flash.Text}}</div>{{end}}
@@ -66,13 +67,6 @@
 {{end}}
 
 {{define "svcbox"}}{{$s := .St}}
-  {{/* the languages by their own names: the same text in either, so the
-       switch never moves; the current one is not a link */}}
-  <div class="langs"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M1.5 8h13M8 1.5c2 2 2 11 0 13M8 1.5c-2 2-2 11 0 13"/></svg>
-    {{if eq .Lang "en"}}<b>English</b>{{else}}<a href="/lang?to=en&back={{.Path}}">English</a>{{end}}
-    <span class="muted">·</span>
-    {{if eq .Lang "ru"}}<b>Русский</b>{{else}}<a href="/lang?to=ru&back={{.Path}}">Русский</a>{{end}}
-  </div>
   {{if not $s.Installed}}
     <span class="muted">{{.T "The service runs the tunnel. Installing it asks for administrator rights once."}}</span>
     <form method="post" action="/act/service"><button name="do" value="install" class="primary">{{.T "Install service"}}</button></form>
@@ -89,6 +83,16 @@
     </form>
   {{end}}
   {{if .Msg}}<span class="msg {{if .Msg.OK}}ok{{else}}bad{{end}}">{{.Msg.Text}}</span>{{end}}
+{{end}}
+
+{{define "langs"}}
+  {{/* the languages by their own names: the same text in either, so the
+       switch never moves; the current one is not a link */}}
+  <div class="langs" id="langs"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M1.5 8h13M8 1.5c2 2 2 11 0 13M8 1.5c-2 2-2 11 0 13"/></svg>
+    {{if eq .Lang "en"}}<b>English</b>{{else}}<a href="/lang?to=en&back={{.Path}}">English</a>{{end}}
+    <span class="muted">·</span>
+    {{if eq .Lang "ru"}}<b>Русский</b>{{else}}<a href="/lang?to=ru&back={{.Path}}">Русский</a>{{end}}
+  </div>
 {{end}}
 
 {{define "confdialog"}}
