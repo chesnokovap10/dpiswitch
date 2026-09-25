@@ -20,10 +20,6 @@ code{font:12px Consolas,monospace;background:var(--bg);padding:0 3px;border-radi
 .dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
 .dot.ok{background:var(--ok)}.dot.bad{background:var(--bad)}.dot.warn{background:var(--warn)}
 .spacer{flex:1}
-.lang{display:inline-flex;flex-shrink:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;font-size:12px}
-/* the same width either way: bold on the active one made it wider */
-.lang a{flex:none;padding:2px 0;width:30px;text-align:center;color:var(--muted);font-weight:600}
-.lang a.on{background:var(--accent-bg);color:var(--accent)}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
 .seg button{border:0;border-radius:0;padding:5px 11px}
 .seg button.on{background:var(--accent);color:#fff;cursor:default}
@@ -57,6 +53,11 @@ nav .items hr{border:0;border-top:1px solid var(--line);margin:8px 4px}
 #svcbox{margin-top:auto;border-top:1px solid var(--line);padding:10px 6px 0;display:flex;flex-direction:column;gap:7px}
 #svcbox form{margin:0}
 #svcbox .muted{font-size:12px}
+.langs{display:flex;align-items:center;gap:6px;font-size:12px}
+.langs svg{width:14px;height:14px;fill:none;stroke:var(--muted);stroke-width:1.2}
+/* one weight for both: a bold current one was wider and moved the other */
+.langs a,.langs b{font-weight:600}
+.langs b{color:var(--fg)}
 
 /* main */
 main{overflow:auto;padding:16px 18px;display:flex;flex-direction:column;min-height:0}

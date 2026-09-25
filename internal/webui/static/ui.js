@@ -20,26 +20,53 @@ function ticket(el) {
 // answer -- the one shown -- lacked the other change, though the file had
 // both. In a queue the last answer comes after every save before it.
 const queues = new Map();
-function swap(url, body, target) {
-  const run = () => send(url, body, target);
+function swap(url, body, target, changed) {
+  const run = () => send(url, body, target, changed);
   const p = (queues.get(target) || Promise.resolve()).then(run, run);
   queues.set(target, p);
   return p;
 }
 
-async function send(url, body, target) {
+function failed(el, text) {
+  const m = document.createElement('div');
+  m.className = 'msg bad';
+  m.textContent = text;
+  el.append(m);
+}
+
+// changed: the control an instant form sent. The answer redraws the whole
+// form, and a field being typed into meanwhile -- another one -- would
+// get the saved value back and lose what was typed; it keeps its text,
+// focus and caret. The control sent takes the server's value: a refused
+// change shows as refused.
+async function send(url, body, target, changed) {
   const el = document.getElementById(target);
-  const current = el ? ticket(el) : () => false;
+  if (!el) return;
+  const current = ticket(el);
   try {
     const r = await fetch(url, {method: 'POST', body});
+    // an HTTP error is not a part of the page: a refused key, a server
+    // error page would have replaced the form
+    if (!r.ok) {
+      if (current()) failed(el, 'HTTP ' + r.status + ' ' + r.statusText);
+      return;
+    }
     const html = await r.text();
-    if (current()) el.innerHTML = html;
-  } catch (e) {
     if (!current()) return;
-    const m = document.createElement('div');
-    m.className = 'msg bad';
-    m.textContent = String(e);
-    el.append(m);
+    const a = document.activeElement;
+    const keep = changed !== undefined && a && el.contains(a) && a.name && a.name !== changed &&
+      'value' in a ? {name: a.name, value: a.value, s: a.selectionStart, e: a.selectionEnd} : null;
+    el.innerHTML = html;
+    if (keep) {
+      const b = el.querySelector('[name="' + CSS.escape(keep.name) + '"]');
+      if (b) {
+        b.value = keep.value;
+        b.focus();
+        try { b.setSelectionRange(keep.s, keep.e); } catch (e) { /* not a text field */ }
+      }
+    }
+  } catch (e) {
+    if (current()) failed(el, String(e));
   }
 }
 
@@ -73,7 +100,7 @@ document.addEventListener('change', e => {
   fd.append('field', el.name);
   fd.append('value', el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value);
   for (const h of f.querySelectorAll('input[type=hidden]')) fd.append(h.name, h.value);
-  swap(f.action, fd, f.dataset.swap);
+  swap(f.action, fd, f.dataset.swap, el.name);
 });
 
 document.addEventListener('click', e => {
@@ -88,10 +115,13 @@ document.addEventListener('click', e => {
 // is shown in the field, and a file dropped on the field, or the field
 // edited, drops the file picked before -- it used to be sent instead of
 // the text on screen.
+// A file is read in the background: only the last one picked or dropped
+// fills the field, and none does once the field is edited by hand.
 function confFile(f) { return f && f.querySelector('input[type=file]'); }
 function readInto(t, file) {
+  const current = ticket(t);
   const fr = new FileReader();
-  fr.onload = () => { t.value = fr.result; };
+  fr.onload = () => { if (current()) t.value = fr.result; };
   fr.readAsText(file);
 }
 document.addEventListener('dragover', e => { if (e.target.closest('[data-drop]')) e.preventDefault(); });
@@ -111,20 +141,26 @@ document.addEventListener('change', e => {
 });
 document.addEventListener('input', e => {
   const t = e.target.closest('[data-drop]');
-  const p = t && confFile(t.form);
+  if (!t) return;
+  ticket(t);
+  const p = confFile(t.form);
   if (p) p.value = '';
 });
 
 // --- polling ---
 const due = new Map();
-// a refresh still under way: the timer does not start another beside it
-const busy = new WeakSet();
+// a refresh still under way: the timer does not start another beside it.
+// Each refresh clears its own mark whatever happened: one outrun by an
+// action's answer used to leave the mark behind, and the part never
+// refreshed again.
+const busy = new WeakMap();
 async function poll(el) {
   // a field being edited is not replaced under the user's hands
   if (el.contains(document.activeElement) && document.activeElement !== el) return;
-  // a newer request -- the filter's, typed meanwhile -- wins over this one
+  // a newer request -- the filter's, an action's -- wins over this one
   const current = ticket(el);
-  busy.add(el);
+  const mark = {};
+  busy.set(el, mark);
   try {
     const r = await fetch(el.dataset.poll, {signal: AbortSignal.timeout(15000)}).catch(() => null);
     if (!r || !r.ok) return;
@@ -136,7 +172,7 @@ async function poll(el) {
   } catch (e) {
     // the body cut off by the timeout: the next period tries again
   } finally {
-    if (current()) busy.delete(el);
+    if (busy.get(el) === mark) busy.delete(el);
   }
 }
 setInterval(() => {
