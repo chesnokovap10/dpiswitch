@@ -116,7 +116,23 @@ func SaveSettings(path string, s Settings) error {
 	if err := os.WriteFile(tmp, b, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	return renameRetry(tmp, path)
+}
+
+// renameRetry: Windows refuses to replace a file someone has open, and the
+// settings file is read every second -- by the controller's watcher, the UI,
+// the tray. A save that met a read failed with "Access is denied"; a read
+// takes well under a millisecond, so trying again a few times gets through.
+func renameRetry(from, to string) error {
+	var err error
+	for i := 0; i < 20; i++ {
+		if err = os.Rename(from, to); err == nil {
+			return nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	os.Remove(from)
+	return err
 }
 
 // the bounds of the numeric settings, in minutes and percent: the UI's
