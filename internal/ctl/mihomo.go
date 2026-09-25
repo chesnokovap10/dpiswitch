@@ -63,6 +63,8 @@ type connection struct {
 		DestinationPort string `json:"destinationPort"`
 		Type            string `json:"type"`
 		Network         string `json:"network"`
+		Process         string `json:"process"`
+		ProcessPath     string `json:"processPath"`
 	} `json:"metadata"`
 }
 

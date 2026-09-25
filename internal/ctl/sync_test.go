@@ -92,3 +92,28 @@ func TestReportsRotate(t *testing.T) {
 		}
 	}
 }
+
+// The UI closes the connections a list change moves by matching the lines
+// of a domain list as the core does.
+func TestMatchDomainRule(t *testing.T) {
+	for _, c := range []struct {
+		rule, host string
+		want       bool
+	}{
+		{"example.com", "example.com", true},
+		{"example.com", "www.example.com", false},
+		{"+.example.com", "example.com", true},
+		{"+.example.com", "a.b.example.com", true},
+		{"+.example.com", "badexample.com", false},
+		{".example.com", "example.com", false},
+		{".example.com", "a.example.com", true},
+		{"*.example.com", "a.example.com", true},
+		{"*.example.com", "a.b.example.com", false},
+		{"Example.COM", "example.com", true},
+		{"example.com", "", false},
+	} {
+		if got := MatchDomainRule(c.rule, c.host); got != c.want {
+			t.Errorf("%q vs %q: %v", c.rule, c.host, got)
+		}
+	}
+}
