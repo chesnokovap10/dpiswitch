@@ -112,7 +112,7 @@ func Run(ctx context.Context, cfg Config) {
 	go watchReset(ctx, cfg, a, st)
 
 	wake := make(chan struct{}, 1)
-	go watchSettings(ctx, cfg, a, set, haveSet, wake)
+	go watchSettings(ctx, cfg, a, st, set, haveSet, wake)
 	settingsChanged := func() {
 		ns, ok := readSettings(cfg)
 		if !ok || haveSet && ns.Equal(set) {

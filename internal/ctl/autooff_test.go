@@ -32,7 +32,13 @@ func TestAutoSwitchOffAtOnce(t *testing.T) {
 				{"id":"det","rule":"RuleSet","rulePayload":"p","chains":["DIRECT"]},
 				{"id":"addr","rule":"RuleSet","rulePayload":"pi","chains":["DIRECT"]},
 				{"id":"user","rule":"RuleSet","rulePayload":"force-direct","chains":["DIRECT"]},
-				{"id":"tun","rule":"Match","rulePayload":"","chains":["awg","tunnel"]}]}`))
+				{"id":"tun","rule":"Match","rulePayload":"","chains":["awg","tunnel"]},
+				{"id":"tun-a","rule":"Match","chains":["awg","tunnel"],"metadata":
+					{"host":"a.example","destinationPort":"443","network":"tcp","sourceIP":"198.18.0.1"}},
+				{"id":"probe-a","rule":"Match","chains":["awg"],"metadata":
+					{"host":"a.example","destinationPort":"443","network":"tcp","sourceIP":"127.0.0.1","inboundName":"probe-tunnel"}},
+				{"id":"pinned-a","rule":"RuleSet","rulePayload":"force-tunnel","chains":["awg"],"metadata":
+					{"host":"a.example","destinationPort":"443","network":"tcp","sourceIP":"198.18.0.1"}}]}`))
 		case r.Method == http.MethodDelete:
 			mu.Lock()
 			closed = append(closed, strings.TrimPrefix(r.URL.Path, "/connections/"))
@@ -43,11 +49,11 @@ func TestAutoSwitchOffAtOnce(t *testing.T) {
 	a := newAPI(strings.TrimPrefix(srv.URL, "http://"), "")
 
 	dir := t.TempDir()
-	cfg := Config{Apply: true, Provider: "p", ListPath: filepath.Join(dir, "d.txt"),
+	cfg := Config{Apply: true, ProxyName: "awg", Provider: "p", ListPath: filepath.Join(dir, "d.txt"),
 		AddrProvider: "pi", AddrListPath: filepath.Join(dir, "ip.txt"),
 		SettingsPath: filepath.Join(dir, "settings.json"), autoOff: new(atomic.Bool)}
 	e := &entry{Verdict: probe.Clean, ExpiresAt: time.Now().Add(time.Hour), TestedIP: "192.0.2.1"}
-	st := &state{Networks: map[string]map[string]*entry{"n": {"a.example": e}}}
+	st := &state{Networks: map[string]map[string]*entry{"n": {"a.example": e}}, Current: "n"}
 	syncList(cfg, a, st, "n", true)
 	if listRules(cfg.ListPath) == nil {
 		t.Fatal("the list was not written to begin with")
@@ -60,7 +66,7 @@ func TestAutoSwitchOffAtOnce(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	wake := make(chan struct{}, 1)
-	go watchSettings(ctx, cfg, a, set, true, wake)
+	go watchSettings(ctx, cfg, a, st, set, true, wake)
 
 	set.AutoSwitch = false
 	if err := SaveSettings(cfg.SettingsPath, set); err != nil {
@@ -88,7 +94,11 @@ func TestAutoSwitchOffAtOnce(t *testing.T) {
 		t.Fatal("a cycle started before wrote the rules back")
 	}
 
-	// turned back on: the lists may be written again
+	// turned back on: the lists are written at once, whatever the main loop
+	// is busy with, and the tunnel connections they now send direct closed
+	mu.Lock()
+	closed = nil
+	mu.Unlock()
 	set.AutoSwitch = true
 	if err := SaveSettings(cfg.SettingsPath, set); err != nil {
 		t.Fatal(err)
@@ -98,7 +108,12 @@ func TestAutoSwitchOffAtOnce(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("turning back on was not seen")
 	}
-	syncList(cfg, a, st, "n", true)
+	mu.Lock()
+	got = append([]string(nil), closed...)
+	mu.Unlock()
+	if want := []string{"tun-a"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("closed on turning on %v, want %v", got, want)
+	}
 	if !reflect.DeepEqual(listRules(cfg.ListPath), []string{"a.example"}) {
 		t.Fatalf("list after turning back on: %v", listRules(cfg.ListPath))
 	}

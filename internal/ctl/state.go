@@ -126,6 +126,12 @@ func (s *state) sawIP(gw string) {
 	}
 }
 
+func (s *state) current() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Current
+}
+
 func (s *state) setCurrent(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
