@@ -118,6 +118,17 @@ func (s *state) attach(gw, asn, ip string) {
 	s.Attach[gw] = attachment{Net: asn, Checked: now, IP: ip, IPChecked: now}
 }
 
+// staleIP: the public address behind gw was found changed; the next
+// resolveNetwork looks at it again at once.
+func (s *state) staleIP(gw string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if a, ok := s.Attach[gw]; ok {
+		a.IPChecked = time.Time{}
+		s.Attach[gw] = a
+	}
+}
+
 // sawIP: the public address behind gw was found the same again.
 func (s *state) sawIP(gw string) {
 	s.mu.Lock()

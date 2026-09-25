@@ -1,6 +1,7 @@
 package ctl
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -51,5 +52,75 @@ func TestResolveNetworkUplinkChange(t *testing.T) {
 	ip, asn = "198.51.100.7", "AS2"
 	if got := resolveNetwork(Config{}, st); got != "AS2" || lookups != 2 {
 		t.Fatalf("new uplink: %s after %d lookups", got, lookups)
+	}
+}
+
+// The public address changed and the ISP lookup failed: the old ISP's
+// verdicts are not borrowed -- the gateway's memory until the lookup works.
+func TestResolveNetworkMovedLookupFails(t *testing.T) {
+	netIDMu.Lock()
+	netIDVal, netIDWhen = "gw1", time.Now().Add(time.Hour)
+	netIDMu.Unlock()
+	ip := "203.0.113.1"
+	var failing bool
+	oldLookup, oldIP, oldRetry := lookupASNFn, publicIPFn, lookupRetry
+	lookupASNFn = func(string) (string, string, error) {
+		if failing {
+			return "", "", errors.New("RIPE down")
+		}
+		return "AS1", ip, nil
+	}
+	publicIPFn = func(string) (string, error) { return ip, nil }
+	lookupRetry = 0
+	t.Cleanup(func() {
+		lookupASNFn, publicIPFn, lookupRetry = oldLookup, oldIP, oldRetry
+		netIDMu.Lock()
+		netIDVal, netIDWhen = "", time.Time{}
+		netIDMu.Unlock()
+	})
+	st := loadState(filepath.Join(t.TempDir(), "state.json"))
+	if got := resolveNetwork(Config{}, st); got != "AS1" {
+		t.Fatalf("first: %s", got)
+	}
+	st.staleIP("gw1")
+	ip, failing = "198.51.100.7", true
+	if got := resolveNetwork(Config{}, st); got != "gw1" {
+		t.Fatalf("moved, lookup failed: %s, want the gateway's memory", got)
+	}
+	// the address check alone failing is no sign of a move
+	st.staleIP("gw1")
+	publicIPFn = func(string) (string, error) { return "", errors.New("RIPE down") }
+	if got := resolveNetwork(Config{}, st); got != "AS1" {
+		t.Fatalf("address unknown: %s, want the cached ISP", got)
+	}
+}
+
+// A cycle's results are filed only while the public address is the one
+// the ISP was found by.
+func TestIPStill(t *testing.T) {
+	ip := "203.0.113.1"
+	checks := 0
+	oldIP := publicIPFn
+	publicIPFn = func(string) (string, error) { checks++; return ip, nil }
+	t.Cleanup(func() { publicIPFn = oldIP })
+	st := loadState(filepath.Join(t.TempDir(), "state.json"))
+	st.attach("gw1", "AS1", ip)
+	if !ipStill(Config{}, st, "gw1") || checks != 0 {
+		t.Fatalf("checked just now: asked %d times", checks)
+	}
+	st.staleIP("gw1")
+	if !ipStill(Config{}, st, "gw1") || checks != 1 {
+		t.Fatal("the same address taken for a change")
+	}
+	st.staleIP("gw1")
+	ip = "198.51.100.7"
+	if ipStill(Config{}, st, "gw1") {
+		t.Fatal("a changed address not seen")
+	}
+	if a, _ := st.attached("gw1"); !a.IPChecked.IsZero() {
+		t.Fatal("the change not left for the main loop to look up")
+	}
+	if !ipStill(Config{}, st, "unknown-gw") {
+		t.Fatal("a gateway with no ISP known held the results back")
 	}
 }

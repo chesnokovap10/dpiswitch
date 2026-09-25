@@ -118,10 +118,24 @@ func (s *Server) URL() string {
 // one -- or on the port it fell back to past all of them. Another user's UI
 // does not answer: it has another key.
 func Find(key string) string {
+	// all at once: one after another, ports held by something that takes a
+	// connection and never answers cost 700 ms each -- 45 s for 64 of them.
+	// Of those that answer, the first in Listen's order wins.
 	cl := &http.Client{Timeout: 700 * time.Millisecond}
-	for _, p := range session.Ports() {
-		if addr := fmt.Sprintf("127.0.0.1:%d", p); answers(cl, addr, key) {
-			return WithKey("http://"+addr+"/", key)
+	ports := session.Ports()
+	ok := make([]bool, len(ports))
+	var wg sync.WaitGroup
+	for i, p := range ports {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ok[i] = answers(cl, fmt.Sprintf("127.0.0.1:%d", p), key)
+		}()
+	}
+	wg.Wait()
+	for i, p := range ports {
+		if ok[i] {
+			return WithKey(fmt.Sprintf("http://127.0.0.1:%d/", p), key)
 		}
 	}
 	return ""

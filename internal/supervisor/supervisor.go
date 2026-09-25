@@ -93,9 +93,15 @@ func (s *Supervisor) Run(ctx context.Context, apply bool) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if !s.waitAPI(ctx, apiAddr, 90*time.Second) {
-			log.Println("core did not come up in time, controller not started")
-			return
+		// waited for as long as it takes: keepCore brings the core up
+		// whenever the network lets it, and a controller that gave up
+		// after 90 seconds left the service without a detector until the
+		// next restart
+		for !s.waitAPI(ctx, apiAddr, 90*time.Second) {
+			if ctx.Err() != nil {
+				return
+			}
+			log.Println("core not up yet, the controller keeps waiting for it")
 		}
 		cfg := ctl.Defaults()
 		cfg.Apply = apply

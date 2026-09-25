@@ -83,7 +83,9 @@ func writeWith(path string, data []byte, sd *windows.SECURITY_DESCRIPTOR) error 
 		err = cerr
 	}
 	if err == nil {
-		err = os.Rename(tmp, path)
+		// config.yaml is read by the controller, the UI and the tray for
+		// its secret: Windows refuses to replace it while one has it open
+		err = renameRetry(tmp, path)
 	}
 	if err != nil {
 		os.Remove(tmp)

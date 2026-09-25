@@ -123,6 +123,9 @@ func resolveNetwork(cfg Config, st *state) string {
 		return att
 	}
 	cached, ok := st.attached(att)
+	// the public address was seen to change: the cached ISP is not known
+	// to be the one behind it any more
+	moved := false
 	if ok && time.Since(cached.Checked) < asnCacheTTL {
 		if cached.IP != "" && time.Since(cached.IPChecked) < ipRecheck {
 			return cached.Net
@@ -137,6 +140,7 @@ func resolveNetwork(cfg Config, st *state) string {
 			return cached.Net
 		}
 		if cached.IP != "" {
+			moved = true
 			log.Printf("public address changed behind the same gateway: %s -> %s, looking up the ISP",
 				cached.IP, ip)
 		}
@@ -151,11 +155,15 @@ func resolveNetwork(cfg Config, st *state) string {
 		time.Sleep(lookupRetry)
 	}
 	if err != nil {
-		if ok {
+		if ok && !moved {
 			// the ISP behind this gateway is already known, it just failed
 			// to re-check -- keep using it
 			return cached.Net
 		}
+		// With the address changed the old ISP is not kept "just in case":
+		// its CLEAN verdicts would send names direct on what may be another
+		// ISP. The gateway's own memory until the lookup succeeds -- the next
+		// tick tries again, the address still differing from the cached one.
 		log.Printf("ISP not determined (%v), using gateway memory %s", err, att)
 		return att
 	}
@@ -167,4 +175,31 @@ func resolveNetwork(cfg Config, st *state) string {
 		log.Printf("ISP %s: merged %d verdicts from previous gateway memory", asn, n)
 	}
 	return asn
+}
+
+// ipStillRecheck: how old the last look at the public address may be before
+// a cycle's results are filed without looking again.
+const ipStillRecheck = time.Minute
+
+// ipStill: whether the public address behind att is still the one the ISP
+// was found by. The network guard sees the gateway only: behind the same
+// router the uplink may change mid-cycle, and the cycle's results would go
+// into the old ISP's memory. A cycle with results asks before filing them,
+// at most once a minute. A changed address is marked for the main loop to
+// look up the ISP at its next tick.
+func ipStill(cfg Config, st *state, att string) bool {
+	cached, ok := st.attached(att)
+	if !ok || cached.IP == "" || time.Since(cached.IPChecked) < ipStillRecheck {
+		return true
+	}
+	ip, err := publicIPFn(cfg.DirectAddr)
+	switch {
+	case err != nil:
+		return true // not known to have changed
+	case ip == cached.IP:
+		st.sawIP(att)
+		return true
+	}
+	st.staleIP(att)
+	return false
 }

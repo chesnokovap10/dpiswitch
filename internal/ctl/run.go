@@ -268,6 +268,10 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 		log.Printf("the network changed during the cycle: %d results dropped", len(results))
 		return
 	}
+	if len(results) > 0 && !ipStill(cfg, st, guard.start) {
+		log.Printf("the public address changed during the cycle: %d results dropped", len(results))
+		return
+	}
 	// filed under listMu: a reset takes it too, so it comes wholly before
 	// this or wholly after
 	listMu.Lock()
