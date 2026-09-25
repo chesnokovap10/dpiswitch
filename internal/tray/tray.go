@@ -17,6 +17,10 @@ import (
 //go:embed icons/*.ico
 var iconFS embed.FS
 
+// IconFile: an icon's .ico file as is -- the web UI shows the tray's own
+// "off" icon as the page's.
+func IconFile(name string) ([]byte, error) { return iconFS.ReadFile("icons/" + name) }
+
 type State int
 
 const (

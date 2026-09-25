@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>DPI Switch</title>
+<link rel="icon" href="/favicon.ico">
 <link rel="stylesheet" href="/static/ui.css">
 </head>
 <body>
@@ -38,7 +39,6 @@
   {{if $s.NetworkID}}<span class="chip muted" title="{{.T "Verdicts are kept per ISP"}}">{{.T "network"}} {{$s.NetworkID}}</span>{{end}}
   {{if .Msg}}<span class="msg {{if .Msg.OK}}ok{{else}}bad{{end}}">{{.Msg.Text}}</span>{{end}}
   <span class="spacer"></span>
-  <span class="lang"><a href="/lang?to=en&back={{.Path}}" class="{{if eq .Lang "en"}}on{{end}}">EN</a><a href="/lang?to=ru&back={{.Path}}" class="{{if eq .Lang "ru"}}on{{end}}">RU</a></span>
   <span class="muted">{{.T "Auto-switch"}}</span>
   <form method="post" action="/act/auto" data-swap="header">
     <span class="seg">
@@ -52,6 +52,9 @@
     {{else}}<button name="do" value="start" class="primary" data-busy="{{.T "Starting…"}}" {{if $s.Pending}}disabled{{end}}>{{.T "Start"}}</button>{{end}}
   </form>
   {{end}}
+  {{/* last, at the right edge: the texts before it change length with the
+       language, and the switch used to move under the pointer */}}
+  <span class="lang"><a href="/lang?to=en&back={{.Path}}" class="{{if eq .Lang "en"}}on{{end}}">EN</a><a href="/lang?to=ru&back={{.Path}}" class="{{if eq .Lang "ru"}}on{{end}}">RU</a></span>
 {{end}}
 
 {{define "navitems"}}{{$s := .St}}

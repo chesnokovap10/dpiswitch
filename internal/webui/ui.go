@@ -20,6 +20,7 @@ import (
 	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/paths"
 	"dpiswitch/internal/supervisor"
+	"dpiswitch/internal/tray"
 	"dpiswitch/internal/version"
 	"dpiswitch/internal/winsvc"
 )
@@ -240,6 +241,18 @@ func (s *Server) handleFrag(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 	sub, _ := fs.Sub(uiFS, "static")
 	http.StripPrefix("/static/", http.FileServer(http.FS(sub))).ServeHTTP(w, r)
+}
+
+// handleIcon: the page's icon is the program's, the tray's "off" one
+func (s *Server) handleIcon(w http.ResponseWriter, r *http.Request) {
+	b, err := tray.IconFile("off.ico")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "image/x-icon")
+	w.Header().Set("Cache-Control", "max-age=86400")
+	w.Write(b)
 }
 
 // the language switch: a cookie, then back to the page it was pressed on

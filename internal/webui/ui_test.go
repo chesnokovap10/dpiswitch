@@ -313,3 +313,12 @@ func TestKey(t *testing.T) {
 		t.Errorf("the status with the key header: %d", w.Code)
 	}
 }
+
+// The page shows the program's icon.
+func TestFavicon(t *testing.T) {
+	s, _ := testServer(t)
+	w := do(t, s.Handler(), "GET", "/favicon.ico", nil, nil)
+	if w.Code != 200 || w.Header().Get("Content-Type") != "image/x-icon" || !strings.HasPrefix(w.Body.String(), "\x00\x00\x01\x00") {
+		t.Fatalf("favicon: %d %q, %d bytes", w.Code, w.Header().Get("Content-Type"), w.Body.Len())
+	}
+}

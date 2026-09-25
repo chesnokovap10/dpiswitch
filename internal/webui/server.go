@@ -72,6 +72,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/", s.handlePage)
 	mux.HandleFunc("/frag/", s.handleFrag)
 	mux.HandleFunc("/static/", s.handleStatic)
+	mux.HandleFunc("/favicon.ico", s.handleIcon)
 	mux.HandleFunc("/lang", s.handleLang)
 	mux.HandleFunc("/api/status", s.handleStatus)
 	for path, h := range map[string]http.HandlerFunc{

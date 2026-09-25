@@ -20,9 +20,10 @@ code{font:12px Consolas,monospace;background:var(--bg);padding:0 3px;border-radi
 .dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
 .dot.ok{background:var(--ok)}.dot.bad{background:var(--bad)}.dot.warn{background:var(--warn)}
 .spacer{flex:1}
-.lang{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;font-size:12px}
-.lang a{padding:2px 7px;color:var(--muted)}
-.lang a.on{background:var(--accent-bg);color:var(--accent);font-weight:600}
+.lang{display:inline-flex;flex-shrink:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;font-size:12px}
+/* the same width either way: bold on the active one made it wider */
+.lang a{flex:none;padding:2px 0;width:30px;text-align:center;color:var(--muted);font-weight:600}
+.lang a.on{background:var(--accent-bg);color:var(--accent)}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
 .seg button{border:0;border-radius:0;padding:5px 11px}
 .seg button.on{background:var(--accent);color:#fff;cursor:default}
