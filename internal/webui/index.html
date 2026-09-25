@@ -404,7 +404,7 @@ $('#btn-set').onclick = async () => {
     tunnel_dns: lines('#s-tdns'),
   };
   const r = await api('/api/settings', {method:'POST', body: JSON.stringify(body)});
-  say('#msg-set', r.ok ? 'saved — the service picks it up within a minute (DNS changes restart the core)'
+  say('#msg-set', r.ok ? 'saved — the service applies it within seconds (DNS changes restart the core)'
                        : ('error: '+r.error), r.ok?'ok':'bad');
 };
 $('#btn-set-def').onclick = () => {

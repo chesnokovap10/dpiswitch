@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"dpiswitch/internal/logfile"
@@ -56,6 +57,8 @@ type Config struct {
 	PinnedLists []string
 	// where the tray leaves a request to drop every verdict, see takeReset
 	ResetPath string
+	// auto-switch turned off since the lists were last written, see autooff.go
+	autoOff *atomic.Bool
 }
 
 // checkProto runs one probe; the scenario tests put a script in its place.
@@ -486,7 +489,7 @@ func syncList(cfg Config, a *api, st *state, netID string, force bool) {
 	listMu.Lock()
 	defer listMu.Unlock()
 	doms, fams := directRules(cfg, st, netID)
-	if !cfg.Apply {
+	if !cfg.Apply || cfg.off() {
 		log.Printf("observe mode: %d domains would go DIRECT (%s)", len(doms), preview(doms))
 		return
 	}
@@ -532,23 +535,6 @@ func syncList(cfg Config, a *api, st *state, netID string, force bool) {
 		return
 	}
 	log.Printf("applied: %d domains go direct", len(doms))
-}
-
-func clearList(cfg Config, a *api) {
-	listMu.Lock()
-	defer listMu.Unlock()
-	b := "# auto-switch disabled -- everything goes through the tunnel\n"
-	if err := replaceList(a, cfg.ListPath, cfg.Provider, b); err != nil {
-		log.Print(err)
-		return
-	}
-	if cfg.AddrListPath != "" {
-		if err := replaceList(a, cfg.AddrListPath, cfg.AddrProvider, b); err != nil {
-			log.Print(err)
-			return
-		}
-	}
-	log.Println("auto-switch disabled: direct path removed from all domains")
 }
 
 // listMu: one writer of the rule files at a time. A reset asked for from

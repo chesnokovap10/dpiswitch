@@ -450,7 +450,7 @@ func (s *Server) handleVerdicts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, snap)
 }
 
-// controller settings: the service picks them up within a minute
+// controller settings: the service picks them up within seconds
 // on its own, no restart needed
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {

@@ -8,6 +8,7 @@ import (
 	"dpiswitch/internal/probe"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"dpiswitch/internal/paths"
@@ -71,6 +72,7 @@ func Run(ctx context.Context, cfg Config) {
 		log.Printf("warning: secret not found in %s, calling the API without auth", cfg.CfgPath)
 	}
 	a := newAPI(cfg.APIAddr, secret)
+	cfg.autoOff = new(atomic.Bool)
 	st := loadState(cfg.StatePath)
 	netID := resolveNetwork(cfg, st)
 	st.setCurrent(netID)
@@ -100,7 +102,7 @@ func Run(ctx context.Context, cfg Config) {
 	} else if haveSet {
 		// disabled by the user: the list from the previous run must not
 		// keep sending sites direct
-		clearList(cfg, a)
+		disableAuto(cfg, a)
 	}
 
 	w := newWatcher(ctx, cfg, a)
@@ -108,6 +110,22 @@ func Run(ctx context.Context, cfg Config) {
 	// a reset asked for while the controller was not running is taken now
 	takeReset(cfg, a, st)
 	go watchReset(ctx, cfg, a, st)
+
+	wake := make(chan struct{}, 1)
+	go watchSettings(ctx, cfg, a, set, haveSet, wake)
+	settingsChanged := func() {
+		ns, ok := readSettings(cfg)
+		if !ok || haveSet && ns.Equal(set) {
+			return
+		}
+		if coreChanged(ns, set, haveSet) && cfg.OnCoreChange != nil {
+			log.Printf("core settings changed (DNS: direct %v, tunnel %v; IPv6 %v) -- restarting the core",
+				ns.DirectDNS, ns.TunnelDNS, ns.IPv6)
+			cfg.OnCoreChange()
+		}
+		cfg = onSettingsChanged(cfg, ns, a, st, netID)
+		set, haveSet = ns, true
+	}
 
 	t := time.NewTicker(cfg.Interval)
 	offline := false // no gateway right now (see the tick below)
@@ -119,16 +137,11 @@ func Run(ctx context.Context, cfg Config) {
 	}
 	for {
 		select {
+		case <-wake:
+			// a change the watcher saw: applied now, not at the next tick
+			settingsChanged()
 		case <-t.C:
-			if ns, ok := readSettings(cfg); ok && (!haveSet || !ns.Equal(set)) {
-				if coreChanged(ns, set, haveSet) && cfg.OnCoreChange != nil {
-					log.Printf("core settings changed (DNS: direct %v, tunnel %v; IPv6 %v) -- restarting the core",
-						ns.DirectDNS, ns.TunnelDNS, ns.IPv6)
-					cfg.OnCoreChange()
-				}
-				cfg = onSettingsChanged(cfg, ns, a, st, netID)
-				set, haveSet = ns, true
-			}
+			settingsChanged()
 			// the network may have changed -- another network's verdicts do not apply
 			id := resolveNetwork(cfg, st)
 			if id == "unknown" {
@@ -330,9 +343,12 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 	switch {
 	case was && !cfg.Apply:
 		// disabled -- everything returns to the tunnel immediately, not when
-		// verdicts expire; memory is kept
-		clearList(cfg, a)
+		// verdicts expire; memory is kept. Usually the watcher has done it.
+		disableAuto(cfg, a)
 	default:
+		if cfg.Apply {
+			enableAuto(cfg)
+		}
 		applyList(cfg, a, st, netID)
 	}
 	return cfg

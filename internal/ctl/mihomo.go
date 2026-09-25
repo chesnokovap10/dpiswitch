@@ -47,6 +47,7 @@ func (a *api) do(method, path string, body io.Reader) ([]byte, error) {
 }
 
 type connection struct {
+	ID          string   `json:"id"`
 	Chains      []string `json:"chains"`
 	Download    int64    `json:"download"`
 	Upload      int64    `json:"upload"`
@@ -95,6 +96,13 @@ func (a *api) established(port int) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// closeConnection: the core drops one open connection; the client reconnects,
+// and the new connection is routed by the rules as they are now
+func (a *api) closeConnection(id string) error {
+	_, err := a.do("DELETE", "/connections/"+url.PathEscape(id), nil)
+	return err
 }
 
 // reload a rule-provider from disk
