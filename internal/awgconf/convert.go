@@ -151,7 +151,6 @@ func (c *Conf) Render() (string, error) {
 	w("# the file is rewritten whenever the config is rebuilt.")
 	w("# provider paths are relative: mihomo forbids paths outside")
 	w("# its home directory, so the core runs with -d <data directory>")
-	w("mixed-port: 7890")
 	w("allow-lan: false")
 	w("mode: rule")
 	w("log-level: info")
@@ -166,10 +165,11 @@ func (c *Conf) Render() (string, error) {
 	w("")
 	w("# a dedicated listener for the prober: bypasses rules, always direct.")
 	w("# the only way to give the prober a direct path while TUN")
-	w("# captures all other traffic.")
+	w("# captures all other traffic. SOCKS only: the prober speaks nothing else,")
+	w("# and the core is built without the other inbounds.")
 	w("listeners:")
 	w("  - name: probe-direct")
-	w("    type: mixed")
+	w("    type: socks")
 	w("    listen: 127.0.0.1")
 	w("    port: 7892")
 	w("    proxy: DIRECT")
@@ -177,14 +177,18 @@ func (c *Conf) Render() (string, error) {
 	w("  # if the group fell back to DIRECT both probes would go direct and")
 	w("  # the detector would call everything clean -- the costliest mistake")
 	w("  - name: probe-tunnel")
-	w("    type: mixed")
+	w("    type: socks")
 	w("    listen: 127.0.0.1")
 	w("    port: 7891")
 	w("    proxy: awg")
 	w("")
 	w("tun:")
 	w("  enable: true")
-	w("  stack: gvisor")
+	w("  # the Windows TCP stack, not gVisor: gVisor retransmitted tail segments")
+	w("  # 2-3 times (Meta counter ~2.2x the payload) and capped the upload")
+	w("  # through the tunnel at ~160 Mbit/s; system gives 230-250 at half the")
+	w("  # CPU. The core is built without gVisor, so no other stack is available.")
+	w("  stack: system")
 	if set.IPv6 {
 		// IPv6 inside the tunnel: the system needs an IPv6 address and route,
 		// otherwise programs don't even try IPv6
@@ -584,7 +588,8 @@ func (c *Conf) writeProxy(w func(string, ...any), name string, tunDNS []string, 
 	// one. With gVisor the upload through the tunnel was capped at 5-20 Mbit/s
 	// with an idle CPU and zero loss on the server -- a sender-side window
 	// limit. Measured on the same tunnel: gVisor 7, mips 28, mips+cubic 108,
-	// mips+bbr ~150 Mbit/s upload; download unchanged.
+	// mips+bbr ~150 Mbit/s upload; download unchanged. The core no longer
+	// includes gVisor, so mips is also the only stack left.
 	w("    ip-stack:")
 	w("      mode: mips")
 	w("      congestion-controller: bbr")
