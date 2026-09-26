@@ -153,6 +153,7 @@ func lang(r *http.Request) string {
 
 func (s *Server) newView(r *http.Request, page string) *view {
 	v := &view{Lang: lang(r), Page: page, Path: r.URL.RequestURI(), St: s.status()}
+	s.shownIn(v.Lang, false)
 	s.mu.Lock()
 	if f, ok := s.flashes[page]; ok {
 		v.Flash = &f
@@ -263,6 +264,7 @@ func (s *Server) handleLang(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, &http.Cookie{Name: "lang", Value: l, Path: "/", MaxAge: 10 * 365 * 24 * 3600,
 		SameSite: http.SameSiteStrictMode})
+	s.shownIn(l, true)
 	http.Redirect(w, r, localPath(r.URL.Query().Get("back")), http.StatusSeeOther)
 }
 

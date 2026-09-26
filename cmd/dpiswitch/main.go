@@ -47,18 +47,18 @@ func main() {
 	case "service":
 		runService()
 	case "install":
-		report("Install service", winsvc.Install(ownerArg()))
+		report(T("Install service"), winsvc.Install(ownerArg()))
 	case "uninstall":
-		report("Uninstall service", winsvc.Uninstall())
+		report(T("Uninstall service"), winsvc.Uninstall())
 	case "reinstall":
 		_ = winsvc.Uninstall()
-		report("Reinstall service", winsvc.Install(ownerArg()))
+		report(T("Reinstall service"), winsvc.Install(ownerArg()))
 	case "", "tray":
 		runTray()
 	case "version", "-v", "--version":
-		msgBox("DPI Switch", "Version "+version.Version, 0x40)
+		msgBox("DPI Switch", T("Version")+" "+version.Version, 0x40)
 	default:
-		report("dpiswitch", fmt.Errorf("unknown command %q; valid: tray, service, install, uninstall, reinstall, version", cmd))
+		report("dpiswitch", fmt.Errorf(T("unknown command %q; valid: tray, service, install, uninstall, reinstall, version"), cmd))
 	}
 }
 
@@ -201,15 +201,22 @@ func runTray() {
 	// the window loop must live on the same thread as the window
 	runtime.LockOSThread()
 
-	srv := &webui.Server{Elevate: elevate, Key: key}
+	srv := &webui.Server{Elevate: elevate, Key: key, LangFile: paths.UILang(),
+		OnLang: func() {
+			select {
+			case langChanged <- struct{}{}:
+			default:
+			}
+		}}
+	uiLang = srv.Lang
 	if err := srv.Start(); err != nil {
-		report("dpiswitch", fmt.Errorf("the UI failed to start: %w", err))
+		report("dpiswitch", fmt.Errorf(T("the UI failed to start: %w"), err))
 		return
 	}
 
 	t, err := tray.New("DPI Switch " + version.Version)
 	if err != nil {
-		report("dpiswitch", fmt.Errorf("the tray icon was not created: %w", err))
+		report("dpiswitch", fmt.Errorf(T("the tray icon was not created: %w"), err))
 		return
 	}
 	quitTray = t.Quit
@@ -228,28 +235,28 @@ func runTray() {
 			}
 		}
 		items := []tray.Item{
-			{ID: 1, Text: "Settings…", Do: openUI},
+			{ID: 1, Text: T("Settings…"), Do: openUI},
 			{Sep: true},
 		}
 		if !installed {
-			items = append(items, tray.Item{ID: 2, Text: "Install service…",
+			items = append(items, tray.Item{ID: 2, Text: T("Install service…"),
 				Do: func() { _ = elevate("install") }})
 		} else if running {
-			items = append(items, tray.Item{ID: 3, Text: "Stop tunnel",
+			items = append(items, tray.Item{ID: 3, Text: T("Stop tunnel"),
 				Do: func() { _ = winsvc.Stop() }})
 		} else {
-			items = append(items, tray.Item{ID: 4, Text: "Start tunnel",
+			items = append(items, tray.Item{ID: 4, Text: T("Start tunnel"),
 				Do: func() { _ = winsvc.Start() }})
 		}
 		items = append(items,
-			tray.Item{ID: 5, Text: "Everything via tunnel (reset verdicts)", Grayed: !running,
+			tray.Item{ID: 5, Text: T("Everything via tunnel (reset verdicts)"), Grayed: !running,
 				Do: func() { go panicTunnel() }},
 			tray.Item{Sep: true},
-			tray.Item{ID: 6, Text: "Start with Windows", Checked: autostart.Enabled(),
+			tray.Item{ID: 6, Text: T("Start with Windows"), Checked: autostart.Enabled(),
 				Do: func() { _ = autostart.Set(!autostart.Enabled()) }},
-			tray.Item{ID: 7, Text: "Data folder", Do: func() { browse(paths.DataDir()) }},
+			tray.Item{ID: 7, Text: T("Data folder"), Do: func() { browse(paths.DataDir()) }},
 			tray.Item{Sep: true},
-			tray.Item{ID: 9, Text: "Exit", Do: func() { t.Quit() }},
+			tray.Item{ID: 9, Text: T("Exit"), Do: func() { t.Quit() }},
 		)
 		return items
 	}
@@ -265,24 +272,36 @@ func watchStatus(t *tray.Tray) {
 		state, tip := status()
 		t.SetState(state, tip)
 		// the tunnel check calls the core API, so it runs less often
-		// than a plain label would refresh
-		sleep(10)
+		// than a plain label would refresh; a language switched on a page
+		// is shown at once
+		select {
+		case <-time.After(10 * time.Second):
+		case <-langChanged:
+		}
 	}
 }
 
+// uiLang: the language the tray speaks -- the pages' once the UI runs
+var uiLang = func() string { return webui.SavedLang(paths.UILang()) }
+
+var langChanged = make(chan struct{}, 1)
+
+// T: a tray string in the program's language
+func T(en string) string { return webui.Tr(uiLang(), en) }
+
 func status() (tray.State, string) {
 	if !winsvc.Installed() {
-		return tray.StateOff, "DPI Switch — service not installed"
+		return tray.StateOff, T("DPI Switch — service not installed")
 	}
 	st, err := winsvc.State()
 	if err != nil {
-		return tray.StateError, "DPI Switch — error: " + err.Error()
+		return tray.StateError, T("DPI Switch — error: ") + err.Error()
 	}
 	if st != svc.Running {
 		if !supervisor.NetworkUp() {
-			return tray.StateOff, "DPI Switch — off, no network"
+			return tray.StateOff, T("DPI Switch — off, no network")
 		}
-		return tray.StateOff, "DPI Switch — tunnel off"
+		return tray.StateOff, T("DPI Switch — tunnel off")
 	}
 	// a running service and a tunnel that passes traffic are different things:
 	// with a dead peer TUN is up but there is no internet
@@ -290,13 +309,12 @@ func status() (tray.State, string) {
 		ctl.SecretFromConfig(paths.Config()), "awg")
 	if !alive {
 		if !supervisor.NetworkUp() {
-			return tray.StateError, "DPI Switch — no network, waiting"
+			return tray.StateError, T("DPI Switch — no network, waiting")
 		}
-		return tray.StateError, "DPI Switch — tunnel not responding: " + note
+		return tray.StateError, T("DPI Switch — tunnel not responding: ") + note
 	}
 	snap := ctl.LoadCached(paths.State())
-	return tray.StateOn, fmt.Sprintf("DPI Switch — tunnel up (%s)\n"+
-		"direct: %d, blocked: %d", note, len(snap.Direct), snap.Blocked())
+	return tray.StateOn, fmt.Sprintf(T("DPI Switch — tunnel up (%s)\ndirect: %d, blocked: %d"), note, len(snap.Direct), snap.Blocked())
 }
 
 // panic reset: clear verdicts, all traffic returns to the tunnel.
@@ -308,19 +326,17 @@ func status() (tray.State, string) {
 func panicTunnel() {
 	req := paths.ResetRequest()
 	if err := os.WriteFile(req, []byte(time.Now().Format(time.RFC3339)+"\n"), 0o644); err != nil {
-		msgBox("DPI Switch", "The reset was not requested:\n\n"+err.Error(), 0x10)
+		msgBox("DPI Switch", T("The reset was not requested:")+"\n\n"+err.Error(), 0x10)
 		return
 	}
 	for i := 0; i < 40; i++ {
 		if _, err := os.Stat(req); os.IsNotExist(err) {
-			msgBox("DPI Switch", "Verdicts reset, all traffic goes through the tunnel.\n"+
-				"The detector will start picking domains again.", 0x40)
+			msgBox("DPI Switch", T("Verdicts reset, all traffic goes through the tunnel.\nThe detector will start picking domains again."), 0x40)
 			return
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
-	msgBox("DPI Switch", "The reset is requested, but the service has not taken it yet:\n"+
-		"it will as soon as its controller runs.", 0x30)
+	msgBox("DPI Switch", T("The reset is requested, but the service has not taken it yet:\nit will as soon as its controller runs."), 0x30)
 }
 
 // installing and removing the service needs administrator rights: a normal
@@ -362,10 +378,10 @@ func browse(target string) {
 
 func report(title string, err error) {
 	if err != nil {
-		msgBox(title, "Failed:\n\n"+err.Error(), 0x10)
+		msgBox(title, T("Failed:")+"\n\n"+err.Error(), 0x10)
 		os.Exit(1)
 	}
-	msgBox(title, "Done.", 0x40)
+	msgBox(title, T("Done."), 0x40)
 }
 
 func msgBox(title, text string, icon uint32) {

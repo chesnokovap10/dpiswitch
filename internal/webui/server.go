@@ -37,6 +37,12 @@ type Server struct {
 	// tests, where the UI is open
 	Key string
 
+	// LangFile keeps the language switched to on a page, for the tray's next
+	// start; empty in tests. OnLang: the pages' language changed (see lang.go).
+	LangFile string
+	OnLang   func()
+	lang     string
+
 	flashes map[string]flash
 	// statusFn replaces collectStatus in tests
 	statusFn func() status

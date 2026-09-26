@@ -126,5 +126,9 @@ func TrayLog() string {
 	return filepath.Join(dir, AppName, "tray.log")
 }
 
+// UILang: the language last switched to in the UI, for the tray -- the
+// user's own, like the tray's log
+func UILang() string { return filepath.Join(filepath.Dir(TrayLog()), "lang") }
+
 // ResetRequest: left by the tray to have the service drop every verdict
 func ResetRequest() string { return User("reset-verdicts.request") }

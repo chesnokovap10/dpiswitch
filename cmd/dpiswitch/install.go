@@ -159,8 +159,7 @@ func updateOffer() bool {
 		return false
 	}
 	r, _ := windows.MessageBox(0, ptr(fmt.Sprintf(
-		"Install DPI Switch %s over the installed version?\n\n"+
-			"Установить DPI Switch %s поверх установленной версии?", version.Version, version.Version)),
+		T("Install DPI Switch %s over the installed version?"), version.Version)),
 		ptr("DPI Switch"), windows.MB_YESNO|windows.MB_ICONQUESTION)
 	if r != 6 { // IDYES
 		return true

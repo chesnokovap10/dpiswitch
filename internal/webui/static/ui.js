@@ -197,7 +197,7 @@ document.addEventListener('input', e => {
       const u = new URL(t.dataset.poll, location.href);
       u.searchParams.set('q', q.value);
       t.dataset.poll = u.pathname + u.search;
-      history.replaceState(null, '', location.pathname + '?' + u.searchParams);
+      history.replaceState(history.state, '', location.pathname + '?' + u.searchParams);
       poll(t);
     }
   }, 200);
@@ -215,4 +215,42 @@ function followOn() {
   c.addEventListener('change', () => { try { localStorage.setItem('follow', c.checked ? '1' : '0'); } catch (e) {} });
   const log = document.getElementById('log');
   if (log) log.scrollTop = log.scrollHeight;
+})();
+
+// The page scrolls in <main>, not the window, and "back" restores only the
+// window's scroll: a page left from its middle came back at the top, save
+// when the browser kept it whole. Where <main> stood is kept in the page's
+// history entry and put back when the entry is returned to.
+(function () {
+  const main = document.querySelector('main');
+  if (!main) return;
+  const keep = () => {
+    try { history.replaceState(Object.assign({}, history.state, {top: main.scrollTop}), ''); } catch (e) {}
+  };
+  let t;
+  main.addEventListener('scroll', () => { clearTimeout(t); t = setTimeout(keep, 150); });
+  // a link followed before the scroll settled
+  document.addEventListener('click', e => { if (e.target.closest('a[href]')) { clearTimeout(t); keep(); } }, true);
+  addEventListener('pagehide', keep);
+  const nav = performance.getEntriesByType('navigation')[0];
+  const st = history.state;
+  if (nav && nav.type !== 'navigate' && st && typeof st.top === 'number') main.scrollTop = st.top;
+})();
+
+// A help link points at a part of a page (/settings#attempts): it is shown
+// and its edge blinks, to say where to look. Not again on "back".
+function point(id) {
+  const el = id && document.getElementById(decodeURIComponent(id));
+  if (!el) return;
+  el.scrollIntoView({block: 'center'});
+  el.classList.remove('blink');
+  void el.offsetWidth; // restarts the animation on a second click
+  el.classList.add('blink');
+  el.addEventListener('animationend', () => el.classList.remove('blink'), {once: true});
+}
+(function () {
+  const nav = performance.getEntriesByType('navigation')[0];
+  // after the browser's own jump to the anchor, which would undo the centring
+  if (!nav || nav.type !== 'back_forward') addEventListener('load', () => point(location.hash.slice(1)));
+  addEventListener('hashchange', () => point(location.hash.slice(1)));
 })();

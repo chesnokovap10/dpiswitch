@@ -2,10 +2,10 @@
 <div class="page">
   <div class="bar">
     <div class="tabs" id="vtabs" data-poll="/frag/verdicts/tabs?cat={{$d.Cat}}&q={{$d.Q}}" data-every="10">{{template "tabs" .}}</div>
-    <input type="search" placeholder="{{.T "Filter by name"}}" value="{{$d.Q}}" data-filter="vtable vtabs" style="width:240px">
+    <input type="search" id="vfilter" placeholder="{{.T "Filter by name"}}" value="{{$d.Q}}" data-filter="vtable vtabs" style="width:240px">
     <span class="spacer"></span>
     <form method="post" action="/act/reset" data-confirm="{{.T "Reset every verdict? All traffic goes through the tunnel until the detector checks the sites again. For when a site broke after going direct."}}">
-      <button class="danger" data-busy="{{.T "Resetting…"}}">{{.T "Reset all verdicts…"}}</button>
+      <button class="danger" id="vreset" data-busy="{{.T "Resetting…"}}">{{.T "Reset all verdicts…"}}</button>
     </form>
   </div>
   <div class="tablebox" id="vtable" data-poll="/frag/verdicts/table?cat={{$d.Cat}}&q={{$d.Q}}" data-every="10">{{template "table" .}}</div>

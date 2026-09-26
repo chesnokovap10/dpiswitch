@@ -43,7 +43,8 @@ input[type=checkbox]{margin:0;width:15px;height:15px;accent-color:var(--accent)}
 label.cb{display:flex;gap:7px;align-items:center;cursor:pointer}
 
 /* nav */
-nav{background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:10px 8px;min-height:0}
+/* the bottom keeps an empty line under the last text, on every page */
+nav{background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:10px 8px calc(1.45em + 10px);min-height:0}
 nav .items a{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-radius:7px;
   color:var(--fg);margin-bottom:1px}
 nav .items a:hover{background:var(--bg)}
@@ -61,7 +62,7 @@ nav .items hr{border:0;border-top:1px solid var(--line);margin:8px 4px}
 .langs b{color:var(--fg)}
 
 /* main */
-main{overflow:auto;padding:16px 18px;display:flex;flex-direction:column;min-height:0}
+main{overflow:auto;padding:16px 18px calc(1.45em + 16px);display:flex;flex-direction:column;min-height:0}
 .page{display:flex;flex-direction:column;flex:1;min-height:0;gap:12px}
 /* a page taller than the window scrolls as a whole instead of squeezing its boxes */
 .page.scroll{flex:none}
@@ -147,6 +148,10 @@ td small{display:block;color:var(--muted)}
 .help ol,.help ul{padding-left:22px;margin:6px 0}
 .help li{margin:3px 0}
 .help .note{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);padding:8px 12px;margin:10px 0}
+
+/* what a help link points at: its edge blinks three times */
+@keyframes blink{50%{box-shadow:0 0 0 3px var(--accent)}}
+.blink{animation:blink .6s ease-in-out 3}
 
 /* dialogs */
 dialog{border:1px solid var(--line);border-radius:10px;padding:16px;width:580px;background:var(--panel);color:var(--fg)}

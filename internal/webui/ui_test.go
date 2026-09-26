@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -137,6 +139,21 @@ func TestTranslations(t *testing.T) {
 			t.Fatal(err)
 		}
 		add(goKey, string(b))
+	}
+	// the tray speaks the pages' language, from the same table
+	trayKey := regexp.MustCompile(`\bT\("((?:[^"\\]|\\.)*)"\)`)
+	for _, f := range []string{"main.go", "install.go"} {
+		b, err := os.ReadFile(filepath.Join("..", "..", "cmd", "dpiswitch", f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range trayKey.FindAllStringSubmatch(string(b), -1) {
+			k, err := strconv.Unquote(`"` + m[1] + `"`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			keys = append(keys, k)
+		}
 	}
 	for _, p := range presets.All {
 		keys = append(keys, p.Title, p.Note)

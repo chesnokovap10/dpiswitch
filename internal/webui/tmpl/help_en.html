@@ -16,10 +16,10 @@ only costs a detour.</div>
 <tr><td>1</td><td>The tunnel servers themselves</td><td>direct (otherwise the tunnel would loop into itself)</td></tr>
 <tr><td>2</td><td>Addresses inside the tunnels (their DNS server)</td><td>that tunnel</td></tr>
 <tr><td>3</td><td>Local networks: the router, printers, shares, <code>.local</code> and <code>.lan</code> names</td><td>direct</td></tr>
-<tr><td>4</td><td><a href="/lists">Programs bypassing the tunnel</a></td><td>direct, all their traffic</td></tr>
-<tr><td>5</td><td><a href="/awg2">Second tunnel</a>: presets and your sites</td><td>awg2; if it is down, awg; if both are down, direct</td></tr>
-<tr><td>6</td><td><a href="/lists">Always via tunnel</a></td><td>awg</td></tr>
-<tr><td>7</td><td><a href="/lists">Always direct</a></td><td>direct</td></tr>
+<tr><td>4</td><td><a href="/lists#list-apps">Programs bypassing the tunnel</a></td><td>direct, all their traffic</td></tr>
+<tr><td>5</td><td><a href="/awg2#presets">Second tunnel</a>: presets and your sites</td><td>awg2; if it is down, awg; if both are down, direct</td></tr>
+<tr><td>6</td><td><a href="/lists#list-tunnel">Always via tunnel</a></td><td>awg</td></tr>
+<tr><td>7</td><td><a href="/lists#list-direct">Always direct</a></td><td>direct</td></tr>
 <tr><td>8</td><td>Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name)</td><td>direct</td></tr>
 <tr><td>9</td><td>Everything else</td><td>awg; if it is down, direct</td></tr>
 </table>
@@ -31,13 +31,13 @@ auto-switch off closes the connections the detector sent direct.</p>
 <ol>
 <li>The detector watches the connections the core carries and picks up the names in them
 (the name is read from the connection itself, so programs with their own DNS count too).</li>
-<li>The name is resolved through the <a href="/settings">DNS for direct sites</a>: the node that
+<li>The name is resolved through the <a href="/settings#direct_dns">DNS for direct sites</a>: the node that
 traffic would really go to.</li>
 <li>That <b>same node</b> is contacted twice: directly and through the tunnel. On each path:
 TCP connection, TLS handshake with the name in it (SNI) and a full certificate check, an HTTP
 request and its answer. A name seen on UDP 443 is also tried over QUIC (HTTP/3). The ports the
 name was really used on are the ones probed.</li>
-<li>This is repeated several times (<a href="/settings">attempts per probe</a>). The name is clean only if
+<li>This is repeated several times (<a href="/settings#attempts">attempts per probe</a>). The name is clean only if
 every attempt is clean, and the direct path is not slower than the tunnel by more than the
 tolerance.</li>
 </ol>
@@ -60,7 +60,7 @@ moment than about the path.</p>
 
 <h4>Terms and re-checks</h4>
 <ul>
-<li>A clean site goes direct for the <a href="/settings">term</a> set (7 days by default), then it is checked
+<li>A clean site goes direct for the <a href="/settings#clean_ttl_min">term</a> set (7 days by default), then it is checked
 again. If the check cannot confirm it, it goes through the tunnel until the next one.</li>
 <li>A site found slower once is not reverted at once: it is measured again after the re-check
 interval, and only a second "slower" in a row sends it back to the tunnel.</li>
@@ -109,12 +109,12 @@ first tunnel.</p>
 
 <h4>When a site does not open</h4>
 <ol>
-<li>Look it up on the <a href="/verdicts">Verdicts</a> page with the filter. If it goes direct and should not,
-add it to <a href="/lists">Always via tunnel</a> (<code>+.example.com</code> for the whole domain).</li>
-<li>If many sites broke at once (a new block by the ISP), <a href="/verdicts">reset all verdicts</a>: everything
+<li>Look it up on the <a href="/verdicts#vfilter">Verdicts</a> page with the filter. If it goes direct and should not,
+add it to <a href="/lists#list-tunnel">Always via tunnel</a> (<code>+.example.com</code> for the whole domain).</li>
+<li>If many sites broke at once (a new block by the ISP), <a href="/verdicts#vreset">reset all verdicts</a>: everything
 goes through the tunnel and the detector starts over.</li>
-<li>If a site must see your real address (a bank, government services), add it to <a href="/lists">Always direct</a>.</li>
-<li>The <a href="/logs">logs</a> show every verdict with its reason.</li>
+<li>If a site must see your real address (a bank, government services), add it to <a href="/lists#list-direct">Always direct</a>.</li>
+<li>The <a href="/logs#log">logs</a> show every verdict with its reason.</li>
 </ol>
 
 <h4>Files</h4>
