@@ -2,6 +2,7 @@ package paths
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,8 +24,8 @@ func sddl(t *testing.T, path string) string {
 func openDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	if err := GrantUsersModify(dir); err != nil {
-		t.Fatal(err)
+	if out, err := exec.Command("icacls", dir, "/grant", "*S-1-5-32-545:(OI)(CI)(M)").CombinedOutput(); err != nil {
+		t.Fatalf("icacls: %v %s", err, out)
 	}
 	if s := sddl(t, dir); !strings.Contains(s, ";;;BU)") {
 		t.Fatalf("setup: the directory does not grant users: %s", s)
@@ -61,58 +62,18 @@ func TestWriteSecret(t *testing.T) {
 	leftovers(t, dir)
 }
 
-// Rewriting keeps the file's own permissions -- the user's access the tray
-// needs -- and replaces the content whole.
-func TestReplaceSecret(t *testing.T) {
-	dir := openDir(t)
+// A service's key file is readable by the owner, writable by no one else.
+func TestWriteServiceSecret(t *testing.T) {
+	asUser(t)
+	dir := t.TempDir()
 	p := filepath.Join(dir, "config.yaml")
-	if err := WriteSecret(p, []byte("old")); err != nil {
+	owner := "S-1-5-21-1-2-3-1001"
+	if err := WriteServiceSecret(p, []byte("secret"), owner); err != nil {
 		t.Fatal(err)
 	}
-	before := sddl(t, p)
-	if err := ReplaceSecret(p, []byte("new")); err != nil {
-		t.Fatal(err)
-	}
-	if after := sddl(t, p); after != before {
-		t.Fatalf("permissions changed:\n%s\n%s", before, after)
-	}
-	if b, _ := os.ReadFile(p); string(b) != "new" {
-		t.Fatalf("content %q", b)
-	}
-	leftovers(t, dir)
-
-	// no file to take permissions from: nothing is created
-	missing := filepath.Join(dir, "missing.yaml")
-	if err := ReplaceSecret(missing, []byte("x")); err == nil {
-		t.Fatal("a missing file was written")
-	}
-	if _, err := os.Stat(missing); !os.IsNotExist(err) {
-		t.Fatal("a missing file was created")
-	}
-	leftovers(t, dir)
-}
-
-// A write that cannot finish leaves the old file whole.
-func TestReplaceSecretKeepsOld(t *testing.T) {
-	dir := openDir(t)
-	p := filepath.Join(dir, "config.yaml")
-	if err := WriteSecret(p, []byte("old")); err != nil {
-		t.Fatal(err)
-	}
-	// held open without delete sharing: it cannot be replaced
-	name, _ := windows.UTF16PtrFromString(p)
-	h, err := windows.CreateFile(name, windows.GENERIC_READ, windows.FILE_SHARE_READ, nil,
-		windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = ReplaceSecret(p, []byte("new"))
-	windows.CloseHandle(h)
-	if err == nil {
-		t.Fatal("replaced a file held open")
-	}
-	if b, _ := os.ReadFile(p); string(b) != "old" {
-		t.Fatalf("the old file was damaged: %q", b)
+	s := sddl(t, p)
+	if !strings.HasPrefix(s, "D:P") || strings.Contains(s, "BU)") || !strings.Contains(s, "(A;;FR;;;"+owner+")") {
+		t.Fatalf("permissions %s: want protected, the owner reading, no users", s)
 	}
 	leftovers(t, dir)
 }

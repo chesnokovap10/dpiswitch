@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"dpiswitch/internal/paths"
 	"dpiswitch/internal/presets"
 	"dpiswitch/internal/probe"
 )
@@ -86,7 +87,8 @@ func DefaultSettings() Settings {
 // defaults are used. The same for missing fields.
 func LoadSettings(path string) Settings {
 	s := DefaultSettings()
-	if b, err := os.ReadFile(path); err == nil {
+	// the user's file, read by the service as SYSTEM: not through a link
+	if b, err := paths.ReadUserFile(path, 1<<20); err == nil {
 		_ = json.Unmarshal(b, &s)
 	}
 	s.clamp()

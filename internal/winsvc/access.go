@@ -13,13 +13,15 @@ import (
 // to avoid elevation -- so open with just what is needed, not everything.
 const (
 	scmLimited = windows.SC_MANAGER_CONNECT | windows.SC_MANAGER_ENUMERATE_SERVICE
-	svcLimited = windows.SERVICE_QUERY_STATUS | windows.SERVICE_QUERY_CONFIG |
-		windows.SERVICE_START | windows.SERVICE_STOP
+	// what every signed-in user may do: see the service. Starting and
+	// stopping are the owner's, asked for by Start and Stop alone -- asked
+	// for always, they would keep every other user from seeing it at all.
+	svcQuery = windows.SERVICE_QUERY_STATUS | windows.SERVICE_QUERY_CONFIG
 )
 
-// openLimited opens the service with rights available to a normal user.
-// The caller must close the returned handle.
-func openLimited() (*mgr.Service, func(), error) {
+// openLimited opens the service with access -- rights a normal user may
+// hold. The caller must close the returned handle.
+func openLimited(access uint32) (*mgr.Service, func(), error) {
 	scm, err := windows.OpenSCManager(nil, nil, scmLimited)
 	if err != nil {
 		return nil, nil, fmt.Errorf("service manager: %w", err)
@@ -29,7 +31,7 @@ func openLimited() (*mgr.Service, func(), error) {
 		windows.CloseServiceHandle(scm)
 		return nil, nil, err
 	}
-	h, err := windows.OpenService(scm, name, svcLimited)
+	h, err := windows.OpenService(scm, name, access)
 	if err != nil {
 		windows.CloseServiceHandle(scm)
 		return nil, nil, err

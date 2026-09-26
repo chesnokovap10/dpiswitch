@@ -5,20 +5,25 @@ package winsvc
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 
+	"dpiswitch/internal/core"
 	"dpiswitch/internal/paths"
 	"dpiswitch/internal/supervisor"
 	"dpiswitch/internal/version"
-	"dpiswitch/internal/winexec"
 )
 
 const (
@@ -27,14 +32,42 @@ const (
 	Description = "Keeps the AmneziaWG tunnel up and switches unblocked sites to a direct path."
 )
 
-// Start/stop rights for interactive users: without this
-// every tunnel toggle from the tray would require UAC.
-// IU -- any signed-in user, SY -- SYSTEM, BA -- Administrators.
-const sddl = "D:(A;;CCLCSWRPWPDTLOCRRC;;;IU)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)"
+// sddl: the service's permissions. Starting and stopping it is the owner's
+// -- the user it was installed for -- without an administrator prompt;
+// every signed-in user (IU) may only see its state. It used to let IU start
+// and stop it: any account on the machine could take the tunnel down, and
+// restart the service -- SYSTEM -- the moment it had planted something for
+// it to read.
+func sddl(owner string) string {
+	s := "D:(A;;CCLCSWLOCRRC;;;IU)" +
+		"(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)"
+	if owner != "" {
+		s += "(A;;CCLCSWRPWPDTLOCRRC;;;" + owner + ")"
+	}
+	return s
+}
 
-func Install() error {
-	if err := paths.EnsureDataDir(); err != nil {
-		return fmt.Errorf("data directory: %w", err)
+// InstallDir: where the service runs from. The service runs as SYSTEM, so
+// its binary must sit where only administrators write: it used to be
+// registered wherever dpiswitch.exe was started from -- Downloads, a folder
+// on a second drive where every signed-in user may modify files -- and any
+// of them could swap the file and restart the service.
+func InstallDir() string {
+	dir, err := windows.KnownFolderPath(windows.FOLDERID_ProgramFiles, 0)
+	if err != nil {
+		dir = `C:\Program Files`
+	}
+	return filepath.Join(dir, "DPI Switch")
+}
+
+// InstalledExe: the service's binary
+func InstalledExe() string { return filepath.Join(InstallDir(), "dpiswitch.exe") }
+
+// Install copies this binary to InstallDir and registers it as the service
+// of owner (a user's SID), who may then start and stop it.
+func Install(owner string) error {
+	if !paths.ValidSID(owner) {
+		return fmt.Errorf("the service is installed for a user account; got %q", owner)
 	}
 	m, err := mgr.Connect()
 	if err != nil {
@@ -46,8 +79,17 @@ func Install() error {
 		s.Close()
 		return fmt.Errorf("service %s is already installed", Name)
 	}
+	if err := copyBinaries(); err != nil {
+		return err
+	}
+	if err := paths.SetOwner(owner); err != nil {
+		return fmt.Errorf("owner not recorded: %w", err)
+	}
+	if err := paths.SecureDataDir(owner); err != nil {
+		log.Printf("warning: data directory: %v", err)
+	}
 
-	s, err := m.CreateService(Name, paths.Exe(), mgr.Config{
+	s, err := m.CreateService(Name, InstalledExe(), mgr.Config{
 		DisplayName: DisplayName,
 		Description: Description,
 		StartType:   mgr.StartAutomatic,
@@ -72,9 +114,96 @@ func Install() error {
 	}, 86400); err != nil {
 		log.Printf("warning: recovery actions not configured: %v", err)
 	}
+	if err := setServiceSD(s.Handle, owner); err != nil {
+		return err
+	}
+	// started at once: a reinstall used to leave the tunnel down until the
+	// user found the Start button. With no .conf yet it waits for one.
+	if err := s.Start(); err != nil {
+		return fmt.Errorf("installed, but not started: %w", err)
+	}
+	return nil
+}
 
-	if out, err := sc("sdset", Name, sddl); err != nil {
-		return fmt.Errorf("service control rights not granted: %v (%s)", err, out)
+// SecureService sets the service's permissions for owner. The service does
+// it at every start: an installation from before owners let IU start and
+// stop it.
+func SecureService(owner string) error {
+	m, err := mgr.Connect()
+	if err != nil {
+		return err
+	}
+	defer m.Disconnect()
+	s, err := m.OpenService(Name)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	return setServiceSD(s.Handle, owner)
+}
+
+func setServiceSD(h windows.Handle, owner string) error {
+	sd, err := windows.SecurityDescriptorFromString(sddl(owner))
+	if err != nil {
+		return err
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return err
+	}
+	if err := windows.SetSecurityInfo(h, windows.SE_SERVICE, windows.DACL_SECURITY_INFORMATION,
+		nil, nil, dacl, nil); err != nil {
+		return fmt.Errorf("service control rights not granted: %w", err)
+	}
+	return nil
+}
+
+// copyBinaries puts this binary (and, for a build without the core inside,
+// the mihomo.exe beside it) into InstallDir. A service that ran the old one
+// has just been stopped: its file may be held a moment longer.
+func copyBinaries() error {
+	if err := os.MkdirAll(InstallDir(), 0o755); err != nil {
+		return fmt.Errorf("%s: %w", InstallDir(), err)
+	}
+	files := [][2]string{{paths.Exe(), InstalledExe()}}
+	if m := paths.Mihomo(); !core.Embedded() && fileExists(m) {
+		files = append(files, [2]string{m, filepath.Join(InstallDir(), "mihomo.exe")})
+	}
+	for _, f := range files {
+		if samePath(windows.EscapeArg(f[0]), f[1]) {
+			continue // installing from the installed copy
+		}
+		var err error
+		for i := 0; i < 50; i++ {
+			if err = copyFile(f[0], f[1]); err == nil {
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		if err != nil {
+			return fmt.Errorf("%s not copied to %s: %w", f[0], f[1], err)
+		}
+	}
+	return nil
+}
+
+func fileExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.Mode().IsRegular()
+}
+
+func copyFile(from, to string) error {
+	b, err := os.ReadFile(from)
+	if err != nil {
+		return err
+	}
+	tmp := to + ".new"
+	if err := os.WriteFile(tmp, b, 0o755); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, to); err != nil {
+		os.Remove(tmp)
+		return err
 	}
 	return nil
 }
@@ -107,7 +236,7 @@ func Uninstall() error {
 }
 
 func Installed() bool {
-	_, closer, err := openLimited()
+	_, closer, err := openLimited(svcQuery)
 	if err != nil {
 		return false
 	}
@@ -118,7 +247,7 @@ func Installed() bool {
 // BinPath: the path the service is registered with. Used to
 // notice a moved folder -- the registered path is fixed.
 func BinPath() string {
-	s, closer, err := openLimited()
+	s, closer, err := openLimited(svcQuery)
 	if err != nil {
 		return ""
 	}
@@ -130,8 +259,49 @@ func BinPath() string {
 	return cfg.BinaryPathName
 }
 
-// PathMatches: whether the service is registered for this very binary.
-func PathMatches() bool { return samePath(BinPath(), paths.Exe()) }
+// SameBuild: whether the service runs this very build. The service runs
+// its own copy in InstallDir, so the path cannot tell; the file is hashed
+// again only when its size or time changed.
+func SameBuild() bool {
+	args, err := windows.DecomposeCommandLine(BinPath())
+	if err != nil || len(args) == 0 {
+		return false
+	}
+	a, b := fileHash(args[0]), fileHash(paths.Exe())
+	return a != "" && a == b
+}
+
+var hashCache sync.Map // path -> hashed
+
+type hashed struct {
+	size int64
+	mod  time.Time
+	sum  string
+}
+
+func fileHash(p string) string {
+	fi, err := os.Stat(p)
+	if err != nil {
+		return ""
+	}
+	if v, ok := hashCache.Load(p); ok {
+		if h := v.(hashed); h.size == fi.Size() && h.mod.Equal(fi.ModTime()) {
+			return h.sum
+		}
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return ""
+	}
+	sum := hex.EncodeToString(h.Sum(nil))
+	hashCache.Store(p, hashed{fi.Size(), fi.ModTime(), sum})
+	return sum
+}
 
 // samePath: whether a service command line runs exe. The path used to be
 // looked for in it as a substring, so a registration for dpiswitch.exe.bak
@@ -150,7 +320,7 @@ func samePath(cmdline, exe string) bool {
 }
 
 func State() (svc.State, error) {
-	s, closer, err := openLimited()
+	s, closer, err := openLimited(svcQuery)
 	if err != nil {
 		return svc.Stopped, err
 	}
@@ -163,7 +333,7 @@ func State() (svc.State, error) {
 }
 
 func Start() error {
-	s, closer, err := openLimited()
+	s, closer, err := openLimited(svcQuery | windows.SERVICE_START)
 	if err != nil {
 		return err
 	}
@@ -175,7 +345,7 @@ func Start() error {
 }
 
 func Stop() error {
-	s, closer, err := openLimited()
+	s, closer, err := openLimited(svcQuery | windows.SERVICE_STOP)
 	if err != nil {
 		return err
 	}
@@ -229,11 +399,6 @@ func StateText(s svc.State) string {
 		return "paused"
 	}
 	return "unknown"
-}
-
-func sc(args ...string) (string, error) {
-	out, err := winexec.CombinedOutput("sc.exe", args...)
-	return string(out), err
 }
 
 // --- service mode ---

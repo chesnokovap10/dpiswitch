@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/paths"
@@ -36,6 +37,10 @@ func testServer(t *testing.T) (*Server, string) {
 	apiAddr = l.Addr().String()
 	l.Close()
 	t.Cleanup(func() { apiAddr = old })
+	// and no service: the machine's real one must not be waited on
+	was := serviceRunning
+	serviceRunning = func() bool { return false }
+	t.Cleanup(func() { serviceRunning = was })
 	s := &Server{statusFn: func() status {
 		return status{Installed: true, PathOK: true, ServiceRun: true, TunnelAlive: true, TunnelNote: "60 ms",
 			Awg2: true, Version: "test", DataDir: paths.DataDir(), NetworkID: "AS1", AutoSwitch: true}
@@ -196,8 +201,16 @@ func TestListSave(t *testing.T) {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
 	want := []string{"+.example.net", "example.com", "sub.example.org"}
-	if got := readList(paths.ForceTunnel()); strings.Join(got, ",") != strings.Join(want, ",") {
+	if got := readList(paths.User(paths.TunnelList)); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("got %v, want %v", got, want)
+	}
+	// the core reads the service's copy, made from the user's
+	if ctl.Synced(paths.TunnelList) {
+		t.Fatal("synced before the service ran")
+	}
+	ctl.SyncUserFiles()
+	if got := readList(paths.ForceTunnel()); strings.Join(got, ",") != strings.Join(want, ",") || !ctl.Synced(paths.TunnelList) {
+		t.Fatalf("service copy %v, want %v", got, want)
 	}
 	// a program is added by name and saved at once
 	w = do(t, h, "POST", "/act/apps", url.Values{"apps": {"a.exe"}, "add": {"b.exe"}, "op": {"add"}}, nil)
@@ -207,6 +220,30 @@ func TestListSave(t *testing.T) {
 	w = do(t, h, "POST", "/act/apps", url.Values{"apps": {"a.exe"}, "add": {""}, "op": {"add"}}, nil)
 	if !strings.Contains(w.Body.String(), "msg bad") {
 		t.Fatalf("an empty pick was not refused: %s", w.Body.String())
+	}
+}
+
+// With the service running, a saved list waits for the service to take it
+// before the connections it moves are closed -- closed earlier, they would
+// reconnect on the old rules -- and says so when it is not taken.
+func TestListWaitsForService(t *testing.T) {
+	s, _ := testServer(t)
+	serviceRunning = func() bool { return true }
+	syncWait = 300 * time.Millisecond
+	t.Cleanup(func() { syncWait = 5 * time.Second })
+	h := s.Handler()
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		ctl.SyncUserFiles()
+	}()
+	w := do(t, h, "POST", "/act/list", url.Values{"kind": {"direct"}, "hosts": {"a.example"}}, nil)
+	if !strings.Contains(w.Body.String(), "msg ok") || !ctl.Synced(paths.DirectList) {
+		t.Fatalf("not taken: %s", w.Body.String())
+	}
+	// no service to take it: the save is kept, the move is not claimed
+	w = do(t, h, "POST", "/act/list", url.Values{"kind": {"direct"}, "hosts": {"b.example"}}, nil)
+	if !strings.Contains(w.Body.String(), "msg bad") || readList(paths.User(paths.DirectList))[0] != "b.example" {
+		t.Fatalf("an untaken save: %s", w.Body.String())
 	}
 }
 
@@ -282,6 +319,8 @@ func TestSettingsAtOnce(t *testing.T) {
 	if got.Attempts != 5 || got.SlowPct != 30 || got.Families || len(got.Awg2Presets) != len(presets.All) {
 		t.Fatalf("changes lost: %+v", got)
 	}
+	// the service writes the preset files the settings ask for
+	ctl.SyncUserFiles()
 	for _, p := range presets.All {
 		b, err := os.ReadFile(paths.Preset(p.ID))
 		if err != nil || !strings.Contains(string(b), ",") {

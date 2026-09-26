@@ -7,9 +7,10 @@
 //
 // The service runs as SYSTEM and executes that file, so the core directory
 // is locked down: SYSTEM and Administrators may write, Users may only read
-// and execute. Without that, the Users-modify permission inherited from the
-// data directory would let any local user replace the file and run code as
-// SYSTEM. The hash check before every start covers the rest.
+// and execute -- as the whole data directory is now (see
+// paths.SecureDataDir); it once let every user modify files, and the core
+// directory had to be kept apart from it. The hash check before every start
+// covers the rest.
 //
 // A build without the embedcore tag embeds nothing and falls back to a
 // mihomo.exe next to dpiswitch.exe (development builds).
@@ -154,13 +155,20 @@ const coreSDDL = "O:SYD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;GRGX;;;BU)"
 func secureDir(dir string) error {
 	fi, err := os.Lstat(dir)
 	switch {
+	case err == nil && fi.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0:
+		// a link -- a junction to System32, say: removed as the link. icacls
+		// below would have followed it and handed SYSTEM whatever it pointed at
+		if err := os.Remove(dir); err != nil {
+			return fmt.Errorf("%s is a link and cannot be removed: %w", dir, err)
+		}
 	case err == nil && fi.IsDir() && trusted(dir):
 		return lockDown(dir)
 	case err == nil:
 		// SYSTEM may lack the rights a stranger's objects grant: it takes
-		// ownership first, and ownership brings the right to set them
-		_, _ = winexec.CombinedOutput("icacls.exe", dir, "/setowner", "*S-1-5-18", "/T", "/C", "/Q")
-		_, _ = winexec.CombinedOutput("icacls.exe", dir, "/grant", "*S-1-5-18:(OI)(CI)F", "/T", "/C", "/Q")
+		// ownership first, and ownership brings the right to set them. /L:
+		// a link inside is acted on as the link, not followed
+		_, _ = winexec.CombinedOutput("icacls.exe", dir, "/setowner", "*S-1-5-18", "/T", "/C", "/Q", "/L")
+		_, _ = winexec.CombinedOutput("icacls.exe", dir, "/grant", "*S-1-5-18:(OI)(CI)F", "/T", "/C", "/Q", "/L")
 		if err := os.RemoveAll(dir); err != nil {
 			return fmt.Errorf("%s is not the service's and cannot be removed: %w", dir, err)
 		}

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/user"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -45,12 +47,12 @@ func main() {
 	case "service":
 		runService()
 	case "install":
-		report("Install service", winsvc.Install())
+		report("Install service", winsvc.Install(ownerArg()))
 	case "uninstall":
 		report("Uninstall service", winsvc.Uninstall())
 	case "reinstall":
 		_ = winsvc.Uninstall()
-		report("Reinstall service", winsvc.Install())
+		report("Reinstall service", winsvc.Install(ownerArg()))
 	case "", "tray":
 		runTray()
 	case "version", "-v", "--version":
@@ -68,7 +70,21 @@ func main() {
 const logMax = 4 << 20
 
 func runService() {
-	_ = paths.EnsureDataDir()
+	// the data directory is made the service's before anything is written
+	// in it: an older version let every user write there, and a log opened
+	// through a link planted in the meantime is SYSTEM writing wherever it
+	// points (see paths.SecureDataDir)
+	owner := paths.ResolveOwner()
+	secErr := paths.SecureDataDir(owner)
+	if secErr != nil {
+		// once more: an entry held open a moment ago may be free now
+		secErr = paths.SecureDataDir(owner)
+	}
+	if fi, err := os.Lstat(paths.LogDir()); err != nil || !fi.IsDir() || fi.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+		// no log directory of our own: nothing is written, the service does
+		// not start -- running on would be running in an unlocked directory
+		return
+	}
 	_ = logfile.RotateIfOver(paths.ServiceLog(), logMax)
 	if f, err := os.OpenFile(paths.ServiceLog(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
 		log.SetOutput(f)
@@ -83,6 +99,14 @@ func runService() {
 		_ = windows.SetStdHandle(windows.STD_ERROR_HANDLE, windows.Handle(f.Fd()))
 	}
 	log.SetFlags(log.LstdFlags)
+	if secErr != nil {
+		log.Printf("data directory not fully locked down: %v", secErr)
+	}
+	if owner == "" {
+		log.Println("no owner recorded: only administrators can change the settings -- install the service again from the tray")
+	} else if err := winsvc.SecureService(owner); err != nil {
+		log.Printf("service permissions not set: %v", err)
+	}
 	if err := winsvc.RunService(true); err != nil {
 		log.Printf("service exited with an error: %v", err)
 	}
@@ -102,14 +126,29 @@ func alreadyRunning() bool {
 	return err == windows.ERROR_ALREADY_EXISTS
 }
 
+// ownerArg: the user the service is installed for -- "--owner <SID>", which
+// the tray passes (the elevated copy may run as another account, an
+// administrator's), else whoever runs the install.
+func ownerArg() string {
+	for i, a := range os.Args {
+		if strings.EqualFold(a, "--owner") && i+1 < len(os.Args) {
+			return os.Args[i+1]
+		}
+	}
+	if u, err := user.Current(); err == nil {
+		return u.Uid
+	}
+	return ""
+}
+
 func runTray() {
 	// logging is set up FIRST: the "already running" check used to come
 	// earlier, and exiting through it left no trace in the log --
 	// exactly the path that needed to be seen
-	_ = paths.EnsureDataDir()
+	_ = os.MkdirAll(filepath.Dir(paths.TrayLog()), 0o700)
 	// a second copy may hold the file open; then it is simply not renamed
-	_ = logfile.RotateIfOver(paths.ControllerLog(), logMax)
-	if f, err := os.OpenFile(paths.ControllerLog(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+	_ = logfile.RotateIfOver(paths.TrayLog(), logMax)
+	if f, err := os.OpenFile(paths.TrayLog(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
 		log.SetOutput(f)
 		// the tray has no console either: as with the service, panics and
 		// stderr -- race reports in a -race build -- go here or nowhere
@@ -269,6 +308,13 @@ func panicTunnel() {
 // process cannot do it, so we call ourselves with runas
 func elevate(verb string) error {
 	exe, _ := syscall.UTF16PtrFromString(paths.Exe())
+	if verb == "install" || verb == "reinstall" {
+		// the administrator prompt may be answered with another account:
+		// the service is still this user's
+		if u, err := user.Current(); err == nil {
+			verb += " --owner " + u.Uid
+		}
+	}
 	args, _ := syscall.UTF16PtrFromString(verb)
 	runas, _ := syscall.UTF16PtrFromString("runas")
 	dir, _ := syscall.UTF16PtrFromString(paths.ExeDir())

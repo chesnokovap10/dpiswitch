@@ -143,7 +143,7 @@ type lists struct {
 }
 
 func listsData() lists {
-	l := lists{Direct: readList(paths.ForceDirect()), Tunnel: readList(paths.ForceTunnel()), Apps: readApps()}
+	l := lists{Direct: readList(paths.User(paths.DirectList)), Tunnel: readList(paths.User(paths.TunnelList)), Apps: readApps()}
 	l.Online = onlineApps(l.Apps)
 	return l
 }
@@ -151,7 +151,7 @@ func listsData() lists {
 // readApps: the program list as the user wrote it -- the file holds rules
 func readApps() []string {
 	apps := []string{}
-	for _, l := range readList(paths.ForceDirectApps()) {
+	for _, l := range readList(paths.User(paths.AppsList)) {
 		if i := strings.IndexByte(l, ','); i > 0 {
 			apps = append(apps, strings.TrimSpace(l[i+1:]))
 		}
@@ -202,7 +202,7 @@ func awg2Data() awg2 {
 	for _, id := range ctl.LoadSettings(paths.Settings()).Awg2Presets {
 		on[id] = true
 	}
-	d := awg2{Hosts: readList(paths.Awg2Hosts())}
+	d := awg2{Hosts: readList(paths.User(paths.Awg2List))}
 	for _, p := range presets.All {
 		d.Presets = append(d.Presets, preset{Preset: p, Rules: len(p.Rules()), On: on[p.ID]})
 	}
@@ -276,12 +276,12 @@ type logs struct {
 }
 
 // logFiles: the log tabs. The controller runs inside the service and logs
-// there; controller.log is the tray's own -- the tab called "Controller"
-// used to show it.
+// there; tray.log, in the user's profile, is the tray's own (see
+// paths.TrayLog).
 var logFiles = map[string]func() string{
 	"service": paths.ServiceLog,
 	"core":    paths.MihomoLog,
-	"tray":    paths.ControllerLog,
+	"tray":    paths.TrayLog,
 }
 
 func logsData(r *http.Request) logs {

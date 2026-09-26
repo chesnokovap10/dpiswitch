@@ -27,6 +27,9 @@ func saveConf2(text string) error {
 		// one key in two sessions -- the servers keep stealing it from each other
 		return errors.New("this is the same config as the first tunnel")
 	}
+	if err := paths.UserReady(); err != nil {
+		return err
+	}
 	// the second tunnel's private key: written locked down, or not at all
 	return paths.WriteSecret(paths.SourceConf2(), []byte(text))
 }

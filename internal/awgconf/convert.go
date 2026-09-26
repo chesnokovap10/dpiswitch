@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"dpiswitch/internal/ctl"
@@ -63,7 +64,9 @@ func Parse(text string) (*Conf, error) {
 }
 
 func ParseFile(path string) (*Conf, error) {
-	b, err := os.ReadFile(path)
+	// the .conf is the user's file, read by the service as SYSTEM: not
+	// through a link (see paths.ReadUserFile)
+	b, err := paths.ReadUserFile(path, 1<<20)
 	if err != nil {
 		return nil, err
 	}
@@ -85,6 +88,51 @@ func keepSecret(existing string) string {
 	return hex.EncodeToString(buf)
 }
 
+// yq: s as a single-quoted YAML scalar. Values from a .conf and from the
+// settings went between quotes as they were: a quote in one ended the scalar
+// early, and the core refused the whole config -- any user who could write
+// a resolver into settings.json kept the tunnel down. A line break has no
+// place in any of them and is dropped.
+func yq(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// hostRe: a name an Endpoint may give -- it also goes into rules, bare
+var hostRe = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$`)
+
+// check refuses what would be written into the config bare and break it or
+// change its meaning: an Endpoint host that is neither an address nor a
+// name, a number that is not one.
+func (c *Conf) check() error {
+	host, port, err := net.SplitHostPort(c.Peer["Endpoint"])
+	if err != nil {
+		return fmt.Errorf("cannot parse Endpoint: %w", err)
+	}
+	if net.ParseIP(host) == nil && !hostRe.MatchString(host) {
+		return fmt.Errorf("Endpoint %q: not an address or a host name", host)
+	}
+	nums := map[string]string{"Endpoint port": port, "MTU": c.Interface["MTU"],
+		"PersistentKeepalive": c.Peer["PersistentKeepalive"]}
+	for _, k := range []string{"Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4"} {
+		nums[k] = c.Interface[k]
+	}
+	for k, v := range nums {
+		if v == "" && k != "Endpoint port" {
+			continue
+		}
+		if n, err := strconv.Atoi(v); err != nil || n < 0 {
+			return fmt.Errorf("%s = %q: not a number", k, v)
+		}
+	}
+	return nil
+}
+
 func split(s string) []string {
 	var out []string
 	for _, p := range strings.Split(s, ",") {
@@ -98,7 +146,7 @@ func split(s string) []string {
 func quoteList(items []string) string {
 	q := make([]string, 0, len(items))
 	for _, i := range items {
-		q = append(q, "'"+i+"'")
+		q = append(q, yq(i))
 	}
 	return "[" + strings.Join(q, ", ") + "]"
 }
@@ -122,6 +170,9 @@ func (c *Conf) Render() (string, error) {
 	if _, _, err := c.addrs(); err != nil {
 		return "", err
 	}
+	if err := c.check(); err != nil {
+		return "", err
+	}
 	// the second tunnel, if loaded; a broken second source
 	// must not break the first one, so the error only goes to the log
 	var c2 *Conf
@@ -129,6 +180,8 @@ func (c *Conf) Render() (string, error) {
 		if cc, err := ParseFile(paths.SourceConf2()); err != nil {
 			log.Printf("second tunnel not attached: %v", err)
 		} else if _, _, err := cc.addrs(); err != nil {
+			log.Printf("second tunnel not attached: %v", err)
+		} else if err := cc.check(); err != nil {
 			log.Printf("second tunnel not attached: %v", err)
 		} else {
 			c2 = cc
@@ -161,7 +214,7 @@ func (c *Conf) Render() (string, error) {
 	w("# with an empty exclusion list this costs nothing")
 	w("find-process-mode: strict")
 	w("external-controller: 127.0.0.1:9090")
-	w("secret: '%s'", keepSecret(paths.Config()))
+	w("secret: %s", yq(keepSecret(paths.Config())))
 	w("")
 	w("# a dedicated listener for the prober: bypasses rules, always direct.")
 	w("# the only way to give the prober a direct path while TUN")
@@ -252,14 +305,14 @@ func (c *Conf) Render() (string, error) {
 	}
 	w("  fake-ip-filter:")
 	for _, z := range localPatterns() {
-		w("    - '%s'", z)
+		w("    - %s", yq(z))
 	}
 	if net.ParseIP(host) == nil {
-		w("    - '%s'", host)
+		w("    - %s", yq(host))
 	}
 	if c2 != nil {
 		if h2, _, err := net.SplitHostPort(c2.Peer["Endpoint"]); err == nil && net.ParseIP(h2) == nil {
-			w("    - '%s'", h2)
+			w("    - %s", yq(h2))
 		}
 	}
 	// Two resolvers for two paths.
@@ -275,26 +328,26 @@ func (c *Conf) Render() (string, error) {
 	w("  # resolves servers given by name; IPs only -- avoids chicken-and-egg")
 	w("  default-nameserver:")
 	for _, d := range bootstrap {
-		w("    - '%s'", d)
+		w("    - %s", yq(d))
 	}
 	w("  # everything else (fake-ip-filter, internal queries) -- the same direct DNS")
 	w("  nameserver:")
 	for _, d := range directDNS {
-		w("    - '%s'", d)
+		w("    - %s", yq(d))
 	}
 	w("  # local names go to the DNS the router hands out over DHCP: the remote")
 	w("  # resolver has never heard of them, and the router answers for itself")
 	w("  nameserver-policy:")
-	w("    '%s':", strings.Join(localPatterns(), ","))
+	w("    %s:", yq(strings.Join(localPatterns(), ",")))
 	w("      - 'dhcp://system'")
 	w("      - 'system'")
 	w("  direct-nameserver:")
 	for _, d := range directDNS {
-		w("    - '%s'", d)
+		w("    - %s", yq(d))
 	}
 	w("  proxy-server-nameserver:")
 	for _, d := range bootstrap {
-		w("    - '%s'", d)
+		w("    - %s", yq(d))
 	}
 	w("")
 	w("# A fallback group. Without it a dead tunnel would mean no internet")
@@ -307,7 +360,7 @@ func (c *Conf) Render() (string, error) {
 	w("    proxies:")
 	w("      - awg")
 	w("      - DIRECT")
-	w("    url: '%s'", ctl.HealthURL)
+	w("    url: %s", yq(ctl.HealthURL))
 	w("    interval: 30")
 	// the first check runs as the core starts, when the WireGuard
 	// handshake has not finished yet: DNS inside the tunnel is lost and retried
@@ -330,7 +383,7 @@ func (c *Conf) Render() (string, error) {
 	}
 	w("      - awg")
 	w("      - DIRECT")
-	w("    url: '%s'", ctl.HealthURL)
+	w("    url: %s", yq(ctl.HealthURL))
 	w("    interval: 30")
 	w("    timeout: 15000")
 	w("    lazy: false")
@@ -567,16 +620,16 @@ func (c *Conf) writeProxy(w func(string, ...any), name string, tunDNS []string, 
 	}
 	w("  - name: %s", name)
 	w("    type: wireguard")
-	w("    server: %s", host)
+	w("    server: %s", yq(host))
 	w("    port: %s", port)
-	w("    ip: %s", v4)
+	w("    ip: %s", yq(v4))
 	if v6 != "" {
-		w("    ipv6: %s", v6)
+		w("    ipv6: %s", yq(v6))
 	}
-	w("    private-key: '%s'", c.Interface["PrivateKey"])
-	w("    public-key: '%s'", c.Peer["PublicKey"])
+	w("    private-key: %s", yq(c.Interface["PrivateKey"]))
+	w("    public-key: %s", yq(c.Peer["PublicKey"]))
 	if k := c.Peer["PresharedKey"]; k != "" {
-		w("    pre-shared-key: '%s'", k)
+		w("    pre-shared-key: %s", yq(k))
 	}
 	allowed := split(c.Peer["AllowedIPs"])
 	if len(allowed) == 0 {
@@ -626,7 +679,7 @@ func (c *Conf) writeProxy(w func(string, ...any), name string, tunDNS []string, 
 	}
 	for _, k := range []string{"H1", "H2", "H3", "H4", "I1", "I2", "I3", "I4", "I5"} {
 		if v := c.Interface[k]; v != "" {
-			w("      %s: '%s'", strings.ToLower(k), v)
+			w("      %s: %s", strings.ToLower(k), yq(v))
 		}
 	}
 	strMap := [][2]string{
@@ -640,7 +693,7 @@ func (c *Conf) writeProxy(w func(string, ...any), name string, tunDNS []string, 
 	}
 	for _, kv := range strMap {
 		if v := c.Interface[kv[0]]; v != "" {
-			w("      %s: '%s'", kv[1], v)
+			w("      %s: %s", kv[1], yq(v))
 		}
 	}
 	for _, kv := range [][2]string{{"RandomTrailers", "random-trailers"}, {"DisableCookies", "disable-cookies"}} {
@@ -656,8 +709,9 @@ func (c *Conf) writeProxy(w func(string, ...any), name string, tunDNS []string, 
 // The config is fully generated, so a new program version must
 // deliver its changes (rules, providers) to an existing installation
 // by itself, without reloading the .conf. The file holds the private
-// keys: it is replaced whole, keeping its own permissions (see
-// paths.ReplaceSecret). Returns true if anything changed.
+// keys: it is replaced whole, readable by the owner alone besides SYSTEM
+// and the administrators (see paths.WriteServiceSecret). Returns true if
+// anything changed.
 func Regenerate() (bool, error) {
 	c, err := ParseFile(paths.SourceConf())
 	if err != nil {
@@ -670,9 +724,9 @@ func Regenerate() (bool, error) {
 	if old, err := os.ReadFile(paths.Config()); err == nil && string(old) == out {
 		return false, nil
 	}
-	// replaced whole, keeping its permissions -- it holds the private keys;
-	// it used to be truncated first and left empty by a failed write
-	if err := paths.ReplaceSecret(paths.Config(), []byte(out)); err != nil {
+	// replaced whole -- it holds the private keys; it used to be truncated
+	// first and left empty by a failed write
+	if err := paths.WriteServiceSecret(paths.Config(), []byte(out), paths.Owner()); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -688,7 +742,7 @@ func EnsureLists() {
 		}
 	}
 	// second-tunnel presets per settings; the core will not start without the files
-	if err := presets.Write(ctl.LoadSettings(paths.Settings()).Awg2Presets); err != nil {
+	if _, err := presets.Write(ctl.LoadSettings(paths.Settings()).Awg2Presets); err != nil {
 		log.Printf("presets not written: %v", err)
 	}
 }

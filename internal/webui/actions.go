@@ -152,24 +152,17 @@ func saveConf1(text string) error {
 	if err != nil {
 		return err
 	}
-	out, err := conf.Render()
-	if err != nil {
+	// rendered here only to refuse a .conf the service could not use: the
+	// service renders config.yaml itself -- the user may not write it
+	if _, err := conf.Render(); err != nil {
 		return err
 	}
-	if err := paths.EnsureDataDir(); err != nil {
+	if err := paths.UserReady(); err != nil {
 		return err
 	}
-	// both files contain the WireGuard private key: they are written locked
-	// down from the start (mode 0600 means nothing on Windows), and not at
-	// all if that cannot be done
-	if err := paths.WriteSecret(paths.SourceConf(), []byte(text)); err != nil {
-		return err
-	}
-	if err := paths.WriteSecret(paths.Config(), []byte(out)); err != nil {
-		return err
-	}
-	awgconf.EnsureLists()
-	return nil
+	// the WireGuard private key: written locked down from the start (mode
+	// 0600 means nothing on Windows), and not at all if that cannot be done
+	return paths.WriteSecret(paths.SourceConf(), []byte(text))
 }
 
 // applyNote: what happened to a saved config, by the state of the service
@@ -215,6 +208,10 @@ func (s *Server) actReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := paths.ResetRequest()
+	if err := paths.UserReady(); err != nil {
+		s.redirect(w, r, err, "")
+		return
+	}
 	if err := os.WriteFile(req, []byte(time.Now().Format(time.RFC3339)+"\n"), 0o644); err != nil {
 		s.redirect(w, r, err, "")
 		return
@@ -238,8 +235,19 @@ func (s *Server) actReset(w http.ResponseWriter, r *http.Request) {
 // reported: the error used to be dropped, and the UI said "Saved" while the
 // connections already open kept their old route.
 //
-// The provider is reloaded first: see ctl.ReloadProviders.
-func closeMoved(provider string, match func(ctl.Conn) bool) (int, error) {
+// The service copies the user's list to the file the core reads (see
+// ctl.SyncUserFiles): taken tells when it has. The provider is reloaded
+// then, and the connections closed: see ctl.ReloadProviders.
+func closeMoved(provider string, match func(ctl.Conn) bool, taken func() bool) (int, error) {
+	if !serviceRunning() {
+		return 0, nil // no core: nothing is open through it
+	}
+	for deadline := time.Now().Add(syncWait); !taken(); {
+		if time.Now().After(deadline) {
+			return 0, errors.New("the service has not taken the change yet")
+		}
+		time.Sleep(syncWait / 50)
+	}
 	secret := ctl.SecretFromConfig(paths.Config())
 	if err := ctl.ReloadProviders(apiAddr, secret, provider); err != nil {
 		log.Printf("ui: %v", err)
@@ -257,8 +265,19 @@ func closeMoved(provider string, match func(ctl.Conn) bool) (int, error) {
 
 // providerOf: the rule-provider a list file is, as the core config names
 // it -- the file's name without .txt
-func providerOf(path string) string {
-	return strings.TrimSuffix(filepath.Base(path), ".txt")
+func providerOf(name string) string {
+	return strings.TrimSuffix(filepath.Base(name), ".txt")
+}
+
+// syncWait: how long a save waits for the service to take it -- it looks
+// every second; a var for tests
+var syncWait = 5 * time.Second
+
+// serviceRunning: whether the service -- and with it the core -- runs; a var
+// for tests, which must not wait on the machine's real service
+var serviceRunning = func() bool {
+	st, err := winsvc.State()
+	return err == nil && st == svc.Running
 }
 
 // changed: the entries in one of two lists and not the other
@@ -306,9 +325,13 @@ func splitLines(s string) []string {
 	return out
 }
 
-// saveDomains writes a domain list and closes what the change moved. err is
-// the list's own, closeErr the connections'.
-func (s *Server) saveDomains(path, kind string, entries []string) (n int, err, closeErr error) {
+// saveDomains writes the user's copy of a domain list and closes what the
+// change moved. err is the list's own, closeErr the connections'.
+func (s *Server) saveDomains(name, kind string, entries []string) (n int, err, closeErr error) {
+	if err := paths.UserReady(); err != nil {
+		return 0, err, nil
+	}
+	path := paths.User(name)
 	s.listMu.Lock()
 	old := readList(path)
 	err = writeList(path, kind, entries)
@@ -317,18 +340,19 @@ func (s *Server) saveDomains(path, kind string, entries []string) (n int, err, c
 	if err != nil {
 		return 0, err, nil
 	}
-	n, closeErr = closeMoved(providerOf(path), domainMatch(changed(old, cur)))
+	n, closeErr = closeMoved(providerOf(name), domainMatch(changed(old, cur)),
+		func() bool { return ctl.Synced(name) })
 	return n, nil, closeErr
 }
 
 func (s *Server) actList(w http.ResponseWriter, r *http.Request) {
 	kind := r.FormValue("kind")
-	path := map[string]string{"direct": paths.ForceDirect(), "tunnel": paths.ForceTunnel()}[kind]
-	if path == "" {
+	name := map[string]string{"direct": paths.DirectList, "tunnel": paths.TunnelList}[kind]
+	if name == "" {
 		http.Error(w, "kind must be direct or tunnel", http.StatusBadRequest)
 		return
 	}
-	n, err, cerr := s.saveDomains(path, kind, splitLines(r.FormValue("hosts")))
+	n, err, cerr := s.saveDomains(name, kind, splitLines(r.FormValue("hosts")))
 	ok, msg := saved(r, err, n, cerr)
 	s.part(w, r, "lists", "list-"+kind, ok, msg)
 }
@@ -346,11 +370,15 @@ func (s *Server) actApps(w http.ResponseWriter, r *http.Request) {
 		}
 		apps = append(apps, a)
 	}
-	s.listMu.Lock()
-	old := readApps()
-	err := writeApps(paths.ForceDirectApps(), apps)
-	cur := readApps()
-	s.listMu.Unlock()
+	err := paths.UserReady()
+	var old, cur []string
+	if err == nil {
+		s.listMu.Lock()
+		old = readApps()
+		err = writeApps(paths.User(paths.AppsList), apps)
+		cur = readApps()
+		s.listMu.Unlock()
+	}
 	n := 0
 	var cerr error
 	if err == nil {
@@ -362,7 +390,7 @@ func (s *Server) actApps(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			return false
-		})
+		}, func() bool { return ctl.Synced(paths.AppsList) })
 	}
 	ok, msg := saved(r, err, n, cerr)
 	s.part(w, r, "lists", "list-apps", ok, msg)
@@ -370,8 +398,9 @@ func (s *Server) actApps(w http.ResponseWriter, r *http.Request) {
 
 // --- second tunnel ---
 
-// actPreset turns one preset on or off at once. Its file is rewritten (the
-// core watches it) and the connections it moves are closed.
+// actPreset turns one preset on or off at once: the settings say which are
+// on, the service writes the preset files within a second (the core watches
+// them), and the connections the preset moves are closed.
 func (s *Server) actPreset(w http.ResponseWriter, r *http.Request) {
 	id, on := r.FormValue("field"), r.FormValue("value") == "1"
 	var p *presets.Preset
@@ -396,29 +425,17 @@ func (s *Server) actPreset(w http.ResponseWriter, r *http.Request) {
 		}
 		return ids
 	}
-	// the preset files follow the settings in the same order: two quick
-	// clicks could otherwise write their files the other way round. The
-	// files go first: settings saved before a file that then failed said
-	// the preset was on while its file said off. On any failure the files
-	// are put back to what the settings say.
-	s.presetMu.Lock()
-	err := presets.Write(toggle(ctl.LoadSettings(paths.Settings()).Awg2Presets))
+	err := paths.UserReady()
 	if err == nil {
 		_, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
 			set.Awg2Presets = toggle(set.Awg2Presets)
 			return nil
 		})
 	}
-	if err != nil {
-		if werr := presets.Write(ctl.LoadSettings(paths.Settings()).Awg2Presets); werr != nil {
-			log.Printf("ui: preset files not put back after a failed change: %v", werr)
-		}
-	}
-	s.presetMu.Unlock()
 	n := 0
 	var cerr error
 	if err == nil {
-		n, cerr = closeMoved("preset-"+p.ID, presetMatch(*p))
+		n, cerr = closeMoved("preset-"+p.ID, presetMatch(*p), func() bool { return presets.Written(p.ID, on) })
 	}
 	ok, msg := saved(r, err, n, cerr)
 	s.part(w, r, "awg2", "presets", ok, msg)
@@ -454,7 +471,7 @@ func presetMatch(p presets.Preset) func(ctl.Conn) bool {
 }
 
 func (s *Server) actAwg2Hosts(w http.ResponseWriter, r *http.Request) {
-	n, err, cerr := s.saveDomains(paths.Awg2Hosts(), "via the second tunnel", splitLines(r.FormValue("hosts")))
+	n, err, cerr := s.saveDomains(paths.Awg2List, "via the second tunnel", splitLines(r.FormValue("hosts")))
 	ok, msg := saved(r, err, n, cerr)
 	s.part(w, r, "awg2", "hosts", ok, msg)
 }
@@ -492,7 +509,7 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	note := "Saved"
-	err := paths.EnsureDataDir()
+	err := paths.UserReady()
 	if err == nil {
 		_, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
 			var err error
@@ -539,7 +556,7 @@ func (s *Server) partField(w http.ResponseWriter, r *http.Request, field string,
 }
 
 func (s *Server) actDNS(w http.ResponseWriter, r *http.Request) {
-	err := paths.EnsureDataDir()
+	err := paths.UserReady()
 	if err == nil {
 		_, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
 			set.DirectDNS = splitLines(r.FormValue("direct_dns"))
@@ -557,7 +574,7 @@ func (s *Server) actDNS(w http.ResponseWriter, r *http.Request) {
 // actDefaults puts every setting back to its default -- the second
 // tunnel's presets aside: they are not on this page.
 func (s *Server) actDefaults(w http.ResponseWriter, r *http.Request) {
-	err := paths.EnsureDataDir()
+	err := paths.UserReady()
 	if err == nil {
 		_, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
 			d := ctl.DefaultSettings()

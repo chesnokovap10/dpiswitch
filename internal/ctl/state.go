@@ -5,6 +5,7 @@ import (
 
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"sort"
@@ -82,7 +83,19 @@ func loadState(path string) *state {
 	if err != nil {
 		return s
 	}
-	_ = json.Unmarshal(b, s)
+	if err := json.Unmarshal(b, s); err != nil {
+		// an unreadable memory used to be dropped in silence, and the next
+		// save wrote the empty one over the only copy of every verdict:
+		// it is set aside for a person to look at
+		bad := path + ".bad"
+		_ = os.Remove(bad)
+		if rerr := os.Rename(path, bad); rerr != nil {
+			log.Printf("state %s unreadable (%v) and not set aside: %v", path, err, rerr)
+		} else {
+			log.Printf("state %s unreadable (%v): kept as %s, starting with an empty memory", path, err, bad)
+		}
+		s = &state{path: path}
+	}
 	if s.Networks == nil {
 		s.Networks = map[string]map[string]*entry{}
 	}

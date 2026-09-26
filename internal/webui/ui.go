@@ -341,7 +341,7 @@ func collectStatus() status {
 		DataDir:   paths.DataDir(),
 		Version:   version.Version,
 	}
-	st.PathOK = !st.Installed || winsvc.PathMatches()
+	st.PathOK = !st.Installed || winsvc.SameBuild()
 	if _, err := os.Stat(paths.Config()); err == nil {
 		st.HasConfig = true
 	}
@@ -371,7 +371,7 @@ func collectStatus() status {
 	set := ctl.LoadSettings(paths.Settings())
 	st.AutoSwitch = set.AutoSwitch
 	st.Presets = len(set.Awg2Presets)
-	st.Awg2Hosts = len(readList(paths.Awg2Hosts()))
+	st.Awg2Hosts = len(readList(paths.User(paths.Awg2List)))
 
 	snap := ctl.LoadCached(paths.State())
 	st.NetworkID = snap.NetworkID

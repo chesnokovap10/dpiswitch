@@ -50,21 +50,17 @@ func New() *Supervisor { return &Supervisor{recheck: make(chan struct{}, 1)} }
 // Run keeps the core alive until the context is cancelled and runs
 // the controller alongside. Returning means a final stop.
 func (s *Supervisor) Run(ctx context.Context, apply bool) {
-	if err := paths.EnsureDataDir(); err != nil {
-		log.Printf("data directory unavailable: %v", err)
-		return
-	}
-	// the service runs as SYSTEM: without this its files are
-	// read-only for the user, and the tray can neither reset
-	// verdicts nor edit the lists
-	if err := paths.GrantUsersModify(paths.DataDir()); err != nil {
-		log.Printf("warning: data directory permissions not granted: %v", err)
-	}
-	if _, err := os.Stat(paths.Config()); err != nil {
-		log.Printf("config not found: %v -- load a .conf in the UI", err)
+	// the data directory was made the service's before the log was opened
+	// (see paths.SecureDataDir); the user writes in paths.UserDir only.
+	//
+	// With no .conf the service waits for one instead of stopping: the UI
+	// loads it into UserDir, and the service renders config.yaml from it --
+	// the user may not write the config itself.
+	if !waitSource(ctx) {
 		return
 	}
 	awgconf.EnsureLists()
+	ctl.SyncUserFiles()
 
 	// cores from a previous run (hard power-off, service crash)
 	// hold TUN and routes -- kill them before bringing up our own
@@ -110,6 +106,28 @@ func (s *Supervisor) Run(ctx context.Context, apply bool) {
 	}()
 
 	wg.Wait()
+}
+
+// waitSource: whether there is a .conf to run, waiting for one to be loaded;
+// false once the service stops.
+func waitSource(ctx context.Context) bool {
+	said := false
+	for {
+		_, errSrc := os.Stat(paths.SourceConf())
+		_, errCfg := os.Stat(paths.Config())
+		if errSrc == nil || errCfg == nil {
+			return true
+		}
+		if !said {
+			log.Println("no config yet -- load a .conf in the UI")
+			said = true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
 // restart the core with a growing pause: at boot the network
@@ -179,6 +197,9 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 		}
 	}
 	s.v6mu.Unlock()
+	// the user's lists as they are now, before the core reads them
+	awgconf.EnsureLists()
+	ctl.SyncUserFiles()
 
 	// the core is embedded into dpiswitch.exe: make sure the extracted copy
 	// is present and untampered before every start (see internal/core)

@@ -72,7 +72,7 @@
     <form method="post" action="/act/service"><button name="do" value="install" class="primary">{{.T "Install service"}}</button></form>
   {{else}}
     {{if not $s.PathOK}}
-      <span class="warn-t">{{.T "The service is registered for another copy of the program:"}} <code>{{$s.BinPath}}</code></span>
+      <span class="warn-t">{{.T "The service runs another build of the program:"}} <code>{{$s.BinPath}}</code></span>
       <form method="post" action="/act/service"><button name="do" value="reinstall" class="primary">{{.T "Reinstall service"}}</button></form>
     {{end}}
     <form method="post" action="/act/autostart" data-swap="svcbox" data-instant="1">

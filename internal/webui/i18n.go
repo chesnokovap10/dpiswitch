@@ -50,7 +50,9 @@ var ru = map[string]string{
 	// service box
 	"The service runs the tunnel. Installing it asks for administrator rights once.": "Туннель работает в службе. Установка один раз попросит права администратора.",
 	"Install service": "Установить службу",
-	"The service is registered for another copy of the program:": "Служба зарегистрирована на другую копию программы:",
+	"The service runs another build of the program:":             "Служба работает на другой сборке программы:",
+	"Install the service first: it keeps the settings and lists": "Сначала установите службу: настройки и списки хранит она",
+	"the service has not taken the change yet":                   "служба ещё не приняла изменение",
 	"Reinstall service":       "Переустановить службу",
 	"Start tray with Windows": "Запускать трей с Windows",
 	"Remove the service? The tunnel stops and does not start with Windows until it is installed again. Settings and lists stay.": "Удалить службу? Туннель остановится и не будет запускаться с Windows, пока службу не установят снова. Настройки и списки сохранятся.",

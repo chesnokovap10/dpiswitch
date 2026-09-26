@@ -663,8 +663,8 @@ func takeReset(cfg Config, a *api, st *state) bool {
 	return true
 }
 
-// watchReset looks for a reset request every second: the tray waits for it
-// to be taken.
+// watchReset looks for a reset request and changed user lists every
+// second: the UI waits for both to be taken.
 func watchReset(ctx context.Context, cfg Config, a *api, st *state) {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
@@ -673,13 +673,14 @@ func watchReset(ctx context.Context, cfg Config, a *api, st *state) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if !takeReset(cfg, a, st) {
-				// a reload left pending -- by a reset, say, which removed
-				// its request all the same -- is not left for the next cycle
-				listMu.Lock()
-				retryReloads(a)
-				listMu.Unlock()
-			}
+			takeReset(cfg, a, st)
+			// the user's lists and presets reach the core within a second;
+			// a reload left pending -- by a reset, say, which removed its
+			// request all the same -- is not left for the next cycle
+			listMu.Lock()
+			syncUserFiles(a)
+			retryReloads(a)
+			listMu.Unlock()
 		}
 	}
 }

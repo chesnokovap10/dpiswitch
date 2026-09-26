@@ -64,7 +64,7 @@ network stack (`stack: system`).
 
 At startup the service extracts the core to `%ProgramData%\dpiswitch\core\mihomo.exe`
 and verifies its SHA-256 before every start, re-extracting it if it does not match.
-That directory is writable by SYSTEM and Administrators only.
+The data directory is writable by SYSTEM and Administrators only.
 
 For development, `.\build.ps1 -NoEmbed` builds without the core; then `mihomo.exe`
 must sit next to `dpiswitch.exe`.
@@ -80,7 +80,9 @@ slower and hungrier than the release build.
 replaces the installed binary: it closes the tray, stops the service and waits
 for it, copies with retries, starts both again and checks the hash. The
 replaced binary is kept beside it as `dpiswitch.last.exe` — `-Path` with it
-is the way back. No elevation is needed.
+is the way back. It asks for administrator rights once: the service's binary
+is in Program Files. A service still registered elsewhere (an older
+installation) is reinstalled from the build, which moves it there.
 
 CI (GitHub Actions, `.github/workflows/ci.yml`) is disabled; checks run locally
 before a push: `go vet ./...`, `go test ./...` and, for `internal/ctl`,
@@ -94,11 +96,22 @@ vX.Y.Z` also builds a tag into a draft release.
 
 1. Run `dpiswitch.exe` — a tray icon appears.
 2. Left click the icon — web UI; right click — menu.
-3. "Install service" (one administrator prompt).
+3. "Install service" (one administrator prompt). The service runs as SYSTEM
+   from its own copy in `%ProgramFiles%\DPI Switch`, where only administrators
+   write; the copy you started stays the tray.
 4. Load the AmneziaWG `.conf`; optionally a second `.conf` for awg2.
 
-Data: `%ProgramData%\dpiswitch` (config, lists, verdicts, settings, logs).
-Files containing private keys are locked down from other users.
+The service belongs to the user who installed it: only that user (and
+administrators) may start and stop it and change its settings, lists and
+configs. Other accounts on the machine may only see its state. A new build is
+installed with "Reinstall service", which copies it over the old one.
+
+Data: `%ProgramData%\dpiswitch` is the service's own (config, verdicts, logs):
+writable by SYSTEM and Administrators only, readable by users. What you change
+in the UI goes to `%ProgramData%\dpiswitch\user`, writable by you alone; the
+service reads it and never writes there. Files containing private keys are
+readable by you and the service only. The tray logs to
+`%LOCALAPPDATA%\dpiswitch\tray.log`.
 
 ## Commands
 

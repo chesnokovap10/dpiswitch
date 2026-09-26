@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 )
 
@@ -28,6 +29,24 @@ func TestSamePath(t *testing.T) {
 		if got := samePath(tc.cmdline, tc.exe); got != tc.want {
 			t.Errorf("%q vs %q: %v, want %v", tc.cmdline, tc.exe, got, tc.want)
 		}
+	}
+}
+
+// Only the owner may start and stop the service; every other signed-in
+// user may only look at it.
+func TestSDDL(t *testing.T) {
+	owner := "S-1-5-21-1-2-3-1001"
+	s := sddl(owner)
+	if !strings.Contains(s, "(A;;CCLCSWRPWPDTLOCRRC;;;"+owner+")") {
+		t.Fatalf("the owner cannot start and stop: %s", s)
+	}
+	for _, ace := range strings.SplitAfter(s, ")") {
+		if strings.HasSuffix(ace, ";;;IU)") && strings.Contains(ace, "RP") {
+			t.Fatalf("interactive users may start or stop: %s", ace)
+		}
+	}
+	if _, err := windows.SecurityDescriptorFromString(s); err != nil {
+		t.Fatal(err)
 	}
 }
 

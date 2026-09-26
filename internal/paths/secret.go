@@ -40,18 +40,13 @@ func WriteSecret(path string, data []byte) error {
 	return writeWith(path, data, sd)
 }
 
-// ReplaceSecret rewrites a key-bearing file that exists, keeping its own
-// permissions: the service rewriting config.yaml must not take away the
-// access the user who saved it -- and the tray reading its secret -- has.
-func ReplaceSecret(path string, data []byte) error {
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION)
+// WriteServiceSecret writes a key-bearing file of the service's: SYSTEM and
+// the Administrators, and the owner may read it -- the UI takes the core
+// API's secret from config.yaml.
+func WriteServiceSecret(path string, data []byte, owner string) error {
+	sd, err := windows.SecurityDescriptorFromString(keySDDL(owner))
 	if err != nil {
-		return fmt.Errorf("permissions of %s: %w", path, err)
-	}
-	// the directory's own permissions must not be inherited on top
-	if err := sd.SetControl(windows.SE_DACL_PROTECTED, windows.SE_DACL_PROTECTED); err != nil {
-		return fmt.Errorf("permissions of %s: %w", path, err)
+		return fmt.Errorf("permissions for %s: %w", path, err)
 	}
 	return writeWith(path, data, sd)
 }

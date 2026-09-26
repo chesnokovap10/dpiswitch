@@ -40,8 +40,6 @@ type Server struct {
 	flashes map[string]flash
 	// statusFn replaces collectStatus in tests
 	statusFn func() status
-	// presetMu: a preset's settings and its files are written as one step
-	presetMu sync.Mutex
 	// listMu: a list's save -- read the old one, write, read back what moved
 	// -- is one step. Two tabs saving at once shared one ".tmp" file, and
 	// one's change could be lost or its rename fail.
