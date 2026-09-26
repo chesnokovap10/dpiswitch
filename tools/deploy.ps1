@@ -70,7 +70,9 @@ if (-not (Wait-Until { (Get-Service dpiswitch).Status -eq 'Running' } 30)) {
 }
 $up = Get-Date
 if ((Get-FileHash $target).Hash -ne $hash) { throw "$target does not match $src after the copy" }
-if ($trays.Count -gt 0) { Start-Process $target }
+# Through explorer, not Start-Process: a child of this shell lives in its job,
+# and the tray died with the terminal (or Claude's session) that ran the deploy.
+if ($trays.Count -gt 0) { explorer.exe $target }
 
 $v = (Get-Item $target).VersionInfo.FileVersion
 Write-Host ("deployed {0} ({1}, {2}) to {3}; tunnel down {4:N0} s" -f

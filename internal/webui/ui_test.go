@@ -2,6 +2,7 @@ package webui
 
 import (
 	"io/fs"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -24,6 +25,17 @@ func testServer(t *testing.T) (*Server, string) {
 	if err := paths.EnsureDataDir(); err != nil {
 		t.Fatal(err)
 	}
+	// no core: on a machine running the service 127.0.0.1:9090 is the live
+	// one, and a list saved here would reload its providers and close its
+	// connections. A port just closed refuses the dial, as with no core.
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := apiAddr
+	apiAddr = l.Addr().String()
+	l.Close()
+	t.Cleanup(func() { apiAddr = old })
 	s := &Server{statusFn: func() status {
 		return status{Installed: true, PathOK: true, ServiceRun: true, TunnelAlive: true, TunnelNote: "60 ms",
 			Awg2: true, Version: "test", DataDir: paths.DataDir(), NetworkID: "AS1", AutoSwitch: true}

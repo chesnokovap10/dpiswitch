@@ -464,8 +464,7 @@ func (s *Server) actAwg2Hosts(w http.ResponseWriter, r *http.Request) {
 // is not a plain "Saved": those connections keep their old route.
 func saved(r *http.Request, err error, moved int, closeErr error) (bool, string) {
 	if err == nil && closeErr != nil {
-		return false, tr(lang(r), "Saved, but the open connections were not moved: "+
-			"they keep their old route until they reconnect")
+		return false, tr(lang(r), "Saved, but the open connections were not moved: they keep their old route until they reconnect")
 	}
 	if err == nil && moved > 0 {
 		return done(r, nil, "Saved; %d open connections moved", moved)

@@ -328,7 +328,9 @@ type status struct {
 	Awg2Hosts   int            `json:"-"`
 }
 
-const apiAddr = "127.0.0.1:9090"
+// apiAddr: the core's controller; a var so tests can point it away from
+// the live core -- saving a list there would close real connections
+var apiAddr = "127.0.0.1:9090"
 
 func collectStatus() status {
 	st := status{
