@@ -122,8 +122,14 @@ func alreadyRunning() bool {
 	if err != nil {
 		return false
 	}
-	_, err = windows.CreateMutex(nil, false, name)
-	return err == windows.ERROR_ALREADY_EXISTS
+	h, err := windows.CreateMutex(nil, false, name)
+	if err == windows.ERROR_ALREADY_EXISTS {
+		// the handle opened here would keep the mutex alive after the other
+		// copy exits: a tray waiting for it (see waitMutex) never got it
+		windows.CloseHandle(h)
+		return true
+	}
+	return false // this copy holds it now, until it exits
 }
 
 // ownerArg: the user the service is installed for -- "--owner <SID>", which
@@ -165,7 +171,16 @@ func runTray() {
 	if err != nil {
 		log.Printf("UI key not kept, an open tab will not outlive a restart: %v", err)
 	}
-	if alreadyRunning() {
+	if hasArg("--moved") {
+		// started by the tray it replaces: that one is on its way out
+		if !waitMutex() {
+			log.Println("tray: the tray this one replaces did not exit")
+			return
+		}
+	} else if alreadyRunning() {
+		if updateOffer() {
+			return
+		}
 		log.Println("tray: another copy is already running -- opening the UI and exiting")
 		// the first copy may still be starting its UI
 		addr := webui.Find(key)
@@ -196,6 +211,10 @@ func runTray() {
 	if err != nil {
 		report("dpiswitch", fmt.Errorf("the tray icon was not created: %w", err))
 		return
+	}
+	quitTray = t.Quit
+	if hasArg("--moved") {
+		settle(hasArg("--first"))
 	}
 	openUI := func() { browse(srv.URL()) }
 	t.OnOpen = openUI
@@ -307,14 +326,12 @@ func panicTunnel() {
 // installing and removing the service needs administrator rights: a normal
 // process cannot do it, so we call ourselves with runas
 func elevate(verb string) error {
-	exe, _ := syscall.UTF16PtrFromString(paths.Exe())
 	if verb == "install" || verb == "reinstall" {
-		// the administrator prompt may be answered with another account:
-		// the service is still this user's
-		if u, err := user.Current(); err == nil {
-			verb += " --owner " + u.Uid
-		}
+		// for this user (the administrator prompt may be answered with
+		// another account), and the tray follows to the installed copy
+		return installFor(verb)
 	}
+	exe, _ := syscall.UTF16PtrFromString(paths.Exe())
 	args, _ := syscall.UTF16PtrFromString(verb)
 	runas, _ := syscall.UTF16PtrFromString("runas")
 	dir, _ := syscall.UTF16PtrFromString(paths.ExeDir())

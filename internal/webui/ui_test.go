@@ -365,6 +365,20 @@ func TestKey(t *testing.T) {
 	}
 }
 
+// The icon is served without the key: the browser fetches it on its own,
+// without the page's cookie, and a refusal left the tab without it.
+func TestIconWithoutKey(t *testing.T) {
+	s, _ := testServer(t)
+	s.Key = strings.Repeat("ab", 32)
+	h := s.Handler()
+	if w := do(t, h, "GET", "/favicon.ico", nil, nil); w.Code != 200 || w.Header().Get("Content-Type") != "image/x-icon" {
+		t.Fatalf("icon: %d %s", w.Code, w.Header().Get("Content-Type"))
+	}
+	if w := do(t, h, "GET", "/overview", nil, nil); w.Code != 403 || !strings.Contains(w.Body.String(), `rel="icon"`) {
+		t.Fatalf("the refusal: %d %s", w.Code, w.Body.String())
+	}
+}
+
 // The page shows the program's icon.
 func TestFavicon(t *testing.T) {
 	s, _ := testServer(t)

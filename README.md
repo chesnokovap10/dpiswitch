@@ -96,15 +96,20 @@ vX.Y.Z` also builds a tag into a draft release.
 
 1. Run `dpiswitch.exe` — a tray icon appears.
 2. Left click the icon — web UI; right click — menu.
-3. "Install service" (one administrator prompt). The service runs as SYSTEM
-   from its own copy in `%ProgramFiles%\DPI Switch`, where only administrators
-   write; the copy you started stays the tray.
+3. "Install service" (one administrator prompt). The program copies itself to
+   `%ProgramFiles%\DPI Switch` and runs from there: the service as SYSTEM, and
+   the tray moves there too, with autostart. A first install puts a
+   "DPI Switch" shortcut on the desktop. The file you started is no longer
+   used and may be deleted.
 4. Load the AmneziaWG `.conf`; optionally a second `.conf` for awg2.
+
+To update, start the new `dpiswitch.exe` from anywhere: it offers to install
+itself over the installed version (one administrator prompt) and moves the
+tray to it.
 
 The service belongs to the user who installed it: only that user (and
 administrators) may start and stop it and change its settings, lists and
-configs. Other accounts on the machine may only see its state. A new build is
-installed with "Reinstall service", which copies it over the old one.
+configs. Other accounts on the machine may only see its state.
 
 Data: `%ProgramData%\dpiswitch` is the service's own (config, verdicts, logs):
 writable by SYSTEM and Administrators only, readable by users. What you change

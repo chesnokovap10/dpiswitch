@@ -87,7 +87,11 @@ func (s *Server) auth(h http.Handler) http.Handler {
 		return h
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == helloPath {
+		// the hello gives out only a proof of holding the key, and the icon
+		// is the program's, no secret: a browser fetches it by itself, and
+		// Chrome sent no SameSite=Strict cookie with it -- the tab showed a
+		// blank globe. The refusal below carries it too.
+		if r.URL.Path == helloPath || r.URL.Path == "/favicon.ico" {
 			h.ServeHTTP(w, r)
 			return
 		}
@@ -107,7 +111,7 @@ func (s *Server) auth(h http.Handler) http.Handler {
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte(`<!doctype html><meta charset="utf-8"><title>DPI Switch</title>
+		w.Write([]byte(`<!doctype html><meta charset="utf-8"><title>DPI Switch</title><link rel="icon" href="/favicon.ico">
 <p>Open DPI Switch from its tray icon.</p><p>Откройте DPI Switch через значок в трее.</p>`))
 	})
 }

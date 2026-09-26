@@ -32,6 +32,18 @@ func Enabled() bool {
 	return strings.EqualFold(v, command())
 }
 
+// Present: whether autostart is on for any copy -- after the tray moves to
+// the installed copy, the old path still says the user wanted it.
+func Present() bool {
+	k, err := registry.OpenKey(registry.CURRENT_USER, runKey, registry.QUERY_VALUE)
+	if err != nil {
+		return false
+	}
+	defer k.Close()
+	_, _, err = k.GetStringValue(valueName)
+	return err == nil
+}
+
 func Set(on bool) error {
 	k, _, err := registry.CreateKey(registry.CURRENT_USER, runKey, registry.SET_VALUE)
 	if err != nil {
