@@ -516,12 +516,20 @@ func (c *Conf) Render() (string, error) {
 
 // addrs: interface addresses from [Interface] Address
 func (c *Conf) addrs() (v4, v6 string, err error) {
+	// one address of each family: the core's outbound takes one of each, and
+	// a second used to replace the first without a word
 	for _, a := range split(c.Interface["Address"]) {
-		ip, _, _ := strings.Cut(a, "/")
-		if strings.Contains(ip, ":") {
-			v6 = ip
-		} else {
-			v4 = ip
+		s, _, _ := strings.Cut(a, "/")
+		ip := net.ParseIP(s)
+		switch {
+		case ip == nil:
+			return "", "", fmt.Errorf("Address %q: not an IP address", a)
+		case ip.To4() == nil && v6 != "", ip.To4() != nil && v4 != "":
+			return "", "", fmt.Errorf("Address %q: only one IPv4 and one IPv6 address are supported", a)
+		case ip.To4() == nil:
+			v6 = ip.String()
+		default:
+			v4 = ip.String()
 		}
 	}
 	if v4 == "" {

@@ -233,17 +233,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 				}
 				noV6 = noV6 || r.DirectNoV6
 				reachedV6 = reachedV6 || directReachedV6(r)
-				// INCONCLUSIVE means "could not measure" -- e.g. the host
-				// does not answer QUIC on either path. Such a result
-				// must not override a definite verdict, otherwise the domain
-				// gets stuck in the tunnel over a protocol it does not have.
-				switch {
-				case rep.Domain == "":
-					rep = r
-				case rep.Verdict == probe.Inconcl && r.Verdict != probe.Inconcl:
-					rep = r
-				case r.Verdict == probe.Inconcl:
-				case rep.Verdict == probe.Clean && r.Verdict != probe.Clean:
+				if rep.Domain == "" || worse(r.Verdict, rep.Verdict) {
 					rep = r
 				}
 			}
@@ -881,6 +871,27 @@ func failTerm(cfg Config, streak, reverts int) time.Duration {
 func sameFinding(a, b probe.Verdict) bool {
 	return a == b || (isBlocked(a) && isBlocked(b))
 }
+
+// verdictRank: how bad a port's verdict is for the name as a whole; the
+// worst port's verdict is the name's. INCONCLUSIVE means "could not
+// measure" -- e.g. the host has no QUIC on either path -- and is below a
+// definite verdict, or the name would stay in the tunnel over a protocol it
+// does not have. The order used to be the ports' order: a SLOWER first held
+// on to its place against a BLOCKED_TLS after it, and a CLEAN kept once
+// before (see SlowOnce) sent the name direct with one of its ports blocked.
+var verdictRank = map[probe.Verdict]int{
+	probe.Inconcl:     0,
+	probe.Clean:       1,
+	probe.Slower:      2,
+	probe.BlockedQUIC: 3,
+	probe.ContentDiff: 4,
+	probe.BlockedTCP:  5,
+	probe.BlockedTLS:  5,
+	probe.MITM:        6,
+}
+
+// worse: whether a is worse than b; of two alike the first stays
+func worse(a, b probe.Verdict) bool { return verdictRank[a] > verdictRank[b] }
 
 func isBlocked(v probe.Verdict) bool {
 	return v == probe.BlockedTCP || v == probe.BlockedTLS || v == probe.BlockedQUIC

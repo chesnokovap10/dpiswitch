@@ -187,8 +187,11 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool,
 		rep.DirectNoV6 = rep.DirectNoV6 || noV6
 		rep.Unmeasured = v == Inconcl && strings.HasPrefix(reason, tunnelDown)
 		// for QUIC the handshake is indivisible, so both "transport"
-		// failures mean the same thing -- packets did not get through
-		if udp && (v == BlockedTCP || v == BlockedTLS) {
+		// failures mean the same thing -- packets did not get through; and an
+		// HTTP/3 answer cut or different on the direct path is QUIC's alone
+		// too -- as CONTENT_DIFF it would outrank a TCP that works and send
+		// the whole name to the tunnel
+		if udp && (v == BlockedTCP || v == BlockedTLS || v == ContentDiff) {
 			v = BlockedQUIC
 		}
 		rep.Verdict, rep.Reason = v, reason

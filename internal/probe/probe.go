@@ -2,6 +2,7 @@ package probe
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
@@ -12,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -87,7 +89,9 @@ func Run(d Dialer, ip, host string) PathResult {
 	}
 
 	if st.NegotiatedProtocol == "h2" {
-		// h2 is not parsed; a successful TLS handshake is enough
+		// a real request over h2 as well: a handshake alone called a site
+		// clean that DPI lets through the ClientHello and stalls after
+		h2Get(&r, tc, host)
 		return r
 	}
 	httpGet(&r, tc, host)
@@ -114,7 +118,7 @@ func RunHTTP(d Dialer, ip, host string) PathResult {
 // would take timing out of our control.
 func httpGet(r *PathResult, conn net.Conn, host string) {
 	req := "GET / HTTP/1.1\r\nHost: " + host + "\r\n" +
-		"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36\r\n" +
+		"User-Agent: " + userAgent + "\r\n" +
 		"Accept: */*\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n"
 	t2 := time.Now()
 	if _, err := conn.Write([]byte(req)); err != nil {
@@ -126,6 +130,49 @@ func httpGet(r *PathResult, conn net.Conn, host string) {
 		r.Err, r.ErrStage = err.Error(), "http_read"
 		return
 	}
+	readResponse(r, resp, host, t2)
+}
+
+// userAgent: what the probes present themselves as
+const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36"
+
+// h2Get sends GET / over an established TLS connection that chose h2.
+// The standard transport does the h2 itself, over this very connection:
+// it is handed out as the one and only dial.
+func h2Get(r *PathResult, conn net.Conn, host string) {
+	t2 := time.Now()
+	var given atomic.Bool
+	tr := &http.Transport{
+		DialTLSContext: func(context.Context, string, string) (net.Conn, error) {
+			if given.Swap(true) {
+				return nil, errors.New("the probe has one connection only")
+			}
+			return conn, nil
+		},
+		ForceAttemptHTTP2:  true,
+		DisableCompression: true,
+	}
+	defer tr.CloseIdleConnections()
+	resp, err := tr.RoundTrip(probeRequest(host))
+	if err != nil {
+		r.Err, r.ErrStage = err.Error(), "http_read"
+		return
+	}
+	readResponse(r, resp, host, t2)
+}
+
+// probeRequest: GET / as the h2 and h3 probes send it
+func probeRequest(host string) *http.Request {
+	req, _ := http.NewRequest(http.MethodGet, "https://"+host+"/", nil)
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Accept-Encoding", "identity")
+	return req
+}
+
+// readResponse records an answer: status, redirect, and the body, read up
+// to bodyLimit.
+func readResponse(r *PathResult, resp *http.Response, host string, t2 time.Time) {
 	r.TTFB = time.Since(t2)
 	r.HTTPStatus = resp.StatusCode
 	if u, err := resp.Location(); err == nil {
@@ -267,8 +314,15 @@ func confirmDial(conn net.Conn, established func(int) (bool, error)) error {
 		// the core answered all along and never had this connection
 		return errors.New("the core never established the connection")
 	}
-	// no way to ask the core: an open connection after its whole dial
-	// budget is the best evidence there is
+	if established != nil {
+		// the core was there to ask and never answered -- busy, or stuck.
+		// An open connection is no proof: the SOCKS reply comes before the
+		// dial. Taken as one, an overloaded core turned failed dials into
+		// CLEAN; a failure keeps the name in the tunnel, which is safe.
+		return errors.New("the dial could not be confirmed: the core's API did not answer")
+	}
+	// nothing to ask (no core behind the dialer): an open connection after
+	// the whole dial budget is the best evidence there is
 	return nil
 }
 

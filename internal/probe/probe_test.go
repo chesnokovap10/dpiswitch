@@ -2,6 +2,7 @@ package probe
 
 import (
 	"bufio"
+	"errors"
 	"net"
 	"testing"
 	"time"
@@ -57,6 +58,9 @@ func TestConfirmDial(t *testing.T) {
 		{"server speaks first", never, func(c net.Conn) { c.Write([]byte("SSH-2.0\r\n")); time.Sleep(time.Second); c.Close() }, true},
 		// no way to ask the core: an open connection after the window counts
 		{"no core to ask, open", nil, func(c net.Conn) { time.Sleep(time.Second); c.Close() }, true},
+		// a core whose API never answers proves nothing: not a dial
+		{"API never answers, open", func(int) (bool, error) { return false, errors.New("timeout") },
+			func(c net.Conn) { time.Sleep(time.Second); c.Close() }, false},
 	}
 	for _, tc := range cases {
 		client, server := pair(t)

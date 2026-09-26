@@ -227,9 +227,11 @@ func Uninstall() error {
 		if _, err := s.Control(svc.Stop); err != nil {
 			log.Printf("warning: stop failed: %v", err)
 		}
-		// removal goes ahead: a service still running is deleted once it stops
-		if err := waitState(query(s), svc.Stopped, 30*time.Second, 300*time.Millisecond); err != nil {
-			log.Printf("warning: %v", err)
+		// a stop may take up to stopLimit. Deleting a service that still runs
+		// only marks it: removal reported done with the process alive, TUN and
+		// routes still up -- and a reinstall right after found the binary held.
+		if err := waitState(query(s), svc.Stopped, stopLimit+30*time.Second, 300*time.Millisecond); err != nil {
+			return fmt.Errorf("the service did not stop, it is not removed: %w", err)
 		}
 	}
 	return s.Delete()
@@ -353,7 +355,8 @@ func Stop() error {
 	if _, err := s.Control(svc.Stop); err != nil {
 		return err
 	}
-	return waitState(query(s), svc.Stopped, 30*time.Second, 300*time.Millisecond)
+	// the service may take up to stopLimit to stop (see waitStopped)
+	return waitState(query(s), svc.Stopped, stopLimit+30*time.Second, 300*time.Millisecond)
 }
 
 func query(s *mgr.Service) func() (svc.State, error) {

@@ -62,6 +62,8 @@ func TestForeignWG(t *testing.T) {
 		{"AmneziaWG up", []adapter{wifi, awgVP}, true},
 		{"a modem, our TUN", []adapter{modem, meta}, false},
 		{"WireGuard down", []adapter{wifi, {name: "home", desc: "WireGuard Tunnel"}}, false},
+		// another VPN on the same driver is not another WireGuard client
+		{"sing-box on Wintun", []adapter{wifi, {name: "singbox", desc: "Wintun Userspace Tunnel", up: true}}, false},
 	} {
 		if got, _ := foreignWG(tc.ads); got != tc.want {
 			t.Errorf("%s: %v, want %v", tc.name, got, tc.want)

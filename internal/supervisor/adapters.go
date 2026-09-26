@@ -110,9 +110,11 @@ func hasUplink(ads []adapter, routes map[uint32]bool) bool {
 }
 
 // wgKinds: words in the description of an adapter another WireGuard-type
-// client brings up -- WireGuard itself, AmneziaWG and AmneziaVPN, and the
-// wintun driver they share
-var wgKinds = []string{"wireguard", "amnezia", "wintun"}
+// client brings up -- WireGuard itself, AmneziaWG and AmneziaVPN. Not the
+// bare "wintun" of the driver they share: sing-box, Clash and other VPNs
+// bring up Wintun adapters too, and with any of them up a dead tunnel was
+// never restarted.
+var wgKinds = []string{"wireguard", "amnezia"}
 
 // foreignWG: an adapter of another WireGuard-type client that is up.
 func foreignWG(ads []adapter) (bool, string) {

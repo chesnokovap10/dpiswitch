@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 )
 
 // QUIC probe. A real handshake rather than a hand-crafted probe packet:
@@ -67,7 +68,23 @@ func RunQUIC(d Dialer, ip string, port int, host string) PathResult {
 		r.CertCN = leaf.Subject.CommonName
 		r.CertValid = verifyChain(host, st.PeerCertificates)
 	}
+	// and a request: a handshake alone called a site clean that DPI lets
+	// through the Initial and cuts after
+	if r.ALPN == "h3" {
+		h3Get(ctx, &r, conn, host)
+	}
 	return r
+}
+
+// h3Get sends GET / over an established QUIC connection that chose h3.
+func h3Get(ctx context.Context, r *PathResult, conn *quic.Conn, host string) {
+	t2 := time.Now()
+	resp, err := (&http3.Transport{}).NewClientConn(conn).RoundTrip(probeRequest(host).WithContext(ctx))
+	if err != nil {
+		r.Err, r.ErrStage = err.Error(), "http_read"
+		return
+	}
+	readResponse(r, resp, host, t2)
 }
 
 var _ = fmt.Sprintf

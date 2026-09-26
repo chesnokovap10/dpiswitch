@@ -75,3 +75,20 @@ func TestRenderQuotesResolvers(t *testing.T) {
 		t.Fatalf("resolver not quoted:\n%s", out)
 	}
 }
+
+// A second address of the same family is refused, not dropped in silence.
+func TestAddrs(t *testing.T) {
+	for addr, ok := range map[string]bool{
+		"10.8.1.3/32":                           true,
+		"10.8.1.3/32, fd7a:a1c3:8b42::3/128":    true,
+		"10.0.0.2/24, 10.0.0.3/24":              false,
+		"10.8.1.3/32, fd7a::3/128, fd7a::4/128": false,
+		"10.8.1.x/32":                           false,
+		"fd7a::3/128":                           false, // no IPv4
+	} {
+		c := &Conf{Interface: Section{"Address": addr}}
+		if _, _, err := c.addrs(); (err == nil) != ok {
+			t.Errorf("%q: err %v, want ok=%v", addr, err, ok)
+		}
+	}
+}

@@ -259,7 +259,7 @@ func (r Resolver) datagram(d Dialer, q []byte, id uint16) ([]byte, error) {
 		resend := time.Now().Add(udpResend)
 		_ = u.SetReadDeadline(minTime(resend, deadline))
 		for {
-			n, _, err := u.ReadFrom(buf)
+			n, from, err := u.ReadFrom(buf)
 			var ne net.Error
 			if errors.As(err, &ne) && ne.Timeout() {
 				break
@@ -268,7 +268,11 @@ func (r Resolver) datagram(d Dialer, q []byte, id uint16) ([]byte, error) {
 				return nil, err
 			}
 			m := buf[:n]
-			if len(m) < 12 || binary.BigEndian.Uint16(m) != id || m[2]&0x80 == 0 {
+			// an answer is the resolver's, to this very question: a 16-bit ID
+			// alone let any datagram that guessed it pass for one
+			if fa, ok := from.(*net.UDPAddr); !ok || !fa.IP.Equal(to.IP) || fa.Port != to.Port ||
+				len(m) < len(q) || binary.BigEndian.Uint16(m) != id || m[2]&0x80 == 0 ||
+				!bytes.EqualFold(m[12:len(q)], q[12:]) {
 				continue // not the answer to this query
 			}
 			if m[2]&0x02 != 0 {

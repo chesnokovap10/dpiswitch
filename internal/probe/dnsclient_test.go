@@ -196,6 +196,13 @@ func TestDoHKeepsConnection(t *testing.T) {
 // every DNS query that reaches its relay -- after dropping the first few,
 // as a lossy network does.
 func udpSocksStub(t *testing.T, drop int) (addr string, asked *atomic.Int32) {
+	return udpSocksStubForged(t, drop, false)
+}
+
+// udpSocksStubForged: the same, and with forge each real answer comes after
+// two forged ones carrying its ID -- one from another address, one to
+// another question -- both saying 6.6.6.6.
+func udpSocksStubForged(t *testing.T, drop int, forge bool) (addr string, asked *atomic.Int32) {
 	relay, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
 		t.Fatal(err)
@@ -217,6 +224,17 @@ func udpSocksStub(t *testing.T, drop int) (addr string, asked *atomic.Int32) {
 				continue
 			}
 			q := buf[10:n]
+			if forge {
+				bad := answerWith(q, binary.BigEndian.Uint16(q))
+				copy(bad[len(bad)-4:], []byte{6, 6, 6, 6})
+				other := append([]byte(nil), buf[:10]...)
+				other[4] = 198 // from 198.x.x.x, not the resolver
+				relay.WriteToUDP(append(other, bad...), from)
+				wrongQ := append([]byte(nil), bad...)
+				wrongQ[13] ^= 0x20 // another name in the question
+				wrongQ[14]++
+				relay.WriteToUDP(append(append([]byte(nil), buf[:10]...), wrongQ...), from)
+			}
 			out := append(append([]byte(nil), buf[:10]...), answerWith(q, binary.BigEndian.Uint16(q))...)
 			relay.WriteToUDP(out, from)
 		}
@@ -264,5 +282,19 @@ func TestLookupOverUDP(t *testing.T) {
 	}
 	if n := asked.Load(); n != 2 {
 		t.Fatalf("%d datagrams, want the lost one sent again", n)
+	}
+}
+
+// An answer counts only from the resolver asked, to the question asked: a
+// datagram that guessed the 16-bit ID was taken for the answer.
+func TestUDPAnswerForged(t *testing.T) {
+	addr, _ := udpSocksStubForged(t, 0, true)
+	r, err := ParseResolver("udp://192.0.2.53")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.Lookup(Dialer{Addr: addr, Timeout: 3 * time.Second}, "example.com")
+	if err != nil || len(got) != 1 || got[0] != "192.0.2.7" {
+		t.Fatalf("got %v, %v -- a forged answer was taken", got, err)
 	}
 }
