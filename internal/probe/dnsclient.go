@@ -189,8 +189,8 @@ func (r Resolver) doh(d Dialer, q []byte) ([]byte, error) {
 		// The kept connection may be dead by the time a query is written
 		// into it -- a core restart cuts every connection it carries -- and
 		// the transport does not always notice first: it fails the query
-		// with the write error and retries nothing, a POST over HTTP/2 (CI
-		// caught it, about once in 300 runs of the test). A query is safe to
+		// with the write error and retries nothing, a POST over HTTP/2 (a test
+		// caught it, about once in 300 runs). A query is safe to
 		// send twice: once more, on a fresh connection.
 		r.dohClient(d).CloseIdleConnections()
 		resp, err = post()

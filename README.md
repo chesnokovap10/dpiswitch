@@ -1,10 +1,38 @@
-# DPI Switch
+<p align="center">
+  <img src="assets/icon.png" width="96" height="96" alt="DPI Switch">
+</p>
 
-**[Русский](#русский)** · **[English](#english)**
+<h1 align="center">DPI Switch</h1>
 
----
+<p align="center">
+  <b>Клиент AmneziaWG для Windows, который сам выводит из туннеля незаблокированные сайты</b><br>
+  <sub>An AmneziaWG client for Windows that takes unblocked sites out of the tunnel by itself</sub>
+</p>
+
+<p align="center">
+  <img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square">
+  <img alt="AmneziaWG" src="https://img.shields.io/badge/AmneziaWG-awg%20%2B%20awg2-2563eb?style=flat-square">
+  <img alt="mihomo" src="https://img.shields.io/badge/core-mihomo-6b7280?style=flat-square">
+  <img alt="Go 1.26+" src="https://img.shields.io/badge/Go-1.26%2B-00ADD8?style=flat-square">
+  <img alt="1.2.0" src="https://img.shields.io/badge/version-1.2.0-127a3d?style=flat-square">
+</p>
+
+<p align="center">
+  <a href="#русский"><kbd> Русский </kbd></a>&nbsp;&nbsp;
+  <a href="#english"><kbd> English </kbd></a>
+</p>
+
+<br>
 
 ## Русский
+
+<table>
+<tr>
+<td width="33%" valign="top"><b>Всё через туннель</b><br><sub>По умолчанию весь трафик идёт через AmneziaWG — ничего не сломается, пока детектор не проверит.</sub></td>
+<td width="33%" valign="top"><b>Детектор блокировок</b><br><sub>Сравнивает прямой путь и туннель на одном узле: TCP, TLS, HTTP, QUIC.</sub></td>
+<td width="33%" valign="top"><b>Второй туннель</b><br><sub>Отдельный сервер для YouTube, Telegram, ИИ-сервисов и вашего списка.</sub></td>
+</tr>
+</table>
 
 Клиент AmneziaWG для Windows на ядре [mihomo](https://github.com/MetaCubeX/mihomo).
 По умолчанию весь трафик компьютера идёт через туннель AmneziaWG. Параллельно детектор проверяет
@@ -12,6 +40,7 @@
 медленнее, переводится на прямое соединение и запоминается: он открывается быстрее и видит вашего
 настоящего провайдера. Всё остальное остаётся в туннеле.
 
+> [!IMPORTANT]
 > Детектор только **выводит** сайты из туннеля, по одному и после проверки. При сомнении сайт
 > остаётся в туннеле: ошибочное «чисто» ломает сайт, ошибочное «заблокирован» стоит лишь крюка
 > через туннель.
@@ -48,8 +77,9 @@
 4. Загрузите `.conf` AmneziaWG, который выдал ваш VPN-провайдер; по желанию — второй `.conf` для
    второго туннеля (awg2). Ключи остаются на этом компьютере.
 
-**Обновление.** Запустите новый `dpiswitch.exe` откуда угодно: он предложит установить себя поверх
-установленной версии (один запрос прав администратора) и перенесёт трей на неё.
+> [!TIP]
+> **Обновление.** Запустите новый `dpiswitch.exe` откуда угодно: он предложит установить себя поверх
+> установленной версии (один запрос прав администратора) и перенесёт трей на неё.
 
 **Удаление.** «Удалить службу…» внизу боковой панели интерфейса. Туннель останавливается и не
 запускается с Windows, пока службу не установят снова; настройки и списки сохраняются.
@@ -133,14 +163,14 @@
 
 | Вердикт | Что увидели | Маршрут |
 |---|---|---|
-| `CLEAN` | Все попытки прошли напрямую так же, как через туннель, и не медленнее | напрямую |
-| `BLOCKED_TCP` | Напрямую соединение отклоняется, сбрасывается или висит, а через туннель работает | туннель |
-| `BLOCKED_TLS` | TCP устанавливается, но TLS-рукопожатие обрывается, как только видно имя сайта: типичная блокировка DPI | туннель |
-| `BLOCKED_QUIC` | Напрямую заблокирован QUIC (UDP 443). TCP может работать, но имя идёт одним маршрутом целиком | туннель |
-| `MITM` | Сертификат на прямом пути не сайта или не проходит проверку: вместо сайта отвечает кто-то другой | туннель |
-| `CONTENT_DIFF` | Ответ на прямом пути отличается от туннельного: скорее всего, страница-заглушка | туннель |
-| `SLOWER` | Не заблокирован, но напрямую медленнее туннеля сверх допуска | туннель |
-| `INCONCLUSIVE` | Не с чем сравнить: туннель тоже не прошёл, сайт нигде не отвечает или его IPv6-узел напрямую недоступен | остаётся прежний вердикт; новое имя остаётся в туннеле |
+| 🟢 `CLEAN` | Все попытки прошли напрямую так же, как через туннель, и не медленнее | напрямую |
+| 🔴 `BLOCKED_TCP` | Напрямую соединение отклоняется, сбрасывается или висит, а через туннель работает | туннель |
+| 🔴 `BLOCKED_TLS` | TCP устанавливается, но TLS-рукопожатие обрывается, как только видно имя сайта: типичная блокировка DPI | туннель |
+| 🔴 `BLOCKED_QUIC` | Напрямую заблокирован QUIC (UDP 443). TCP может работать, но имя идёт одним маршрутом целиком | туннель |
+| 🔴 `MITM` | Сертификат на прямом пути не сайта или не проходит проверку: вместо сайта отвечает кто-то другой | туннель |
+| 🔴 `CONTENT_DIFF` | Ответ на прямом пути отличается от туннельного: скорее всего, страница-заглушка | туннель |
+| 🟡 `SLOWER` | Не заблокирован, но напрямую медленнее туннеля сверх допуска | туннель |
+| ⚪ `INCONCLUSIVE` | Не с чем сравнить: туннель тоже не прошёл, сайт нигде не отвечает или его IPv6-узел напрямую недоступен | остаётся прежний вердикт; новое имя остаётся в туннеле |
 
 ### Сроки и перепроверки
 
@@ -185,7 +215,9 @@ CDN, спидтестам, обновлениям.
   ядро узнаёт уже на выбранном маршруте. Поэтому маршрут решает имя, а не адрес. Диапазон IPv6
   намеренно не ULA: Chrome считает `fc00::/7` локальной сетью и блокирует запросы к ней (Local Network
   Access).
-- Сохранение DNS перезапускает ядро: туннель пропадает на пару секунд.
+
+> [!NOTE]
+> Сохранение DNS перезапускает ядро: туннель пропадает на пару секунд.
 
 ### IPv6
 
@@ -270,14 +302,24 @@ dpiswitch version    показать версию
   копию папки данных, чтобы не трогать настоящие настройки; служба и её ядро при этом настоящие.
   Откройте адрес с ключом, который он печатает.
 
-CI (GitHub Actions, `.github/workflows/ci.yml`) выключен; проверки запускаются локально перед
-пушем: `go vet ./...`, `go test ./...` и для `internal/ctl` — `go test -race`. `gh workflow enable CI`
-включает его обратно: тогда пуш в `main` с изменениями Go-кода гоняет `go vet` и тесты, а
-`gh workflow run CI --ref vX.Y.Z` ещё и собирает тег в черновик релиза.
+Проверки перед пушем запускаются локально: `go vet ./...`, `go test ./...` и для `internal/ctl` —
+`go test -race` (`.\build.ps1` сам гоняет vet и тесты перед сборкой).
 
----
+<p align="right"><a href="#readme">↑ наверх</a></p>
+
+<br>
 
 ## English
+
+<p align="right"><a href="#русский"><kbd> Русский ↑ </kbd></a></p>
+
+<table>
+<tr>
+<td width="33%" valign="top"><b>Everything via the tunnel</b><br><sub>By default all traffic goes through AmneziaWG — nothing breaks before the detector has checked.</sub></td>
+<td width="33%" valign="top"><b>A block detector</b><br><sub>Compares the direct path and the tunnel on the same node: TCP, TLS, HTTP, QUIC.</sub></td>
+<td width="33%" valign="top"><b>A second tunnel</b><br><sub>A separate server for YouTube, Telegram, AI services and your own list.</sub></td>
+</tr>
+</table>
 
 An AmneziaWG client for Windows built on the [mihomo](https://github.com/MetaCubeX/mihomo) core.
 All traffic of the computer goes through the AmneziaWG tunnel by default. Alongside, a detector
@@ -285,6 +327,7 @@ checks, site by site, whether your ISP interferes with the direct path. A site t
 and is not slower there, is switched to a direct connection and remembered: it opens faster and sees
 your real ISP. Everything else stays in the tunnel.
 
+> [!IMPORTANT]
 > The detector only ever **takes sites out** of the tunnel, one at a time, after checking them. When
 > in doubt a site stays in the tunnel: a wrong "clean" breaks a site, a wrong "blocked" only costs a
 > detour.
@@ -321,8 +364,9 @@ your real ISP. Everything else stays in the tunnel.
 4. Load the AmneziaWG `.conf` your VPN provider gave you; optionally a second `.conf` for the second
    tunnel (awg2). Keys stay on this machine.
 
-**Updating.** Start the new `dpiswitch.exe` from anywhere: it offers to install itself over the
-installed version (one administrator prompt) and moves the tray to it.
+> [!TIP]
+> **Updating.** Start the new `dpiswitch.exe` from anywhere: it offers to install itself over the
+> installed version (one administrator prompt) and moves the tray to it.
 
 **Removing.** "Remove service…" at the bottom of the UI's sidebar. The tunnel stops and does not start
 with Windows until the service is installed again; settings and lists stay.
@@ -406,14 +450,14 @@ moment than about the path.
 
 | Verdict | What was seen | Route |
 |---|---|---|
-| `CLEAN` | Every attempt passed directly just as through the tunnel, not slower | direct |
-| `BLOCKED_TCP` | The connection is refused, reset or times out directly, and works through the tunnel | tunnel |
-| `BLOCKED_TLS` | TCP connects, but the TLS handshake is cut once the site's name is seen: the typical DPI block | tunnel |
-| `BLOCKED_QUIC` | QUIC (UDP 443) is blocked directly. TCP may work, but a name goes one way as a whole | tunnel |
-| `MITM` | The certificate on the direct path is not the site's, or does not verify: someone answers in the site's place | tunnel |
-| `CONTENT_DIFF` | The answer on the direct path differs from the tunnel's: most likely a block page | tunnel |
-| `SLOWER` | Not blocked, but slower direct than through the tunnel beyond the tolerance | tunnel |
-| `INCONCLUSIVE` | Nothing to compare: the tunnel failed too, the site answers nowhere, or its IPv6 node is out of reach directly | keeps the previous verdict; a new name stays in the tunnel |
+| 🟢 `CLEAN` | Every attempt passed directly just as through the tunnel, not slower | direct |
+| 🔴 `BLOCKED_TCP` | The connection is refused, reset or times out directly, and works through the tunnel | tunnel |
+| 🔴 `BLOCKED_TLS` | TCP connects, but the TLS handshake is cut once the site's name is seen: the typical DPI block | tunnel |
+| 🔴 `BLOCKED_QUIC` | QUIC (UDP 443) is blocked directly. TCP may work, but a name goes one way as a whole | tunnel |
+| 🔴 `MITM` | The certificate on the direct path is not the site's, or does not verify: someone answers in the site's place | tunnel |
+| 🔴 `CONTENT_DIFF` | The answer on the direct path differs from the tunnel's: most likely a block page | tunnel |
+| 🟡 `SLOWER` | Not blocked, but slower direct than through the tunnel beyond the tolerance | tunnel |
+| ⚪ `INCONCLUSIVE` | Nothing to compare: the tunnel failed too, the site answers nowhere, or its IPv6 node is out of reach directly | keeps the previous verdict; a new name stays in the tunnel |
 
 ### Terms and re-checks
 
@@ -458,7 +502,9 @@ shares them, another ISP starts its own. Without a network the checks pause and 
   core resolves the real one on the chosen route. That is why a name, not an address, decides the
   route. The IPv6 range is deliberately not ULA: Chrome treats `fc00::/7` as a local network and
   blocks requests to it (Local Network Access).
-- Saving the DNS restarts the core: the tunnel drops for a couple of seconds.
+
+> [!NOTE]
+> Saving the DNS restarts the core: the tunnel drops for a couple of seconds.
 
 ### IPv6
 
@@ -545,7 +591,7 @@ are left out: ~30 MB instead of ~80 MB. The TUN runs on the Windows network stac
   `ProgramData` at a copy of the data directory to leave the real settings alone; the service and
   its core are still the real ones. Open the address with the key it prints.
 
-CI (GitHub Actions, `.github/workflows/ci.yml`) is disabled; checks run locally before a push:
-`go vet ./...`, `go test ./...` and, for `internal/ctl`, `go test -race`. `gh workflow enable CI`
-turns it back on: then a push to `main` that changes Go code runs `go vet` and the tests, and
-`gh workflow run CI --ref vX.Y.Z` also builds a tag into a draft release.
+Checks run locally before a push: `go vet ./...`, `go test ./...` and, for `internal/ctl`,
+`go test -race` (`.\build.ps1` runs vet and the tests itself before building).
+
+<p align="right"><a href="#readme">↑ back to top</a> · <a href="#русский">Русский</a></p>
