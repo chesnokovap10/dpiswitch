@@ -13,7 +13,11 @@
 # EasyTier stacks and Hysteria's fake-TCP; -s -w strips debug symbols.
 param(
     # pinned commit the program was tested with
-    [string]$Commit = "f103639c808d93a2c34cae56757b458862871b22"
+    [string]$Commit = "f103639c808d93a2c34cae56757b458862871b22",
+    # where to take it from. The private copy, should upstream go away:
+    # https://github.com/chesnokovap10/mihomo-dpiswitch -- the pinned commit
+    # and its history, the cut already made, every dependency in vendor/
+    [string]$Repo = "https://github.com/MetaCubeX/mihomo.git"
 )
 
 $ErrorActionPreference = "Stop"
@@ -21,9 +25,9 @@ $root = $PSScriptRoot | Split-Path
 $src = Join-Path $env:TEMP "mihomo-src-$($Commit.Substring(0, 12))"
 
 if (-not (Test-Path $src)) {
-    git clone --filter=blob:none https://github.com/MetaCubeX/mihomo.git $src
+    git clone --filter=blob:none $Repo $src
 }
-git -C $src fetch --quiet origin $Commit
+git -C $src fetch --quiet $Repo $Commit
 # a previous run left the switches cut: start from the pristine tree
 git -C $src reset --quiet --hard
 git -C $src checkout --quiet --detach $Commit
