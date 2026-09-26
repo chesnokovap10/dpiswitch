@@ -190,33 +190,7 @@ func updateOffer() bool {
 }
 
 // closeTrays ends every other tray of this session
-func closeTrays() {
-	var sess uint32
-	windows.ProcessIdToSessionId(windows.GetCurrentProcessId(), &sess)
-	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
-	if err != nil {
-		return
-	}
-	defer windows.CloseHandle(snap)
-	var e windows.ProcessEntry32
-	e.Size = uint32(unsafe.Sizeof(e))
-	for err = windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
-		if !strings.EqualFold(windows.UTF16ToString(e.ExeFile[:]), "dpiswitch.exe") || e.ProcessID == windows.GetCurrentProcessId() {
-			continue
-		}
-		var s uint32
-		if windows.ProcessIdToSessionId(e.ProcessID, &s) != nil || s != sess {
-			continue
-		}
-		h, err := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, e.ProcessID)
-		if err != nil {
-			continue
-		}
-		windows.TerminateProcess(h, 0)
-		windows.WaitForSingleObject(h, 5000)
-		windows.CloseHandle(h)
-	}
-}
+func closeTrays() { closeTraysBut(0) }
 
 func ptr(s string) *uint16 {
 	p, _ := syscall.UTF16PtrFromString(s)

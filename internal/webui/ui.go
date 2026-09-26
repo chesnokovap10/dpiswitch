@@ -309,6 +309,7 @@ type status struct {
 	Autostart   bool           `json:"autostart"`
 	HasConfig   bool           `json:"has_config"`
 	DataDir     string         `json:"data_dir"`
+	InstallDir  string         `json:"install_dir"`
 	NetworkID   string         `json:"network_id"`
 	Counts      map[string]int `json:"counts"`
 	DirectCount int            `json:"direct_count"`
@@ -336,12 +337,13 @@ var apiAddr = "127.0.0.1:9090"
 
 func collectStatus() status {
 	st := status{
-		Installed: winsvc.Installed(),
-		ExePath:   paths.Exe(),
-		BinPath:   winsvc.BinPath(),
-		Autostart: autostart.Enabled(),
-		DataDir:   paths.DataDir(),
-		Version:   version.Version,
+		Installed:  winsvc.Installed(),
+		ExePath:    paths.Exe(),
+		BinPath:    winsvc.BinPath(),
+		Autostart:  autostart.Enabled(),
+		DataDir:    paths.DataDir(),
+		InstallDir: winsvc.InstallDir(),
+		Version:    version.Version,
 	}
 	st.PathOK = !st.Installed || winsvc.SameBuild()
 	if _, err := os.Stat(paths.Config()); err == nil {

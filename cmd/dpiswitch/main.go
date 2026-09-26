@@ -53,12 +53,14 @@ func main() {
 	case "reinstall":
 		_ = winsvc.Uninstall()
 		report(T("Reinstall service"), winsvc.Install(ownerArg()))
+	case "remove":
+		runRemove()
 	case "", "tray":
 		runTray()
 	case "version", "-v", "--version":
 		msgBox("DPI Switch", T("Version")+" "+version.Version, 0x40)
 	default:
-		report("dpiswitch", fmt.Errorf(T("unknown command %q; valid: tray, service, install, uninstall, reinstall, version"), cmd))
+		report("dpiswitch", fmt.Errorf(T("unknown command %q; valid: tray, service, install, uninstall, reinstall, remove, version"), cmd))
 	}
 }
 
@@ -342,6 +344,9 @@ func panicTunnel() {
 // installing and removing the service needs administrator rights: a normal
 // process cannot do it, so we call ourselves with runas
 func elevate(verb string) error {
+	if verb == "remove" {
+		return removeProgram()
+	}
 	if verb == "install" || verb == "reinstall" {
 		// for this user (the administrator prompt may be answered with
 		// another account), and the tray follows to the installed copy

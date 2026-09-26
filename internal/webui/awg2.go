@@ -22,9 +22,7 @@ func saveConf2(text string) error {
 	if _, _, err := net.SplitHostPort(c.Peer["Endpoint"]); err != nil {
 		return fmt.Errorf("cannot parse Endpoint: %w", err)
 	}
-	if c1, err := awgconf.ParseFile(paths.SourceConf()); err == nil &&
-		c1.Interface["PrivateKey"] == c.Interface["PrivateKey"] {
-		// one key in two sessions -- the servers keep stealing it from each other
+	if c1, err := awgconf.ParseFile(paths.SourceConf()); err == nil && awgconf.SameKey(c1, c) {
 		return errors.New("this is the same config as the first tunnel")
 	}
 	if err := paths.UserReady(); err != nil {

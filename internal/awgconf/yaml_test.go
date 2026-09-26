@@ -1,6 +1,7 @@
 package awgconf
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -89,6 +90,37 @@ func TestAddrs(t *testing.T) {
 		c := &Conf{Interface: Section{"Address": addr}}
 		if _, _, err := c.addrs(); (err == nil) != ok {
 			t.Errorf("%q: err %v, want ok=%v", addr, err, ok)
+		}
+	}
+}
+
+// A second tunnel with the first one's key -- saved before the UI refused
+// it, or put there by hand -- is left out: both would keep dropping.
+func TestRenderSkipsSameKey(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	conf := func(key string) string {
+		return "[Interface]\nPrivateKey = " + key + "\nAddress = 10.8.1.3/32\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.8:51820\n"
+	}
+	c, err := Parse(conf("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		key  string
+		awg2 bool
+	}{{"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", false}, {"AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", true}} {
+		if err := os.WriteFile(paths.SourceConf2(), []byte(conf(tc.key)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		out, err := c.Render()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Contains(out, "name: awg2"); got != tc.awg2 {
+			t.Errorf("key %s: awg2 attached = %v, want %v", tc.key, got, tc.awg2)
 		}
 	}
 }

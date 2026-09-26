@@ -3,7 +3,9 @@
 package awgconf
 
 import (
+	"bytes"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -183,6 +185,10 @@ func (c *Conf) Render() (string, error) {
 			log.Printf("second tunnel not attached: %v", err)
 		} else if err := cc.check(); err != nil {
 			log.Printf("second tunnel not attached: %v", err)
+		} else if SameKey(c, cc) {
+			// the UI refuses it either way; a pair from before that, or
+			// files put there by hand, must not bring both tunnels down
+			log.Printf("second tunnel not attached: it has the first tunnel's key")
 		} else {
 			c2 = cc
 		}
@@ -770,4 +776,17 @@ func bootstrapDNS(list []string) []string {
 		out = []string{"https://77.88.8.8/dns-query", "tls://77.88.8.1"}
 	}
 	return out
+}
+
+// SameKey: the two configs are one peer to their servers -- the same
+// private key. Two tunnels with one key are one session the servers keep
+// taking from each other, and both keep dropping. Compared as keys, not as
+// text: base64 written differently is still the same key.
+func SameKey(a, b *Conf) bool {
+	ka, ea := base64.StdEncoding.DecodeString(a.Interface["PrivateKey"])
+	kb, eb := base64.StdEncoding.DecodeString(b.Interface["PrivateKey"])
+	if ea != nil || eb != nil {
+		return a.Interface["PrivateKey"] == b.Interface["PrivateKey"]
+	}
+	return bytes.Equal(ka, kb)
 }

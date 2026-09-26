@@ -87,11 +87,15 @@ func (s *Server) actService(w http.ResponseWriter, r *http.Request) {
 		err = winsvc.Start()
 	case "stop":
 		err = winsvc.Stop()
-	case "install", "uninstall", "reinstall":
+	case "install", "uninstall", "reinstall", "remove":
 		if s.Elevate == nil {
 			err = errors.New("elevation unavailable")
 		} else {
 			err = s.Elevate(do)
+		}
+		if do == "remove" {
+			s.redirect(w, r, err, "Confirm the administrator prompt: then the program removes itself and this page stops answering")
+			return
 		}
 		s.redirect(w, r, err, "Confirm the administrator prompt: the status updates by itself")
 		return
@@ -156,6 +160,10 @@ func saveConf1(text string) error {
 	// service renders config.yaml itself -- the user may not write it
 	if _, err := conf.Render(); err != nil {
 		return err
+	}
+	// the other way round from saveConf2: one key in both tunnels breaks both
+	if c2, err := awgconf.ParseFile(paths.SourceConf2()); err == nil && awgconf.SameKey(conf, c2) {
+		return errors.New("this is the same config as the second tunnel: replace or detach that one first")
 	}
 	if err := paths.UserReady(); err != nil {
 		return err

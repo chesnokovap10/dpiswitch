@@ -115,7 +115,11 @@ func TestTranslations(t *testing.T) {
 		for _, m := range re.FindAllStringSubmatch(text, -1) {
 			for _, k := range m[1:] {
 				if k != "" {
-					keys = append(keys, strings.ReplaceAll(k, `\"`, `"`))
+					// the keys are Go strings in the source: \n and \" as written there
+					if u, err := strconv.Unquote(`"` + k + `"`); err == nil {
+						k = u
+					}
+					keys = append(keys, k)
 				}
 			}
 		}
@@ -142,7 +146,7 @@ func TestTranslations(t *testing.T) {
 	}
 	// the tray speaks the pages' language, from the same table
 	trayKey := regexp.MustCompile(`\bT\("((?:[^"\\]|\\.)*)"\)`)
-	for _, f := range []string{"main.go", "install.go"} {
+	for _, f := range []string{"main.go", "install.go", "remove.go"} {
 		b, err := os.ReadFile(filepath.Join("..", "..", "cmd", "dpiswitch", f))
 		if err != nil {
 			t.Fatal(err)
@@ -402,5 +406,34 @@ func TestFavicon(t *testing.T) {
 	w := do(t, s.Handler(), "GET", "/favicon.ico", nil, nil)
 	if w.Code != 200 || w.Header().Get("Content-Type") != "image/x-icon" || !strings.HasPrefix(w.Body.String(), "\x00\x00\x01\x00") {
 		t.Fatalf("favicon: %d %q, %d bytes", w.Code, w.Header().Get("Content-Type"), w.Body.Len())
+	}
+}
+
+// One .conf in both tunnels is refused whichever is loaded second.
+func TestSameConfBothTunnels(t *testing.T) {
+	testServer(t)
+	conf := func(key, host string) string {
+		return "[Interface]\nPrivateKey = " + key + "\nAddress = 10.8.1.3/32\n[Peer]\nPublicKey = cA==\nEndpoint = " + host + ":51820\n"
+	}
+	k1 := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	k2 := "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	if err := saveConf1(conf(k1, "198.51.100.7")); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveConf2(conf(k1, "198.51.100.8")); err == nil {
+		t.Fatal("the first tunnel's key taken for the second")
+	}
+	if err := saveConf2(conf(k2, "198.51.100.8")); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveConf1(conf(k2, "198.51.100.9")); err == nil {
+		t.Fatal("the second tunnel's key taken for the first")
+	}
+	if b, _ := os.ReadFile(paths.SourceConf()); !strings.Contains(string(b), k1) {
+		t.Fatal("the refused config replaced the first one")
+	}
+	// the first one replaced by another of its own: fine
+	if err := saveConf1(conf(k1, "198.51.100.10")); err != nil {
+		t.Fatal(err)
 	}
 }

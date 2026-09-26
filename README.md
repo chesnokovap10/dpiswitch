@@ -81,8 +81,17 @@
 > **Обновление.** Запустите новый `dpiswitch.exe` откуда угодно: он предложит установить себя поверх
 > установленной версии (один запрос прав администратора) и перенесёт трей на неё.
 
-**Удаление.** «Удалить службу…» внизу боковой панели интерфейса. Туннель останавливается и не
-запускается с Windows, пока службу не установят снова; настройки и списки сохраняются.
+**Удаление.** Внизу боковой панели интерфейса:
+
+- «Удалить службу…» — туннель останавливается и не запускается с Windows, пока службу не установят
+  снова; программа, настройки и списки остаются.
+- «Удалить программу…» — полное удаление (один запрос прав администратора): останавливается и
+  удаляется служба, закрывается трей, удаляются `%ProgramFiles%\DPI Switch`, `%ProgramData%\dpiswitch`
+  (с файлами `.conf` и их ключами), папка трея в профиле, автозапуск и ярлык на рабочем столе. Остаётся
+  только файл, из которого программу устанавливали.
+
+> [!CAUTION]
+> Удаление программы необратимо: если файлы `.conf` ещё понадобятся, сохраните их копию заранее.
 
 ### Интерфейс
 
@@ -267,6 +276,7 @@ dpiswitch            трей (по умолчанию)
 dpiswitch install    установить службу
 dpiswitch uninstall  удалить службу
 dpiswitch reinstall  переустановить службу
+dpiswitch remove     удалить программу целиком (служба, файлы, данные)
 dpiswitch version    показать версию
 ```
 
@@ -368,8 +378,17 @@ your real ISP. Everything else stays in the tunnel.
 > **Updating.** Start the new `dpiswitch.exe` from anywhere: it offers to install itself over the
 > installed version (one administrator prompt) and moves the tray to it.
 
-**Removing.** "Remove service…" at the bottom of the UI's sidebar. The tunnel stops and does not start
-with Windows until the service is installed again; settings and lists stay.
+**Removing.** At the bottom of the UI's sidebar:
+
+- "Remove service…" — the tunnel stops and does not start with Windows until the service is installed
+  again; the program, settings and lists stay.
+- "Remove the program…" — a complete removal (one administrator prompt): the service stops and is
+  removed, the tray closes, and `%ProgramFiles%\DPI Switch`, `%ProgramData%\dpiswitch` (the `.conf`
+  files and their keys included), the tray's folder in the profile, autostart and the desktop shortcut
+  are deleted. Only the file the program was installed from stays.
+
+> [!CAUTION]
+> Removing the program cannot be undone: keep a copy of your `.conf` files first if you will need them.
 
 ### The interface
 
@@ -555,6 +574,7 @@ dpiswitch            tray (default)
 dpiswitch install    install the service
 dpiswitch uninstall  remove the service
 dpiswitch reinstall  reinstall the service
+dpiswitch remove     remove the whole program (service, files, data)
 dpiswitch version    show the version
 ```
 

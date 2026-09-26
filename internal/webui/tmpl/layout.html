@@ -82,6 +82,9 @@
       <button name="do" value="uninstall" class="link">{{.T "Remove service…"}}</button>
     </form>
   {{end}}
+  <form method="post" action="/act/service" data-confirm="{{.Tf "Remove DPI Switch from this computer completely?\n\nThe tunnel stops, the service is removed and the tray closes. Deleted for good:\n\n• the program: %s\n• all its data: %s — the .conf files with the private keys, the lists, the settings, the verdicts, the logs, the core\n• the tray's folder in your profile, autostart and the desktop shortcut\n\nThis cannot be undone. Keep a copy of your .conf files if you will need them again: they are not kept anywhere else.\n\nThe file you installed the program from is not touched." .St.InstallDir .St.DataDir}}">
+    <button name="do" value="remove" class="link">{{.T "Remove the program…"}}</button>
+  </form>
   {{if .Msg}}<span class="msg {{if .Msg.OK}}ok{{else}}bad{{end}}">{{.Msg.Text}}</span>{{end}}
 {{end}}
 
