@@ -66,6 +66,7 @@ type connection struct {
 		Process         string `json:"process"`
 		ProcessPath     string `json:"processPath"`
 		InboundName     string `json:"inboundName"`
+		RemoteDst       string `json:"remoteDestination"`
 	} `json:"metadata"`
 }
 

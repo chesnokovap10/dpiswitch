@@ -50,6 +50,10 @@ type Server struct {
 	// -- is one step. Two tabs saving at once shared one ".tmp" file, and
 	// one's change could be lost or its rename fail.
 	listMu sync.Mutex
+
+	// live: the loop asking the core for its connections while the live
+	// page is open; a fake core's in tests
+	live *liveHub
 }
 
 func (s *Server) Addr() string {
@@ -77,6 +81,9 @@ func (s *Server) Start() error {
 
 // Handler: every page, fragment and action of the UI.
 func (s *Server) Handler() http.Handler {
+	if s.live == nil {
+		s.live = newLiveHub(coreSource)
+	}
 	mux := http.NewServeMux()
 	for _, p := range pageNames {
 		mux.HandleFunc("/"+p, s.handlePage)
@@ -87,6 +94,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/favicon.ico", s.handleIcon)
 	mux.HandleFunc("/lang", s.handleLang)
 	mux.HandleFunc("/api/status", s.handleStatus)
+	mux.HandleFunc("/live/stream", s.handleLive)
 	mux.HandleFunc(helloPath, s.handleHello)
 	for path, h := range map[string]http.HandlerFunc{
 		"/act/auto":      s.actAuto,
@@ -104,6 +112,7 @@ func (s *Server) Handler() http.Handler {
 		"/act/dns":       s.actDNS,
 		"/act/dnstest":   s.actDNSTest,
 		"/act/defaults":  s.actDefaults,
+		"/act/liveclose": s.actLiveClose,
 	} {
 		mux.HandleFunc(path, post(h))
 	}

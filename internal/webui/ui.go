@@ -35,8 +35,9 @@ import (
 //go:embed tmpl/*.html static/*
 var uiFS embed.FS
 
-// pageNames: the pages of the menu, in its order; help sits apart below it
-var pageNames = []string{"overview", "verdicts", "lists", "awg2", "settings", "logs", "help"}
+// pageNames: the pages of the menu, in its order; help sits apart below
+// it, and the live connections below help
+var pageNames = []string{"overview", "verdicts", "lists", "awg2", "settings", "logs", "help", "live"}
 
 var pageTmpl = map[string]*template.Template{}
 
@@ -216,6 +217,8 @@ func (s *Server) pageData(r *http.Request, page string, v *view) any {
 		return settingsData()
 	case "logs":
 		return logsData(r)
+	case "live":
+		return liveWords(v)
 	}
 	return nil
 }

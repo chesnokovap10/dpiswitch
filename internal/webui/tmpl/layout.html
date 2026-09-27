@@ -64,6 +64,8 @@
   <a href="/logs" class="{{if eq .Page "logs"}}on{{end}}">{{.T "Logs"}}</a>
   <hr>
   <a href="/help" class="{{if eq .Page "help"}}on{{end}}">{{.T "Help"}}</a>
+  <hr>
+  <a href="/live" class="{{if eq .Page "live"}}on{{end}}">Live</a>
 {{end}}
 
 {{define "svcbox"}}{{$s := .St}}

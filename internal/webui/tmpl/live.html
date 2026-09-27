@@ -1,0 +1,63 @@
+{{define "content"}}
+<div class="page live" id="live" data-stream="/live/stream">
+  <div class="tiles">
+    <div class="tile"><b id="t-open">—</b><span>{{.T "Open connections"}}</span></div>
+    <div class="tile"><b id="t-ds">—</b><span>{{.T "Download"}}</span></div>
+    <div class="tile"><b id="t-us">—</b><span>{{.T "Upload"}}</span></div>
+    <div class="tile"><b id="t-tot">—</b><span id="t-mem">{{.T "since the core started"}}</span></div>
+  </div>
+  <div class="bar">
+    <div class="tabs" id="ltabs">
+      <button type="button" data-tab="open" class="on">{{.T "Open"}} <span class="n" id="n-open"></span></button>
+      <button type="button" data-tab="closed">{{.T "Closed"}} <span class="n" id="n-closed"></span></button>
+      <button type="button" data-tab="all">{{.T "All"}}</button>
+    </div>
+    <div class="tabs" id="lroutes">
+      <button type="button" data-route="" class="on">{{.T "All"}}</button>
+      <button type="button" data-route="direct">{{.T "Direct"}}</button>
+      <button type="button" data-route="awg">{{.T "Tunnel"}}</button>
+      <button type="button" data-route="awg2">{{.T "Tunnel 2"}}</button>
+    </div>
+    <input type="search" id="lfilter" placeholder="{{.T "Host, program, address"}}" style="width:180px">
+    <label class="cb"><input type="checkbox" id="lnoprobe"> {{.T "Hide the detector's checks"}}</label>
+    <span class="spacer"></span>
+    <span class="muted" id="lstate"></span>
+    <button type="button" id="lpause">{{.T "Pause"}}</button>
+    <button type="button" id="lclear" title="{{.T "Only on this page: the core keeps no closed connections"}}">{{.T "Clear closed"}}</button>
+  </div>
+  <div class="flash bad" id="lbanner" hidden></div>
+  <div class="tablebox">
+    <table class="ltable">
+      <thead><tr>
+        <th class="c-st"></th>
+        <th data-sort="proc">{{.T "Program"}}</th>
+        <th data-sort="host">{{.T "Host"}}</th>
+        <th data-sort="ip">IP</th>
+        <th data-sort="port" class="num">{{.T "Port"}}</th>
+        <th data-sort="proto">{{.T "Type"}}</th>
+        <th data-sort="route">{{.T "Route"}}</th>
+        <th data-sort="ds" class="num">↓ {{.T "Speed"}}</th>
+        <th data-sort="us" class="num">↑ {{.T "Speed"}}</th>
+        <th data-sort="down" class="num">{{.T "Received"}}</th>
+        <th data-sort="up" class="num">{{.T "Sent"}}</th>
+        <th data-sort="start" class="num">{{.T "Time"}}</th>
+        <th class="c-x"></th>
+      </tr></thead>
+      <tbody id="lrows"></tbody>
+    </table>
+    <div class="empty" id="lempty"></div>
+  </div>
+  <div class="legend">
+    <span><span class="st open"></span> {{.T "open"}}</span>
+    <span><span class="st idle"></span> {{.T "idle over 30 s"}}</span>
+    <span><span class="st closed"></span> {{.T "closed"}}</span>
+    <span class="spacer"></span>
+    <span class="sw r-direct">{{.T "Direct"}}</span>
+    <span class="sw r-awg">{{.T "Tunnel"}}</span>
+    <span class="sw r-awg2">{{.T "Tunnel 2"}}</span>
+    <span class="sw r-probe">{{.T "The detector's checks"}}</span>
+  </div>
+  <script type="application/json" id="lwords">{{.Data.Words}}</script>
+</div>
+<script src="/static/live.js" defer></script>
+{{end}}

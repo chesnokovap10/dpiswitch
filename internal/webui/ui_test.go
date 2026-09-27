@@ -137,7 +137,7 @@ func TestTranslations(t *testing.T) {
 		t.Fatal(err)
 	}
 	goKey := regexp.MustCompile(`(?:v\.Tf?\(|tr\(lang\(r\), |done\(r, [a-z]+, |redirect\(w, r, [^,"]+, )"([^"]+)"|note = "([^"]+)"|return "(Config[^"]+)"|\{\d+, "([^"]+)"\}`)
-	for _, f := range []string{"actions.go", "ui.go", "pages.go"} {
+	for _, f := range []string{"actions.go", "ui.go", "pages.go", "live.go"} {
 		b, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
