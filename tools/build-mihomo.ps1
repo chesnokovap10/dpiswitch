@@ -1,5 +1,11 @@
 # Builds a minimal mihomo.exe for DPI Switch into .\dist
 #
+# The source is the private copy of mihomo (see DPISWITCH.md there): the
+# upstream commit the program was tested with, the cut below already made,
+# every dependency in vendor/, and one fix -- a peer's ICMP error no longer
+# ends a UDP session through a WireGuard outbound, which left BitTorrent's
+# uTP and DHT through the tunnel with nothing.
+#
 # Only what DPI Switch uses is kept:
 #  - outbounds: wireguard (AmneziaWG) only; DIRECT and REJECT are built into
 #    the core and do not go through the parser;
@@ -12,12 +18,10 @@
 # then drops their code. Build tags drop the embedded Tailscale, ZeroTier and
 # EasyTier stacks and Hysteria's fake-TCP; -s -w strips debug symbols.
 param(
-    # pinned commit the program was tested with
-    [string]$Commit = "f103639c808d93a2c34cae56757b458862871b22",
-    # where to take it from. The private copy, should upstream go away:
-    # https://github.com/chesnokovap10/mihomo-dpiswitch -- the pinned commit
-    # and its history, the cut already made, every dependency in vendor/
-    [string]$Repo = "https://github.com/MetaCubeX/mihomo.git"
+    # pinned commit of the private copy: upstream f103639c, the cut, vendor/,
+    # the ICMP fix
+    [string]$Commit = "bfad17438fc4898d798115880c42b10bc3599368",
+    [string]$Repo = "https://github.com/chesnokovap10/mihomo-dpiswitch.git"
 )
 
 $ErrorActionPreference = "Stop"
