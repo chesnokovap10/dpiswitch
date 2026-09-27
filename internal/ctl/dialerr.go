@@ -27,7 +27,7 @@ type DialErr struct {
 	Rule        string
 	RulePayload string
 	Process     string
-	Probe       bool   // the prober's own, from loopback
+	Probe       bool   // the prober's own: from loopback, by a listener bound to an outbound
 	Host        string // "" for a bare address
 	IP          string // the address, when the error names it
 	Port        int
@@ -42,9 +42,13 @@ type DialErr struct {
 // prober's), the program's part when it is not known.
 var dialErrRe = regexp.MustCompile(`(?s)^\[(TCP|UDP)\] dial (\S+) (?:\(match ([^/)]*)/(.*?)\) )?(\S+?)(?:\(([^)]*)\))? --> (\S+) error: (.*)$`)
 
-// the remote address in a dial error: "dial tcp 1.2.3.4:443: ..." direct,
-// "dial tcp [fd7a::3]:54895->[2a09::6ab]:443: ..." inside a tunnel
-var dialAddrRe = regexp.MustCompile(`(?:dial (?:tcp|udp)[46]? |->)(\[[0-9a-fA-F:.]+\]|[0-9]+(?:\.[0-9]+){3}):[0-9]+`)
+// the remote address of each dial in an error: "dial tcp 1.2.3.4:443: ..."
+// direct, "dial tcp [fd7a::3]:54895->[2a09::6ab]:443: ..." inside a tunnel,
+// where the first is the tunnel's own end. A name with both families dialled
+// has one such line for each.
+const dialAddr = `(\[[0-9a-fA-F:.]+\]|[0-9]+(?:\.[0-9]+){3}):[0-9]+`
+
+var dialAddrRe = regexp.MustCompile(`dial (?:tcp|udp)[46]? ` + dialAddr + `(?:->` + dialAddr + `)?`)
 
 // ParseDialErr reads one warning of the core's log; false for any other.
 func ParseDialErr(line string) (DialErr, bool) {
@@ -53,7 +57,10 @@ func ParseDialErr(line string) (DialErr, bool) {
 		return DialErr{}, false
 	}
 	e := DialErr{Network: strings.ToLower(m[1]), Proxy: m[2], Rule: m[3], RulePayload: m[4]}
-	if src, _, err := net.SplitHostPort(m[5]); err == nil {
+	// The prober's listeners are on loopback and send straight to an
+	// outbound, past the rules: the warning names no rule. A local client
+	// going through the rules would.
+	if src, _, err := net.SplitHostPort(m[5]); err == nil && m[3] == "" {
 		ip := net.ParseIP(src)
 		e.Probe = ip != nil && ip.IsLoopback()
 	}
@@ -67,8 +74,13 @@ func ParseDialErr(line string) (DialErr, bool) {
 		e.IP = host
 	} else {
 		e.Host = strings.TrimSuffix(strings.ToLower(host), ".")
-		if a := dialAddrRe.FindAllStringSubmatch(m[8], -1); a != nil {
-			e.IP = strings.Trim(a[len(a)-1][1], "[]")
+		// the first address dialled; the error in full names every one
+		if a := dialAddrRe.FindStringSubmatch(m[8]); a != nil {
+			e.IP = a[1]
+			if a[2] != "" {
+				e.IP = a[2]
+			}
+			e.IP = strings.Trim(e.IP, "[]")
 		}
 	}
 	// errors joined by the core come one to a line, often the same again
@@ -82,26 +94,67 @@ func ParseDialErr(line string) (DialErr, bool) {
 	return e, true
 }
 
+// failKinds: what a dial error comes down to, by the words in it -- the
+// first that matches. Go's own words and Windows' (WSAECONNRESET is "an
+// existing connection was forcibly closed"), and the core's resolver's.
+var failKinds = []struct {
+	kind  string
+	words []string
+}{
+	{"nonet", []string{"interface not found"}},
+	{"dns", []string{"dns resolve failed", "no such host", "couldn't find ip", "no ip address",
+		"ip version error", "ipv6 disabled"}},
+	{"timeout", []string{"timeout", "deadline exceeded", "timed out", "did not properly respond"}},
+	{"refused", []string{"refused"}},
+	{"reset", []string{"reset", "forcibly closed", "aborted", "broken pipe"}},
+	{"unreach", []string{"unreachable", "no route"}},
+	{"canceled", []string{"context canceled", "operation was canceled"}},
+}
+
+// eofRe: the other side closed before the connection was made
+var eofRe = regexp.MustCompile(`\b(unexpected )?eof\b`)
+
 // FailKind: what a dial error comes down to, for the page to say in words.
+// Checked against the 2,174 dial warnings in the core's logs of the machine
+// it was written on (September 2026): all but one fell into a kind.
 func FailKind(err string) string {
 	e := strings.ToLower(err)
-	switch {
-	case strings.Contains(e, "interface not found"):
-		return "nonet"
-	case strings.Contains(e, "dns resolve failed") || strings.Contains(e, "no such host") ||
-		strings.Contains(e, "couldn't find ip"):
-		return "dns"
-	case strings.Contains(e, "timeout") || strings.Contains(e, "deadline exceeded") ||
-		strings.Contains(e, "timed out"):
-		return "timeout"
-	case strings.Contains(e, "refused"):
-		return "refused"
-	case strings.Contains(e, "reset"):
-		return "reset"
-	case strings.Contains(e, "unreachable") || strings.Contains(e, "no route"):
-		return "unreach"
+	for _, k := range failKinds {
+		for _, w := range k.words {
+			if strings.Contains(e, w) {
+				return k.kind
+			}
+		}
+	}
+	if eofRe.MatchString(e) {
+		return "eof"
 	}
 	return "other"
+}
+
+// Groups: the choice each proxy group has made now, by the group's name.
+// A failed dial names the group it was sent to; what it went through is the
+// group's choice -- a tunnel group that fell back sends direct.
+func (l *LiveClient) Groups() (map[string]string, error) {
+	b, err := l.a.do("GET", "/proxies", nil)
+	if err != nil {
+		return nil, err
+	}
+	var p struct {
+		Proxies map[string]struct {
+			Now string `json:"now"`
+		} `json:"proxies"`
+	}
+	if err := json.Unmarshal(b, &p); err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for name, x := range p.Proxies {
+		if x.Now != "" {
+			out[name] = x.Now
+		}
+	}
+	return out, nil
 }
 
 // DialErrors reads the core's warnings as they come and hands on the failed

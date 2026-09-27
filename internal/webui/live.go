@@ -12,10 +12,11 @@ package webui
 //
 // A connection the core failed to make is not among them at all: the core
 // only logs it. While a page watches, the core's warnings are read too,
-// and each failed dial is a row of its own -- the same one again within a
-// minute counted on it rather than added.
+// and each failed dial is a row of its own -- the same one again, while its
+// row is still listed, counted on it rather than added.
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,6 +24,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -46,8 +48,6 @@ const (
 	// the closed ones kept: the newest this many, none older than this
 	liveClosedMax = 500
 	liveClosedAge = 10 * time.Minute
-	// the same failure again within this is counted on its row
-	liveFailMerge = time.Minute
 )
 
 // liveSource: the core, or a fake one in tests
@@ -55,6 +55,7 @@ type liveSource interface {
 	Connections() (ctl.Live, error)
 	Close(id string) error
 	DialErrors(ctx context.Context, each func(ctl.DialErr)) error
+	Groups() (map[string]string, error)
 	Release()
 }
 
@@ -85,7 +86,7 @@ type liveRow struct {
 	Act   int64  `json:"act"` // the last time its bytes moved
 	End   int64  `json:"end,omitempty"`
 	// a failed dial: what the core said, what it comes to (ctl.FailKind),
-	// how many times within liveFailMerge; Start is the first, End the last
+	// how many times while listed; Start is the first, End the last
 	Err string `json:"err,omitempty"`
 	Why string `json:"why,omitempty"`
 	N   int    `json:"n,omitempty"`
@@ -156,7 +157,7 @@ type liveHub struct {
 	err    string
 
 	failed  []*liveRow          // oldest first
-	failKey map[string]*liveRow // the latest failure of a kind, to count the same one again on
+	failKey map[string]*liveRow // the listed row of each failure, to count the same one again on
 	failNew []*liveRow          // for the next tick
 	failID  string              // the loop's own prefix: a page keeps rows over a restart
 	failSeq int
@@ -299,13 +300,20 @@ func (h *liveHub) update(live ctl.Live, err error, now time.Time) {
 		}
 		us, ds := rate(c.Upload-r.Up, dt), rate(c.Download-r.Down, dt)
 		moved := c.Upload != r.Up || c.Download != r.Down
-		if !moved && us == r.US && ds == r.DS {
+		// the core fills a connection in before it tracks it, but should
+		// it learn more later -- a name, the program -- the row follows
+		meta := r.takeMeta(newLiveRow(c, now))
+		if !meta && !moved && us == r.US && ds == r.DS {
 			continue
 		}
 		if moved {
 			r.Act = now.UnixMilli()
 		}
 		r.Up, r.Down, r.US, r.DS = c.Upload, c.Download, us, ds
+		if meta {
+			m.Add = append(m.Add, r) // drawn anew
+			continue
+		}
 		m.Upd = append(m.Upd, liveUpd{r.ID, r.Up, r.Down, r.US, r.DS, r.Act})
 	}
 	for id, r := range h.open {
@@ -329,8 +337,21 @@ func (h *liveHub) update(live ctl.Live, err error, now time.Time) {
 func (h *liveHub) watchFailures(ctx context.Context, src liveSource, retry time.Duration) {
 	defer h.wg.Done()
 	defer func() { src.Release() }()
+	var groups map[string]string
+	var groupsAt time.Time
+	each := func(e ctl.DialErr) {
+		// the groups' choices, asked again when a few seconds old: failures
+		// come in bursts, and a fallback group changes its mind rarely
+		if time.Since(groupsAt) > 5*time.Second {
+			if g, err := src.Groups(); err == nil {
+				groups = g
+			}
+			groupsAt = time.Now()
+		}
+		h.failure(ctx, e, groupChain(e.Proxy, groups), time.Now())
+	}
 	for {
-		err := src.DialErrors(ctx, func(e ctl.DialErr) { h.failure(ctx, e, time.Now()) })
+		err := src.DialErrors(ctx, each)
 		if ctx.Err() != nil {
 			return
 		}
@@ -347,10 +368,12 @@ func (h *liveHub) watchFailures(ctx context.Context, src liveSource, retry time.
 	}
 }
 
-// failure takes one failed dial: a row of its own, or one more on the row
-// of the same failure within liveFailMerge -- a program retrying a blocked
-// site fails dozens of times a minute.
-func (h *liveHub) failure(ctx context.Context, e ctl.DialErr, now time.Time) {
+// failure takes one failed dial: a row of its own, or one more on the row of
+// the same failure, for as long as that row is listed -- a program retrying
+// a blocked site fails dozens of times a minute. The same is the same
+// program, destination, route and rule, failing for the same reason: a list
+// or config changed between two tries is another failure.
+func (h *liveHub) failure(ctx context.Context, e ctl.DialErr, chain []string, now time.Time) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if ctx.Err() != nil {
@@ -361,20 +384,27 @@ func (h *liveHub) failure(ctx context.Context, e ctl.DialErr, now time.Time) {
 	if dst == "" {
 		dst = e.IP
 	}
-	key := strings.Join([]string{e.Network, e.Proxy, e.Process, dst, fmt.Sprint(e.Port), fmt.Sprint(e.Probe), why}, "|")
+	route := liveChain(chain)
+	rule := strings.TrimSpace(e.Rule + " " + e.RulePayload)
+	key := strings.Join([]string{e.Network, route, rule, e.Process, dst, fmt.Sprint(e.Port), fmt.Sprint(e.Probe), why}, "|")
 	ms := now.UnixMilli()
-	if r := h.failKey[key]; r != nil && ms-r.End < liveFailMerge.Milliseconds() {
+	if r := h.failKey[key]; r != nil {
 		r.N++
 		r.End, r.Err = ms, e.Err
 		if e.IP != "" {
 			r.IP = e.IP
+		}
+		// the newest last: the list is kept in the order the rows last
+		// failed, which trim relies on
+		if i := slices.Index(h.failed, r); i >= 0 {
+			h.failed = append(slices.Delete(h.failed, i, i+1), r)
 		}
 		h.queue(r)
 		return
 	}
 	h.failSeq++
 	r := &liveRow{ID: h.failID + fmt.Sprint(h.failSeq), Host: e.Host, IP: e.IP, Port: e.Port, Net: e.Network,
-		Route: liveRoute([]string{e.Proxy}), Chain: e.Proxy, Rule: strings.TrimSpace(e.Rule + " " + e.RulePayload),
+		Route: liveRoute(chain), Chain: route, Rule: rule,
 		Probe: e.Probe, Proc: e.Process, Start: ms, Act: ms, End: ms, Err: e.Err, Why: why, N: 1}
 	r.Proto, _ = liveProto(r.Net, e.Port, false)
 	h.failed = append(h.failed, r)
@@ -408,31 +438,90 @@ func (h *liveHub) close(id string, r *liveRow, now time.Time) liveGone {
 }
 
 // trim keeps the newest closed ones and failures -- the pages drop the
-// same on their side
+// same on their side. A failure no longer listed is forgotten: the same one
+// again starts a row of its own.
 func (h *liveHub) trim(now time.Time) {
 	cut := now.Add(-liveClosedAge).UnixMilli()
 	h.closed = keepNewest(h.closed, cut)
-	h.failed = keepNewest(h.failed, cut)
-	merge := now.Add(-liveFailMerge).UnixMilli()
-	for k, r := range h.failKey {
-		if r.End < merge {
-			delete(h.failKey, k)
+	if kept := keepNewest(h.failed, cut); len(kept) != len(h.failed) {
+		h.failed = kept
+		listed := make(map[*liveRow]bool, len(kept))
+		for _, r := range kept {
+			listed[r] = true
+		}
+		for k, r := range h.failKey {
+			if !listed[r] {
+				delete(h.failKey, k)
+			}
 		}
 	}
 }
 
-// keepNewest: the rows, oldest first, less those past the cut and beyond
-// the count. A failure counted again stays where it first came: it goes
-// when its first time is old, a little early.
-func keepNewest(rows []*liveRow, cut int64) []*liveRow {
-	i := 0
-	for i < len(rows) && (len(rows)-i > liveClosedMax || rows[i].End < cut) {
-		i++
+// clear forgets the closed connections and the failures: a failure after it
+// starts a row of its own, counted from one. A page cleared its own; the
+// others keep what they have until they are reloaded.
+func (h *liveHub) clear() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, r := range h.failNew {
+		r.queued = false
 	}
-	if i == 0 {
+	h.closed, h.failed, h.failKey, h.failNew = nil, nil, map[string]*liveRow{}, nil
+}
+
+// keepNewest: the rows that ended since cut, the newest liveClosedMax of
+// them. It does not take the order on trust: a failure counted again ends
+// anew, and one left where it first came used to shield the older rows
+// behind it from the cut.
+func keepNewest(rows []*liveRow, cut int64) []*liveRow {
+	old := 0
+	for _, r := range rows {
+		if r.End < cut {
+			old++
+		}
+	}
+	if old == 0 && len(rows) <= liveClosedMax {
 		return rows
 	}
-	return append([]*liveRow(nil), rows[i:]...)
+	kept := make([]*liveRow, 0, len(rows)-old)
+	for _, r := range rows {
+		if r.End >= cut {
+			kept = append(kept, r)
+		}
+	}
+	if n := len(kept) - liveClosedMax; n > 0 {
+		slices.SortStableFunc(kept, func(a, b *liveRow) int { return cmp.Compare(a.End, b.End) })
+		kept = kept[n:]
+	}
+	return kept
+}
+
+// groupChain: the chain a failed dial took -- the group it was sent to, then
+// the group's choice, down to an outbound -- outbound first, as the core
+// gives an open connection's.
+func groupChain(name string, groups map[string]string) []string {
+	chain := []string{name}
+	for range 8 {
+		next, ok := groups[chain[0]]
+		if !ok || slices.Contains(chain, next) {
+			break
+		}
+		chain = append([]string{next}, chain...)
+	}
+	return chain
+}
+
+// takeMeta takes what a fresh look at the connection says of it, and
+// whether anything differed.
+func (r *liveRow) takeMeta(f *liveRow) bool {
+	same := r.Host == f.Host && r.IP == f.IP && r.Port == f.Port && r.Net == f.Net && r.Proto == f.Proto &&
+		r.Sure == f.Sure && r.Route == f.Route && r.Chain == f.Chain && r.Rule == f.Rule && r.Probe == f.Probe &&
+		r.Proc == f.Proc && r.Path == f.Path
+	if !same {
+		r.Host, r.IP, r.Port, r.Net, r.Proto, r.Sure = f.Host, f.IP, f.Port, f.Net, f.Proto, f.Sure
+		r.Route, r.Chain, r.Rule, r.Probe, r.Proc, r.Path = f.Route, f.Chain, f.Rule, f.Probe, f.Proc, f.Path
+	}
+	return !same
 }
 
 // send: one message to every page. A page that does not take it is dropped
@@ -510,7 +599,7 @@ func liveRoute(chains []string) string {
 	if len(chains) == 0 {
 		return "other"
 	}
-	// a failed dial names the group it was sent to, not the member
+	// the groups too, for a failed dial whose group's choice is not known
 	switch chains[0] {
 	case "DIRECT":
 		return "direct"
@@ -580,6 +669,12 @@ func (s *Server) actLiveClose(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// actLiveClear: the page's Clear -- see clear
+func (s *Server) actLiveClear(w http.ResponseWriter, r *http.Request) {
+	s.live.clear()
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // liveData: the words the page's script puts together itself
 type liveData struct {
 	Words map[string]string
@@ -587,55 +682,57 @@ type liveData struct {
 
 func liveWords(v *view) liveData {
 	return liveData{Words: map[string]string{
-		"direct":      v.T("Direct"),
-		"awg":         v.T("Tunnel"),
-		"awg2":        v.T("Tunnel 2"),
-		"reject":      v.T("Rejected"),
-		"other":       v.T("Other"),
-		"probe":       v.T("check"),
-		"noname":      v.T("no name"),
-		"open":        v.T("open"),
-		"idle":        v.T("idle: no traffic for over 30 s"),
-		"closedAgo":   v.T("closed %s ago"),
-		"sure":        v.T("read from the traffic"),
-		"byPort":      v.T("by the port"),
-		"B":           v.T("B"),
-		"KB":          v.T("KB"),
-		"MB":          v.T("MB"),
-		"GB":          v.T("GB"),
-		"perSec":      v.T("/s"),
-		"sec":         v.T("%d s"),
-		"min":         v.T("%d min"),
-		"hour":        v.T("%d h %d min"),
-		"started":     v.T("started"),
-		"loading":     v.T("Connecting to the core…"),
-		"reconnect":   v.T("The stream dropped, reconnecting…"),
-		"stopped":     v.T("The core is not running: the service is stopped or starting."),
-		"error":       v.T("The core does not answer:"),
-		"live":        v.T("live"),
-		"liveHint":    v.T("The core is asked every second while this page is in view"),
-		"paused":      v.T("on pause"),
-		"pausedHint":  v.T("Nothing is asked of the core until you resume"),
-		"noOpen":      v.T("No open connections."),
-		"noClosed":    v.T("None closed yet: they show here as they close while the page is open."),
-		"noMatch":     v.T("Nothing matches the filter."),
-		"shown":       v.T("Shown %d of %d: narrow the filter."),
-		"close":       v.T("Close the connection: the program opens a new one, routed by the rules as they are now"),
-		"closeFail":   v.T("Not closed:"),
-		"pause":       v.T("Pause"),
-		"resume":      v.T("Resume"),
-		"memory":      v.T("core memory %s"),
-		"sinceStart":  v.T("since the core started"),
-		"failed":      v.T("failed: the core could not make the connection"),
-		"noFailed":    v.T("No failures yet: they show here as the core fails to make a connection while the page is open."),
-		"attempts":    v.T("attempts: %d"),
-		"firstAt":     v.T("the first at %s"),
-		"why.timeout": v.T("timed out"),
-		"why.refused": v.T("refused"),
-		"why.reset":   v.T("reset"),
-		"why.dns":     v.T("name not found"),
-		"why.nonet":   v.T("no network interface"),
-		"why.unreach": v.T("network unreachable"),
-		"why.other":   v.T("connection failed"),
+		"direct":       v.T("Direct"),
+		"awg":          v.T("Tunnel"),
+		"awg2":         v.T("Tunnel 2"),
+		"reject":       v.T("Rejected"),
+		"other":        v.T("Other"),
+		"probe":        v.T("check"),
+		"noname":       v.T("no name"),
+		"open":         v.T("open"),
+		"idle":         v.T("idle: no traffic for over 30 s"),
+		"closedAgo":    v.T("closed %s ago"),
+		"sure":         v.T("read from the traffic"),
+		"byPort":       v.T("by the port"),
+		"B":            v.T("B"),
+		"KB":           v.T("KB"),
+		"MB":           v.T("MB"),
+		"GB":           v.T("GB"),
+		"perSec":       v.T("/s"),
+		"sec":          v.T("%d s"),
+		"min":          v.T("%d min"),
+		"hour":         v.T("%d h %d min"),
+		"started":      v.T("started"),
+		"loading":      v.T("Connecting to the core…"),
+		"reconnect":    v.T("The stream dropped, reconnecting…"),
+		"stopped":      v.T("The core is not running: the service is stopped or starting."),
+		"error":        v.T("The core does not answer:"),
+		"live":         v.T("live"),
+		"liveHint":     v.T("The core is asked every second while this page is in view"),
+		"paused":       v.T("on pause"),
+		"pausedHint":   v.T("Nothing is asked of the core until you resume"),
+		"noOpen":       v.T("No open connections."),
+		"noClosed":     v.T("None closed yet: they show here as they close while the page is open."),
+		"noMatch":      v.T("Nothing matches the filter."),
+		"shown":        v.T("Shown %d of %d: narrow the filter."),
+		"close":        v.T("Close the connection: the program opens a new one, routed by the rules as they are now"),
+		"closeFail":    v.T("Not closed:"),
+		"pause":        v.T("Pause"),
+		"resume":       v.T("Resume"),
+		"memory":       v.T("core memory %s"),
+		"sinceStart":   v.T("since the core started"),
+		"failed":       v.T("failed: the core could not make the connection"),
+		"noFailed":     v.T("No failures yet: they show here as the core fails to make a connection while the page is open."),
+		"attempts":     v.T("attempts: %d"),
+		"firstAt":      v.T("the first at %s"),
+		"why.timeout":  v.T("timed out"),
+		"why.refused":  v.T("refused"),
+		"why.reset":    v.T("reset"),
+		"why.dns":      v.T("name not found"),
+		"why.nonet":    v.T("no network interface"),
+		"why.unreach":  v.T("network unreachable"),
+		"why.eof":      v.T("closed by the other side"),
+		"why.canceled": v.T("canceled"),
+		"why.other":    v.T("connection failed"),
 	}}
 }

@@ -167,7 +167,6 @@ td small{display:block;color:var(--muted)}
 .r-probe td,.sw.r-probe{background:var(--probe-bg)}
 .r-reject td{background:var(--bad-bg)}
 .ltable tr.closed td{background:none;color:var(--muted)}
-.ltable tr.failed td{background:none}
 .ltable td.c-why{color:var(--bad)}
 .st{display:inline-block;width:8px;height:8px;border-radius:50%;box-sizing:border-box;vertical-align:middle}
 .st.open{background:var(--ok)}
@@ -181,6 +180,9 @@ td small{display:block;color:var(--muted)}
 .pb.p-HTTP{background:var(--warn-bg);color:var(--warn)}
 .pb.p-DNS{background:var(--bg);color:var(--muted)}
 .pb.p-TCP,.pb.p-UDP{border-color:var(--line);color:var(--muted)}
+/* by the port only: the protocol is likely, not seen */
+.pb.guess{background:none;border-style:dashed;border-color:currentColor}
+.pb.p-TCP.guess,.pb.p-UDP.guess{border-style:solid;border-color:var(--line)}
 .ltable tr.closed .pb,.ltable tr.failed .pb{background:none;border-color:var(--line);color:var(--muted)}
 button.lx{border:0;background:none;padding:0 4px;color:var(--muted);visibility:hidden}
 .ltable tr:hover button.lx{visibility:visible}

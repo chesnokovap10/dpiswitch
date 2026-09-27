@@ -34,6 +34,13 @@ func TestParseDialErr(t *testing.T) {
 		{"[TCP] dial awg 127.0.0.1:58728 --> example.org:443 error: dial tcp [fd7a:a1c3:8b42::3]:51834->[2a09:5302:ffff::6ab]:443: context deadline exceeded",
 			DialErr{Network: "tcp", Proxy: "awg", Probe: true, Host: "example.org", IP: "2a09:5302:ffff::6ab", Port: 443,
 				Err: "dial tcp [fd7a:a1c3:8b42::3]:51834->[2a09:5302:ffff::6ab]:443: context deadline exceeded"}},
+		// both families dialled, one line each: the first address
+		{"[TCP] dial DIRECT (match RuleSet/direct-verified) 198.18.0.1:50003(chrome.exe) --> dual.example:443 error: dial tcp [2001:db8::1]:443: i/o timeout\ndial tcp 192.0.2.1:443: i/o timeout",
+			DialErr{Network: "tcp", Proxy: "DIRECT", Rule: "RuleSet", RulePayload: "direct-verified", Process: "chrome.exe",
+				Host: "dual.example", IP: "2001:db8::1", Port: 443, Err: "dial tcp [2001:db8::1]:443: i/o timeout; dial tcp 192.0.2.1:443: i/o timeout"}},
+		// a local client through the rules is no probe, loopback or not
+		{"[TCP] dial tunnel (match Match/) 127.0.0.1:49157(app.exe) --> example.net:443 error: i/o timeout",
+			DialErr{Network: "tcp", Proxy: "tunnel", Rule: "Match", Process: "app.exe", Host: "example.net", Port: 443, Err: "i/o timeout"}},
 		{"[UDP] dial tunnel2 (match RuleSet/preset-youtube) 198.18.0.1:60000(chrome.exe, uid=0) --> rr1.googlevideo.com:443 error: connection refused",
 			DialErr{Network: "udp", Proxy: "tunnel2", Rule: "RuleSet", RulePayload: "preset-youtube", Process: "chrome.exe",
 				Host: "rr1.googlevideo.com", Port: 443, Err: "connection refused"}},
@@ -64,6 +71,14 @@ func TestFailKind(t *testing.T) {
 		"read: connection reset by peer":                "reset",
 		"connect: network is unreachable":               "unreach",
 		"awg connect error: handshake did not complete": "other",
+		"no ip address":                                 "dns",
+		"ipv6 disabled":                                 "dns",
+		"wsarecv: An existing connection was forcibly closed by the remote host.":                                 "reset",
+		"A connection attempt failed because the connected party did not properly respond after a period of time": "timeout",
+		"context canceled":        "canceled",
+		"unexpected EOF":          "eof",
+		"read tcp 1.2.3.4:5: EOF": "eof",
+		"dial tcp 1.2.3.4:443: connectex: An invalid argument was supplied.": "other",
 	} {
 		if got := FailKind(err); got != want {
 			t.Errorf("%q: %s, want %s", err, got, want)
@@ -102,5 +117,19 @@ func TestDialErrors(t *testing.T) {
 	srv.Close()
 	if err := l.DialErrors(context.Background(), func(DialErr) {}); err != ErrCoreDown {
 		t.Errorf("no core: %v", err)
+	}
+}
+
+// A failed dial names a group; what it went through is the group's choice.
+func TestGroups(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"proxies":{"tunnel":{"type":"Fallback","now":"DIRECT","all":["awg","DIRECT"]},"awg":{"type":"WireGuard"},"DIRECT":{"type":"Direct"}}}`)
+	}))
+	defer srv.Close()
+	l := NewLiveClient(strings.TrimPrefix(srv.URL, "http://"), "")
+	defer l.Release()
+	g, err := l.Groups()
+	if err != nil || len(g) != 1 || g["tunnel"] != "DIRECT" {
+		t.Errorf("%v: %v", err, g)
 	}
 }

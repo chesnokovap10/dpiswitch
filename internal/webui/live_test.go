@@ -145,6 +145,16 @@ func TestLiveUpdate(t *testing.T) {
 		t.Errorf("nothing changed, yet: %+v", m)
 	}
 
+	// the core tells more of a connection it tracks: the row follows, and
+	// goes to the pages whole
+	learnt := conn("a", 300, 5000, t0)
+	learnt.Host, learnt.Sniffed, learnt.Process = "a.example.org", true, "chrome.exe"
+	h.update(ctl.Live{Conns: []ctl.LiveConn{learnt, conn("c", 50, 500, t1)}}, nil, t2.Add(1500*time.Millisecond))
+	if m = next(t, sub); len(m.Add) != 1 || m.Add[0].Host != "a.example.org" || !m.Add[0].Sure || m.Add[0].Proc != "chrome.exe" ||
+		m.Add[0].Up != 300 || len(m.Upd) != 0 {
+		t.Errorf("metadata learnt later: %+v %+v", m.Add, m.Upd)
+	}
+
 	// a core slow to answer still holds its connections
 	h.update(ctl.Live{}, errors.New("timeout"), t2.Add(2*time.Second))
 	if m = next(t, sub); m.Down != "error" || m.Err != "timeout" || len(m.Gone) != 0 || len(h.open) != 2 {
@@ -205,6 +215,8 @@ func newFakeCore(t *testing.T) *fakeCore {
 "process":"chrome.exe","processPath":"C:\\chrome.exe","remoteDestination":"203.0.113.9","inboundName":""},
 "upload":1,"download":1,"start":"2026-09-27T12:00:01+03:00","chains":["DIRECT"],"rule":"RuleSet","rulePayload":"direct-verified"}]}`,
 				n*1000, n*100, n*100, n*1000)
+		case r.Method == "GET" && r.URL.Path == "/proxies":
+			fmt.Fprint(w, `{"proxies":{"tunnel":{"type":"Fallback","now":"awg"},"awg":{"type":"WireGuard"},"DIRECT":{"type":"Direct"}}}`)
 		case r.Method == "GET" && r.URL.Path == "/logs":
 			c.logs.Add(1)
 			defer c.logs.Add(-1)
@@ -327,7 +339,7 @@ func TestLiveStream(t *testing.T) {
 		}
 	}
 	if f.N != 2 || f.Why != "timeout" || f.Host != "blocked.example" || f.IP != "203.0.113.7" || f.Route != "awg" ||
-		f.Chain != "tunnel" || f.Proc != "chrome.exe" || f.Proto != "TLS" || f.Rule != "Match" || f.Probe {
+		f.Chain != "tunnel → awg" || f.Proc != "chrome.exe" || f.Proto != "TLS" || f.Rule != "Match" || f.Probe {
 		t.Errorf("the failure: %+v", f)
 	}
 
@@ -465,8 +477,8 @@ func TestLiveWords(t *testing.T) {
 	}
 }
 
-// A failure is a row; the same one again within liveFailMerge is counted
-// on it, and goes to the pages once a tick however often it came.
+// A failure is a row; the same one again, while its row is listed, is
+// counted on it and goes to the pages once a tick however often it came.
 func TestLiveFailure(t *testing.T) {
 	h := newLiveHub(nil)
 	h.failID = "f-"
@@ -475,41 +487,145 @@ func TestLiveFailure(t *testing.T) {
 	t0 := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
 	e := ctl.DialErr{Network: "tcp", Proxy: "DIRECT", Rule: "RuleSet", RulePayload: "direct-verified", Process: "svchost.exe",
 		Host: "login.live.com", Port: 443, Err: "interface not found"}
+	direct := []string{"DIRECT"}
 
-	h.failure(ctx, e, t0)
-	h.failure(ctx, e, t0.Add(10*time.Second))
-	h.failure(ctx, e, t0.Add(20*time.Second))
+	h.failure(ctx, e, direct, t0)
+	h.failure(ctx, e, direct, t0.Add(10*time.Second))
+	// minutes apart, the row still listed: the same one
+	h.failure(ctx, e, direct, t0.Add(5*time.Minute))
 	if len(h.failed) != 1 {
 		t.Fatalf("%d rows for one failure", len(h.failed))
 	}
 	r := h.failed[0]
-	if r.N != 3 || r.Start != t0.UnixMilli() || r.End != t0.Add(20*time.Second).UnixMilli() || r.Why != "nonet" ||
+	if r.N != 3 || r.Start != t0.UnixMilli() || r.End != t0.Add(5*time.Minute).UnixMilli() || r.Why != "nonet" ||
 		r.Route != "direct" || r.Rule != "RuleSet direct-verified" || r.Proto != "TLS" {
 		t.Errorf("the row: %+v", r)
 	}
-	h.update(ctl.Live{}, nil, t0.Add(21*time.Second))
+	h.update(ctl.Live{}, nil, t0.Add(5*time.Minute+time.Second))
 	if m := next(t, sub); len(m.Fail) != 1 || m.Fail[0].N != 3 {
 		t.Errorf("sent: %+v", m.Fail)
 	}
-	h.update(ctl.Live{}, nil, t0.Add(22*time.Second))
+	h.update(ctl.Live{}, nil, t0.Add(5*time.Minute+2*time.Second))
 	if m := next(t, sub); len(m.Fail) != 0 {
 		t.Errorf("sent again with nothing new: %+v", m.Fail)
 	}
 
-	// another reason is another row; so is the same one a minute after the last
+	// another reason, another rule, another route: other rows
+	at := t0.Add(6 * time.Minute)
 	other := e
 	other.Err = "dns resolve failed: couldn't find ip"
-	h.failure(ctx, other, t0.Add(23*time.Second))
-	h.failure(ctx, e, t0.Add(20*time.Second+liveFailMerge+time.Second))
-	if len(h.failed) != 3 || h.failed[1].Why != "dns" || h.failed[2].N != 1 || h.failed[2].ID == r.ID {
-		t.Errorf("rows: %+v %+v", h.failed[1], h.failed[2])
+	h.failure(ctx, other, direct, at)
+	byB := e
+	byB.RulePayload = "force-direct"
+	h.failure(ctx, byB, direct, at)
+	h.failure(ctx, e, []string{"awg", "tunnel"}, at)
+	if len(h.failed) != 4 || h.failed[1].Why != "dns" || h.failed[2].Rule != "RuleSet force-direct" ||
+		h.failed[3].Route != "awg" || h.failed[3].Chain != "tunnel → awg" {
+		t.Errorf("rows: %+v %+v %+v", h.failed[1], h.failed[2], h.failed[3])
 	}
 
 	// read after the loop stopped: not taken in
 	done, cancel := context.WithCancel(ctx)
 	cancel()
-	h.failure(done, e, t0.Add(3*time.Minute))
-	if len(h.failed) != 3 {
-		t.Errorf("a failure taken in after the loop stopped: %d rows", len(h.failed))
+	h.failure(done, e, direct, t0.Add(7*time.Minute))
+	if len(h.failed) != 4 || r.N != 3 {
+		t.Errorf("a failure taken in after the loop stopped: %d rows, n %d", len(h.failed), r.N)
+	}
+}
+
+// A failure counted again moves to the end, and the rows behind it are cut
+// all the same: once one counted again stood first, and shielded the rows
+// behind it from the cut.
+func TestLiveFailedTrim(t *testing.T) {
+	h := newLiveHub(nil)
+	h.failID = "f-"
+	ctx := context.Background()
+	t0 := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	a := ctl.DialErr{Network: "tcp", Proxy: "DIRECT", Host: "a.example", Port: 443, Err: "i/o timeout"}
+	b := a
+	b.Host = "b.example"
+	h.failure(ctx, a, []string{"DIRECT"}, t0)
+	h.failure(ctx, b, []string{"DIRECT"}, t0.Add(time.Minute))
+	h.failure(ctx, a, []string{"DIRECT"}, t0.Add(9*time.Minute))
+	if h.failed[0].Host != "b.example" || h.failed[1].Host != "a.example" {
+		t.Fatalf("not in the order they last failed: %s, %s", h.failed[0].Host, h.failed[1].Host)
+	}
+	h.trim(t0.Add(time.Minute + liveClosedAge + time.Second))
+	if len(h.failed) != 1 || h.failed[0].Host != "a.example" {
+		t.Fatalf("after the cut: %d rows, the first %s", len(h.failed), h.failed[0].Host)
+	}
+	// b is forgotten with its row: failing again, it starts a new one
+	h.failure(ctx, b, []string{"DIRECT"}, t0.Add(12*time.Minute))
+	if len(h.failed) != 2 || h.failed[1].N != 1 {
+		t.Errorf("b again: %+v", h.failed)
+	}
+}
+
+// keepNewest takes no order on trust.
+func TestKeepNewest(t *testing.T) {
+	var rows []*liveRow
+	for i := range liveClosedMax + 3 {
+		// the ends out of order: 2, 1, 4, 3, ...
+		rows = append(rows, &liveRow{ID: fmt.Sprint(i), End: int64(1000 + i + 1 - 2*(i%2))})
+	}
+	rows = append(rows, &liveRow{ID: "old", End: 10})
+	kept := keepNewest(rows, 100)
+	if len(kept) != liveClosedMax {
+		t.Fatalf("%d kept", len(kept))
+	}
+	for _, r := range kept {
+		if r.ID == "old" || r.End < 1003 {
+			t.Errorf("kept %s, ended %d", r.ID, r.End)
+		}
+	}
+	few := rows[:3]
+	if got := keepNewest(few, 0); &got[0] != &few[0] || len(got) != 3 {
+		t.Error("nothing to cut, yet copied")
+	}
+}
+
+// Clear forgets the failures: the same one after it is a new row, counted
+// from one -- it used to come back with the count and the first time from
+// before.
+func TestLiveClear(t *testing.T) {
+	h := newLiveHub(nil)
+	h.failID = "f-"
+	ctx := context.Background()
+	t0 := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	e := ctl.DialErr{Network: "tcp", Proxy: "DIRECT", Host: "a.example", Port: 443, Err: "i/o timeout"}
+	h.failure(ctx, e, []string{"DIRECT"}, t0)
+	h.failure(ctx, e, []string{"DIRECT"}, t0.Add(10*time.Second))
+	h.closed = []*liveRow{{ID: "x", End: t0.UnixMilli()}}
+	first := h.failed[0].ID
+	h.clear()
+	if len(h.failed)+len(h.closed)+len(h.failKey)+len(h.failNew) != 0 {
+		t.Fatalf("left after clear: %d failed, %d closed", len(h.failed), len(h.closed))
+	}
+	h.failure(ctx, e, []string{"DIRECT"}, t0.Add(20*time.Second))
+	if r := h.failed[0]; r.N != 1 || r.ID == first || r.Start != t0.Add(20*time.Second).UnixMilli() {
+		t.Errorf("after clear: %+v", r)
+	}
+}
+
+func TestGroupChain(t *testing.T) {
+	groups := map[string]string{"tunnel": "awg", "tunnel2": "tunnel", "fell": "DIRECT", "a": "b", "b": "a"}
+	for name, want := range map[string]string{
+		"tunnel":  "tunnel → awg",
+		"tunnel2": "tunnel2 → tunnel → awg",
+		"fell":    "fell → DIRECT",
+		"DIRECT":  "DIRECT",
+		"a":       "a → b", // a loop is cut
+		"unknown": "unknown",
+	} {
+		if got := liveChain(groupChain(name, groups)); got != want {
+			t.Errorf("%s: %q, want %q", name, got, want)
+		}
+	}
+	// a tunnel group gone direct is direct
+	if r := liveRoute(groupChain("fell", groups)); r != "direct" {
+		t.Errorf("fell back: %s", r)
+	}
+	if r := liveRoute(groupChain("tunnel", nil)); r != "awg" {
+		t.Errorf("no choices known: %s", r)
 	}
 }

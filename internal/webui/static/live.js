@@ -92,7 +92,12 @@
       }
       for (const r of m.failed || []) fail(r);
     } else {
-      for (const r of m.add || []) open.set(r.id, r);
+      for (const r of m.add || []) {
+        // sent again when the core told more of it: drawn anew
+        const o = open.get(r.id);
+        if (o && o._tr) o._tr.remove();
+        open.set(r.id, r);
+      }
       for (const u of m.upd || []) {
         const r = open.get(u.id);
         if (r) { r.up = u.up; r.down = u.down; r.us = u.us; r.ds = u.ds; r.act = u.act; }
@@ -119,15 +124,19 @@
     if (!o) { failed.set(r.id, r); return; }
     o.n = r.n; o.end = r.end; o.err = r.err; o._hay = null;
     if (o.ip !== r.ip) { o.ip = r.ip; if (o._ip) o._ip.textContent = r.ip || ''; }
+    failed.delete(o.id);
+    failed.set(o.id, o);
   }
 
-  // the same ones the server keeps: the newest, none too old
+  // the same ones the server keeps: the newest, none too old. Every row is
+  // looked at: a failure counted again ends anew, and the rows that came
+  // with a reload join after the ones this page kept.
   function trim(map) {
     const cut = now - keep[1] * 1000;
-    for (const [id, r] of map) {
-      if (map.size <= keep[0] && r.end >= cut) break;
-      map.delete(id);
-      if (r._tr) r._tr.remove();
+    const drop = r => { map.delete(r.id); if (r._tr) r._tr.remove(); };
+    for (const r of [...map.values()]) if (r.end < cut) drop(r);
+    if (map.size > keep[0]) {
+      [...map.values()].sort((a, b) => a.end - b.end).slice(0, map.size - keep[0]).forEach(drop);
     }
   }
 
@@ -148,7 +157,7 @@
     r._ip.textContent = r.ip || '';
     td('num').textContent = r.port || '';
     const b = document.createElement('span');
-    b.className = 'pb p-' + r.proto;
+    b.className = 'pb p-' + r.proto + (r.sure ? '' : ' guess');
     b.textContent = r.proto;
     b.title = r.sure ? W.sure : W.byPort;
     td().append(b);
@@ -328,7 +337,11 @@
       for (const r of m.values()) if (r._tr) r._tr.remove();
       m.clear();
     }
-    clearedAt = now;
+    // the server forgets them too: a failure after this is counted from
+    // one, not added to the count before it
+    fetch('/act/liveclear', {method: 'POST'}).catch(() => {});
+    // before the first answer there is no server time yet
+    clearedAt = now || Date.now();
     try { sessionStorage.setItem('liveCleared', String(now)); } catch (e) {}
     draw();
   });
