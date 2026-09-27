@@ -58,9 +58,12 @@ func testDNS(path string, servers []string) []dnsResult {
 				case len(srv) > 6 && srv[:6] == "tls://":
 					res.Kind = "DoT"
 				}
-				t := time.Now()
-				res.IPs, err = rs.Lookup(d, "whoami.akamai.net")
-				res.Ms = time.Since(t).Milliseconds()
+				// the time of a query on a connection already up: the first
+				// one's handshake is paid once, and showed a server two or
+				// three times slower than it answers
+				var rtt time.Duration
+				res.IPs, rtt, err = rs.Ping(d, "whoami.akamai.net")
+				res.Ms = rtt.Milliseconds()
 			}
 			if err != nil {
 				res.Error = probe.Truncate(err.Error(), 120)

@@ -206,15 +206,29 @@ func (r Resolver) doh(d Dialer, q []byte) ([]byte, error) {
 }
 
 func (r Resolver) stream(d Dialer, q []byte) ([]byte, error) {
-	c, err := d.dial(r.Host, r.Port)
+	c, err := r.streamConn(d)
 	if err != nil {
 		return nil, err
 	}
 	defer c.Close()
-	if r.Scheme == "tls" {
-		tc := tls.Client(c, &tls.Config{ServerName: r.Host})
-		c = tc
+	return exchange(c, d, q)
+}
+
+// streamConn: a TCP connection to the resolver, in TLS for tls://
+func (r Resolver) streamConn(d Dialer) (net.Conn, error) {
+	c, err := d.dial(r.Host, r.Port)
+	if err != nil {
+		return nil, err
 	}
+	if r.Scheme == "tls" {
+		c = tls.Client(c, &tls.Config{ServerName: r.Host, RootCAs: resolverRoots})
+	}
+	return c, nil
+}
+
+// exchange: one query and its answer over a stream connection; several
+// may follow one another on it (RFC 7766, 7858)
+func exchange(c net.Conn, d Dialer, q []byte) ([]byte, error) {
 	_ = c.SetDeadline(time.Now().Add(d.Timeout))
 	msg := make([]byte, 2+len(q))
 	binary.BigEndian.PutUint16(msg, uint16(len(q)))
@@ -227,8 +241,53 @@ func (r Resolver) stream(d Dialer, q []byte) ([]byte, error) {
 		return nil, err
 	}
 	out := make([]byte, binary.BigEndian.Uint16(l[:]))
-	_, err = io.ReadFull(c, out)
+	_, err := io.ReadFull(c, out)
 	return out, err
+}
+
+// Ping: how long a query takes once the connection is up -- what the core
+// pays per query, not the handshake it pays once per connection. The first
+// query sets the connection up, the second is timed: over DoH on the kept
+// connection, over DoT and TCP on the same connection, over UDP it is just
+// asked again. A server that closes a stream after one answer is timed with
+// its handshake, the only way it can be used.
+func (r Resolver) Ping(d Dialer, name string) ([]string, time.Duration, error) {
+	if r.Scheme == "tls" || r.Scheme == "tcp" || (r.Scheme == "udp" && net.ParseIP(r.Host) == nil) {
+		return r.pingStream(d, name)
+	}
+	if _, err := r.Lookup(d, name); err != nil {
+		return nil, 0, err
+	}
+	t := time.Now()
+	ips, err := r.Lookup(d, name)
+	return ips, time.Since(t), err
+}
+
+func (r Resolver) pingStream(d Dialer, name string) ([]string, time.Duration, error) {
+	ask := func(c net.Conn) ([]string, error) {
+		q, id := buildQuery(name, typeA)
+		resp, err := exchange(c, d, q)
+		if err != nil {
+			return nil, err
+		}
+		return parseAnswer(resp, id, typeA)
+	}
+	t := time.Now()
+	c, err := r.streamConn(d)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer c.Close()
+	ips, err := ask(c)
+	if err != nil {
+		return nil, 0, err
+	}
+	cold := time.Since(t)
+	t = time.Now()
+	if warm, err := ask(c); err == nil {
+		return warm, time.Since(t), nil
+	}
+	return ips, cold, nil
 }
 
 // udpResend: a datagram may be lost; the query goes again after this long,

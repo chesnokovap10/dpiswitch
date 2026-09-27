@@ -298,3 +298,69 @@ func TestUDPAnswerForged(t *testing.T) {
 		t.Fatalf("got %v, %v -- a forged answer was taken", got, err)
 	}
 }
+
+// tcpDNS: a DNS server over TCP whose first answer on each connection comes
+// late, as the handshake's does; with once it closes after that answer.
+func tcpDNS(t *testing.T, once bool) string {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				for i := 0; ; i++ {
+					var l [2]byte
+					if _, err := io.ReadFull(c, l[:]); err != nil {
+						return
+					}
+					q := make([]byte, binary.BigEndian.Uint16(l[:]))
+					if _, err := io.ReadFull(c, q); err != nil {
+						return
+					}
+					if i == 0 {
+						time.Sleep(100 * time.Millisecond)
+					}
+					a := answerWith(q, binary.BigEndian.Uint16(q))
+					c.Write(append([]byte{byte(len(a) >> 8), byte(len(a))}, a...))
+					if once {
+						return
+					}
+				}
+			}(c)
+		}
+	}()
+	return ln.Addr().String()
+}
+
+// The DNS test shows a query's time on a connection already up: the first
+// query's setup used to be counted, and a server looked three times slower
+// than it answers. One connection carries both queries; a server that
+// closes it after one answer is timed with the setup, and still answers.
+func TestPingWarm(t *testing.T) {
+	for _, once := range []bool{false, true} {
+		srv := tcpDNS(t, once)
+		socks := newSocksStub(t, srv)
+		_, port, _ := net.SplitHostPort(srv)
+		r, err := ParseResolver("tcp://127.0.0.1:" + port)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ips, rtt, err := r.Ping(Dialer{Addr: socks.ln.Addr().String(), Timeout: 3 * time.Second}, "a.example.org")
+		if err != nil || len(ips) != 1 || ips[0] != "192.0.2.7" {
+			t.Fatalf("once=%v: %v %v", once, ips, err)
+		}
+		if n := socks.conns.Load(); n != 1 {
+			t.Errorf("once=%v: %d connections, want 1", once, n)
+		}
+		if slow := rtt >= 100*time.Millisecond; slow != once {
+			t.Errorf("once=%v: %v timed, the setup counted = %v", once, rtt, slow)
+		}
+	}
+}
