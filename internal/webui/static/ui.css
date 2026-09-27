@@ -167,18 +167,21 @@ td small{display:block;color:var(--muted)}
 .r-probe td,.sw.r-probe{background:var(--probe-bg)}
 .r-reject td{background:var(--bad-bg)}
 .ltable tr.closed td{background:none;color:var(--muted)}
+.ltable tr.failed td{background:none}
+.ltable td.c-why{color:var(--bad)}
 .st{display:inline-block;width:8px;height:8px;border-radius:50%;box-sizing:border-box;vertical-align:middle}
 .st.open{background:var(--ok)}
 .st.idle{border:1.5px solid var(--muted)}
 .st.closed{width:auto;height:auto;border-radius:0;line-height:1}
 .st.closed::before{content:"✕";color:var(--muted);font-size:11px}
+.st.failed{background:var(--bad)}
 .pb{display:inline-block;padding:0 7px;border-radius:99px;font-size:11px;line-height:17px;border:1px solid transparent}
 .pb.p-TLS{background:var(--tls-bg);color:var(--tls)}
 .pb.p-QUIC{background:var(--quic-bg);color:var(--quic)}
 .pb.p-HTTP{background:var(--warn-bg);color:var(--warn)}
 .pb.p-DNS{background:var(--bg);color:var(--muted)}
 .pb.p-TCP,.pb.p-UDP{border-color:var(--line);color:var(--muted)}
-.ltable tr.closed .pb{background:none;border-color:var(--line);color:var(--muted)}
+.ltable tr.closed .pb,.ltable tr.failed .pb{background:none;border-color:var(--line);color:var(--muted)}
 button.lx{border:0;background:none;padding:0 4px;color:var(--muted);visibility:hidden}
 .ltable tr:hover button.lx{visibility:visible}
 button.lx:hover{color:var(--bad)}

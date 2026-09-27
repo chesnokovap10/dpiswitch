@@ -2,6 +2,7 @@ package webui
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -183,6 +184,7 @@ func TestLiveTrim(t *testing.T) {
 type fakeCore struct {
 	srv    *httptest.Server
 	gets   atomic.Int64
+	logs   atomic.Int64 // log streams open
 	mu     sync.Mutex
 	closed []string
 }
@@ -203,6 +205,18 @@ func newFakeCore(t *testing.T) *fakeCore {
 "process":"chrome.exe","processPath":"C:\\chrome.exe","remoteDestination":"203.0.113.9","inboundName":""},
 "upload":1,"download":1,"start":"2026-09-27T12:00:01+03:00","chains":["DIRECT"],"rule":"RuleSet","rulePayload":"direct-verified"}]}`,
 				n*1000, n*100, n*100, n*1000)
+		case r.Method == "GET" && r.URL.Path == "/logs":
+			c.logs.Add(1)
+			defer c.logs.Add(-1)
+			for _, p := range []string{
+				"[Metadata] not valid",
+				"[TCP] dial tunnel (match Match/) 198.18.0.1:50427(chrome.exe) --> blocked.example:443 error: dial tcp 203.0.113.7:443: i/o timeout",
+				"[TCP] dial tunnel (match Match/) 198.18.0.1:50428(chrome.exe) --> blocked.example:443 error: dial tcp 203.0.113.7:443: i/o timeout",
+			} {
+				fmt.Fprintf(w, "{\"type\":\"warning\",\"payload\":%q}\n", p)
+			}
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
 		case r.Method == "DELETE" && strings.HasPrefix(r.URL.Path, "/connections/"):
 			c.mu.Lock()
 			c.closed = append(c.closed, strings.TrimPrefix(r.URL.Path, "/connections/"))
@@ -222,25 +236,19 @@ func newFakeCore(t *testing.T) *fakeCore {
 func liveTest(t *testing.T) (*Server, *fakeCore, *httptest.Server) {
 	s, _ := testServer(t)
 	core := newFakeCore(t)
-	oldAddr, oldEvery, oldGrace := apiAddr, liveEvery, liveGrace
+	oldAddr, oldEvery, oldGrace, oldRetry := apiAddr, liveEvery, liveGrace, liveRetry
 	apiAddr = strings.TrimPrefix(core.srv.URL, "http://")
-	liveEvery, liveGrace = 20*time.Millisecond, 60*time.Millisecond
-	t.Cleanup(func() { apiAddr, liveEvery, liveGrace = oldAddr, oldEvery, oldGrace })
+	liveEvery, liveGrace, liveRetry = 20*time.Millisecond, 60*time.Millisecond, 20*time.Millisecond
+	t.Cleanup(func() { apiAddr, liveEvery, liveGrace, liveRetry = oldAddr, oldEvery, oldGrace, oldRetry })
 	ui := httptest.NewServer(s.Handler())
 	t.Cleanup(func() {
 		ui.Close()
-		for deadline := time.Now().Add(5 * time.Second); ; {
-			s.live.mu.Lock()
-			running := s.live.running
-			s.live.mu.Unlock()
-			if !running {
-				return
-			}
-			if time.Now().After(deadline) {
-				t.Error("the loop still runs with no page watching")
-				return
-			}
-			time.Sleep(10 * time.Millisecond)
+		done := make(chan struct{})
+		go func() { s.live.wg.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("the loop still runs with no page watching")
 		}
 	})
 	return s, core, ui
@@ -264,7 +272,8 @@ func TestLiveStream(t *testing.T) {
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(nil, 1<<20)
 	var full, withRows liveMsg
-	for sc.Scan() && withRows.Kind == "" {
+	var fails []*liveRow
+	for sc.Scan() && (withRows.Kind == "" || len(fails) == 0 || fails[len(fails)-1].N < 2) {
 		data, ok := strings.CutPrefix(sc.Text(), "data: ")
 		if !ok {
 			continue
@@ -280,6 +289,7 @@ func TestLiveStream(t *testing.T) {
 		if len(m.Add) > 0 || len(m.Conns) > 0 {
 			withRows = m
 		}
+		fails = append(fails, m.Fail...)
 	}
 	if full.Kind != "full" {
 		t.Fatalf("the first message: %+v", full)
@@ -305,6 +315,21 @@ func TestLiveStream(t *testing.T) {
 	if withRows.Tot.Mem != 52428800 {
 		t.Errorf("totals: %+v", withRows.Tot)
 	}
+	// the same failure twice is one row, counted twice; the other warning
+	// is none
+	if len(fails) == 0 {
+		t.Fatal("no failure came")
+	}
+	f := fails[len(fails)-1]
+	for _, g := range fails {
+		if g.ID != f.ID {
+			t.Errorf("the same failure on two rows: %s, %s", g.ID, f.ID)
+		}
+	}
+	if f.N != 2 || f.Why != "timeout" || f.Host != "blocked.example" || f.IP != "203.0.113.7" || f.Route != "awg" ||
+		f.Chain != "tunnel" || f.Proc != "chrome.exe" || f.Proto != "TLS" || f.Rule != "Match" || f.Probe {
+		t.Errorf("the failure: %+v", f)
+	}
 
 	resp.Body.Close()
 	// the loop stops after the grace; a call on the way may still land
@@ -326,8 +351,15 @@ func TestLiveStream(t *testing.T) {
 	if m := core.gets.Load(); m != n {
 		t.Errorf("the core asked %d more times with no page open", m-n)
 	}
-	if len(s.live.open) != 0 || len(s.live.closed) != 0 {
-		t.Errorf("state kept with no page: %d open, %d closed", len(s.live.open), len(s.live.closed))
+	// nor is its log read
+	s.live.wg.Wait()
+	for deadline := time.Now().Add(5 * time.Second); core.logs.Load() != 0; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d log streams still open with no page", core.logs.Load())
+		}
+	}
+	if len(s.live.open) != 0 || len(s.live.closed) != 0 || len(s.live.failed) != 0 || len(s.live.failKey) != 0 {
+		t.Errorf("state kept with no page: %d open, %d closed, %d failed", len(s.live.open), len(s.live.closed), len(s.live.failed))
 	}
 }
 
@@ -430,5 +462,54 @@ func TestLiveWords(t *testing.T) {
 	}
 	if !strings.Contains(body, `<a href="/live" class="on">Live</a>`) {
 		t.Error("the menu does not mark the live page")
+	}
+}
+
+// A failure is a row; the same one again within liveFailMerge is counted
+// on it, and goes to the pages once a tick however often it came.
+func TestLiveFailure(t *testing.T) {
+	h := newLiveHub(nil)
+	h.failID = "f-"
+	sub := watch(h)
+	ctx := context.Background()
+	t0 := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	e := ctl.DialErr{Network: "tcp", Proxy: "DIRECT", Rule: "RuleSet", RulePayload: "direct-verified", Process: "svchost.exe",
+		Host: "login.live.com", Port: 443, Err: "interface not found"}
+
+	h.failure(ctx, e, t0)
+	h.failure(ctx, e, t0.Add(10*time.Second))
+	h.failure(ctx, e, t0.Add(20*time.Second))
+	if len(h.failed) != 1 {
+		t.Fatalf("%d rows for one failure", len(h.failed))
+	}
+	r := h.failed[0]
+	if r.N != 3 || r.Start != t0.UnixMilli() || r.End != t0.Add(20*time.Second).UnixMilli() || r.Why != "nonet" ||
+		r.Route != "direct" || r.Rule != "RuleSet direct-verified" || r.Proto != "TLS" {
+		t.Errorf("the row: %+v", r)
+	}
+	h.update(ctl.Live{}, nil, t0.Add(21*time.Second))
+	if m := next(t, sub); len(m.Fail) != 1 || m.Fail[0].N != 3 {
+		t.Errorf("sent: %+v", m.Fail)
+	}
+	h.update(ctl.Live{}, nil, t0.Add(22*time.Second))
+	if m := next(t, sub); len(m.Fail) != 0 {
+		t.Errorf("sent again with nothing new: %+v", m.Fail)
+	}
+
+	// another reason is another row; so is the same one a minute after the last
+	other := e
+	other.Err = "dns resolve failed: couldn't find ip"
+	h.failure(ctx, other, t0.Add(23*time.Second))
+	h.failure(ctx, e, t0.Add(20*time.Second+liveFailMerge+time.Second))
+	if len(h.failed) != 3 || h.failed[1].Why != "dns" || h.failed[2].N != 1 || h.failed[2].ID == r.ID {
+		t.Errorf("rows: %+v %+v", h.failed[1], h.failed[2])
+	}
+
+	// read after the loop stopped: not taken in
+	done, cancel := context.WithCancel(ctx)
+	cancel()
+	h.failure(done, e, t0.Add(3*time.Minute))
+	if len(h.failed) != 3 {
+		t.Errorf("a failure taken in after the loop stopped: %d rows", len(h.failed))
 	}
 }

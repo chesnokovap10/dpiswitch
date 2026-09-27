@@ -3,6 +3,9 @@
 // first, then what changed, every second -- and the rows are kept and
 // redrawn in place.
 //
+// Failed dials come as rows of their own, with what the core said and how
+// many times the same one failed.
+//
 // The stream is open only while the page is seen: a tab in the background,
 // a window minimized, a pause close it, and the server stops asking the
 // core once no page watches.
@@ -17,7 +20,8 @@
   const IDLE = 30000; // no traffic this long: idle
   const MAX = 1000;   // rows drawn at most; the filter narrows the rest
 
-  const open = new Map(), closed = new Map(); // id -> row, closed in the order they closed
+  // id -> row; closed and failed ones in the order they came
+  const open = new Map(), closed = new Map(), failed = new Map();
   let now = 0, keep = [500, 600], tot = null, ready = false, down = '', err = '';
   let es = null, paused = false, dropped = false;
 
@@ -25,7 +29,7 @@
   const pref = {tab: 'open', route: '', noprobe: false, sort: 'start', desc: true};
   try { Object.assign(pref, JSON.parse(localStorage.getItem('live') || '{}')); } catch (e) {}
   const save = () => { try { localStorage.setItem('live', JSON.stringify(pref)); } catch (e) {} };
-  // closed ones cleared stay cleared for this tab, a reload included
+  // closed ones and failures cleared stay cleared for this tab, a reload included
   let clearedAt = 0;
   try { clearedAt = +sessionStorage.getItem('liveCleared') || 0; } catch (e) {}
 
@@ -47,6 +51,8 @@
     return fmt(W.hour, Math.floor(s / 3600), Math.floor(s % 3600 / 60));
   }
   const label = r => W[r.route] || r.route;
+  const clock = ms => new Date(ms).toLocaleTimeString(locale);
+  const why = r => W['why.' + r.why] || r.why;
 
   // --- the stream ---
   function start() {
@@ -84,6 +90,7 @@
       for (const r of m.closed || []) {
         if (r.end > clearedAt && !closed.has(r.id)) closed.set(r.id, r);
       }
+      for (const r of m.failed || []) fail(r);
     } else {
       for (const r of m.add || []) open.set(r.id, r);
       for (const u of m.upd || []) {
@@ -97,15 +104,31 @@
         r.end = g.end; r.us = 0; r.ds = 0;
         closed.set(r.id, r);
       }
+      for (const r of m.fail || []) fail(r);
     }
-    // the same closed ones the server keeps: the newest, none too old
+    trim(closed);
+    trim(failed);
+    draw();
+  }
+
+  // A failure comes again when the same one fails again: the row on the
+  // page takes its new count and time.
+  function fail(r) {
+    if (r.end <= clearedAt) return;
+    const o = failed.get(r.id);
+    if (!o) { failed.set(r.id, r); return; }
+    o.n = r.n; o.end = r.end; o.err = r.err; o._hay = null;
+    if (o.ip !== r.ip) { o.ip = r.ip; if (o._ip) o._ip.textContent = r.ip || ''; }
+  }
+
+  // the same ones the server keeps: the newest, none too old
+  function trim(map) {
     const cut = now - keep[1] * 1000;
-    for (const [id, r] of closed) {
-      if (closed.size <= keep[0] && r.end >= cut) break;
-      closed.delete(id);
+    for (const [id, r] of map) {
+      if (map.size <= keep[0] && r.end >= cut) break;
+      map.delete(id);
       if (r._tr) r._tr.remove();
     }
-    draw();
   }
 
   // --- drawing ---
@@ -121,7 +144,8 @@
     const h = td('c-h');
     if (r.host) { h.textContent = r.host; h.title = r.host; }
     else { h.textContent = W.noname; h.classList.add('muted'); }
-    td().textContent = r.ip || '';
+    r._ip = td();
+    r._ip.textContent = r.ip || '';
     td('num').textContent = r.port || '';
     const b = document.createElement('span');
     b.className = 'pb p-' + r.proto;
@@ -131,11 +155,18 @@
     const rt = td('c-r');
     rt.textContent = label(r) + (r.probe ? ' · ' + W.probe : '');
     rt.title = r.chain + (r.rule ? '\n' + r.rule : '');
-    r._v = [td('num'), td('num'), td('num'), td('num'), td('num')];
-    r._v[4].title = W.started + ' ' + new Date(r.start).toLocaleTimeString(locale);
+    if (r.why) {
+      // no speed and no bytes: what the core said takes their place
+      const w = td('c-why');
+      w.colSpan = 4;
+      r._v = [w, td('num')];
+    } else {
+      r._v = [td('num'), td('num'), td('num'), td('num'), td('num')];
+      r._v[4].title = W.started + ' ' + clock(r.start);
+    }
     r._x = td('c-x');
     // the detector's own are not closed from here: that only breaks a check
-    if (!r.probe) {
+    if (!r.probe && !r.why) {
       const x = document.createElement('button');
       x.type = 'button';
       x.className = 'lx';
@@ -150,16 +181,26 @@
 
   function paint(r) {
     if (!r._tr) mk(r);
-    const st = r.end ? 'closed' : now - r.act > IDLE ? 'idle' : 'open';
+    const st = r.why ? 'failed' : r.end ? 'closed' : now - r.act > IDLE ? 'idle' : 'open';
     if (r._state !== st) {
       r._state = st;
       r._st.className = 'st ' + st;
       r._tr.classList.toggle('closed', st === 'closed');
+      r._tr.classList.toggle('failed', st === 'failed');
       if (st === 'closed') r._x.textContent = '';
     }
-    const t = st === 'closed' ? fmt(W.closedAgo, dur(now - r.end)) : st === 'idle' ? W.idle : W.open;
+    const t = st === 'failed' ? W.failed : st === 'closed' ? fmt(W.closedAgo, dur(now - r.end)) : st === 'idle' ? W.idle : W.open;
     if (r._st.title !== t) r._st.title = t;
-    const v = [speed(r.ds), speed(r.us), size(r.down), size(r.up), dur((r.end || now) - r.start)];
+    let v;
+    if (r.why) {
+      // the last time it failed; the first, when it failed more than once
+      v = [why(r) + (r.n > 1 ? ' ×' + r.n : ''), clock(r.end)];
+      const t0 = r.err + (r.n > 1 ? '\n' + fmt(W.attempts, r.n) : ''), t1 = r.n > 1 ? fmt(W.firstAt, clock(r.start)) : '';
+      if (r._v[0].title !== t0) r._v[0].title = t0;
+      if (r._v[1].title !== t1) r._v[1].title = t1;
+    } else {
+      v = [speed(r.ds), speed(r.us), size(r.down), size(r.up), dur((r.end || now) - r.start)];
+    }
     for (let i = 0; i < v.length; i++) {
       if (r._last[i] !== v[i]) { r._last[i] = v[i]; r._v[i].textContent = v[i]; }
     }
@@ -180,17 +221,18 @@
     return d || b.start - a.start || (a.id < b.id ? -1 : 1);
   }
 
-  const hay = r => r._hay || (r._hay = [r.host, r.proc, r.ip, r.port, r.proto, label(r)].join(' ').toLowerCase());
+  const hay = r => r._hay ||
+    (r._hay = [r.host, r.proc, r.ip, r.port, r.proto, label(r), r.why ? why(r) : ''].join(' ').toLowerCase());
 
   function draw() {
     const q = $('lfilter').value.trim().toLowerCase();
-    const maps = pref.tab === 'open' ? [open] : pref.tab === 'closed' ? [closed] : [open, closed];
-    const list = [];
-    let nOpen = 0, nClosed = 0;
-    for (const m of [open, closed]) {
+    const all = [open, closed, failed];
+    const maps = pref.tab === 'all' ? all : [{open, closed, failed}[pref.tab] || open];
+    const list = [], count = new Map(all.map(m => [m, 0]));
+    for (const m of all) {
       for (const r of m.values()) {
         if (pref.noprobe && r.probe) continue;
-        if (m === open) nOpen++; else nClosed++;
+        count.set(m, count.get(m) + 1);
         if (!maps.includes(m) || pref.route && r.route !== pref.route || q && !hay(r).includes(q)) continue;
         list.push(r);
       }
@@ -205,12 +247,15 @@
     }
     while (tbody.children.length > n) tbody.lastChild.remove();
 
-    $('n-open').textContent = nOpen;
-    $('n-closed').textContent = nClosed;
+    $('n-open').textContent = count.get(open);
+    $('n-closed').textContent = count.get(closed);
+    $('n-failed').textContent = count.get(failed);
     let e = '';
     if (!ready) e = W.loading;
     else if (list.length > MAX) e = fmt(W.shown, MAX, list.length);
-    else if (!list.length) e = q || pref.route ? W.noMatch : pref.tab === 'closed' ? W.noClosed : W.noOpen;
+    else if (!list.length) {
+      e = q || pref.route ? W.noMatch : pref.tab === 'closed' ? W.noClosed : pref.tab === 'failed' ? W.noFailed : W.noOpen;
+    }
     $('lempty').textContent = e;
     $('lempty').hidden = !e;
 
@@ -279,8 +324,10 @@
     state();
   });
   $('lclear').addEventListener('click', () => {
-    for (const r of closed.values()) if (r._tr) r._tr.remove();
-    closed.clear();
+    for (const m of [closed, failed]) {
+      for (const r of m.values()) if (r._tr) r._tr.remove();
+      m.clear();
+    }
     clearedAt = now;
     try { sessionStorage.setItem('liveCleared', String(now)); } catch (e) {}
     draw();

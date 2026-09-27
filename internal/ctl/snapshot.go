@@ -48,8 +48,9 @@ var ErrCoreDown = errors.New("the core is not running")
 // live page calls it every second. They are its own, and Release closes
 // them: with the page closed nothing is left open to the core.
 type LiveClient struct {
-	a  *api
-	tr *http.Transport
+	a      *api
+	tr     *http.Transport
+	stream *http.Client // the core's log: open for as long as it is read
 }
 
 func NewLiveClient(apiAddr, secret string) *LiveClient {
@@ -57,7 +58,7 @@ func NewLiveClient(apiAddr, secret string) *LiveClient {
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	// a second-long refresh: a call hung longer is no use to it
 	a.c = &http.Client{Timeout: 3 * time.Second, Transport: tr}
-	return &LiveClient{a, tr}
+	return &LiveClient{a, tr, &http.Client{Transport: tr}}
 }
 
 // Release closes the connections kept open for the next call.

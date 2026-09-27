@@ -124,9 +124,16 @@ the type, the route, the speed and the bytes both ways. A row's colour is its ro
 the first tunnel, violet the second, grey the detector's checks. Hover over a route for the group and the
 rule that chose it.</p>
 <ul>
-<li><b>States.</b> ● open; ○ open, but no traffic for over 30 seconds; ✕ closed. The core keeps no closed
-connections: the page sees one leave, and keeps the last 500 closed for up to 10 minutes. A connection that
-opened and closed within a second may never show.</li>
+<li><b>States.</b> ● open; ○ open, but no traffic for over 30 seconds; ✕ closed; <span class="bad-t">●</span>
+failed: the core could not make the connection. The core keeps no closed connections: the page sees one
+leave, and keeps the last 500 closed for up to 10 minutes. A connection that opened and closed within a
+second may never show.</li>
+<li><b>Failures</b> are only written to the core's log, and the page reads it while it is open. In place of
+the speed and the bytes a failed row says why: timed out, refused, reset, name not found, no network
+interface; the tooltip has the error in full. The same program failing again to reach the same address by
+the same route is no new row but "×N" on the old one, as long as the attempts are less than a minute apart.
+The detector's checks fail too, as they should on a blocked path; "Hide the detector's checks" hides
+them.</li>
 <li><b>Type.</b> TLS, QUIC and HTTP are told by the port. Where the core read the site's name from the traffic
 itself it is confirmed; the badge's tooltip says which.</li>
 <li><b>✕ in a row</b> closes the connection in the core: the program reconnects, and the new connection
