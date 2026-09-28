@@ -186,6 +186,8 @@ type awg2 struct {
 	Presets []preset
 	Hosts   []string
 	Online  []netprocs.Proc
+	// a preset's save refused: its dialog opens again on what was sent
+	Draft *presetDraft
 }
 
 func awg2Data() awg2 {
@@ -195,8 +197,8 @@ func awg2Data() awg2 {
 	}
 	d := awg2{Hosts: readEntries(paths.Awg2List)}
 	d.Online = onlineApps(d.Hosts)
-	for _, p := range presets.All {
-		d.Presets = append(d.Presets, preset{Preset: p, Rules: len(p.Rules()), On: on[p.ID]})
+	for _, p := range presets.Load() {
+		d.Presets = append(d.Presets, preset{Preset: p, Rules: len(ctl.PresetRules(p)), On: on[p.ID]})
 	}
 	return d
 }

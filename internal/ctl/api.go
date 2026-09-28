@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"dpiswitch/internal/paths"
-	"dpiswitch/internal/presets"
 )
 
 // Defaults: default settings derived from the data directory.
@@ -55,14 +54,10 @@ func Defaults() Config {
 }
 
 // pinnedLists: the rule-provider files routing names above the detector --
-// the forbidden ones too: a probe would reach them past the rules. A
-// disabled preset is written empty, so every preset file is read.
+// the forbidden ones too: a probe would reach them past the rules. The
+// presets' file holds the ones switched on only.
 func pinnedLists() []string {
-	out := []string{paths.Awg2Hosts(), paths.ForceTunnel(), paths.ForceBlock()}
-	for _, p := range presets.All {
-		out = append(out, paths.Preset(p.ID))
-	}
-	return out
+	return []string{paths.Awg2Hosts(), paths.ForceTunnel(), paths.ForceBlock(), paths.Presets()}
 }
 
 // Run loops until the context is cancelled. It is the single

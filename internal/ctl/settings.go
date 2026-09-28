@@ -42,7 +42,7 @@ type Settings struct {
 	Families bool `json:"families"`
 	// IPv6 through the tunnel: TUN gets IPv6 and a route
 	IPv6 bool `json:"ipv6"`
-	// second tunnel (awg2) presets: youtube, telegram, ai
+	// second tunnel (awg2): the IDs of the presets switched on
 	Awg2Presets []string `json:"awg2_presets"`
 	// direct-path resolvers: the core and the prober reach them directly,
 	// so CDNs hand out nodes closest to the user's ISP
@@ -235,8 +235,9 @@ func (s Settings) Validate() error {
 	case len(s.DirectDNS) == 0:
 		return fmt.Errorf("at least one DNS server for direct sites is required")
 	}
+	known := presets.Known()
 	for _, id := range s.Awg2Presets {
-		if !presets.Valid(id) {
+		if !known[id] {
 			return fmt.Errorf("unknown preset %q", id)
 		}
 	}
@@ -276,10 +277,15 @@ func (s *Settings) clamp() {
 	if s.Attempts < 1 || s.Attempts > 10 {
 		s.Attempts = d.Attempts
 	}
+	// a preset deleted meanwhile is switched off with it. The settings are
+	// read every second, the presets' file only when a preset is on.
 	var ps []string
-	for _, id := range s.Awg2Presets {
-		if presets.Valid(id) {
-			ps = append(ps, id)
+	if len(s.Awg2Presets) > 0 {
+		known := presets.Known()
+		for _, id := range s.Awg2Presets {
+			if known[id] {
+				ps = append(ps, id)
+			}
 		}
 	}
 	if ps == nil {

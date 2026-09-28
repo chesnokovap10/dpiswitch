@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"dpiswitch/internal/paths"
-	"dpiswitch/internal/presets"
 )
 
 // A line of a user list is a site, an address or a program, written the one
@@ -100,10 +99,8 @@ func TestSyncUserFiles(t *testing.T) {
 	if !contains(got, "force-direct") || !Synced(paths.DirectList) {
 		t.Fatalf("changed %v, synced %v", got, Synced(paths.DirectList))
 	}
-	for _, p := range presets.All {
-		if !contains(got, "preset-"+p.ID) {
-			t.Fatalf("preset %s not written: %v", p.ID, got)
-		}
+	if !contains(got, PresetsProvider) {
+		t.Fatalf("presets not written: %v", got)
 	}
 	if again := SyncUserFiles(); len(again) != 0 {
 		t.Fatalf("nothing changed, yet %v", again)

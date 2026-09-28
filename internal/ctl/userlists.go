@@ -120,12 +120,8 @@ func SyncUserFiles() []string {
 	if replaced(paths.ObserveAll(), observeAll(mode), "observe only list") {
 		changed = append(changed, ObserveProvider)
 	}
-	ids, err := presets.Write(set.Awg2Presets)
-	if err != nil {
-		log.Printf("presets not written: %v", err)
-	}
-	for _, id := range ids {
-		changed = append(changed, "preset-"+id)
+	if replaced(paths.Presets(), presetsBody(presets.Load(), set.Awg2Presets), "presets") {
+		changed = append(changed, PresetsProvider)
 	}
 	return changed
 }

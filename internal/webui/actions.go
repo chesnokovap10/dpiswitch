@@ -352,18 +352,14 @@ func splitLines(s string) []string {
 // --- second tunnel ---
 
 // actPreset turns one preset on or off at once: the settings say which are
-// on, the service writes the preset files within a second (the core watches
-// them), and the connections the preset moves are closed.
+// on, the service writes the presets' file within a second (the core
+// watches it), and the connections the preset moves are closed.
 func (s *Server) actPreset(w http.ResponseWriter, r *http.Request) {
 	id, on := r.FormValue("field"), r.FormValue("value") == "1"
-	var p *presets.Preset
-	for i := range presets.All {
-		if presets.All[i].ID == id {
-			p = &presets.All[i]
-		}
-	}
-	if p == nil {
-		http.Error(w, "unknown preset", http.StatusBadRequest)
+	p, ok := findPreset(presets.Load(), id)
+	if !ok {
+		// deleted in another window meanwhile
+		s.part(w, r, "awg2", "presets", false, tr(lang(r), errPresetGone.Error()))
 		return
 	}
 	toggle := func(cur []string) []string {
@@ -388,18 +384,22 @@ func (s *Server) actPreset(w http.ResponseWriter, r *http.Request) {
 	n := 0
 	var cerr error
 	if err == nil {
-		n, cerr = closeMoved([]string{"preset-" + p.ID}, presetMatch(*p), func() bool { return presets.Written(p.ID, on) })
+		n, cerr = closeMoved([]string{ctl.PresetsProvider}, rulesMatch(ctl.PresetRules(p)),
+			func() bool { return ctl.PresetWritten(p, on) })
 	}
 	ok, msg := saved(r, err, n, cerr)
 	s.part(w, r, "awg2", "presets", ok, msg)
 }
 
-// presetMatch: the connections a preset's rules take, and the ones it did
-func presetMatch(p presets.Preset) func(ctl.Conn) bool {
-	var suffixes []string
+// rulesMatch: the connections a preset's core rules take, or took
+func rulesMatch(rules []string) func(ctl.Conn) bool {
+	var suffixes, apps []string
 	var nets []*netPrefix
-	for _, rl := range p.Rules() {
+	for _, rl := range rules {
 		f := strings.Split(rl, ",")
+		if len(f) < 2 {
+			continue
+		}
 		switch f[0] {
 		case "DOMAIN-SUFFIX":
 			suffixes = append(suffixes, "+."+f[1])
@@ -407,12 +407,19 @@ func presetMatch(p presets.Preset) func(ctl.Conn) bool {
 			if n := parsePrefix(f[1]); n != nil {
 				nets = append(nets, n)
 			}
+		case "PROCESS-NAME", "PROCESS-PATH":
+			apps = append(apps, f[1])
 		}
 	}
 	dm := domainMatch(suffixes)
 	return func(c ctl.Conn) bool {
-		if c.RulePayload == "preset-"+p.ID || dm(c) {
+		if dm(c) {
 			return true
+		}
+		for _, a := range apps {
+			if strings.EqualFold(a, c.Process) || strings.EqualFold(a, c.ProcessPath) {
+				return true
+			}
 		}
 		for _, n := range nets {
 			if n.contains(c.IP) {

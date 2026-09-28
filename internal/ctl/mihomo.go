@@ -279,10 +279,10 @@ func (c connection) pinned() bool {
 		return false
 	}
 	switch c.RulePayload {
-	case "awg2-hosts", "awg2-hosts-ip", "force-tunnel", "force-tunnel-ip", "force-block", "force-block-ip":
+	case PresetsProvider, "awg2-hosts", "awg2-hosts-ip", "force-tunnel", "force-tunnel-ip", "force-block", "force-block-ip":
 		return true
 	}
-	return strings.HasPrefix(c.RulePayload, "preset-")
+	return false
 }
 
 func (c connection) viaDirect() bool {

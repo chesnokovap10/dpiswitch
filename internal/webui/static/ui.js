@@ -64,6 +64,8 @@ async function send(url, body, target, changed) {
       if (t) t.value = f.textContent;
       f.remove();
     }
+    // a dialog whose save was refused comes back open, on what was typed
+    for (const d of el.querySelectorAll('dialog[data-show]')) d.showModal();
     if (keep) {
       const b = el.querySelector('[name="' + CSS.escape(keep.name) + '"]');
       if (b) {
@@ -116,6 +118,27 @@ document.addEventListener('click', e => {
   const c = e.target.closest('[data-close]');
   if (c) c.closest('dialog').close();
 });
+
+// A dialog left unsent -- Cancel, Esc -- shows what is saved when opened
+// again, not what was typed into it and dropped. A refused save's dialog
+// was drawn on what was typed: the part it came in is drawn afresh. close
+// does not bubble: it is caught on its way down.
+document.addEventListener('close', e => {
+  const d = e.target;
+  if (!(d instanceof HTMLDialogElement)) return;
+  const f = d.querySelector('form[data-reset]');
+  if (f) f.reset();
+  const part = d.dataset.refresh && d.parentElement && d.parentElement.closest('[id]');
+  if (part) refresh(part, d.dataset.refresh);
+}, true);
+
+async function refresh(el, url) {
+  const current = ticket(el);
+  const r = await fetch(url).catch(() => null);
+  if (!r || !r.ok) return;
+  const html = await r.text();
+  if (current()) el.innerHTML = html;
+}
 
 // A .conf form has a text field and a file picker, and the server takes
 // the file first. What the field shows must be what is sent: a file picked

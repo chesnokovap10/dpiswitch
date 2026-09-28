@@ -128,6 +128,8 @@ func TestClampUpperBounds(t *testing.T) {
 // The settings form carries no presets: saving it must keep the ones the
 // second tunnel block turned on, and the other way round.
 func TestPatchSettingsKeepsOtherFields(t *testing.T) {
+	// the presets there are: the shipped ones, not this machine's
+	t.Setenv("ProgramData", t.TempDir())
 	p := filepath.Join(t.TempDir(), "settings.json")
 	s := DefaultSettings()
 	s.Awg2Presets = []string{"youtube", "ai"}

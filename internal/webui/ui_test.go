@@ -139,7 +139,7 @@ func TestTranslations(t *testing.T) {
 		t.Fatal(err)
 	}
 	goKey := regexp.MustCompile(`(?:v\.Tf?\(|tr\(lang\(r\), |done\(r, [a-z]+, |redirect\(w, r, [^,"]+, )"([^"]+)"|note = "([^"]+)"|return "(Config[^"]+)"|\{\d+, "([^"]+)"\}`)
-	for _, f := range []string{"actions.go", "ui.go", "pages.go", "live.go", "entries.go"} {
+	for _, f := range []string{"actions.go", "ui.go", "pages.go", "live.go", "entries.go", "presets.go"} {
 		b, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
@@ -161,7 +161,7 @@ func TestTranslations(t *testing.T) {
 			keys = append(keys, k)
 		}
 	}
-	for _, p := range presets.All {
+	for _, p := range presets.Builtin() {
 		keys = append(keys, p.Title, p.Note)
 	}
 	if len(keys) < 150 {
@@ -407,6 +407,7 @@ func TestLang(t *testing.T) {
 func TestSettingsAtOnce(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
+	all := presets.Load()
 	var wg sync.WaitGroup
 	send := func(path, field, value string) {
 		defer wg.Done()
@@ -419,19 +420,19 @@ func TestSettingsAtOnce(t *testing.T) {
 		go send("/act/set", "attempts", "5")
 		go send("/act/set", "slow_pct", "30")
 		go send("/act/set", "families", "0")
-		go send("/act/preset", presets.All[i%len(presets.All)].ID, "1")
+		go send("/act/preset", all[i%len(all)].ID, "1")
 	}
 	wg.Wait()
 	got := ctl.LoadSettings(paths.Settings())
-	if got.Attempts != 5 || got.SlowPct != 30 || got.Families || len(got.Awg2Presets) != len(presets.All) {
+	if got.Attempts != 5 || got.SlowPct != 30 || got.Families || len(got.Awg2Presets) != len(all) {
 		t.Fatalf("changes lost: %+v", got)
 	}
-	// the service writes the preset files the settings ask for
+	// the service writes the presets the settings ask for
 	ctl.SyncUserFiles()
-	for _, p := range presets.All {
-		b, err := os.ReadFile(paths.Preset(p.ID))
-		if err != nil || !strings.Contains(string(b), ",") {
-			t.Fatalf("preset %s: file %q, %v", p.ID, b, err)
+	for _, p := range all {
+		if !ctl.PresetWritten(p, true) {
+			b, err := os.ReadFile(paths.Presets())
+			t.Fatalf("preset %s not written: %q, %v", p.ID, b, err)
 		}
 	}
 }

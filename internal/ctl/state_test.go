@@ -136,7 +136,7 @@ func TestDropPinnedAndSkipped(t *testing.T) {
 	}
 
 	force := connection{Rule: "RuleSet", RulePayload: "force-tunnel"}
-	preset := connection{Rule: "RuleSet", RulePayload: "preset-youtube"}
+	preset := connection{Rule: "RuleSet", RulePayload: PresetsProvider}
 	ours := connection{Rule: "RuleSet", RulePayload: "direct-verified"}
 	if !force.pinned() || !preset.pinned() || ours.pinned() {
 		t.Error("pinned: force-tunnel and presets yes, the detector's own list no")

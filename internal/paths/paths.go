@@ -122,14 +122,17 @@ func ForceBlock() string      { return Data(BlockList) }
 // ctl.SyncUserFiles
 func ObserveAll() string { return Data("observe-all.txt") }
 
-// second tunnel (awg2): source .conf, custom host list, presets
-func SourceConf2() string     { return User("source2.conf") }
-func Awg2Hosts() string       { return Data(Awg2List) }
-func Preset(id string) string { return Data("preset-" + id + ".txt") }
-func ForceTunnel() string     { return Data(TunnelList) }
-func TunnelIPv6() string      { return Data("tunnel-ipv6.json") }
-func ServiceLog() string      { return filepath.Join(LogDir(), "service.log") }
-func MihomoLog() string       { return filepath.Join(LogDir(), "mihomo.log") }
+// second tunnel (awg2): source .conf, custom host list, presets -- the
+// user's set of them, and the rules of the ones switched on, which the
+// service writes for the core
+func SourceConf2() string { return User("source2.conf") }
+func Awg2Hosts() string   { return Data(Awg2List) }
+func UserPresets() string { return User("presets.json") }
+func Presets() string     { return Data("presets.txt") }
+func ForceTunnel() string { return Data(TunnelList) }
+func TunnelIPv6() string  { return Data("tunnel-ipv6.json") }
+func ServiceLog() string  { return filepath.Join(LogDir(), "service.log") }
+func MihomoLog() string   { return filepath.Join(LogDir(), "mihomo.log") }
 
 // TrayLog: the tray runs as the user and logs in the user's own profile --
 // the service's log directory is not the user's to write in

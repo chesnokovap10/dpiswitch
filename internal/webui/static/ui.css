@@ -141,10 +141,14 @@ td small{display:block;color:var(--muted)}
 .form .h{position:relative;padding-right:130px}
 .form .h .msg{position:absolute;right:14px;max-width:120px;text-align:right}
 .form select,.form input{width:100%}
-.presets .p{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+/* a preset per row: its switch and name, then its buttons; many scroll */
+.presets{overflow:auto}
+.presets .p{display:flex;align-items:center;gap:6px;padding:9px 0;border-bottom:1px solid var(--line)}
 .presets .p:last-child{border-bottom:0}
-.presets .p span{flex:1}
+.presets .p label{display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer}
+.presets .p span{flex:1;min-width:0}
 .presets .p small{display:block;color:var(--muted)}
+.presets .p button{padding:2px 9px;font-size:12px}
 /* DNS: the two columns share rows, so their buttons line up whatever the hints' length */
 .dnsgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:14px;row-gap:6px;align-items:start}
 .dnsgrid .hint{margin:0}
@@ -226,3 +230,8 @@ dialog{border:1px solid var(--line);border-radius:10px;padding:16px;width:580px;
 dialog::backdrop{background:rgba(0,0,0,.35)}
 dialog h2{font-size:15px;margin:0 0 8px}
 dialog form{margin:0}
+/* a preset's dialog: name and description side by side, its lines below */
+.presetdlg .fields{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:10px;margin-bottom:10px}
+.presetdlg .fields label{display:flex;flex-direction:column;gap:4px;color:var(--muted);font-size:12px}
+.presetdlg .fields input{width:100%}
+.presetdlg .actions{min-height:0}

@@ -59,8 +59,8 @@ func newScenario(t *testing.T) *scenario {
 	s.api = newAPI(strings.TrimPrefix(srv.URL, "http://"), "")
 
 	dir := t.TempDir()
-	preset := filepath.Join(dir, "preset-ai.txt")
-	if err := os.WriteFile(preset, []byte("DOMAIN-SUFFIX,claude.ai\n"), 0o644); err != nil {
+	preset := filepath.Join(dir, "presets.txt")
+	if err := os.WriteFile(preset, []byte("# preset ai\nDOMAIN-SUFFIX,claude.ai\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	s.cfg = Config{
@@ -256,7 +256,7 @@ func TestCyclePinnedLeftAlone(t *testing.T) {
 	s := newScenario(t)
 	s.st.put("n", "api.claude.ai", &entry{Verdict: probe.Clean, DecidedAt: time.Now(),
 		ExpiresAt: time.Now().Add(time.Hour), LastSeen: time.Now()})
-	s.see(via("claude.ai", 443, "tcp", "awg2", "RuleSet", "preset-ai"))
+	s.see(via("claude.ai", 443, "tcp", "awg2", "RuleSet", PresetsProvider))
 	s.cycle()
 	if len(s.probed) != 0 {
 		t.Fatalf("probed %v", s.probed)

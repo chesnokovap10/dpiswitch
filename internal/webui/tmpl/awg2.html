@@ -32,11 +32,47 @@
   <p class="hint">{{.T "Always through the second tunnel, above every other list. If awg2 is down, through awg; if both are down, direct. A switch applies at once, open connections included."}}</p>
   <form method="post" action="/act/preset" data-swap="presets" data-instant="1" class="presets">
     {{range .Data.Presets}}
-    <label class="p"><input type="checkbox" name="{{.ID}}" {{if .On}}checked{{end}}>
-      <span>{{$v.T .Title}}<small>{{$v.T .Note}} · {{$v.Tf "%d rules" .Rules}}</small></span></label>
+    <div class="p">
+      <label><input type="checkbox" name="{{.ID}}" {{if .On}}checked{{end}}>
+        <span>{{$v.T .Title}}<small>{{if .Note}}{{$v.T .Note}} · {{end}}{{$v.Tf "%d rules" .Rules}}</small></span></label>
+      <button type="button" data-open="dlg-preset-{{.ID}}">{{$v.T "Edit"}}</button>
+      <button class="danger" form="presetdel" name="id" value="{{.ID}}" data-busy="{{$v.T "Deleting…"}}"
+        data-confirm="{{$v.Tf "Delete the preset “%s”? What it routes goes the way the other lists send it." ($v.T .Title)}}">{{$v.T "Delete"}}</button>
+    </div>
+    {{else}}
+    <p class="muted">{{.T "No presets: add one below."}}</p>
     {{end}}
   </form>
-  <div class="actions">{{template "msg" .}}</div>
+  <div class="actions">
+    <button type="button" data-open="dlg-preset-new">{{.T "Add…"}}</button>
+    {{template "msg" .}}
+    {{/* the rows' delete buttons send this form: one cannot sit inside another */}}
+    <form id="presetdel" method="post" action="/act/presetdel" data-swap="presets"></form>
+  </div>
+  {{range .Data.Presets}}{{template "presetdlg" ($v.PresetDlg .ID)}}{{end}}
+  {{template "presetdlg" (.PresetDlg "")}}
+{{end}}
+
+{{/* a preset's dialog: its name, what it is about, its lines */}}
+{{define "presetdlg"}}{{$v := .V}}
+<dialog id="dlg-preset-{{.Key}}" class="presetdlg"{{if .Show}} data-show data-refresh="/frag/awg2/presets"{{end}}>
+  <form method="post" action="/act/presetsave" data-swap="presets" data-reset>
+    <input type="hidden" name="id" value="{{.ID}}">
+    <h2>{{if .ID}}{{$v.T "Edit preset"}}{{else}}{{$v.T "New preset"}}{{end}}</h2>
+    <div class="fields">
+      <label>{{$v.T "Preset name"}}<input type="text" name="title" value="{{.Title}}" maxlength="80" required></label>
+      <label>{{$v.T "Description"}}<input type="text" name="note" value="{{.Note}}" maxlength="200" placeholder="{{$v.T "optional"}}"></label>
+    </div>
+    <p class="hint">{{$v.T "One per line: a site (example.com: the site and everything under it), an address or a network (1.2.3.4, 91.108.4.0/22: for connections made to it by address), a program (telegram.exe; a full path for that copy only). A line starting with # is a comment."}}</p>
+    <textarea name="lines" rows="14" spellcheck="false" placeholder="example.com&#10;91.108.4.0/22&#10;telegram.exe">{{.Text}}</textarea>
+    <div class="actions">
+      {{if .Err}}<span class="msg bad">{{.Err}}</span>{{end}}
+      <span class="spacer"></span>
+      <button type="button" data-close>{{$v.T "Cancel"}}</button>
+      <button class="primary" data-busy="{{$v.T "Saving…"}}">{{if .ID}}{{$v.T "Save"}}{{else}}{{$v.T "Add"}}{{end}}</button>
+    </div>
+  </form>
+</dialog>
 {{end}}
 
 

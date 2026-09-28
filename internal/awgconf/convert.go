@@ -11,13 +11,13 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/paths"
-	"dpiswitch/internal/presets"
 	"dpiswitch/internal/probe"
 )
 
@@ -395,15 +395,14 @@ func (c *Conf) Render() (string, error) {
 	w("    lazy: false")
 	w("")
 	w("rule-providers:")
-	w("  # second-tunnel presets: a disabled one is written empty, so")
-	w("  # enabling and disabling need no core restart")
-	for _, p := range presets.All {
-		w("  preset-%s:", p.ID)
-		w("    type: file")
-		w("    behavior: classical")
-		w("    format: text")
-		w("    path: ./preset-%s.txt", p.ID)
-	}
+	w("  # second-tunnel presets: the rules of the ones switched on, in one file")
+	w("  # the service writes -- switching, editing, adding and deleting one")
+	w("  # need no core restart")
+	w("  %s:", ctl.PresetsProvider)
+	w("    type: file")
+	w("    behavior: classical")
+	w("    format: text")
+	w("    path: ./%s", filepath.Base(paths.Presets()))
 	w("  # observe only: everything goes direct -- the service writes the")
 	w("  # catch-all here in that mode and leaves the file empty otherwise")
 	w("  observe-all:")
@@ -509,9 +508,7 @@ func (c *Conf) Render() (string, error) {
 	w("  - RULE-SET,force-direct-apps,DIRECT")
 	w("")
 	w("  # 7. second tunnel: presets and the user's awg2 list -- the detector leaves them alone")
-	for _, p := range presets.All {
-		w("  - RULE-SET,preset-%s,tunnel2", p.ID)
-	}
+	w("  - RULE-SET,%s,tunnel2", ctl.PresetsProvider)
 	w("  - RULE-SET,awg2-hosts-apps,tunnel2")
 	w("  - RULE-SET,awg2-hosts,tunnel2")
 	w("  - RULE-SET,awg2-hosts-ip,tunnel2,no-resolve")
@@ -765,7 +762,7 @@ func Regenerate() (bool, error) {
 // EnsureLists creates missing list files: a provider without
 // its file prevents the core from starting
 func EnsureLists() {
-	files := []string{paths.Verified(), paths.VerifiedAddr(), paths.ObserveAll()}
+	files := []string{paths.Verified(), paths.VerifiedAddr(), paths.ObserveAll(), paths.Presets()}
 	for _, l := range paths.UserLists {
 		files = append(files, paths.Data(l), paths.Data(paths.IPList(l)), paths.Data(paths.AppList(l)))
 	}
@@ -773,10 +770,6 @@ func EnsureLists() {
 		if _, err := os.Stat(p); err != nil {
 			os.WriteFile(p, []byte("# empty\n"), 0o644)
 		}
-	}
-	// second-tunnel presets per settings; the core will not start without the files
-	if _, err := presets.Write(ctl.LoadSettings(paths.Settings()).Awg2Presets); err != nil {
-		log.Printf("presets not written: %v", err)
 	}
 }
 

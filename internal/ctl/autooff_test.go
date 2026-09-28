@@ -152,9 +152,9 @@ func TestModeCloses(t *testing.T) {
 				{"id":"obs","rule":"RuleSet","rulePayload":"observe-all","chains":["DIRECT"]},
 				{"id":"lan","rule":"IPCIDR","rulePayload":"192.168.0.0/16","chains":["DIRECT"]},
 				{"id":"tun","rule":"Match","chains":["awg","tunnel"],"metadata":{"host":"t.example"}},
-				{"id":"preset","rule":"RuleSet","rulePayload":"preset-youtube","chains":["awg2","tunnel2"]},
+				{"id":"preset","rule":"RuleSet","rulePayload":"presets","chains":["awg2","tunnel2"]},
 				{"id":"d-tun","rule":"Match","chains":["awg","tunnel"],"metadata":{"host":"d.example"}},
-				{"id":"app-tun","rule":"RuleSet","rulePayload":"preset-youtube","chains":["awg2","tunnel2"],"metadata":{"process":"X.EXE"}},
+				{"id":"app-tun","rule":"RuleSet","rulePayload":"presets","chains":["awg2","tunnel2"],"metadata":{"process":"X.EXE"}},
 				{"id":"probe","rule":"Match","chains":["awg"],"metadata":{"inboundName":"probe-tunnel","sourceIP":"127.0.0.1"}}]}`))
 		case r.Method == http.MethodDelete:
 			mu.Lock()

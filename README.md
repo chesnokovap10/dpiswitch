@@ -103,7 +103,7 @@
 | **Обзор** | Сколько сайтов идёт напрямую, заблокировано, медленнее, не проверено; состояние обоих туннелей, замена `.conf`; последние события |
 | **Вердикты** | Все вердикты по вкладкам «Напрямую», «Заблокированы», «Медленнее», «Не проверено», фильтр по имени, «Сбросить все вердикты…» |
 | **Списки маршрутов** | «Всегда напрямую», «Всегда через туннель», «Программы в обход туннеля» |
-| **Второй туннель** | Подключение awg2, пресеты (YouTube, Telegram, ИИ-сервисы, Instagram/Facebook/X) и свои сайты |
+| **Второй туннель** | Подключение awg2, пресеты (YouTube, Telegram, ИИ-сервисы, Instagram/Facebook/X; их можно изменить, удалить и добавить свои) и свои сайты |
 | **Настройки** | Детектор, сроки, IPv6, DNS; каждое изменение применяется сразу |
 | **Логи** | Лог контроллера и службы, ядра, трея и интерфейса |
 | **Справка** | То, что описано ниже; ссылки из неё ведут прямо к нужному полю, и оно подсвечивается |
@@ -242,6 +242,11 @@ Claude, Gemini, Grok, Copilot, DeepL и др.), Instagram, Facebook, X и ваш
 всех остальных списков, детектор его имена не трогает. Если он лежит, его сайты идут через первый
 туннель; если лежат оба — напрямую. Пока он не подключён, пресеты идут через первый туннель. Все
 пресеты по умолчанию выключены. Переключение пресета применяется сразу, включая открытые соединения.
+
+Пресеты можно менять: **Изменить** открывает во всплывающем окне название, описание и строки пресета
+(сайты, адреса, программы — как в списках; `#` — комментарий), **Удалить** убирает его, **Добавить…**
+создаёт новый — он сразу включён. Всё это применяется так же сразу, без перезапуска ядра. Пока вы ничего
+не меняли, используются пресеты программы.
 
 ### Если сайт не открывается
 
@@ -405,7 +410,7 @@ their own port and access key).
 | **Overview** | How many sites go direct, are blocked, slower, unverified; both tunnels' state, replacing a `.conf`; recent events |
 | **Verdicts** | Every verdict in the "Direct", "Blocked", "Slower", "Unverified" tabs, a name filter, "Reset all verdicts…" |
 | **Routing lists** | "Always direct", "Always via tunnel", "Forbidden": sites, addresses and programs in each |
-| **Second tunnel** | Attaching awg2, presets (YouTube, Telegram, AI services, Instagram/Facebook/X) and your own list |
+| **Second tunnel** | Attaching awg2, presets (YouTube, Telegram, AI services, Instagram/Facebook/X; edit them, delete them, add your own) and your own list |
 | **Settings** | Detector, terms, IPv6, DNS; every change applies at once |
 | **Logs** | The controller and service log, the core's, the tray and UI's |
 | **Help** | What is described below; its links lead straight to the field meant, which blinks |
@@ -560,6 +565,11 @@ Gemini, Grok, Copilot, DeepL and more), Instagram, Facebook, X and your own list
 every other list, the detector leaves its names alone. If it is down, its sites go through the first
 tunnel; if both are down, direct. Until it is attached, its presets use the first tunnel. Every
 preset is off by default. A preset switch applies at once, open connections included.
+
+The presets are yours to change: **Edit** opens a preset's name, description and lines in a dialog
+(sites, addresses and programs, as in the lists; `#` starts a comment), **Delete** removes it,
+**Add…** makes a new one, switched on at once. These apply at once too, with no core restart. Until
+you change any, the program's own presets are used.
 
 ### When a site does not open
 
