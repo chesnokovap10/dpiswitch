@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -13,13 +14,20 @@ import (
 	"testing"
 	"time"
 
+	"dpiswitch/internal/paths"
 	"dpiswitch/internal/probe"
 )
 
-// Auto-switch turned off in the UI: within a second the lists are empty,
-// the connections they sent direct are closed and the user's own and the
-// tunnel's stay open, and a cycle started before cannot write the rules back.
+// Observe only chosen in the UI: within a second the detector's lists are
+// empty, the connections through the tunnels are closed to reconnect direct
+// and the direct ones stay open, and a cycle started before cannot write the
+// rules back.
 func TestAutoSwitchOffAtOnce(t *testing.T) {
+	// the change of mode writes the list copies: not the real ones
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
 	old := settingsPoll
 	settingsPoll = 10 * time.Millisecond
 	defer func() { settingsPoll = old }()
@@ -51,7 +59,7 @@ func TestAutoSwitchOffAtOnce(t *testing.T) {
 	dir := t.TempDir()
 	cfg := Config{Apply: true, ProxyName: "awg", Provider: "p", ListPath: filepath.Join(dir, "d.txt"),
 		AddrProvider: "pi", AddrListPath: filepath.Join(dir, "ip.txt"),
-		SettingsPath: filepath.Join(dir, "settings.json"), autoOff: new(atomic.Bool)}
+		SettingsPath: paths.Settings(), autoOff: new(atomic.Bool)}
 	e := &entry{Verdict: probe.Clean, ExpiresAt: time.Now().Add(time.Hour), TestedIP: "192.0.2.1"}
 	st := &state{Networks: map[string]map[string]*entry{"n": {"a.example": e}}, Current: "n"}
 	syncList(cfg, a, st, "n", true)
@@ -84,8 +92,11 @@ func TestAutoSwitchOffAtOnce(t *testing.T) {
 	got := append([]string(nil), closed...)
 	mu.Unlock()
 	sort.Strings(got)
-	if want := []string{"addr", "det"}; !reflect.DeepEqual(got, want) {
+	if want := []string{"pinned-a", "tun", "tun-a"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("closed %v, want %v", got, want)
+	}
+	if !strings.Contains(strings.Join(listRules(paths.ObserveAll()), " "), "NETWORK") {
+		t.Fatal("the catch-all was not written")
 	}
 
 	// the cycle that was running holds Apply true
@@ -119,56 +130,98 @@ func TestAutoSwitchOffAtOnce(t *testing.T) {
 	}
 }
 
-// Tunnel only chosen in the UI: within a second probing stops and the lists
-// are emptied as for observe only; observe only starts probing again.
-func TestTunnelOnlyAtOnce(t *testing.T) {
-	old := settingsPoll
-	settingsPoll = 10 * time.Millisecond
-	defer func() { settingsPoll = old }()
+// A change of mode closes the open connections it sends another way, and
+// only those: the prober's own and the local networks' are left alone.
+func TestModeCloses(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	// the user's direct lists as the core reads them once on again
+	os.WriteFile(paths.ForceDirect(), []byte("d.example\n"), 0o644)
+	os.WriteFile(paths.ForceDirectApps(), []byte("PROCESS-NAME,x.exe\n"), 0o644)
+	var mu sync.Mutex
+	var closed []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/connections" {
-			w.Write([]byte(`{"connections":[]}`))
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/connections":
+			w.Write([]byte(`{"connections":[
+				{"id":"det","rule":"RuleSet","rulePayload":"p","chains":["DIRECT"]},
+				{"id":"user","rule":"RuleSet","rulePayload":"force-direct","chains":["DIRECT"]},
+				{"id":"app","rule":"RuleSet","rulePayload":"force-direct-apps","chains":["DIRECT"],"metadata":{"process":"x.exe"}},
+				{"id":"obs","rule":"RuleSet","rulePayload":"observe-all","chains":["DIRECT"]},
+				{"id":"lan","rule":"IPCIDR","rulePayload":"192.168.0.0/16","chains":["DIRECT"]},
+				{"id":"tun","rule":"Match","chains":["awg","tunnel"],"metadata":{"host":"t.example"}},
+				{"id":"preset","rule":"RuleSet","rulePayload":"preset-youtube","chains":["awg2","tunnel2"]},
+				{"id":"d-tun","rule":"Match","chains":["awg","tunnel"],"metadata":{"host":"d.example"}},
+				{"id":"app-tun","rule":"RuleSet","rulePayload":"preset-youtube","chains":["awg2","tunnel2"],"metadata":{"process":"X.EXE"}},
+				{"id":"probe","rule":"Match","chains":["awg"],"metadata":{"inboundName":"probe-tunnel","sourceIP":"127.0.0.1"}}]}`))
+		case r.Method == http.MethodDelete:
+			mu.Lock()
+			closed = append(closed, strings.TrimPrefix(r.URL.Path, "/connections/"))
+			mu.Unlock()
 		}
 	}))
 	defer srv.Close()
 	a := newAPI(strings.TrimPrefix(srv.URL, "http://"), "")
-	dir := t.TempDir()
-	cfg := Config{Apply: true, ProxyName: "awg", Provider: "p", ListPath: filepath.Join(dir, "d.txt"),
-		SettingsPath: filepath.Join(dir, "settings.json"), autoOff: new(atomic.Bool), tunnelOnly: new(atomic.Bool)}
-	e := &entry{Verdict: probe.Clean, ExpiresAt: time.Now().Add(time.Hour), TestedIP: "192.0.2.1"}
-	st := &state{Networks: map[string]map[string]*entry{"n": {"a.example": e}}, Current: "n"}
-	syncList(cfg, a, st, "n", true)
+	for _, c := range []struct {
+		from, to string
+		want     []string
+	}{
+		{ModeOn, ModeObserve, []string{"app-tun", "d-tun", "preset", "tun"}},
+		{ModeOn, ModeTunnel, []string{"app", "det", "obs", "user"}},
+		{ModeObserve, ModeOn, []string{"obs"}},
+		{ModeTunnel, ModeOn, []string{"app-tun", "d-tun", "obs"}},
+	} {
+		mu.Lock()
+		closed = nil
+		mu.Unlock()
+		closeRerouted(Config{}, a, c.from, c.to)
+		mu.Lock()
+		got := append([]string(nil), closed...)
+		mu.Unlock()
+		sort.Strings(got)
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s -> %s closed %v, want %v", c.from, c.to, got, c.want)
+		}
+	}
+}
 
-	set := DefaultSettings()
-	if err := SaveSettings(cfg.SettingsPath, set); err != nil {
+// The files a mode decides follow the settings: observe only writes the
+// catch-all, tunnel only sets the direct lists aside, and the UI's wait for
+// a saved list still ends in that mode.
+func TestModeFiles(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	wake := make(chan struct{}, 1)
-	go watchSettings(ctx, cfg, a, st, set, true, wake)
-	change := func(m string) {
-		t.Helper()
-		set.SetMode(m)
-		if err := SaveSettings(cfg.SettingsPath, set); err != nil {
+	os.WriteFile(paths.User(paths.DirectList), []byte("d.example\n"), 0o644)
+	os.WriteFile(paths.User(paths.TunnelList), []byte("t.example\n"), 0o644)
+	set := DefaultSettings()
+	for _, c := range []struct {
+		mode, direct, tunnel string
+		observe              bool
+	}{
+		{ModeObserve, "d.example", "t.example", true},
+		{ModeTunnel, "", "t.example", false},
+		{ModeOn, "d.example", "t.example", false},
+	} {
+		set.SetMode(c.mode)
+		if err := SaveSettings(paths.Settings(), set); err != nil {
 			t.Fatal(err)
 		}
-		select {
-		case <-wake:
-		case <-time.After(3 * time.Second):
-			t.Fatalf("%s was not seen", m)
+		SyncUserFiles()
+		if got := strings.Join(listRules(paths.ForceDirect()), " "); got != c.direct {
+			t.Errorf("%s: direct list %q, want %q", c.mode, got, c.direct)
 		}
-	}
-
-	change(ModeTunnel)
-	if !cfg.noProbes() {
-		t.Fatal("tunnel only: probing goes on")
-	}
-	if listRules(cfg.ListPath) != nil {
-		t.Fatal("tunnel only: the list was not emptied")
-	}
-	change(ModeObserve)
-	if cfg.noProbes() {
-		t.Fatal("observe only: probing did not come back")
+		if got := strings.Join(listRules(paths.ForceTunnel()), " "); got != c.tunnel {
+			t.Errorf("%s: tunnel list %q, want %q", c.mode, got, c.tunnel)
+		}
+		if got := listRules(paths.ObserveAll()) != nil; got != c.observe {
+			t.Errorf("%s: catch-all %v", c.mode, listRules(paths.ObserveAll()))
+		}
+		if !Synced(paths.DirectList) {
+			t.Errorf("%s: the direct list never counts as taken", c.mode)
+		}
 	}
 }

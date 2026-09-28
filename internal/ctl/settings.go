@@ -22,9 +22,10 @@ import (
 // The controller re-reads the file every cycle -- no service restart
 // is needed to change a TTL.
 type Settings struct {
-	// auto-switch: false -- observe only, everything goes through the tunnel
+	// auto-switch: false -- observe only, everything goes direct
 	AutoSwitch bool `json:"auto_switch"`
-	// with auto-switch off: nothing is probed either, see Mode
+	// with auto-switch off: everything goes through the tunnels instead of
+	// direct, see Mode
 	TunnelOnly bool `json:"tunnel_only"`
 	// how long a domain stays direct before a re-check
 	CleanTTLMin int `json:"clean_ttl_min"`
@@ -66,11 +67,12 @@ func (s Settings) SameCore(o Settings) bool {
 
 func (s Settings) Equal(o Settings) bool { return reflect.DeepEqual(s, o) }
 
-// the three ways the detector can run, see Mode
+// the three auto-switch modes, see Mode. The detector probes and records in
+// every one; they differ in where the traffic goes.
 const (
-	ModeOn      = "on"      // verdicts applied: unblocked sites go direct
-	ModeObserve = "observe" // everything through the tunnel, the detector probes and records
-	ModeTunnel  = "tunnel"  // everything through the tunnel, nothing is probed
+	ModeOn      = "on"      // verdicts applied: unblocked sites direct, the rest by the lists
+	ModeObserve = "observe" // everything direct, the user's tunnel lists included
+	ModeTunnel  = "tunnel"  // everything through awg and awg2, the user's direct lists included
 )
 
 // Mode: auto-switch on outranks tunnel only, so a file written before
@@ -325,7 +327,7 @@ func canonicalDNS(in []string) []string {
 
 func (s Settings) apply(cfg Config) Config {
 	cfg.Apply = s.AutoSwitch
-	cfg.setTunnelOnly(s.Mode() == ModeTunnel)
+	cfg.setMode(s.Mode())
 	cfg.TTL = time.Duration(s.CleanTTLMin) * time.Minute
 	cfg.FailTTL = time.Duration(s.FailTTLMin) * time.Minute
 	cfg.MaxBackoff = time.Duration(s.MaxBackoffMin) * time.Minute

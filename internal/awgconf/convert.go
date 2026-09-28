@@ -409,6 +409,13 @@ func (c *Conf) Render() (string, error) {
 	w("    behavior: domain")
 	w("    format: text")
 	w("    path: ./awg2-hosts.txt")
+	w("  # observe only: everything goes direct -- the service writes the")
+	w("  # catch-all here in that mode and leaves the file empty otherwise")
+	w("  observe-all:")
+	w("    type: file")
+	w("    behavior: classical")
+	w("    format: text")
+	w("    path: ./observe-all.txt")
 	w("  # user lists: the controller never touches or rewrites them")
 	w("  force-direct-apps:")
 	w("    type: file")
@@ -494,28 +501,33 @@ func (c *Conf) Render() (string, error) {
 		w("  - DOMAIN,%s,DIRECT", d)
 	}
 	w("")
-	w("  # 4. excluded programs: all their traffic bypasses the tunnel")
+	w("  # 4. observe only: everything else goes direct, above every list below.")
+	w("  #    Tunnel only needs no rule of its own: the service writes the two")
+	w("  #    direct lists empty in that mode.")
+	w("  - RULE-SET,observe-all,DIRECT")
+	w("")
+	w("  # 5. excluded programs: all their traffic bypasses the tunnel")
 	w("  - RULE-SET,force-direct-apps,DIRECT")
 	w("")
-	w("  # 5. second tunnel: presets and custom list -- the detector leaves them alone")
+	w("  # 6. second tunnel: presets and custom list -- the detector leaves them alone")
 	for _, p := range presets.All {
 		w("  - RULE-SET,preset-%s,tunnel2", p.ID)
 	}
 	w("  - RULE-SET,awg2-hosts,tunnel2")
 	w("")
-	w("  # 6. user's always-tunnel list -- beats detector verdicts")
+	w("  # 7. user's always-tunnel list -- beats detector verdicts")
 	w("  - RULE-SET,force-tunnel,tunnel")
 	w("")
-	w("  # 7. user's always-direct list")
+	w("  # 8. user's always-direct list")
 	w("  - RULE-SET,force-direct,DIRECT")
 	w("")
-	w("  # 8. detector verdicts")
+	w("  # 9. detector verdicts")
 	w("  - RULE-SET,direct-verified,DIRECT")
 	w("  # the same verdicts by the address that was probed, for connections that")
 	w("  # carry no name at all (a speedtest client dialling a bare IP on 20000)")
 	w("  - RULE-SET,direct-verified-addr,DIRECT,no-resolve")
 	w("")
-	w("  # 9. everything else goes to the first tunnel")
+	w("  # 10. everything else goes to the first tunnel")
 	w("  - MATCH,tunnel")
 	return b.String(), nil
 }
@@ -750,7 +762,8 @@ func Regenerate() (bool, error) {
 // its file prevents the core from starting
 func EnsureLists() {
 	for _, p := range []string{paths.ForceDirect(), paths.ForceTunnel(),
-		paths.Verified(), paths.VerifiedAddr(), paths.ForceDirectApps(), paths.Awg2Hosts()} {
+		paths.Verified(), paths.VerifiedAddr(), paths.ForceDirectApps(), paths.Awg2Hosts(),
+		paths.ObserveAll()} {
 		if _, err := os.Stat(p); err != nil {
 			os.WriteFile(p, []byte("# empty\n"), 0o644)
 		}

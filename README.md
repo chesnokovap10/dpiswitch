@@ -424,7 +424,7 @@ many are blocked.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| Auto-switch | On | Unblocked sites go direct; "Observe only" — everything through the tunnel; "Tunnel only" — the same, and nothing is probed |
+| Auto-switch | On | Unblocked sites go direct; "Observe only" — everything direct; "Tunnel only" — everything through awg and awg2. Verdicts are recorded in every mode |
 | Whole domains | Extend to the domain | 3+ clean subdomains and none blocked — the whole domain goes direct |
 | Latency tolerance | 20 % | How much slower than the tunnel the direct path may be and still be used |
 | Attempts per probe | 3 | A site is clean only if every attempt is |
@@ -504,13 +504,20 @@ speed tests, updates.
 
 ### Auto-switch: on, observe only, tunnel only
 
-**On**: the verdicts are applied. **Observe only**: everything goes through the tunnel, the detector
-keeps checking and recording, and the log shows what would go direct. **Tunnel only**: everything goes
-through the tunnel and the detector checks nothing, so not a single probe goes direct. The "Always
-direct" list and the programs bypassing the tunnel work in every mode. Switching applies within a
-second. Turning it off closes the open connections the detector sent direct, and the programs
-reconnect through the tunnel. Turning it on leaves open connections in the tunnel; new ones go
-direct. The verdicts are kept in every mode.
+The detector checks sites and records verdicts in all three modes; the modes differ only in where the
+traffic goes.
+
+- **On**: the verdicts are applied. Unblocked sites go direct, the rest by the lists and through the
+  tunnel.
+- **Observe only**: everything goes direct, the presets, the custom awg2 list and "Always via tunnel"
+  included. Blocked sites do not open in this mode. The detector checks everything, the sites of those
+  lists too.
+- **Tunnel only**: everything goes through awg and awg2, "Always direct" and the programs bypassing the
+  tunnel included. The presets and the custom awg2 list still go to awg2.
+
+The local network and the tunnels' own addresses go direct in every mode. Switching applies within a
+second: the open connections the mode sends another way are closed, and the programs reconnect the new
+way. The verdicts are kept in every mode.
 
 ### Networks
 

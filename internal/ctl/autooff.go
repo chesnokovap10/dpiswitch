@@ -5,6 +5,8 @@ import (
 	"log"
 	"strings"
 	"time"
+
+	"dpiswitch/internal/paths"
 )
 
 // Turning auto-switch off takes effect within a second. The main loop reads
@@ -19,19 +21,28 @@ import (
 // holds Apply true, and its sync must not write the rules back.
 func (cfg Config) off() bool { return cfg.autoOff != nil && cfg.autoOff.Load() }
 
-// noProbes: the user chose tunnel only. Shared the same way: a cycle
-// already probing when it was chosen starts no more probes.
-func (cfg Config) noProbes() bool { return cfg.tunnelOnly != nil && cfg.tunnelOnly.Load() }
+// modeNow: the auto-switch mode chosen, see Settings.Mode; shared the same
+// way. A Config without it (the tests') is on.
+func (cfg Config) modeNow() string {
+	if cfg.mode != nil {
+		if m, ok := cfg.mode.Load().(string); ok {
+			return m
+		}
+	}
+	return ModeOn
+}
 
-func (cfg Config) setTunnelOnly(on bool) {
-	if cfg.tunnelOnly != nil {
-		cfg.tunnelOnly.Store(on)
+func (cfg Config) setMode(m string) {
+	if cfg.mode != nil {
+		cfg.mode.Store(m)
 	}
 }
 
 // disableAuto empties both lists and closes the connections they sent
-// direct. Once: a second call finds it done.
-func disableAuto(cfg Config, a *api) {
+// direct -- unless observe only is what it was turned off for: everything
+// goes direct then, and those connections with it. Once: a second call
+// finds it done.
+func disableAuto(cfg Config, a *api, closeDirect bool) {
 	listMu.Lock()
 	if cfg.autoOff != nil && !cfg.autoOff.CompareAndSwap(false, true) {
 		listMu.Unlock()
@@ -49,6 +60,10 @@ func disableAuto(cfg Config, a *api) {
 	listMu.Unlock()
 	if err != nil {
 		log.Print(err)
+		return
+	}
+	if !closeDirect {
+		log.Printf("auto-switch disabled: the detector's lists emptied")
 		return
 	}
 	n := closeDetectorDirect(cfg, a)
@@ -162,22 +177,113 @@ func watchSettings(ctx context.Context, cfg Config, a *api, st *state, last Sett
 		if !ok || haveLast && ns.Equal(last) {
 			continue
 		}
-		wasOn := !haveLast || last.AutoSwitch
+		was := ModeOn
+		if haveLast {
+			was = last.Mode()
+		}
 		last, haveLast = ns, true
-		cfg.setTunnelOnly(ns.Mode() == ModeTunnel)
-		switch {
-		case ns.AutoSwitch && !wasOn:
+		cfg.setMode(ns.Mode())
+		switch now := ns.Mode(); {
+		case now != was:
 			// the settings as they are now: this copy may have started
 			// with auto-switch off, Apply false
-			turnOn(ns.apply(cfg), a, st)
-		case ns.AutoSwitch:
+			switchMode(ns.apply(cfg), a, st, was, now)
+		case now == ModeOn:
 			enableAuto(cfg)
 		default:
-			disableAuto(cfg, a)
+			disableAuto(cfg, a, now != ModeObserve)
 		}
 		select {
 		case wake <- struct{}{}:
 		default:
 		}
+	}
+}
+
+// switchMode carries out a change of auto-switch mode at once. The files the
+// mode decides are written first -- the catch-all of observe only, the
+// direct lists tunnel only sets aside -- since a connection closed after
+// reconnects at once, and must meet the new rules. Then the detector's
+// lists, then every open connection the new mode sends another way.
+func switchMode(cfg Config, a *api, st *state, from, to string) {
+	listMu.Lock()
+	syncUserFiles(a)
+	listMu.Unlock()
+	if to == ModeOn {
+		turnOn(cfg, a, st)
+	} else {
+		disableAuto(cfg, a, false)
+	}
+	n := closeRerouted(cfg, a, from, to)
+	log.Printf("auto-switch: %s -> %s, %d open connections sent the new way", from, to, n)
+}
+
+// closeRerouted closes the open connections a change of mode moves: the core
+// routes a connection once, when it opens. Observe only sends everything
+// direct, tunnel only everything through the tunnels; on sends back what
+// observe only took, and what the user's direct lists take again after
+// tunnel only. The endpoints, the tunnels' inside and the local networks are
+// routed by rules no mode touches, and are left alone.
+func closeRerouted(cfg Config, a *api, from, to string) int {
+	conns, err := a.connections()
+	if err != nil {
+		log.Printf("cannot read connections: %v", err)
+		return 0
+	}
+	var userDirect func(connection) bool
+	if to == ModeOn && from == ModeTunnel {
+		userDirect = userListsDirect()
+	}
+	n := 0
+	for _, c := range conns {
+		if c.ID == "" || c.fromProbe() || c.Rule != "RuleSet" && c.Rule != "Match" {
+			continue
+		}
+		var moved bool
+		switch to {
+		case ModeObserve:
+			moved = !c.viaDirect()
+		case ModeTunnel:
+			moved = c.viaDirect()
+		default:
+			moved = c.byProvider(ObserveProvider) || userDirect != nil && !c.viaDirect() && userDirect(c)
+		}
+		if !moved {
+			continue
+		}
+		if err := a.closeConnection(c.ID); err != nil {
+			log.Printf("connection %s not closed: %v", c.ID, err)
+			continue
+		}
+		n++
+	}
+	return n
+}
+
+// userListsDirect: whether the user's direct lists, as the core now reads
+// them, send a connection direct. An excluded program stands above every
+// list; the always-direct names only above the detector's rules and MATCH,
+// so those only take a connection one of these routed.
+func userListsDirect() func(connection) bool {
+	apps := listRules(paths.ForceDirectApps())
+	names := listRules(paths.ForceDirect())
+	return func(c connection) bool {
+		for _, r := range apps {
+			kind, v, _ := strings.Cut(r, ",")
+			if strings.EqualFold(kind, "PROCESS-NAME") && strings.EqualFold(v, c.Metadata.Process) ||
+				strings.EqualFold(kind, "PROCESS-PATH") && strings.EqualFold(v, c.Metadata.ProcessPath) {
+				return true
+			}
+		}
+		if c.Rule != "Match" {
+			return false
+		}
+		dom := c.domain()
+		for _, r := range names {
+			if MatchDomainRule(r, dom) {
+				return true
+			}
+		}
+		return false
 	}
 }

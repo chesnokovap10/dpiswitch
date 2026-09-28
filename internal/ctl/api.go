@@ -73,7 +73,7 @@ func Run(ctx context.Context, cfg Config) {
 	}
 	a := newAPI(cfg.APIAddr, secret)
 	cfg.autoOff = new(atomic.Bool)
-	cfg.tunnelOnly = new(atomic.Bool)
+	cfg.mode = new(atomic.Value)
 	cfg.stop = ctx.Done()
 	st := loadState(cfg.StatePath)
 	netID := resolveNetwork(cfg, st)
@@ -87,12 +87,15 @@ func Run(ctx context.Context, cfg Config) {
 		cfg = set.apply(cfg)
 	}
 
-	mode := "OBSERVE (nothing is changed)"
-	switch {
-	case cfg.Apply:
-		mode = "APPLY"
-	case cfg.noProbes():
-		mode = "TUNNEL ONLY (nothing is changed or probed)"
+	mode := "APPLY"
+	switch cfg.modeNow() {
+	case ModeObserve:
+		mode = "OBSERVE (everything goes direct)"
+	case ModeTunnel:
+		mode = "TUNNEL ONLY (everything goes through the tunnels)"
+	}
+	if !haveSet && !cfg.Apply {
+		mode = "OBSERVE (nothing is changed)"
 	}
 	log.Printf("network %s | mode: %s | clean TTL %s, blocked TTL %s", netID, mode, cfg.TTL, cfg.FailTTL)
 	if n := len(st.verified(netID)); n > 0 {
@@ -107,7 +110,7 @@ func Run(ctx context.Context, cfg Config) {
 	} else if haveSet {
 		// disabled by the user: the list from the previous run must not
 		// keep sending sites direct
-		disableAuto(cfg, a)
+		disableAuto(cfg, a, set.Mode() != ModeObserve)
 	}
 
 	w := newWatcher(ctx, cfg, a)
@@ -137,7 +140,7 @@ func Run(ctx context.Context, cfg Config) {
 	defer t.Stop()
 	g := &gate{interval: cfg.Interval}
 	health := func() (bool, string, error) { return a.tunnelHealth(cfg.ProxyName) }
-	if cfg.noProbes() || g.allow(time.Now().Round(0), health) {
+	if g.allow(time.Now().Round(0), health) {
 		cycle(cfg, a, st, netID, w)
 	}
 	for {
@@ -173,14 +176,6 @@ func Run(ctx context.Context, cfg Config) {
 				if cfg.Apply {
 					applyList(cfg, a, st, netID)
 				}
-			}
-			if cfg.noProbes() {
-				// tunnel only: no probe to hold back, and the gate's clock
-				// runs on -- switching back must not read the time spent
-				// here as a sleep. The cycle only takes in what was seen.
-				g.last = time.Now().Round(0)
-				cycle(cfg, a, st, netID, w)
-				continue
 			}
 			if !g.allow(time.Now().Round(0), health) {
 				// the list still follows memory: verdicts expire all the same
@@ -355,9 +350,9 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 
 	switch {
 	case was && !cfg.Apply:
-		// disabled -- everything returns to the tunnel immediately, not when
+		// disabled -- the detector's lists are emptied at once, not when
 		// verdicts expire; memory is kept. Usually the watcher has done it.
-		disableAuto(cfg, a)
+		disableAuto(cfg, a, s.Mode() != ModeObserve)
 	default:
 		if cfg.Apply {
 			enableAuto(cfg)

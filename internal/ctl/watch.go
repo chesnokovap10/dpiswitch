@@ -133,9 +133,10 @@ func (w *watcher) observe(cfg Config, conns []connection) {
 		}
 		// besides tunnelled ones, take those sent direct by our list:
 		// this way hosts admitted by a family without their own verdict
-		// get checked. Already decided ones are filtered by the state
+		// get checked. And in observe only, everything: it all goes direct.
+		// Already decided ones are filtered by the state
 		if dom == "" || !c.probeable() ||
-			!(c.viaTunnel(cfg.ProxyName) || c.byProvider(cfg.Provider)) {
+			!(c.viaTunnel(cfg.ProxyName) || c.byProvider(cfg.Provider) || c.byProvider(ObserveProvider)) {
 			continue
 		}
 		if w.seen[dom] == nil {
@@ -265,7 +266,7 @@ func addrProbeable(c connection, tunnelProxy string) bool {
 	return !c.fromProbe() &&
 		strings.EqualFold(c.Metadata.Network, "tcp") &&
 		c.port() > 0 && c.port() != 443 &&
-		c.viaTunnel(tunnelProxy)
+		(c.viaTunnel(tunnelProxy) || c.byProvider(ObserveProvider))
 }
 
 // drain hands over what has been seen since the last call, with the order

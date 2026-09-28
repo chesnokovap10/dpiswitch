@@ -716,48 +716,32 @@ func TestCycleStopping(t *testing.T) {
 	}
 }
 
-// Tunnel only: nothing is probed, a new name gets no verdict -- and a name in
-// use is still marked so, or its verdict would be forgotten meanwhile.
-func TestCycleTunnelOnly(t *testing.T) {
+// Observe only: everything goes direct by the catch-all, and all of it is
+// probed -- a name the user's lists pin to a tunnel included.
+func TestCycleObserveAll(t *testing.T) {
 	s := newScenario(t)
 	s.cfg.Apply = false
-	s.cfg.tunnelOnly = new(atomic.Bool)
-	s.cfg.tunnelOnly.Store(true)
-	old := time.Now().Add(-48 * time.Hour)
-	s.st.put("n", "old.example.org", &entry{Verdict: probe.BlockedTLS, ExpiresAt: old, LastSeen: old})
-	s.see(tunnelled("new.example.org", 443), tunnelled("old.example.org", 443))
+	s.cfg.mode = new(atomic.Value)
+	s.cfg.setMode(ModeObserve)
+	s.see(via("claude.ai", 443, "tcp", "DIRECT", "RuleSet", ObserveProvider),
+		via("o.example.org", 443, "tcp", "DIRECT", "RuleSet", ObserveProvider))
+	s.script("claude.ai tcp/443", blockedTLS("192.0.2.70"))
+	s.script("o.example.org tcp/443", clean("192.0.2.71"))
 	s.cycle()
-	if s.wasProbed("new.example.org tcp/443") || s.wasProbed("old.example.org tcp/443") {
-		t.Fatal("probed in tunnel only")
+	if !s.wasProbed("claude.ai tcp/443") || !s.wasProbed("o.example.org tcp/443") {
+		t.Fatal("observe only left a name unprobed")
 	}
-	if e := s.entry("new.example.org"); e != nil {
-		t.Fatalf("a verdict made in tunnel only: %s", e.Verdict)
+	if e := s.entry("claude.ai"); e == nil || e.Verdict != probe.BlockedTLS {
+		t.Fatalf("pinned name not filed: %v", e)
 	}
-	if e := s.entry("old.example.org"); e == nil || !e.lastSeen().After(old) {
-		t.Fatal("a name in use was not marked")
+	if got := listRules(s.cfg.ListPath); got != nil {
+		t.Fatalf("observe only wrote the list: %v", got)
 	}
-
-	// chosen while a cycle probes: the probe under way is filed, the ones
-	// not started yet are not made
-	s.cfg.tunnelOnly.Store(false)
-	s.cfg.Workers = 1
-	s.script("old.example.org tcp/443", blockedTLS("192.0.2.64"))
-	s.script("a.example.org tcp/443", clean("192.0.2.65"))
-	s.script("b.example.org tcp/443", clean("192.0.2.66"))
-	check := checkProto
-	checkProto = func(direct, tunnel probe.Dialer, dom string, port, att int, udp bool, was probe.Verdict) probe.Report {
-		s.cfg.tunnelOnly.Store(true)
-		return check(direct, tunnel, dom, port, att, udp, was)
-	}
-	s.see(tunnelled("old.example.org", 443), tunnelled("a.example.org", 443), tunnelled("b.example.org", 443))
+	// back on, the list routes the pinned name again: its verdict goes
+	s.cfg.Apply = true
+	s.cfg.setMode(ModeOn)
 	s.cycle()
-	s.mu.Lock()
-	probed := append([]string(nil), s.probed...)
-	s.mu.Unlock()
-	if len(probed) != 1 {
-		t.Fatalf("probed after tunnel only was chosen: %v", probed)
-	}
-	if e := s.entry(strings.Fields(probed[0])[0]); e == nil || e.DecidedAt.Before(time.Now().Add(-time.Minute)) {
-		t.Fatalf("the probe under way was not filed: %v", e)
+	if e := s.entry("claude.ai"); e != nil {
+		t.Fatalf("pinned verdict kept once on: %s", e.Verdict)
 	}
 }

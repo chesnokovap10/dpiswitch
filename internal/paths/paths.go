@@ -107,6 +107,10 @@ func VerifiedAddr() string    { return Data("direct-verified-addr.txt") }
 func ForceDirect() string     { return Data(DirectList) }
 func ForceDirectApps() string { return Data(AppsList) }
 
+// ObserveAll: the catch-all the service writes for observe only, see
+// ctl.SyncUserFiles
+func ObserveAll() string { return Data("observe-all.txt") }
+
 // second tunnel (awg2): source .conf, custom host list, presets
 func SourceConf2() string     { return User("source2.conf") }
 func Awg2Hosts() string       { return Data(Awg2List) }

@@ -44,8 +44,8 @@
   <form method="post" action="/act/auto" data-swap="header">
     <span class="seg">
       <button name="value" value="on" class="{{if eq $s.Mode "on"}}on{{end}}" title="{{.T "Sites the detector found unblocked go direct"}}">{{.T "On"}}</button>
-      <button name="value" value="observe" class="{{if eq $s.Mode "observe"}}on{{end}}" title="{{.T "Everything goes through the tunnel; the detector only records verdicts"}}">{{.T "Observe only"}}</button>
-      <button name="value" value="tunnel" class="{{if eq $s.Mode "tunnel"}}on{{end}}" title="{{.T "Everything goes through the tunnel; the detector checks nothing"}}">{{.T "Tunnel only"}}</button>
+      <button name="value" value="observe" class="{{if eq $s.Mode "observe"}}on{{end}}" title="{{.T "Everything goes direct; the detector records verdicts"}}">{{.T "Observe only"}}</button>
+      <button name="value" value="tunnel" class="{{if eq $s.Mode "tunnel"}}on{{end}}" title="{{.T "Everything goes through awg and awg2; the detector records verdicts"}}">{{.T "Tunnel only"}}</button>
     </span>
   </form>
   {{if $s.Installed}}
