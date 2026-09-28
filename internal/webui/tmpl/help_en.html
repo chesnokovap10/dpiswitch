@@ -133,7 +133,8 @@ add it to <a href="/lists#list-tunnel">Always via tunnel</a> (<code>+.example.co
 goes through the tunnel and the detector starts over.</li>
 <li>If a site must see your real address (a bank, government services), add it to <a href="/lists#list-direct">Always direct</a>.</li>
 <li>The <a href="/logs#log">logs</a> show every verdict with its reason.</li>
-<li>The <a href="/live">Live</a> page shows which route its connections take right now, and by which rule.</li>
+<li>The <a href="/live">Live</a> page shows which route its connections take right now, and by which rule; a
+right-click on a row sends the site straight to the list it belongs in.</li>
 </ol>
 
 <h4>Live</h4>
@@ -142,43 +143,60 @@ the type, the route, the speed and the bytes both ways. A row's colour is its ro
 the first tunnel, violet the second, grey the detector's checks; closed rows have none. Hover over a route
 for the group and the rule that chose it.</p>
 <ul>
+<li><b><a href="/live#ltabs">Tabs</a>.</b> Open, Closed, Failed, Forbidden — the tries the
+<a href="/lists#list-block">Forbidden</a> list refused — and All. Beside them, a <a href="/live#lroutes">filter by
+route</a>, a <a href="/live#lfilter">search</a> by host, program and address, and
+<a href="/live#lnoprobe">"Hide the detector's checks"</a>. A click on a column's head sorts the table by it.</li>
 <li><b>States.</b> ● open; ○ open, but no traffic for over 30 seconds; ✕ closed; <span class="bad-t">●</span>
-failed: the core could not make the connection. The core keeps no closed connections: the program sees
-one leave, and keeps the closed ones and the failures for the core's whole run, however old: the last
-100,000 of each. When the core starts anew the history starts over. A connection that opened and closed
-within a second may never show.</li>
+failed: the core could not make the connection.</li>
+<li><b>Type.</b> TLS, QUIC and HTTP are told by the port: the likely protocol, not one seen, with a dashed
+badge. Where the core read the site's name from the traffic itself the protocol is confirmed, and the badge
+is solid.</li>
 <li><b>Failures</b> are only written to the core's log, and the program reads it all the time. In place of
 the speed and the bytes a failed row says why: timed out, refused, reset, name not found, no network
 interface, closed by the other side; the tooltip has the error in full. The same program failing again to
 reach the same address by the same route and rule, for the same reason, is no new row but "×N" on the old
-one. A failure's route is its group's choice at the time: with the tunnel down and the
-group gone direct, it shows as direct.
-The detector's checks fail too, as they should on a blocked path; "Hide the detector's checks" hides
-them. Clear removes the closed connections and the failures, on every page open, and repeats after it are
-counted anew.</li>
-<li><b>Type.</b> TLS, QUIC and HTTP are told by the port: the likely protocol, not one seen, with a dashed
-badge. Where the core read the site's name from the traffic itself the protocol is confirmed, and the badge
-is solid.</li>
-<li><b>✕ in a row</b> closes the connection in the core: the program reconnects, and the new connection
-follows the rules as they are now.</li>
-<li><b>A row clicked</b> is picked and holds its place: sorted by speed, the others move around it. A click
-anywhere else lets it go.</li>
+one. A failure's route is its group's choice at the time: with the tunnel down and the group gone direct, it
+shows as direct. The detector's checks fail too, as they should on a blocked path.</li>
+<li><b>History.</b> The core keeps no closed connections: the program asks it every second from the tray's
+start, whether the page is open or not, and sees one leave. The closed ones and the failures are kept for the
+core's whole run, however old: the last 100,000 of each. When the core starts anew the history starts over:
+the service names every run of the core, so a restart shows even between two calls.
+<a href="/live#lclear">Clear</a> removes the closed ones and the failures on every page open, and repeats after
+it are counted anew. The history lives in the tray's memory and is gathered anew when the tray restarts. A
+connection that opened and closed within a second may never show.</li>
+<li><b><a href="/live#lpause">Pause</a></b> stops the table, not the gathering: what closes and fails
+meanwhile is there when you resume. A page in the background takes nothing, and coming back takes only what
+it missed.</li>
+<li><b>A row clicked</b> is picked and holds its place: sorted by speed, the others move around it, and a
+connection that closes stays where it was, closed. A click anywhere else, or a change of tab, filter or sort,
+lets it go. <b>✕ in a row</b> closes the connection in the core: the program reconnects, and the new
+connection follows the rules as they are now.</li>
 <li><b>A row right-clicked</b> opens a menu. On top, what to send: the whole domain (<code>+.example.com</code>),
-the name alone, the address or the program; then where: <b>Direct</b>, <b>Via the tunnel</b>, <b>Via the
-second tunnel</b> (its own list), <b>To a preset</b>, <b>Forbid</b>. It goes to that list, and the open
-connections it moves are moved. A list whose rules come first loses every line routing it, a wider one too
-(<code>+.example.com</code> for api.example.com, <code>10.0.0.0/8</code> for an address in it), and the answer
-names what went; a list whose rules come after loses the same line and the narrower ones only. The order:
-Forbidden, the programs sent direct, the second tunnel, Always via tunnel, the sites and addresses sent
-direct. The presets switched
-on stand above "Always via tunnel" and a direct site or address: <b>Via the tunnel</b> and <b>Direct</b> take
-the same line out of them, and the names under a whole domain; a preset that takes it by a wider line is
-named, and routes it while it is on. <b>File location</b>
-opens the program's folder with its file picked out.</li>
-<li>The core is asked every second from the program's start, whether the page is open or not: what closes
-and fails meanwhile is there when you open it. A page in the background, or on Pause, takes nothing, and
-coming back takes only what came since.</li>
+the name alone, the address or the program. Then where: <b>Direct</b>, <b>Via the tunnel</b>, <b>Via the second
+tunnel</b> (its <a href="/awg2#list-awg2">own list</a>), <b>To a preset</b> (the <a href="/awg2#presets">presets</a>
+switched off are greyed: they route nothing), <b>Forbid</b>. <b>File location</b> opens the program's folder
+with its file picked out.</li>
 </ul>
+<p>A line sent from the menu goes to the list chosen, and the open connections it moves are moved at once.
+For it to take that route, the menu takes it out of wherever a rule would route it first. The core's rules
+come in this order:</p>
+<ol>
+<li><a href="/lists#list-block">Forbidden</a>;</li>
+<li>the programs in <a href="/lists#list-direct">Always direct</a>;</li>
+<li>the second tunnel: its <a href="/awg2#presets">presets</a> switched on, then its <a href="/awg2#list-awg2">own list</a>;</li>
+<li><a href="/lists#list-tunnel">Always via tunnel</a>;</li>
+<li>the sites and addresses in Always direct;</li>
+<li>the detector's verdicts.</li>
+</ol>
+<p>A list whose rules come <b>before</b> the one chosen loses every line routing it, a wider one too:
+<code>+.example.com</code> for <code>api.example.com</code>, <code>10.0.0.0/8</code> for an address in it, a
+program by its name for a copy of it by its path. A wider line goes whole — a list cannot hold an exception
+for one name — so the answer names what went, and from where. A list whose rules come <b>after</b> it loses
+the same line and the narrower ones only: a wider line there is in nobody's way. Via the tunnel and Direct
+(a site or an address) take the same line and the narrower ones out of the presets switched on; a preset
+that takes it by a wider line is named, and routes it for as long as it is on. The lists and the presets
+change as one: a file failing to write puts back the ones written before it.</p>
 
 <h4>Files</h4>
 <p>Everything is kept in <code>{{.St.DataDir}}</code>: the configs (locked to administrators and you, they
