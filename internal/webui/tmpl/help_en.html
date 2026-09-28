@@ -75,12 +75,14 @@ left alone, and after ten days it is forgotten.</li>
 domain (<code>+.example.com</code>) goes direct: new subdomains do not wait for a check. The first
 bad subdomain removes the rule. It helps services with pools of servers: CDNs, speed tests, updates.</p>
 
-<h4>Auto-switch and observe only</h4>
+<h4>Auto-switch: on, observe only, tunnel only</h4>
 <p><b>On</b>: the verdicts are applied. <b>Observe only</b>: everything goes through the tunnel, the
-detector keeps checking and recording, and the log shows what would go direct. Switching applies within
-a second. Turning it off closes the open connections the detector sent direct, and the programs
+detector keeps checking and recording, and the log shows what would go direct. <b>Tunnel only</b>:
+everything goes through the tunnel and the detector checks nothing, so not a single probe goes direct.
+The "Always direct" list and the programs bypassing the tunnel work in every mode. Switching applies
+within a second. Turning it off closes the open connections the detector sent direct, and the programs
 reconnect through the tunnel. Turning it on leaves open connections in the tunnel; new ones go direct.
-The verdicts are kept either way.</p>
+The verdicts are kept in every mode.</p>
 
 <h4>Networks</h4>
 <p>Verdicts are kept per ISP (its AS number), not per Wi-Fi network: another network of the same ISP

@@ -19,6 +19,16 @@ import (
 // holds Apply true, and its sync must not write the rules back.
 func (cfg Config) off() bool { return cfg.autoOff != nil && cfg.autoOff.Load() }
 
+// noProbes: the user chose tunnel only. Shared the same way: a cycle
+// already probing when it was chosen starts no more probes.
+func (cfg Config) noProbes() bool { return cfg.tunnelOnly != nil && cfg.tunnelOnly.Load() }
+
+func (cfg Config) setTunnelOnly(on bool) {
+	if cfg.tunnelOnly != nil {
+		cfg.tunnelOnly.Store(on)
+	}
+}
+
 // disableAuto empties both lists and closes the connections they sent
 // direct. Once: a second call finds it done.
 func disableAuto(cfg Config, a *api) {
@@ -154,6 +164,7 @@ func watchSettings(ctx context.Context, cfg Config, a *api, st *state, last Sett
 		}
 		wasOn := !haveLast || last.AutoSwitch
 		last, haveLast = ns, true
+		cfg.setTunnelOnly(ns.Mode() == ModeTunnel)
 		switch {
 		case ns.AutoSwitch && !wasOn:
 			// the settings as they are now: this copy may have started

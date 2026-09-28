@@ -356,7 +356,7 @@ your real ISP. Everything else stays in the tunnel.
 - [Verdicts](#verdicts)
 - [Terms and re-checks](#terms-and-re-checks)
 - [Whole domains](#whole-domains)
-- [Auto-switch and observe only](#auto-switch-and-observe-only)
+- [Auto-switch: on, observe only, tunnel only](#auto-switch-on-observe-only-tunnel-only)
 - [Networks](#networks)
 - [DNS](#dns-1)
 - [IPv6](#ipv6-1)
@@ -424,7 +424,7 @@ many are blocked.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| Auto-switch | On | Unblocked sites go direct; "Observe only" — everything through the tunnel |
+| Auto-switch | On | Unblocked sites go direct; "Observe only" — everything through the tunnel; "Tunnel only" — the same, and nothing is probed |
 | Whole domains | Extend to the domain | 3+ clean subdomains and none blocked — the whole domain goes direct |
 | Latency tolerance | 20 % | How much slower than the tunnel the direct path may be and still be used |
 | Attempts per probe | 3 | A site is clean only if every attempt is |
@@ -502,13 +502,15 @@ domain (`+.example.com`) goes direct: new subdomains do not wait for a check and
 afterwards. The first bad subdomain removes the rule. It helps services with pools of servers: CDNs,
 speed tests, updates.
 
-### Auto-switch and observe only
+### Auto-switch: on, observe only, tunnel only
 
 **On**: the verdicts are applied. **Observe only**: everything goes through the tunnel, the detector
-keeps checking and recording, and the log shows what would go direct. Switching applies within a
+keeps checking and recording, and the log shows what would go direct. **Tunnel only**: everything goes
+through the tunnel and the detector checks nothing, so not a single probe goes direct. The "Always
+direct" list and the programs bypassing the tunnel work in every mode. Switching applies within a
 second. Turning it off closes the open connections the detector sent direct, and the programs
 reconnect through the tunnel. Turning it on leaves open connections in the tunnel; new ones go
-direct. The verdicts are kept either way.
+direct. The verdicts are kept in every mode.
 
 ### Networks
 

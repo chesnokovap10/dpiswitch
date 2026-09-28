@@ -324,7 +324,7 @@ type status struct {
 	TunnelNote  string         `json:"tunnel_note"`
 	NetworkUp   bool           `json:"network_up"`
 	Version     string         `json:"version"`
-	AutoSwitch  bool           `json:"-"`
+	Mode        string         `json:"-"` // see ctl.Settings.Mode
 	Endpoint    string         `json:"-"`
 	Awg2        bool           `json:"-"` // a second tunnel is attached
 	Awg2Alive   bool           `json:"-"`
@@ -376,7 +376,7 @@ func collectStatus() status {
 	}
 	st.NetworkUp = supervisor.NetworkUp()
 	set := ctl.LoadSettings(paths.Settings())
-	st.AutoSwitch = set.AutoSwitch
+	st.Mode = set.Mode()
 	st.Presets = len(set.Awg2Presets)
 	st.Awg2Hosts = len(readList(paths.User(paths.Awg2List)))
 

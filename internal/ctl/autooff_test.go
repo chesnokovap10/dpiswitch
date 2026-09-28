@@ -118,3 +118,57 @@ func TestAutoSwitchOffAtOnce(t *testing.T) {
 		t.Fatalf("list after turning back on: %v", listRules(cfg.ListPath))
 	}
 }
+
+// Tunnel only chosen in the UI: within a second probing stops and the lists
+// are emptied as for observe only; observe only starts probing again.
+func TestTunnelOnlyAtOnce(t *testing.T) {
+	old := settingsPoll
+	settingsPoll = 10 * time.Millisecond
+	defer func() { settingsPoll = old }()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/connections" {
+			w.Write([]byte(`{"connections":[]}`))
+		}
+	}))
+	defer srv.Close()
+	a := newAPI(strings.TrimPrefix(srv.URL, "http://"), "")
+	dir := t.TempDir()
+	cfg := Config{Apply: true, ProxyName: "awg", Provider: "p", ListPath: filepath.Join(dir, "d.txt"),
+		SettingsPath: filepath.Join(dir, "settings.json"), autoOff: new(atomic.Bool), tunnelOnly: new(atomic.Bool)}
+	e := &entry{Verdict: probe.Clean, ExpiresAt: time.Now().Add(time.Hour), TestedIP: "192.0.2.1"}
+	st := &state{Networks: map[string]map[string]*entry{"n": {"a.example": e}}, Current: "n"}
+	syncList(cfg, a, st, "n", true)
+
+	set := DefaultSettings()
+	if err := SaveSettings(cfg.SettingsPath, set); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	wake := make(chan struct{}, 1)
+	go watchSettings(ctx, cfg, a, st, set, true, wake)
+	change := func(m string) {
+		t.Helper()
+		set.SetMode(m)
+		if err := SaveSettings(cfg.SettingsPath, set); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-wake:
+		case <-time.After(3 * time.Second):
+			t.Fatalf("%s was not seen", m)
+		}
+	}
+
+	change(ModeTunnel)
+	if !cfg.noProbes() {
+		t.Fatal("tunnel only: probing goes on")
+	}
+	if listRules(cfg.ListPath) != nil {
+		t.Fatal("tunnel only: the list was not emptied")
+	}
+	change(ModeObserve)
+	if cfg.noProbes() {
+		t.Fatal("observe only: probing did not come back")
+	}
+}

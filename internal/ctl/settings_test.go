@@ -49,6 +49,36 @@ func TestSettingsRoundTrip(t *testing.T) {
 	}
 }
 
+// Three modes in two fields: auto-switch on outranks tunnel only, so a file
+// from before tunnel_only, or a hand edit of auto_switch alone, means what it
+// always did.
+func TestSettingsMode(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "settings.json")
+	for _, m := range []string{ModeOn, ModeObserve, ModeTunnel} {
+		s := DefaultSettings()
+		if !s.SetMode(m) {
+			t.Fatalf("%s refused", m)
+		}
+		if err := SaveSettings(p, s); err != nil {
+			t.Fatal(err)
+		}
+		if got := LoadSettings(p).Mode(); got != m {
+			t.Fatalf("saved %s, read %s", m, got)
+		}
+	}
+	if s := DefaultSettings(); s.SetMode("off") || s.Mode() != ModeOn {
+		t.Fatalf("an unknown mode was taken: %s", s.Mode())
+	}
+	os.WriteFile(p, []byte(`{"auto_switch":true,"tunnel_only":true}`), 0o644)
+	if s := LoadSettings(p); s.Mode() != ModeOn || s.TunnelOnly {
+		t.Fatalf("auto_switch set by hand: %+v", s)
+	}
+	os.WriteFile(p, []byte(`{"auto_switch":false}`), 0o644)
+	if s := LoadSettings(p); s.Mode() != ModeObserve {
+		t.Fatalf("a file from before tunnel only: %s", s.Mode())
+	}
+}
+
 // The core is built from the defaults while there is no settings file: the
 // first save with other resolvers or IPv6 needs a restart, one with only
 // controller values does not.

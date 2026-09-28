@@ -70,10 +70,26 @@ func (s *Server) redirect(w http.ResponseWriter, r *http.Request, err error, okT
 // --- header: auto-switch and the service ---
 
 func (s *Server) actAuto(w http.ResponseWriter, r *http.Request) {
-	on := r.FormValue("value") == "on"
-	err := ctl.PatchSettings(paths.Settings(), []byte(fmt.Sprintf(`{"auto_switch":%v}`, on)))
+	_, err := ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
+		return setMode(set, r.FormValue("value"))
+	})
 	ok, msg := done(r, err, "")
 	s.part(w, r, pageOf(back(r)), "header", ok, msg)
+}
+
+// setMode: auto-switch as the header's buttons and the settings' select send
+// it. "off", "1" and "0" come from a page served before tunnel only existed.
+func setMode(set *ctl.Settings, v string) error {
+	switch v {
+	case "1":
+		v = ctl.ModeOn
+	case "0", "off":
+		v = ctl.ModeObserve
+	}
+	if !set.SetMode(v) {
+		return fmt.Errorf("unknown auto-switch mode %q", v)
+	}
+	return nil
 }
 
 // actService: start and stop wait for the service to get there (up to
@@ -523,7 +539,7 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 			var err error
 			switch field {
 			case "auto_switch":
-				set.AutoSwitch = val == "1"
+				err = setMode(set, val)
 			case "families":
 				set.Families = val == "1"
 			case "ipv6":

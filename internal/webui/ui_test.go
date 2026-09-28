@@ -45,7 +45,7 @@ func testServer(t *testing.T) (*Server, string) {
 	t.Cleanup(func() { serviceRunning = was })
 	s := &Server{statusFn: func() status {
 		return status{Installed: true, PathOK: true, ServiceRun: true, TunnelAlive: true, TunnelNote: "60 ms",
-			Awg2: true, Version: "test", DataDir: paths.DataDir(), NetworkID: "AS1", AutoSwitch: true}
+			Awg2: true, Version: "test", DataDir: paths.DataDir(), NetworkID: "AS1", Mode: ctl.ModeOn}
 	}}
 	return s, paths.DataDir()
 }
@@ -190,10 +190,29 @@ func TestSettingInstant(t *testing.T) {
 		return w.Body.String()
 	}
 	post("attempts", "5")
-	post("auto_switch", "0")
+	post("auto_switch", "tunnel")
 	got := ctl.LoadSettings(paths.Settings())
-	if got.Attempts != 5 || got.AutoSwitch || len(got.Awg2Presets) != 1 {
+	if got.Attempts != 5 || got.Mode() != ctl.ModeTunnel || len(got.Awg2Presets) != 1 {
 		t.Fatalf("after two changes: %+v", got)
+	}
+	// the header's buttons, and "0" and "off" from a page served before
+	// tunnel only existed
+	for _, c := range []struct{ path, field, value, want string }{
+		{"/act/auto", "", "on", ctl.ModeOn},
+		{"/act/auto", "", "tunnel", ctl.ModeTunnel},
+		{"/act/auto", "", "off", ctl.ModeObserve},
+		{"/act/set", "auto_switch", "1", ctl.ModeOn},
+		{"/act/set", "auto_switch", "0", ctl.ModeObserve},
+	} {
+		if w := do(t, h, "POST", c.path, url.Values{"field": {c.field}, "value": {c.value}}, nil); w.Code != 200 {
+			t.Fatalf("%s %s: %d", c.path, c.value, w.Code)
+		}
+		if got := ctl.LoadSettings(paths.Settings()).Mode(); got != c.want {
+			t.Fatalf("%s %s: mode %s, want %s", c.path, c.value, got, c.want)
+		}
+	}
+	if body := post("auto_switch", "nope"); !strings.Contains(body, `msg bad`) {
+		t.Fatalf("an unknown mode was not refused:\n%s", body)
 	}
 	// a re-check past the pause cap raises the cap instead of being refused
 	post("fail_ttl_min", "4320")

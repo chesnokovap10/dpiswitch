@@ -60,6 +60,8 @@ type Config struct {
 	ResetPath string
 	// auto-switch turned off since the lists were last written, see autooff.go
 	autoOff *atomic.Bool
+	// tunnel only: nothing is probed, see noProbes
+	tunnelOnly *atomic.Bool
 	// closed when the controller is stopping: a cycle starts no more probes
 	stop <-chan struct{}
 }
@@ -120,6 +122,12 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	}
 	if n := st.drop(netID, leaveAlone); n > 0 {
 		log.Printf("dropped %d verdicts for names that are skipped or pinned by a list", n)
+	}
+	if cfg.noProbes() {
+		// tunnel only: the names in use were marked above, so memory is
+		// kept as it is until the detector runs again; the new candidates
+		// are let go and come back when they are next requested
+		return
 	}
 
 	// order matters: suspicious first, then expired,
@@ -185,6 +193,9 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			defer func() { <-sem }()
 			if guard.moved() || cfg.stopping() {
 				return // the whole cycle is dropped: no use probing on
+			}
+			if cfg.noProbes() {
+				return // tunnel only chosen mid-cycle: the probes done are filed
 			}
 
 			// mihomo rules are per domain, so a decision applies

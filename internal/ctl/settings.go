@@ -24,6 +24,8 @@ import (
 type Settings struct {
 	// auto-switch: false -- observe only, everything goes through the tunnel
 	AutoSwitch bool `json:"auto_switch"`
+	// with auto-switch off: nothing is probed either, see Mode
+	TunnelOnly bool `json:"tunnel_only"`
 	// how long a domain stays direct before a re-check
 	CleanTTLMin int `json:"clean_ttl_min"`
 	// when to re-check a blocked domain
@@ -63,6 +65,36 @@ func (s Settings) SameCore(o Settings) bool {
 }
 
 func (s Settings) Equal(o Settings) bool { return reflect.DeepEqual(s, o) }
+
+// the three ways the detector can run, see Mode
+const (
+	ModeOn      = "on"      // verdicts applied: unblocked sites go direct
+	ModeObserve = "observe" // everything through the tunnel, the detector probes and records
+	ModeTunnel  = "tunnel"  // everything through the tunnel, nothing is probed
+)
+
+// Mode: auto-switch on outranks tunnel only, so a file written before
+// tunnel_only existed, or a hand edit setting auto_switch alone, means
+// what it always did.
+func (s Settings) Mode() string {
+	switch {
+	case s.AutoSwitch:
+		return ModeOn
+	case s.TunnelOnly:
+		return ModeTunnel
+	}
+	return ModeObserve
+}
+
+// SetMode: the two fields for one of the modes; false for an unknown one.
+func (s *Settings) SetMode(m string) bool {
+	switch m {
+	case ModeOn, ModeObserve, ModeTunnel:
+		s.AutoSwitch, s.TunnelOnly = m == ModeOn, m == ModeTunnel
+		return true
+	}
+	return false
+}
 
 func DefaultSettings() Settings {
 	return Settings{
@@ -225,6 +257,7 @@ func (s Settings) Validate() error {
 // negative term.
 func (s *Settings) clamp() {
 	d := DefaultSettings()
+	s.SetMode(s.Mode())
 	if s.CleanTTLMin < cleanTTLMin || s.CleanTTLMin > cleanTTLMax {
 		s.CleanTTLMin = d.CleanTTLMin
 	}
@@ -292,6 +325,7 @@ func canonicalDNS(in []string) []string {
 
 func (s Settings) apply(cfg Config) Config {
 	cfg.Apply = s.AutoSwitch
+	cfg.setTunnelOnly(s.Mode() == ModeTunnel)
 	cfg.TTL = time.Duration(s.CleanTTLMin) * time.Minute
 	cfg.FailTTL = time.Duration(s.FailTTLMin) * time.Minute
 	cfg.MaxBackoff = time.Duration(s.MaxBackoffMin) * time.Minute

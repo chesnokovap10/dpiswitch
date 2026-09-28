@@ -73,6 +73,7 @@ func Run(ctx context.Context, cfg Config) {
 	}
 	a := newAPI(cfg.APIAddr, secret)
 	cfg.autoOff = new(atomic.Bool)
+	cfg.tunnelOnly = new(atomic.Bool)
 	cfg.stop = ctx.Done()
 	st := loadState(cfg.StatePath)
 	netID := resolveNetwork(cfg, st)
@@ -87,8 +88,11 @@ func Run(ctx context.Context, cfg Config) {
 	}
 
 	mode := "OBSERVE (nothing is changed)"
-	if cfg.Apply {
+	switch {
+	case cfg.Apply:
 		mode = "APPLY"
+	case cfg.noProbes():
+		mode = "TUNNEL ONLY (nothing is changed or probed)"
 	}
 	log.Printf("network %s | mode: %s | clean TTL %s, blocked TTL %s", netID, mode, cfg.TTL, cfg.FailTTL)
 	if n := len(st.verified(netID)); n > 0 {
@@ -133,7 +137,7 @@ func Run(ctx context.Context, cfg Config) {
 	defer t.Stop()
 	g := &gate{interval: cfg.Interval}
 	health := func() (bool, string, error) { return a.tunnelHealth(cfg.ProxyName) }
-	if g.allow(time.Now().Round(0), health) {
+	if cfg.noProbes() || g.allow(time.Now().Round(0), health) {
 		cycle(cfg, a, st, netID, w)
 	}
 	for {
@@ -169,6 +173,14 @@ func Run(ctx context.Context, cfg Config) {
 				if cfg.Apply {
 					applyList(cfg, a, st, netID)
 				}
+			}
+			if cfg.noProbes() {
+				// tunnel only: no probe to hold back, and the gate's clock
+				// runs on -- switching back must not read the time spent
+				// here as a sleep. The cycle only takes in what was seen.
+				g.last = time.Now().Round(0)
+				cycle(cfg, a, st, netID, w)
+				continue
 			}
 			if !g.allow(time.Now().Round(0), health) {
 				// the list still follows memory: verdicts expire all the same
@@ -314,8 +326,8 @@ func readSettings(cfg Config) (Settings, bool) {
 func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) Config {
 	was, old := cfg.Apply, cfg
 	cfg = s.apply(cfg)
-	log.Printf("settings: auto-switch %v, direct TTL %s, blocked TTL %s, cap %s, tolerance +%d%%, attempts %d",
-		cfg.Apply, cfg.TTL, cfg.FailTTL, cfg.MaxBackoff, s.SlowPct, cfg.Attempts)
+	log.Printf("settings: auto-switch %s, direct TTL %s, blocked TTL %s, cap %s, tolerance +%d%%, attempts %d",
+		s.Mode(), cfg.TTL, cfg.FailTTL, cfg.MaxBackoff, s.SlowPct, cfg.Attempts)
 
 	// Terms follow the setting they come from, and only when it changed.
 	// The other verdicts' terms were left as they were -- a blocked re-check

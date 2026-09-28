@@ -26,6 +26,10 @@ code{font:12px Consolas,monospace;background:var(--bg);padding:0 3px;border-radi
 .seg button{border:0;border-radius:0;padding:5px 11px}
 .seg button.on{background:var(--accent);color:#fff;cursor:default}
 header form{margin:0;display:inline-flex}
+/* three modes and the second tunnel's chip overflow a narrow window: the
+   label goes first (the buttons carry their own titles), then the network */
+@media (max-width:1279px){.autolabel{display:none}}
+@media (max-width:1099px){.netchip{display:none}}
 
 /* controls */
 button,.btn{font:inherit;padding:5px 12px;border-radius:7px;border:1px solid var(--line);background:var(--panel);
