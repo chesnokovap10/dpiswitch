@@ -86,6 +86,14 @@ h3{font-size:12px;margin:0 0 8px;color:var(--muted);font-weight:600;text-transfo
 .ok-t{color:var(--ok)}.bad-t{color:var(--bad)}.warn-t{color:var(--warn)}
 .cols2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .cols3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+/* the lists' three blocks line up across: title, text, picker, box and
+   buttons each on a row the three share, however long each text is */
+.cols3.lists{grid-template-rows:auto auto auto minmax(0,1fr) auto;row-gap:0}
+.cols3.lists>.box{display:grid;grid-row:1/-1;grid-template-rows:subgrid;grid-template-columns:minmax(0,1fr)}
+.cols3.lists>.box>form{display:contents}
+/* the buttons row is as tall as the tallest message: buttons at its foot,
+   where they are with no message */
+.cols3.lists .actions{align-items:flex-end}
 .fill{flex:1;min-height:0}
 .row{display:flex;gap:8px;align-items:center}
 .pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;background:var(--bg)}
