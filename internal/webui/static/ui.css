@@ -205,6 +205,41 @@ td small{display:block;color:var(--muted)}
 button.lx{border:0;background:none;padding:0 4px;color:var(--muted);visibility:hidden}
 .ltable tr:hover button.lx{visibility:visible}
 button.lx:hover{color:var(--bad)}
+/* the row picked: framed, and held where it was picked (see live.js) */
+.ltable tbody tr{cursor:default}
+.ltable tr.sel td{box-shadow:inset 0 2px 0 var(--accent),inset 0 -2px 0 var(--accent)}
+.ltable tr.sel td:first-child{box-shadow:inset 2px 2px 0 var(--accent),inset 0 -2px 0 var(--accent)}
+.ltable tr.sel td:last-child{box-shadow:inset -2px 2px 0 var(--accent),inset 0 -2px 0 var(--accent)}
+.ltable tr.sel button.lx{visibility:visible}
+
+/* a row's menu, where it was right-clicked */
+.cmenu{position:fixed;z-index:20;min-width:210px;max-width:420px;padding:4px;background:var(--panel);
+  border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.18);display:flex;flex-direction:column}
+.cmenu[hidden]{display:none}
+.cmenu button{border:0;border-radius:5px;background:none;text-align:left;padding:5px 10px;white-space:nowrap}
+.cmenu button:hover:not(:disabled){background:var(--accent-bg);color:var(--accent)}
+.cmenu hr{border:0;border-top:1px solid var(--line);margin:4px 2px}
+.cmenu .off{color:var(--muted)}
+.cmenu .muted{padding:5px 10px}
+/* what goes to the list: the choices side by side, the one taken marked */
+.cm-what{display:flex;flex-wrap:wrap;gap:4px;padding:4px 4px 6px;margin-bottom:4px;border-bottom:1px solid var(--line)}
+.cm-what button{font:12px Consolas,monospace;padding:2px 7px;border:1px solid var(--line);border-radius:99px;
+  max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.cm-what button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.cm-what button.on:hover{background:var(--accent);color:#fff}
+.cm-sub{position:relative;display:flex;flex-direction:column}
+.cm-more::after{content:"▸";float:right;margin-left:16px;color:var(--muted)}
+.cm-sub > .cmenu{position:absolute;left:100%;top:-5px;display:none;max-height:60vh;overflow:auto}
+.cm-sub:hover > .cmenu,.cm-sub > .cmenu.shown{display:flex}
+.cmenu.left .cm-sub > .cmenu{left:auto;right:100%}
+.cm-sub:has(> button:disabled) > .cmenu{display:none}
+
+/* what an action came to, for a few seconds */
+.toast{position:fixed;z-index:30;left:50%;bottom:24px;transform:translateX(-50%);max-width:70vw;padding:8px 14px;
+  border-radius:8px;border:1px solid var(--line);background:var(--panel);box-shadow:0 6px 24px rgba(0,0,0,.18)}
+.toast.ok{border-color:var(--ok);color:var(--ok)}
+.toast.bad{border-color:var(--bad);color:var(--bad)}
+.toast[hidden]{display:none}
 .legend{display:flex;gap:14px;align-items:center;color:var(--muted);font-size:12px}
 .legend .sw{padding:1px 8px;border-radius:5px;color:var(--fg)}
 

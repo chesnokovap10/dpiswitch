@@ -60,6 +60,21 @@
     <span class="sw r-awg2">{{.T "Tunnel 2"}}</span>
     <span class="sw r-probe">{{.T "The detector's checks"}}</span>
   </div>
+  {{/* a row's menu: what of it to send, and where */}}
+  <div class="cmenu" id="lmenu" hidden>
+    <div class="cm-what" id="lwhat" title="{{.T "What to send"}}"></div>
+    <button type="button" data-to="direct" title="{{.T "Adds it to “Always direct”"}}">{{.T "Direct"}}</button>
+    <button type="button" data-to="tunnel" title="{{.T "Adds it to “Always via tunnel”"}}">{{.T "Via the tunnel"}}</button>
+    <button type="button" data-to="awg2" title="{{.T "Adds it to the second tunnel's own list"}}">{{.T "Via the second tunnel"}}</button>
+    <div class="cm-sub">
+      <button type="button" id="lpresetbtn" class="cm-more">{{.T "To a preset"}}</button>
+      <div class="cmenu" id="lpresets"></div>
+    </div>
+    <button type="button" data-to="block" title="{{.T "Adds it to “Forbidden”"}}">{{.T "Forbid"}}</button>
+    <hr>
+    <button type="button" id="lreveal">{{.T "File location"}}</button>
+  </div>
+  <div class="toast" id="ltoast" hidden></div>
   <script type="application/json" id="lwords">{{.Data.Words}}</script>
 </div>
 <script src="/static/live.js" defer></script>

@@ -123,7 +123,7 @@ func TestLiveUpdate(t *testing.T) {
 	if len(m.Add) != 1 || m.Add[0].ID != "c" || m.Add[0].US != 100 || m.Add[0].DS != 1000 {
 		t.Errorf("c added: %+v", m.Add)
 	}
-	if len(m.Gone) != 1 || m.Gone[0] != (liveGone{"b", t1.UnixMilli()}) {
+	if len(m.Gone) != 1 || m.Gone[0] != (liveGone{"b", t1.UnixMilli(), 1}) {
 		t.Errorf("b gone: %+v", m.Gone)
 	}
 	if m.Tot.US != 350 || m.Tot.DS != 5500 {
@@ -165,28 +165,101 @@ func TestLiveUpdate(t *testing.T) {
 	if m = next(t, sub); m.Down != "stopped" || len(m.Gone) != 2 || len(h.open) != 0 || len(h.closed) != 3 {
 		t.Errorf("the core gone: %+v, %d open, %d closed", m, len(h.open), len(h.closed))
 	}
-	// and back
+	// and back: a new run, sent whole
 	h.update(ctl.Live{Conns: []ctl.LiveConn{conn("d", 1, 1, t2)}}, nil, t2.Add(4*time.Second))
-	if m = next(t, sub); m.Down != "" || len(m.Add) != 1 {
+	if m = next(t, sub); m.Kind != "full" || m.Down != "" || len(m.Conns) != 1 || len(m.Closed) != 0 {
 		t.Errorf("the core back: %+v", m)
 	}
 }
 
-// The closed ones kept are the newest, none older than liveClosedAge.
+// A new run of the core starts the history anew: seen gone and back, or its
+// totals counted from nothing again. A failure its log told already stays.
+func TestLiveNewRun(t *testing.T) {
+	h := newLiveHub(nil)
+	h.failID = "f-"
+	sub := watch(h)
+	ctx := context.Background()
+	t0 := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	conn := func(id string) ctl.LiveConn {
+		return ctl.LiveConn{ID: id, Host: id + ".example", Port: 443, Network: "tcp", Chains: []string{"DIRECT"}, Start: t0}
+	}
+	fail := func(host string, at time.Time) {
+		h.failure(ctx, ctl.DialErr{Network: "tcp", Proxy: "DIRECT", Host: host, Port: 443, Err: "i/o timeout"}, []string{"DIRECT"}, at)
+	}
+	h.update(ctl.Live{UploadTotal: 10, DownloadTotal: 10, Conns: []ctl.LiveConn{conn("a"), conn("b")}}, nil, t0)
+	h.update(ctl.Live{UploadTotal: 20, DownloadTotal: 20, Conns: []ctl.LiveConn{conn("a")}}, nil, t0.Add(time.Second))
+	fail("old.example", t0.Add(1500*time.Millisecond))
+	sess := h.sess
+	h.update(ctl.Live{}, ctl.ErrCoreDown, t0.Add(2*time.Second))
+	if len(h.closed) != 2 || len(h.failed) != 1 || h.sess != sess {
+		t.Fatalf("the core gone: %d closed, %d failed -- they stay until it runs anew", len(h.closed), len(h.failed))
+	}
+	// the new core's log is read before its connections are
+	fail("new.example", t0.Add(3*time.Second))
+	for len(sub.ch) > 0 {
+		<-sub.ch
+	}
+	h.update(ctl.Live{UploadTotal: 1, DownloadTotal: 1, Conns: []ctl.LiveConn{conn("c")}}, nil, t0.Add(4*time.Second))
+	m := next(t, sub)
+	if m.Kind != "full" || m.Sess == sess || m.Sess != h.sess || len(m.Conns) != 1 || len(m.Closed) != 0 ||
+		len(m.Failed) != 1 || m.Failed[0].Host != "new.example" {
+		t.Fatalf("the new run: %+v", m)
+	}
+	// restarted between two calls: the totals are counted from nothing again
+	h.update(ctl.Live{UploadTotal: 50, DownloadTotal: 50}, nil, t0.Add(5*time.Second))
+	if m = next(t, sub); m.Kind != "tick" || len(h.closed) != 1 {
+		t.Fatalf("the same run: %+v, %d closed", m, len(h.closed))
+	}
+	sess = h.sess
+	h.update(ctl.Live{UploadTotal: 3, DownloadTotal: 3, Conns: []ctl.LiveConn{conn("d")}}, nil, t0.Add(6*time.Second))
+	if m = next(t, sub); m.Kind != "full" || h.sess == sess || len(h.closed) != 0 || len(m.Conns) != 1 || m.Conns[0].ID != "d" {
+		t.Fatalf("restarted unseen: %+v, %d closed", m, len(h.closed))
+	}
+}
+
+// A page coming back to the history it holds gets only what came since the
+// last it saw; one holding another gets it all.
+func TestLiveSince(t *testing.T) {
+	h := newLiveHub(nil)
+	h.running = true // no loop: the hub is driven by hand
+	t0 := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	conn := func(id string) ctl.LiveConn {
+		return ctl.LiveConn{ID: id, Port: 443, Network: "tcp", Chains: []string{"DIRECT"}, Start: t0}
+	}
+	h.update(ctl.Live{Conns: []ctl.LiveConn{conn("a"), conn("b"), conn("c")}}, nil, t0)
+	h.update(ctl.Live{Conns: []ctl.LiveConn{conn("c")}}, nil, t0.Add(time.Second))
+	seen := h.closed[len(h.closed)-1].Seq
+	h.update(ctl.Live{}, nil, t0.Add(2*time.Second))
+	take := func(sess string, since int64) liveMsg {
+		sub, b := h.join(sess, since)
+		h.leave(sub)
+		var m liveMsg
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	if m := take(h.sess, seen); !m.Part || len(m.Closed) != 1 || m.Closed[0].ID != "c" {
+		t.Errorf("coming back: %+v", m)
+	}
+	if m := take("other", seen); m.Part || len(m.Closed) != 3 {
+		t.Errorf("another history: %+v", m)
+	}
+	if m := take(h.sess, 0); m.Part || len(m.Closed) != 3 {
+		t.Errorf("a page new to it: %+v", m)
+	}
+}
+
+// The closed ones kept are the newest liveKeep, whatever their age.
 func TestLiveTrim(t *testing.T) {
 	h := newLiveHub(nil)
-	now := time.Now()
-	for i := range liveClosedMax + 20 {
-		h.closed = append(h.closed, &liveRow{ID: fmt.Sprint(i), End: now.UnixMilli()})
+	old := time.Now().Add(-30 * 24 * time.Hour).UnixMilli()
+	for i := range liveKeep + 20 {
+		h.closed = append(h.closed, &liveRow{ID: fmt.Sprint(i), End: old})
 	}
-	h.trim(now)
-	if len(h.closed) != liveClosedMax || h.closed[0].ID != "20" {
+	h.trim()
+	if len(h.closed) != liveKeep || h.closed[0].ID != "20" {
 		t.Fatalf("%d kept, the first %s", len(h.closed), h.closed[0].ID)
-	}
-	h.closed[0].End = now.Add(-liveClosedAge - time.Second).UnixMilli()
-	h.trim(now)
-	if len(h.closed) != liveClosedMax-1 || h.closed[0].ID != "21" {
-		t.Fatalf("too old: %d kept, the first %s", len(h.closed), h.closed[0].ID)
 	}
 }
 
@@ -248,31 +321,30 @@ func newFakeCore(t *testing.T) *fakeCore {
 func liveTest(t *testing.T) (*Server, *fakeCore, *httptest.Server) {
 	s, _ := testServer(t)
 	core := newFakeCore(t)
-	oldAddr, oldEvery, oldGrace, oldRetry := apiAddr, liveEvery, liveGrace, liveRetry
+	oldAddr, oldEvery, oldRetry := apiAddr, liveEvery, liveRetry
 	apiAddr = strings.TrimPrefix(core.srv.URL, "http://")
-	liveEvery, liveGrace, liveRetry = 20*time.Millisecond, 60*time.Millisecond, 20*time.Millisecond
-	t.Cleanup(func() { apiAddr, liveEvery, liveGrace, liveRetry = oldAddr, oldEvery, oldGrace, oldRetry })
+	liveEvery, liveRetry = 20*time.Millisecond, 20*time.Millisecond
+	t.Cleanup(func() { apiAddr, liveEvery, liveRetry = oldAddr, oldEvery, oldRetry })
 	ui := httptest.NewServer(s.Handler())
 	t.Cleanup(func() {
 		ui.Close()
 		done := make(chan struct{})
-		go func() { s.live.wg.Wait(); close(done) }()
+		go func() { s.live.stop(); close(done) }()
 		select {
 		case <-done:
 		case <-time.After(5 * time.Second):
-			t.Error("the loop still runs with no page watching")
+			t.Error("the loop did not stop")
 		}
 	})
 	return s, core, ui
 }
 
-// The core is asked only while a page watches: the stream brings the
-// connections, and once it closes the loop stops -- no call to the core
-// after the grace.
+// The stream brings the connections and the failures; the core is asked on
+// with no page watching, and what it told is kept for the page coming back.
 func TestLiveStream(t *testing.T) {
 	s, core, ui := liveTest(t)
 	if n := core.gets.Load(); n != 0 {
-		t.Fatalf("the core asked %d times before any page opened", n)
+		t.Fatalf("the core asked %d times before the UI started gathering", n)
 	}
 	resp, err := http.Get(ui.URL + "/live/stream")
 	if err != nil {
@@ -344,42 +416,49 @@ func TestLiveStream(t *testing.T) {
 	}
 
 	resp.Body.Close()
-	// the loop stops after the grace; a call on the way may still land
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		s.live.mu.Lock()
-		running := s.live.running
-		s.live.mu.Unlock()
-		if !running {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the loop did not stop after the page left")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	// no page watches: the core is asked all the same, and the state stays
 	n := core.gets.Load()
 	time.Sleep(10 * liveEvery)
-	if m := core.gets.Load(); m != n {
-		t.Errorf("the core asked %d more times with no page open", m-n)
+	if m := core.gets.Load(); m == n {
+		t.Error("the core no longer asked with no page open: what closes meanwhile is lost")
 	}
-	// nor is its log read
-	s.live.wg.Wait()
+	s.live.mu.Lock()
+	open, failed := len(s.live.open), len(s.live.failed)
+	s.live.mu.Unlock()
+	if open != 2 || failed != 1 {
+		t.Errorf("state with no page: %d open, %d failed", open, failed)
+	}
+	// once stopped, the core's log is no longer read
+	s.live.stop()
 	for deadline := time.Now().Add(5 * time.Second); core.logs.Load() != 0; time.Sleep(10 * time.Millisecond) {
 		if time.Now().After(deadline) {
-			t.Fatalf("%d log streams still open with no page", core.logs.Load())
+			t.Fatalf("%d log streams still open after the loop stopped", core.logs.Load())
 		}
-	}
-	if len(s.live.open) != 0 || len(s.live.closed) != 0 || len(s.live.failed) != 0 || len(s.live.failKey) != 0 {
-		t.Errorf("state kept with no page: %d open, %d closed, %d failed", len(s.live.open), len(s.live.closed), len(s.live.failed))
 	}
 }
 
-// Two pages share one loop, and it outlives one of them.
+// The UI gathers from its start, before any page opens.
+func TestLiveGathersFromStart(t *testing.T) {
+	s, core, _ := liveTest(t)
+	s.live.start()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		s.live.mu.Lock()
+		open := len(s.live.open)
+		s.live.mu.Unlock()
+		if open == 2 && core.gets.Load() > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("nothing gathered with no page: %d open", open)
+		}
+	}
+}
+
+// Two pages share one loop.
 func TestLiveTwoPages(t *testing.T) {
 	s, _, _ := liveTest(t)
-	a, _ := s.live.join()
-	b, _ := s.live.join()
+	a, _ := s.live.join("", 0)
+	b, _ := s.live.join("", 0)
 	// the page left open reads its ticks: one that does not is dropped
 	done := make(chan struct{})
 	go func() {
@@ -388,7 +467,7 @@ func TestLiveTwoPages(t *testing.T) {
 		}
 	}()
 	s.live.leave(a)
-	time.Sleep(3 * liveGrace)
+	time.Sleep(5 * liveEvery)
 	s.live.mu.Lock()
 	running, subs := s.live.running, len(s.live.subs)
 	s.live.mu.Unlock()
@@ -399,7 +478,6 @@ func TestLiveTwoPages(t *testing.T) {
 	s.live.mu.Lock()
 	if _, ok := s.live.subs[b]; ok {
 		delete(s.live.subs, b)
-		s.live.left()
 		close(b.ch)
 	}
 	s.live.mu.Unlock()
@@ -491,7 +569,7 @@ func TestLiveFailure(t *testing.T) {
 
 	h.failure(ctx, e, direct, t0)
 	h.failure(ctx, e, direct, t0.Add(10*time.Second))
-	// minutes apart, the row still listed: the same one
+	// hours apart, the row still listed: the same one
 	h.failure(ctx, e, direct, t0.Add(5*time.Minute))
 	if len(h.failed) != 1 {
 		t.Fatalf("%d rows for one failure", len(h.failed))
@@ -533,9 +611,9 @@ func TestLiveFailure(t *testing.T) {
 	}
 }
 
-// A failure counted again moves to the end, and the rows behind it are cut
-// all the same: once one counted again stood first, and shielded the rows
-// behind it from the cut.
+// A failure counted again moves to the end, with the history's newest
+// count: past liveKeep the rows cut are the ones failed longest ago, and a
+// failure is never cut for its age.
 func TestLiveFailedTrim(t *testing.T) {
 	h := newLiveHub(nil)
 	h.failID = "f-"
@@ -547,46 +625,44 @@ func TestLiveFailedTrim(t *testing.T) {
 	h.failure(ctx, a, []string{"DIRECT"}, t0)
 	h.failure(ctx, b, []string{"DIRECT"}, t0.Add(time.Minute))
 	h.failure(ctx, a, []string{"DIRECT"}, t0.Add(9*time.Minute))
-	if h.failed[0].Host != "b.example" || h.failed[1].Host != "a.example" {
-		t.Fatalf("not in the order they last failed: %s, %s", h.failed[0].Host, h.failed[1].Host)
+	if h.failed[0].Host != "b.example" || h.failed[1].Host != "a.example" || h.failed[1].Seq <= h.failed[0].Seq {
+		t.Fatalf("not in the order they last failed: %+v, %+v", h.failed[0], h.failed[1])
 	}
-	h.trim(t0.Add(time.Minute + liveClosedAge + time.Second))
-	if len(h.failed) != 1 || h.failed[0].Host != "a.example" {
+	h.update(ctl.Live{}, nil, t0.Add(48*time.Hour))
+	if len(h.failed) != 2 {
+		t.Fatalf("failures cut for their age: %d left", len(h.failed))
+	}
+	// past liveKeep: b, failed longest ago, goes first, and is forgotten
+	for i := range liveKeep - 1 {
+		h.failed = append(h.failed, &liveRow{ID: fmt.Sprint(i)})
+	}
+	h.trim()
+	if len(h.failed) != liveKeep || h.failed[0].Host != "a.example" {
 		t.Fatalf("after the cut: %d rows, the first %s", len(h.failed), h.failed[0].Host)
 	}
-	// b is forgotten with its row: failing again, it starts a new one
-	h.failure(ctx, b, []string{"DIRECT"}, t0.Add(12*time.Minute))
-	if len(h.failed) != 2 || h.failed[1].N != 1 {
-		t.Errorf("b again: %+v", h.failed)
+	h.failure(ctx, b, []string{"DIRECT"}, t0.Add(49*time.Hour))
+	if r := h.failed[len(h.failed)-1]; r.Host != "b.example" || r.N != 1 {
+		t.Errorf("b again: %+v", r)
 	}
 }
 
-// keepNewest takes no order on trust.
-func TestKeepNewest(t *testing.T) {
+func TestKeepLast(t *testing.T) {
 	var rows []*liveRow
-	for i := range liveClosedMax + 3 {
-		// the ends out of order: 2, 1, 4, 3, ...
-		rows = append(rows, &liveRow{ID: fmt.Sprint(i), End: int64(1000 + i + 1 - 2*(i%2))})
+	for i := range liveKeep + 3 {
+		rows = append(rows, &liveRow{ID: fmt.Sprint(i)})
 	}
-	rows = append(rows, &liveRow{ID: "old", End: 10})
-	kept := keepNewest(rows, 100)
-	if len(kept) != liveClosedMax {
-		t.Fatalf("%d kept", len(kept))
-	}
-	for _, r := range kept {
-		if r.ID == "old" || r.End < 1003 {
-			t.Errorf("kept %s, ended %d", r.ID, r.End)
-		}
+	if kept := keepLast(rows); len(kept) != liveKeep || kept[0].ID != "3" {
+		t.Fatalf("%d kept, the first %s", len(kept), kept[0].ID)
 	}
 	few := rows[:3]
-	if got := keepNewest(few, 0); &got[0] != &few[0] || len(got) != 3 {
+	if got := keepLast(few); &got[0] != &few[0] || len(got) != 3 {
 		t.Error("nothing to cut, yet copied")
 	}
 }
 
 // Clear forgets the failures: the same one after it is a new row, counted
 // from one -- it used to come back with the count and the first time from
-// before.
+// before -- and every page is told.
 func TestLiveClear(t *testing.T) {
 	h := newLiveHub(nil)
 	h.failID = "f-"
@@ -596,10 +672,15 @@ func TestLiveClear(t *testing.T) {
 	h.failure(ctx, e, []string{"DIRECT"}, t0)
 	h.failure(ctx, e, []string{"DIRECT"}, t0.Add(10*time.Second))
 	h.closed = []*liveRow{{ID: "x", End: t0.UnixMilli()}}
-	first := h.failed[0].ID
+	first, sess := h.failed[0].ID, h.sess
+	sub := watch(h)
 	h.clear()
 	if len(h.failed)+len(h.closed)+len(h.failKey)+len(h.failNew) != 0 {
 		t.Fatalf("left after clear: %d failed, %d closed", len(h.failed), len(h.closed))
+	}
+	// every page drops what it held: a new history, sent whole
+	if m := next(t, sub); m.Kind != "full" || m.Part || m.Sess == sess || len(m.Closed)+len(m.Failed) != 0 {
+		t.Errorf("the pages after clear: %+v", m)
 	}
 	h.failure(ctx, e, []string{"DIRECT"}, t0.Add(20*time.Second))
 	if r := h.failed[0]; r.N != 1 || r.ID == first || r.Start != t0.Add(20*time.Second).UnixMilli() {

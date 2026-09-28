@@ -74,6 +74,9 @@ func (s *Server) Start() error {
 	s.mu.Unlock()
 
 	go http.Serve(ln, s.Handler())
+	// the live page's history is of the core's whole run: gathered from the
+	// start, not from the first time the page is opened
+	s.live.start()
 	return nil
 }
 
@@ -93,6 +96,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/lang", s.handleLang)
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/live/stream", s.handleLive)
+	mux.HandleFunc("/live/presets", s.handleLivePresets)
 	mux.HandleFunc(helloPath, s.handleHello)
 	for path, h := range map[string]http.HandlerFunc{
 		"/act/auto":          s.actAuto,
@@ -113,6 +117,8 @@ func (s *Server) Handler() http.Handler {
 		"/act/defaults":      s.actDefaults,
 		"/act/liveclose":     s.actLiveClose,
 		"/act/liveclear":     s.actLiveClear,
+		"/act/liveadd":       s.actLiveAdd,
+		"/act/livereveal":    s.actLiveReveal,
 	} {
 		mux.HandleFunc(path, post(h))
 	}

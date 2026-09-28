@@ -107,7 +107,7 @@
 | **Настройки** | Детектор, сроки, IPv6, DNS; каждое изменение применяется сразу |
 | **Логи** | Лог контроллера и службы, ядра, трея и интерфейса |
 | **Справка** | То, что описано ниже; ссылки из неё ведут прямо к нужному полю, и оно подсвечивается |
-| **Live** | Соединения ядра раз в секунду: программа, хост, IP, порт, тип (TLS, QUIC, HTTP…), маршрут, скорость и объём в обе стороны; открытые, простаивающие, закрытые и неудавшиеся (с причиной: тайм-аут, отказ, DNS…), цвет строки — маршрут. Ядро опрашивается, только пока страница на экране |
+| **Live** | Соединения ядра раз в секунду: программа, хост, IP, порт, тип (TLS, QUIC, HTTP…), маршрут, скорость и объём в обе стороны; открытые, простаивающие, закрытые и неудавшиеся (с причиной: тайм-аут, отказ, DNS…), цвет строки — маршрут. Закрытые и ошибки хранятся весь запуск ядра. Щелчок закрепляет строку, правый щелчок — меню: напрямую, в туннель, во второй туннель, в пресет, запретить, расположение файла |
 
 В шапке — состояние службы и туннелей, переключатель авто-переключения и кнопка «Старт»/«Стоп».
 Внизу боковой панели — установка и удаление службы, автозапуск трея и выбор языка (English / Русский).
@@ -419,7 +419,7 @@ their own port and access key).
 | **Settings** | Detector, terms, IPv6, DNS; every change applies at once |
 | **Logs** | The controller and service log, the core's, the tray and UI's |
 | **Help** | What is described below; its links lead straight to the field meant, which blinks |
-| **Live** | The core's connections, every second: the program, host, IP, port, type (TLS, QUIC, HTTP…), route, speed and bytes both ways; open, idle, closed and failed (with the reason: timed out, refused, DNS…), a row coloured by its route. The core is asked only while the page is in view |
+| **Live** | The core's connections, every second: the program, host, IP, port, type (TLS, QUIC, HTTP…), route, speed and bytes both ways; open, idle, closed and failed (with the reason: timed out, refused, DNS…), a row coloured by its route. The closed ones and the failures are kept for the core's whole run. A click pins a row, a right-click opens a menu: direct, via the tunnel, via the second tunnel, to a preset, forbid, file location |
 
 The header shows the service and tunnels' state, the auto-switch toggle and Start/Stop. The bottom
 of the sidebar holds installing and removing the service, the tray's autostart and the language

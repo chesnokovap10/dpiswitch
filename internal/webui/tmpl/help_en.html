@@ -143,24 +143,34 @@ the first tunnel, violet the second, grey the detector's checks; closed rows hav
 for the group and the rule that chose it.</p>
 <ul>
 <li><b>States.</b> ● open; ○ open, but no traffic for over 30 seconds; ✕ closed; <span class="bad-t">●</span>
-failed: the core could not make the connection. The core keeps no closed connections: the page sees one
-leave, and keeps the last 500 closed for up to 10 minutes. A connection that opened and closed within a
-second may never show.</li>
-<li><b>Failures</b> are only written to the core's log, and the page reads it while it is open. In place of
+failed: the core could not make the connection. The core keeps no closed connections: the program sees
+one leave, and keeps the closed ones and the failures for the core's whole run, however old: the last
+100,000 of each. When the core starts anew the history starts over. A connection that opened and closed
+within a second may never show.</li>
+<li><b>Failures</b> are only written to the core's log, and the program reads it all the time. In place of
 the speed and the bytes a failed row says why: timed out, refused, reset, name not found, no network
 interface, closed by the other side; the tooltip has the error in full. The same program failing again to
 reach the same address by the same route and rule, for the same reason, is no new row but "×N" on the old
-one while it is listed. A failure's route is its group's choice at the time: with the tunnel down and the
+one. A failure's route is its group's choice at the time: with the tunnel down and the
 group gone direct, it shows as direct.
 The detector's checks fail too, as they should on a blocked path; "Hide the detector's checks" hides
-them. Clear removes the closed connections and the failures, and repeats after it are counted anew.</li>
+them. Clear removes the closed connections and the failures, on every page open, and repeats after it are
+counted anew.</li>
 <li><b>Type.</b> TLS, QUIC and HTTP are told by the port: the likely protocol, not one seen, with a dashed
 badge. Where the core read the site's name from the traffic itself the protocol is confirmed, and the badge
 is solid.</li>
 <li><b>✕ in a row</b> closes the connection in the core: the program reconnects, and the new connection
 follows the rules as they are now.</li>
-<li>The core is asked only while the page is in view. Minimize the window, switch to another tab or press
-Pause, and the asking stops ten seconds later.</li>
+<li><b>A row clicked</b> is picked and holds its place: sorted by speed, the others move around it. A click
+anywhere else lets it go.</li>
+<li><b>A row right-clicked</b> opens a menu. On top, what to send: the whole domain (<code>+.example.com</code>),
+the name alone, the address or the program; then where: <b>Direct</b>, <b>Via the tunnel</b>, <b>Via the
+second tunnel</b> (its own list), <b>To a preset</b>, <b>Forbid</b>. It goes to that list and out of the
+others, which would route it otherwise, and the open connections it moves are moved. <b>File location</b>
+opens the program's folder with its file picked out.</li>
+<li>The core is asked every second from the program's start, whether the page is open or not: what closes
+and fails meanwhile is there when you open it. A page in the background, or on Pause, takes nothing, and
+coming back takes only what came since.</li>
 </ul>
 
 <h4>Files</h4>
