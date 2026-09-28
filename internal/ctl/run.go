@@ -180,10 +180,36 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 		// filed only once every probe is done and the network is known to
 		// have stayed the same, see guardNetwork
 		results []checked
+		// names whose probes were cut short, see retry
+		cut []string
 		// what this cycle showed of IPv6 on the direct path, see learnV6
 		v6Missed  int
 		v6Reached bool
 	)
+	// retry: names this cycle took from the watcher and files nothing for
+	// -- a probe the core's going away cut short, a cycle whose results are
+	// dropped. The watcher let go of them in drain: a new name no connection
+	// showed again was never checked. They go back as the ones left over for
+	// want of room do; a known name comes back from memory by itself, and on
+	// another network every name is new.
+	retry := func(doms []string, anyNet bool) {
+		var back []string
+		for _, d := range doms {
+			if _, had := st.get(netID, d); anyNet || !had {
+				back = append(back, d)
+			}
+		}
+		if n := w.requeue(back, ports); n > 0 {
+			log.Printf("  candidate backlog full (%d): the %d oldest dropped", maxBacklog, n)
+		}
+	}
+	unfiled := func() []string {
+		out := append([]string(nil), cut...)
+		for _, r := range results {
+			out = append(out, r.dom)
+		}
+		return out
+	}
 	for _, dom := range queue {
 		wg.Add(1)
 		go func(dom string) {
@@ -191,7 +217,11 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			if guard.moved() || cfg.stopping() {
-				return // the whole cycle is dropped: no use probing on
+				// the whole cycle is dropped: no use probing on
+				mu.Lock()
+				cut = append(cut, dom)
+				mu.Unlock()
+				return
 			}
 
 			// mihomo rules are per domain, so a decision applies
@@ -229,8 +259,11 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 				r := checkProto(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp, was)
 				appendJSONL(cfg.JSONLPath, r)
 				if r.Aborted {
-					// leave memory alone: the domain stays queued
-					// and is re-checked once the core is back
+					// leave memory alone: the name goes back to the
+					// watcher and is checked once the core is back
+					mu.Lock()
+					cut = append(cut, dom)
+					mu.Unlock()
 					return
 				}
 				// QUIC failing direct is left out: most hosts have no QUIC at
@@ -281,10 +314,12 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 		// switches to the new network at its next tick, and the names come
 		// back to be checked there.
 		log.Printf("the network changed during the cycle: %d results dropped", len(results))
+		retry(unfiled(), true)
 		return
 	}
 	if len(results) > 0 && !ipStill(cfg, st, guard.start) {
 		log.Printf("the public address changed during the cycle: %d results dropped", len(results))
+		retry(unfiled(), true)
 		return
 	}
 	// filed under listMu: a reset takes it too, so it comes wholly before
@@ -293,6 +328,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	if st.resetEpoch() != epoch {
 		listMu.Unlock()
 		log.Printf("verdicts were reset during the cycle: %d results dropped", len(results))
+		retry(unfiled(), true)
 		return
 	}
 	changed := false
@@ -302,6 +338,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 		}
 	}
 	listMu.Unlock()
+	retry(cut, false)
 
 	if until, now := st.learnV6(netID, v6Missed, v6Reached); now {
 		log.Printf("the direct path here has no IPv6: %d names in a row could not reach "+
@@ -630,6 +667,13 @@ func retryReloads(a *api) {
 // wrote every DIRECT rule back within a minute; the address list it never
 // touched. The tray now leaves a request; the controller drops its own
 // memory, empties both lists, and removes the request once done.
+//
+// Done is the emptied memory saved and both lists written. The request
+// used to go whatever failed: a state file not written came back at the
+// next start with every verdict in it, and the tray had been told the
+// reset was done. It stays now, and the reset is done again the next
+// second. A reload the core refused is not a failure: the file is written,
+// and the reload is retried (see retryReloads).
 func takeReset(cfg Config, a *api, st *state) bool {
 	if cfg.ResetPath == "" {
 		return false
@@ -638,19 +682,41 @@ func takeReset(cfg Config, a *api, st *state) bool {
 		return false
 	}
 	listMu.Lock()
-	n := st.resetVerdicts()
-	if err := st.save(); err != nil {
-		log.Printf("state not saved: %v", err)
+	resetDropped += st.resetVerdicts()
+	err := st.save()
+	if err != nil {
+		err = fmt.Errorf("state not saved: %w", err)
 	}
-	body := "# verdicts reset from the tray -- everything goes through the tunnel\n"
-	if err := replaceList(a, cfg.ListPath, cfg.Provider, body); err != nil {
-		log.Print(err)
-	}
-	if cfg.AddrListPath != "" {
-		if err := replaceList(a, cfg.AddrListPath, cfg.AddrProvider, body); err != nil {
-			log.Print(err)
+	body := []byte("# verdicts reset from the tray -- everything goes through the tunnel\n")
+	for _, l := range [][2]string{{cfg.ListPath, cfg.Provider}, {cfg.AddrListPath, cfg.AddrProvider}} {
+		path, provider := l[0], l[1]
+		if path == "" {
+			continue
 		}
+		if werr := paths.ReplaceFile(path, body); werr != nil {
+			if err == nil {
+				err = fmt.Errorf("list %s not written: %w", path, werr)
+			}
+			continue
+		}
+		if rerr := a.reloadProvider(provider); rerr != nil {
+			reloadPending[provider] = true
+			log.Printf("provider %s not reloaded, will retry: %v", provider, rerr)
+			continue
+		}
+		delete(reloadPending, provider)
 	}
+	if err != nil {
+		// said once, not every second the request is taken again
+		if resetFailed != err.Error() {
+			resetFailed = err.Error()
+			log.Printf("verdicts reset, but not for good: %v -- trying again", err)
+		}
+		listMu.Unlock()
+		return false
+	}
+	n := resetDropped
+	resetFailed, resetDropped = "", 0
 	listMu.Unlock()
 	// the tray waits for the request to go: it goes last
 	if err := os.Remove(cfg.ResetPath); err != nil {
@@ -659,6 +725,13 @@ func takeReset(cfg Config, a *api, st *state) bool {
 	log.Printf("verdicts reset from the tray: %d dropped, everything goes through the tunnel", n)
 	return true
 }
+
+// resetFailed: why the last reset could not be completed, and what the
+// attempts at it dropped; listMu held
+var (
+	resetFailed  string
+	resetDropped int
+)
 
 // watchReset looks for a reset request and changed user lists every
 // second: the UI waits for both to be taken.

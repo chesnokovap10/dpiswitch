@@ -39,12 +39,25 @@ func (a *api) do(method, path string, body io.Reader) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	b, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if resp.StatusCode >= 300 {
 		return b, fmt.Errorf("%s %s: %s", method, path, resp.Status)
 	}
+	if err != nil {
+		return nil, fmt.Errorf("%s %s: %w", method, path, err)
+	}
+	if int64(len(b)) > maxBody {
+		return nil, fmt.Errorf("%s %s: the answer is larger than %d MB", method, path, maxBody>>20)
+	}
 	return b, nil
 }
+
+// maxBody: the most of an answer read. /connections is the big one, 730 KB
+// for a thousand connections, and a torrent client holds thousands: the 4 MB
+// read before were cut off at some 5,700, and the JSON cut short failed
+// every cycle, the watcher and the live page with it. Past this it is an
+// error of its own, not broken JSON. A var: the tests lower it.
+var maxBody int64 = 64 << 20
 
 type connection struct {
 	ID          string   `json:"id"`

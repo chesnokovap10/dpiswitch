@@ -8,6 +8,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"strings"
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -67,8 +69,11 @@ type Item struct {
 }
 
 type Tray struct {
-	hwnd    windows.HWND
-	icons   [3]windows.Handle
+	hwnd  windows.HWND
+	icons [3]windows.Handle
+	// state and tip are set from any goroutine and read on the window's
+	// thread too (the icon added again, removed): under mu
+	mu      sync.Mutex
 	state   State
 	tip     string
 	Menu    func() []Item
@@ -252,17 +257,38 @@ func loadIcon(name string) (windows.Handle, error) {
 }
 
 func (t *Tray) data() *notifyIconData {
+	t.mu.Lock()
+	state, tip := t.state, t.tip
+	t.mu.Unlock()
 	d := &notifyIconData{
 		cbSize:           uint32(unsafe.Sizeof(notifyIconData{})),
 		hWnd:             t.hwnd,
 		uID:              1,
 		uFlags:           nifMessage | nifIcon | nifTip,
 		uCallbackMessage: wmTrayIcon,
-		hIcon:            t.icons[t.state],
+		hIcon:            t.icons[state],
 	}
-	copy(d.szTip[:], windows.StringToUTF16(t.tip))
+	copy(d.szTip[:], windows.StringToUTF16(tip))
 	d.szTip[len(d.szTip)-1] = 0
 	return d
+}
+
+// clipTip: a tooltip cut to what szTip holds -- 127 UTF-16 units and the
+// closing zero -- at a whole character. It used to be cut at 120 bytes:
+// a Russian one lost half its room, and a letter cut in two showed as "?".
+func clipTip(s string) string {
+	n := 0
+	for i, r := range s {
+		w := 1
+		if r >= 0x10000 {
+			w = 2 // a surrogate pair
+		}
+		if n+w > 127 {
+			return s[:i]
+		}
+		n += w
+	}
+	return s
 }
 
 func (t *Tray) notify(action uint32) error {
@@ -274,13 +300,13 @@ func (t *Tray) notify(action uint32) error {
 }
 
 // SetState changes the icon and tooltip. Safe to call from any goroutine:
-// Shell_NotifyIcon does not require the window's thread.
+// Shell_NotifyIcon does not require the window's thread, and the fields
+// are under mu -- the window's thread reads them too, and an icon of one
+// state could go with the tooltip of another.
 func (t *Tray) SetState(s State, tip string) {
-	t.state = s
-	if len(tip) > 120 {
-		tip = tip[:120]
-	}
-	t.tip = tip
+	t.mu.Lock()
+	t.state, t.tip = s, clipTip(strings.ReplaceAll(tip, "\x00", ""))
+	t.mu.Unlock()
 	_ = t.notify(nimModify)
 }
 

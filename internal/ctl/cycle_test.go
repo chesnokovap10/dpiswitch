@@ -380,6 +380,14 @@ func TestCycleAbortedLeavesMemory(t *testing.T) {
 	if e := s.entry("r.example.org"); e != nil {
 		t.Fatalf("an aborted probe was remembered: %s", e.Verdict)
 	}
+	// the core is back, and no connection shows the name again: it is
+	// checked all the same -- drain had let go of it, and it was lost
+	s.see()
+	s.script("r.example.org tcp/443", clean("192.0.2.64"))
+	s.cycle()
+	if e := s.entry("r.example.org"); e == nil || e.Verdict != probe.Clean {
+		t.Fatalf("the name cut short was not checked again: %v", e)
+	}
 }
 
 // "Everything via tunnel" from the tray drops every verdict and empties both
@@ -422,6 +430,48 @@ func TestCycleResetFromTray(t *testing.T) {
 	check("after the reset")
 	s.cycle()
 	check("a cycle later")
+}
+
+// A reset whose emptied memory could not be saved is not done: the old
+// state file would bring every verdict back at the next start. The request
+// stays, and the reset is done once the file can be written.
+func TestResetNotSaved(t *testing.T) {
+	s := newScenario(t)
+	s.cfg.ResetPath = filepath.Join(t.TempDir(), "reset.request")
+	s.see(tunnelled("a.example.org", 443))
+	s.script("a.example.org tcp/443", clean("192.0.2.1"))
+	s.cycle()
+	if _, err := os.Stat(s.cfg.StatePath); err != nil {
+		t.Fatalf("setup: no state file: %v", err)
+	}
+	// the state file cannot be replaced: a folder stands in its place
+	if err := os.Remove(s.cfg.StatePath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(s.cfg.StatePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.cfg.ResetPath, []byte("now"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if takeReset(s.cfg, s.api, s.st) {
+		t.Fatal("a reset not saved was taken as done")
+	}
+	if _, err := os.Stat(s.cfg.ResetPath); err != nil {
+		t.Fatalf("the request went with the reset not saved: %v", err)
+	}
+	if err := os.Remove(s.cfg.StatePath); err != nil {
+		t.Fatal(err)
+	}
+	if !takeReset(s.cfg, s.api, s.st) {
+		t.Fatal("the reset was not done once the file could be written")
+	}
+	if _, err := os.Stat(s.cfg.ResetPath); !os.IsNotExist(err) {
+		t.Fatal("the request was left behind")
+	}
+	if st := loadState(s.cfg.StatePath); len(st.Networks["n"]) != 0 {
+		t.Fatalf("the saved state kept %d verdicts", len(st.Networks["n"]))
+	}
 }
 
 // A name on more ports than a check takes is not called clean -- the ports
@@ -634,10 +684,11 @@ func TestCycleNetworkChangesMidway(t *testing.T) {
 		t.Fatalf("list %v", got)
 	}
 
-	// back on the first network, and staying there: the name is checked and filed
+	// back on the first network, and staying there: the name is checked and
+	// filed -- with no connection showing it again: the cycle gave it back
 	checkProto = s.check
 	s.where.Store("wifi-a")
-	s.see(tunnelled("moved.example.org", 443))
+	s.see()
 	s.cycle()
 	if e := s.entry("moved.example.org"); e == nil || e.Verdict != probe.Clean {
 		t.Fatalf("verdict %v", e)
@@ -660,6 +711,13 @@ func TestCycleResetMidway(t *testing.T) {
 	}
 	if got := listRules(s.cfg.ListPath); len(got) != 0 {
 		t.Fatalf("list %v", got)
+	}
+	// the name is checked again on the emptied memory
+	checkProto = s.check
+	s.see()
+	s.cycle()
+	if e := s.entry("reset.example.org"); e == nil || e.Verdict != probe.Clean {
+		t.Fatalf("the name was not checked after the reset: %v", e)
 	}
 }
 
