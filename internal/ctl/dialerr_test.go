@@ -131,7 +131,11 @@ func TestDialErrors(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	var got []DialErr
-	err := l.DialErrors(ctx, func(e DialErr) {
+	opened := 0
+	err := l.DialErrors(ctx, func() { opened++ }, func(e DialErr) {
+		if opened != 1 {
+			t.Errorf("a line before the stream was opened, or opened %d times", opened)
+		}
 		if got = append(got, e); len(got) == 2 {
 			cancel()
 		}
@@ -142,7 +146,7 @@ func TestDialErrors(t *testing.T) {
 
 	// nothing listening: the core is not running
 	srv.Close()
-	if err := l.DialErrors(context.Background(), func(DialErr) {}); err != ErrCoreDown {
+	if err := l.DialErrors(context.Background(), func() { t.Error("opened with no core") }, func(DialErr) {}); err != ErrCoreDown {
 		t.Errorf("no core: %v", err)
 	}
 }

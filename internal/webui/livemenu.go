@@ -39,12 +39,18 @@ var errUnchanged = errors.New("unchanged")
 
 // liveMove: what a menu action came to
 type liveMove struct {
-	had      bool     // the line was where it was sent already
-	outOf    []string // the lists and presets it was taken out of, by name
-	still    []string // presets switched on that take it all the same, above where it went
-	off      bool     // it went to a preset switched off, which routes nothing
+	had      bool      // the line was where it was sent already
+	outOf    []liveOut // the lines taken out of the lists and presets
+	still    []string  // presets switched on that take it all the same, above where it went
+	off      bool      // it went to a preset switched off, which routes nothing
 	moved    int
 	closeErr error
+}
+
+// liveOut: the lines taken out of a list or a preset, by its name
+type liveOut struct {
+	name  string
+	lines []string
 }
 
 // actLiveAdd sends one line to a list or a preset, and out of the places
@@ -90,6 +96,21 @@ func (s *Server) actLiveAdd(w http.ResponseWriter, r *http.Request) {
 		slices.Sort(q)
 		return strings.Join(q, ", ")
 	}
+	// where it was taken out of, and what, when it is more than the line
+	// itself: a wider line there routed it too
+	outs := make([]string, 0, len(mv.outOf))
+	for _, o := range mv.outOf {
+		out := "«" + tr(l, o.name) + "»"
+		if len(o.lines) != 1 || !strings.EqualFold(o.lines[0], v) {
+			shown := o.lines[:min(len(o.lines), 5)]
+			out += ": " + strings.Join(shown, ", ")
+			if n := len(o.lines) - len(shown); n > 0 {
+				out += fmt.Sprintf(" +%d", n)
+			}
+		}
+		outs = append(outs, out)
+	}
+	slices.Sort(outs)
 	var msg string
 	switch {
 	case mv.had && len(mv.outOf) == 0:
@@ -100,7 +121,7 @@ func (s *Server) actLiveAdd(w http.ResponseWriter, r *http.Request) {
 		msg = fmt.Sprintf(tr(lang(r), "Added to “%s”: %s"), name, v)
 	}
 	if len(mv.outOf) > 0 {
-		msg += fmt.Sprintf(tr(lang(r), " (taken out of %s)"), quote(mv.outOf))
+		msg += fmt.Sprintf(tr(lang(r), " (taken out of %s)"), strings.Join(outs, "; "))
 	}
 	if mv.off {
 		msg += tr(lang(r), ". The preset is off: it routes nothing until it is switched on")
@@ -119,9 +140,14 @@ func (s *Server) actLiveAdd(w http.ResponseWriter, r *http.Request) {
 }
 
 // moveLine sends v to the list named to, or to the preset id, and takes it
-// out of the places that would route it otherwise: every other list, and --
-// for "Always via tunnel" and a direct site or address, which the presets
-// stand above -- the same rule in the presets switched on. The lists and
+// out of the places that would route it otherwise. A list whose rules stand
+// before the one v went to loses every line routing what v routes -- the
+// same, a narrower one, and a wider one: "+.example.com" in "Always via
+// tunnel" would keep api.example.com sent direct in the tunnel. A list after
+// it loses the same line and the narrower ones only: a wider line there
+// routes other names, and v's before it. The presets switched on stand
+// before "Always via tunnel" and a direct site or address, and lose the same
+// line and the narrower ones; a wider line of theirs is named. The lists and
 // the presets are read and written as one: under the lists' lock, inside
 // the presets' change, and a file failing to write puts back the ones
 // written before it.
@@ -129,8 +155,9 @@ func (s *Server) moveLine(to, id, v string) (mv liveMove, err error) {
 	kind, _, _ := ctl.ParseEntry(v)
 	same := func(x string) bool { return strings.EqualFold(x, v) }
 	rule := ctl.PresetRules(presets.Preset{Lines: []string{v}})
-	within := inside(v)
-	above := to == "tunnel" || to == "direct" && kind != ctl.EntryApp
+	within, overlap := inside(v), liveOverlap(v)
+	rank := liveRank(to, kind)
+	above := liveRank("preset", kind) < rank
 	on := ctl.LoadSettings(paths.Settings()).Awg2Presets
 	var (
 		lists   = map[string][]string{} // the lists that change, as they will be
@@ -143,19 +170,30 @@ func (s *Server) moveLine(to, id, v string) (mv liveMove, err error) {
 	err = presets.Update(func(all []presets.Preset) ([]presets.Preset, error) {
 		for k, name := range listFile {
 			cur := readEntries(name)
-			has := slices.ContainsFunc(cur, same)
-			switch {
-			case k == to && has:
-				mv.had = true
-			case k == to:
-				lists[name], _ = normEntries(append(cur, v))
-			case has:
-				lists[name] = slices.DeleteFunc(slices.Clone(cur), same)
-				mv.outOf = append(mv.outOf, liveListNames[k])
+			if k == to {
+				if slices.ContainsFunc(cur, same) {
+					mv.had = true
+				} else {
+					lists[name], _ = normEntries(append(cur, v))
+					moved = append(moved, v)
+				}
+				continue
 			}
-		}
-		if len(lists) > 0 {
-			moved = append(moved, v)
+			before := liveRank(k, kind) < rank
+			var out []string
+			rest := slices.DeleteFunc(slices.Clone(cur), func(x string) bool {
+				over, in := overlap(x)
+				if in || before && over {
+					out = append(out, x)
+					return true
+				}
+				return false
+			})
+			if len(out) > 0 {
+				lists[name] = rest
+				mv.outOf = append(mv.outOf, liveOut{liveListNames[k], out})
+				moved = append(moved, out...)
+			}
 		}
 		found, changedAny := false, false
 		for i := range all {
@@ -172,11 +210,18 @@ func (s *Server) moveLine(to, id, v string) (mv liveMove, err error) {
 				}
 				p.Lines = append(slices.Clone(p.Lines), v)
 			case above && isOn:
-				lines := slices.DeleteFunc(slices.Clone(p.Lines), within)
-				cut := len(lines) != len(p.Lines)
+				var out []string
+				lines := slices.DeleteFunc(slices.Clone(p.Lines), func(l string) bool {
+					if within(l) {
+						out = append(out, l)
+						return true
+					}
+					return false
+				})
+				cut := len(out) > 0
 				if cut {
 					p.Lines = lines
-					mv.outOf = append(mv.outOf, p.Title)
+					mv.outOf = append(mv.outOf, liveOut{p.Title, out})
 				}
 				// a wider line of it takes it still
 				if rulesMatch(ctl.PresetRules(*p))(liveConnOf(kind, v)) {
@@ -244,6 +289,65 @@ func (s *Server) moveLine(to, id, v string) (mv liveMove, err error) {
 		return true
 	})
 	return mv, nil
+}
+
+// liveRank: where a list's rules of a kind stand among the core's rules --
+// the lower, the sooner they route (see awgconf): Forbidden, the programs
+// sent direct, the second tunnel (its presets, then its own list), Always
+// via tunnel, the sites and addresses sent direct
+func liveRank(list string, kind int) int {
+	switch list {
+	case "block":
+		return 0
+	case "direct":
+		if kind == ctl.EntryApp {
+			return 1
+		}
+		return 4
+	case "preset", "awg2":
+		return 2
+	case "tunnel":
+		return 3
+	}
+	return 5
+}
+
+// liveOverlap: how a list's line stands to the line v, as the lists read
+// them -- over: it routes some of what v routes; in: it routes nothing v
+// does not. A site: "example.com" is the name alone, "+.example.com" the
+// domain and everything under it. An address or a network: the networks
+// overlap, or one holds the other. A program: by its name every copy, by its
+// path that copy. Lines of other kinds route other connections.
+func liveOverlap(v string) func(line string) (over, in bool) {
+	kind, val, _ := ctl.ParseEntry(v)
+	whole := kind == ctl.EntryName && strings.IndexAny(val, "+.*") == 0
+	name := strings.TrimLeft(val, "+.*")
+	net := entryPrefix(val)
+	return func(line string) (bool, bool) {
+		k, x, err := ctl.ParseEntry(line)
+		if err != nil || k != kind {
+			return false, false
+		}
+		switch kind {
+		case ctl.EntryName:
+			y := strings.TrimLeft(x, "+.*")
+			wide := strings.IndexAny(x, "+.*") == 0
+			in := y == name && (whole || !wide) || whole && strings.HasSuffix(y, "."+name)
+			return in || ctl.MatchDomainRule(x, name), in
+		case ctl.EntryIP:
+			n := entryPrefix(x)
+			if !net.IsValid() || !n.IsValid() {
+				return false, false
+			}
+			return net.Overlaps(n), net.Bits() <= n.Bits() && net.Contains(n.Addr())
+		}
+		if !strings.EqualFold(filepath.Base(x), filepath.Base(val)) {
+			return false, false
+		}
+		path, pathV := strings.ContainsAny(x, `\/`), strings.ContainsAny(val, `\/`)
+		in := strings.EqualFold(x, val) || !pathV && path
+		return in || !path || !pathV, in
+	}
 }
 
 // inside: whether a preset's line routes nothing the line v does not route

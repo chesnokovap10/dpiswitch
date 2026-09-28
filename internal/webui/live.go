@@ -57,7 +57,7 @@ const liveKeep = 100000
 type liveSource interface {
 	Connections() (ctl.Live, error)
 	Close(id string) error
-	DialErrors(ctx context.Context, each func(ctl.DialErr)) error
+	DialErrors(ctx context.Context, opened func(), each func(ctl.DialErr)) error
 	Groups() (map[string]string, error)
 	Release()
 }
@@ -444,6 +444,11 @@ func (h *liveHub) watchFailures(ctx context.Context, src liveSource, retry time.
 	defer func() { src.Release() }()
 	var groups map[string]string
 	var groupsAt time.Time
+	// the run of the core a stream is of, asked when the core has taken it:
+	// the service names a run before its core listens. A line an old core's
+	// stream still holds once the new one runs keeps the old name.
+	var run string
+	opened := func() { run = h.runOf() }
 	each := func(e ctl.DialErr) {
 		// the groups' choices, asked again when a few seconds old: failures
 		// come in bursts, and a fallback group changes its mind rarely
@@ -453,10 +458,10 @@ func (h *liveHub) watchFailures(ctx context.Context, src liveSource, retry time.
 			}
 			groupsAt = time.Now()
 		}
-		h.failure(ctx, e, groupChain(e.Proxy, groups), time.Now())
+		h.failure(ctx, run, e, groupChain(e.Proxy, groups), time.Now())
 	}
 	for {
-		err := src.DialErrors(ctx, each)
+		err := src.DialErrors(ctx, opened, each)
 		if ctx.Err() != nil {
 			return
 		}
@@ -473,12 +478,13 @@ func (h *liveHub) watchFailures(ctx context.Context, src liveSource, retry time.
 	}
 }
 
-// failure takes one failed dial: a row of its own, or one more on the row of
-// the same failure -- a program retrying a blocked site fails dozens of
-// times a minute. The same is the same program, destination, route and
-// rule, failing for the same reason: a list or config changed between two
-// tries is another failure.
-func (h *liveHub) failure(ctx context.Context, e ctl.DialErr, chain []string, now time.Time) {
+// failure takes one failed dial, read from the log of the core's run named
+// run: a row of its own, or one more on the row of the same failure -- a
+// program retrying a blocked site fails dozens of times a minute. The same
+// is the same program, destination, route and rule, failing for the same
+// reason, in the same run: a list or config changed between two tries is
+// another failure.
+func (h *liveHub) failure(ctx context.Context, run string, e ctl.DialErr, chain []string, now time.Time) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if ctx.Err() != nil {
@@ -494,9 +500,6 @@ func (h *liveHub) failure(ctx context.Context, e ctl.DialErr, chain []string, no
 	key := strings.Join([]string{e.Network, route, rule, e.Process, dst, fmt.Sprint(e.Port), fmt.Sprint(e.Probe), why}, "|")
 	ms := now.UnixMilli()
 	h.seq++
-	// the run is asked here, not taken from the last call: the new core's
-	// log may be read before its connections are
-	run := h.runOf()
 	// a failure of another run is not counted on: the new core's log may
 	// tell one before the loop sees the core anew. Where the service names no
 	// runs, one from before the core was seen gone is another run's.

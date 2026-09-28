@@ -109,6 +109,8 @@ func TestMatchDomainRule(t *testing.T) {
 		{".example.com", "a.example.com", true},
 		{"*.example.com", "a.example.com", true},
 		{"*.example.com", "a.b.example.com", false},
+		{"*.example.com", "example.com", false}, // the domain itself is no name under it
+		{"*.example.com", "badexample.com", false},
 		{"Example.COM", "example.com", true},
 		{"example.com", "", false},
 	} {

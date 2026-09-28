@@ -192,7 +192,7 @@ func TestLiveNewRun(t *testing.T) {
 		return ctl.LiveConn{ID: id, Host: id + ".example", Port: 443, Network: "tcp", Chains: []string{"DIRECT"}, Start: t0}
 	}
 	fail := func(host string, at time.Time) {
-		h.failure(ctx, ctl.DialErr{Network: "tcp", Proxy: "DIRECT", Host: host, Port: 443, Err: "i/o timeout"}, []string{"DIRECT"}, at)
+		h.failure(ctx, "", ctl.DialErr{Network: "tcp", Proxy: "DIRECT", Host: host, Port: 443, Err: "i/o timeout"}, []string{"DIRECT"}, at)
 	}
 	h.update(ctl.Live{UploadTotal: 10, DownloadTotal: 10, Conns: []ctl.LiveConn{conn("a"), conn("b")}}, nil, t0)
 	h.update(ctl.Live{UploadTotal: 20, DownloadTotal: 20, Conns: []ctl.LiveConn{conn("a")}}, nil, t0.Add(time.Second))
@@ -247,7 +247,7 @@ func TestLiveNewRunByMarker(t *testing.T) {
 	direct := []string{"DIRECT"}
 	h.update(ctl.Live{UploadTotal: 100, DownloadTotal: 100, Conns: []ctl.LiveConn{conn("a")}}, nil, t0)
 	for i := range 5 {
-		h.failure(ctx, e, direct, t0.Add(time.Duration(i)*time.Second))
+		h.failure(ctx, run, e, direct, t0.Add(time.Duration(i)*time.Second))
 	}
 	h.update(ctl.Live{UploadTotal: 200, DownloadTotal: 200}, nil, t0.Add(5*time.Second))
 	if len(h.failed) != 1 || h.failed[0].N != 5 || len(h.closed) != 1 {
@@ -258,7 +258,12 @@ func TestLiveNewRunByMarker(t *testing.T) {
 	}
 	sess := h.sess
 	run = "200 2"
-	h.failure(ctx, e, direct, t0.Add(6*time.Second))
+	h.failure(ctx, run, e, direct, t0.Add(6*time.Second))
+	// the old core's stream still held a line, read once the new run is
+	// named: it is the old run's all the same
+	stale := e
+	stale.Host = "stale.example"
+	h.failure(ctx, "100 1", stale, direct, t0.Add(6500*time.Millisecond))
 	h.update(ctl.Live{UploadTotal: 500, DownloadTotal: 500, Conns: []ctl.LiveConn{conn("b")}}, nil, t0.Add(7*time.Second))
 	m := next(t, sub)
 	if m.Kind != "full" || m.Sess == sess || len(m.Closed) != 0 || len(m.Conns) != 1 {
@@ -268,7 +273,7 @@ func TestLiveNewRunByMarker(t *testing.T) {
 		t.Fatalf("the failure in the new run: %+v", m.Failed)
 	}
 	// counted on in its own run
-	h.failure(ctx, e, direct, t0.Add(8*time.Second))
+	h.failure(ctx, run, e, direct, t0.Add(8*time.Second))
 	if len(h.failed) != 1 || h.failed[0].N != 2 {
 		t.Fatalf("again in the new run: %+v", h.failed)
 	}
@@ -629,10 +634,10 @@ func TestLiveFailure(t *testing.T) {
 		Host: "login.live.com", Port: 443, Err: "interface not found"}
 	direct := []string{"DIRECT"}
 
-	h.failure(ctx, e, direct, t0)
-	h.failure(ctx, e, direct, t0.Add(10*time.Second))
+	h.failure(ctx, "", e, direct, t0)
+	h.failure(ctx, "", e, direct, t0.Add(10*time.Second))
 	// hours apart, the row still listed: the same one
-	h.failure(ctx, e, direct, t0.Add(5*time.Minute))
+	h.failure(ctx, "", e, direct, t0.Add(5*time.Minute))
 	if len(h.failed) != 1 {
 		t.Fatalf("%d rows for one failure", len(h.failed))
 	}
@@ -654,11 +659,11 @@ func TestLiveFailure(t *testing.T) {
 	at := t0.Add(6 * time.Minute)
 	other := e
 	other.Err = "dns resolve failed: couldn't find ip"
-	h.failure(ctx, other, direct, at)
+	h.failure(ctx, "", other, direct, at)
 	byB := e
 	byB.RulePayload = "force-direct"
-	h.failure(ctx, byB, direct, at)
-	h.failure(ctx, e, []string{"awg", "tunnel"}, at)
+	h.failure(ctx, "", byB, direct, at)
+	h.failure(ctx, "", e, []string{"awg", "tunnel"}, at)
 	if len(h.failed) != 4 || h.failed[1].Why != "dns" || h.failed[2].Rule != "RuleSet force-direct" ||
 		h.failed[3].Route != "awg" || h.failed[3].Chain != "tunnel → awg" {
 		t.Errorf("rows: %+v %+v %+v", h.failed[1], h.failed[2], h.failed[3])
@@ -667,7 +672,7 @@ func TestLiveFailure(t *testing.T) {
 	// read after the loop stopped: not taken in
 	done, cancel := context.WithCancel(ctx)
 	cancel()
-	h.failure(done, e, direct, t0.Add(7*time.Minute))
+	h.failure(done, "", e, direct, t0.Add(7*time.Minute))
 	if len(h.failed) != 4 || r.N != 3 {
 		t.Errorf("a failure taken in after the loop stopped: %d rows, n %d", len(h.failed), r.N)
 	}
@@ -684,9 +689,9 @@ func TestLiveFailedTrim(t *testing.T) {
 	a := ctl.DialErr{Network: "tcp", Proxy: "DIRECT", Host: "a.example", Port: 443, Err: "i/o timeout"}
 	b := a
 	b.Host = "b.example"
-	h.failure(ctx, a, []string{"DIRECT"}, t0)
-	h.failure(ctx, b, []string{"DIRECT"}, t0.Add(time.Minute))
-	h.failure(ctx, a, []string{"DIRECT"}, t0.Add(9*time.Minute))
+	h.failure(ctx, "", a, []string{"DIRECT"}, t0)
+	h.failure(ctx, "", b, []string{"DIRECT"}, t0.Add(time.Minute))
+	h.failure(ctx, "", a, []string{"DIRECT"}, t0.Add(9*time.Minute))
 	if h.failed[0].Host != "b.example" || h.failed[1].Host != "a.example" || h.failed[1].Seq <= h.failed[0].Seq {
 		t.Fatalf("not in the order they last failed: %+v, %+v", h.failed[0], h.failed[1])
 	}
@@ -702,7 +707,7 @@ func TestLiveFailedTrim(t *testing.T) {
 	if len(h.failed) != liveKeep || h.failed[0].Host != "a.example" {
 		t.Fatalf("after the cut: %d rows, the first %s", len(h.failed), h.failed[0].Host)
 	}
-	h.failure(ctx, b, []string{"DIRECT"}, t0.Add(49*time.Hour))
+	h.failure(ctx, "", b, []string{"DIRECT"}, t0.Add(49*time.Hour))
 	if r := h.failed[len(h.failed)-1]; r.Host != "b.example" || r.N != 1 {
 		t.Errorf("b again: %+v", r)
 	}
@@ -731,8 +736,8 @@ func TestLiveClear(t *testing.T) {
 	ctx := context.Background()
 	t0 := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
 	e := ctl.DialErr{Network: "tcp", Proxy: "DIRECT", Host: "a.example", Port: 443, Err: "i/o timeout"}
-	h.failure(ctx, e, []string{"DIRECT"}, t0)
-	h.failure(ctx, e, []string{"DIRECT"}, t0.Add(10*time.Second))
+	h.failure(ctx, "", e, []string{"DIRECT"}, t0)
+	h.failure(ctx, "", e, []string{"DIRECT"}, t0.Add(10*time.Second))
 	h.closed = []*liveRow{{ID: "x", End: t0.UnixMilli()}}
 	first, sess := h.failed[0].ID, h.sess
 	sub := watch(h)
@@ -744,7 +749,7 @@ func TestLiveClear(t *testing.T) {
 	if m := next(t, sub); m.Kind != "full" || m.Part || m.Sess == sess || len(m.Closed)+len(m.Failed) != 0 {
 		t.Errorf("the pages after clear: %+v", m)
 	}
-	h.failure(ctx, e, []string{"DIRECT"}, t0.Add(20*time.Second))
+	h.failure(ctx, "", e, []string{"DIRECT"}, t0.Add(20*time.Second))
 	if r := h.failed[0]; r.N != 1 || r.ID == first || r.Start != t0.Add(20*time.Second).UnixMilli() {
 		t.Errorf("after clear: %+v", r)
 	}

@@ -105,6 +105,105 @@ func TestLiveAddPreset(t *testing.T) {
 	}
 }
 
+// A line sent to a list goes out of the lists that would route it before
+// that one -- by a wider line as well: "+.example.com" in Always via tunnel
+// kept api.example.com, sent direct, in the tunnel; "+.example.com" in
+// Forbidden kept it refused; 10.0.0.0/8 kept 10.20.30.40. A list after it
+// keeps a wider line -- it routes other names, and the line sent routes
+// before it -- and loses the narrower ones.
+func TestLiveAddOverlap(t *testing.T) {
+	s, _ := testServer(t)
+	write := func(name string, lines ...string) {
+		t.Helper()
+		if err := writeEntries(name, lines); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list := func(name string) string { return strings.Join(readEntries(name), ",") }
+	add := func(to, entry string) liveAnswer {
+		t.Helper()
+		return liveAct(t, s, "/act/liveadd", url.Values{"to": {to}, "entry": {entry}}, nil)
+	}
+
+	write(paths.TunnelList, "+.example.com", "other.example")
+	write(paths.BlockList, "+.example.com")
+	a := add("direct", "api.example.com")
+	if !a.OK || list(paths.TunnelList) != "other.example" || list(paths.BlockList) != "" || list(paths.DirectList) != "api.example.com" {
+		t.Fatalf("a wider line before: %+v; tunnel %q, forbidden %q, direct %q", a,
+			list(paths.TunnelList), list(paths.BlockList), list(paths.DirectList))
+	}
+	if !strings.Contains(a.Msg, "«Always via tunnel»: +.example.com") || !strings.Contains(a.Msg, "«Forbidden»: +.example.com") {
+		t.Fatalf("what was taken out is not said: %s", a.Msg)
+	}
+
+	write(paths.TunnelList, "10.0.0.0/8", "192.168.1.0/24")
+	if a = add("direct", "10.20.30.40"); !a.OK || list(paths.TunnelList) != "192.168.1.0/24" {
+		t.Fatalf("a network holding the address: %+v, tunnel %q", a, list(paths.TunnelList))
+	}
+
+	// a list after: its wider line stays, a narrower one goes
+	write(paths.DirectList, "+.example.org", "a.api.example.org")
+	write(paths.TunnelList)
+	if a = add("tunnel", "+.api.example.org"); !a.OK || list(paths.DirectList) != "+.example.org" {
+		t.Fatalf("a list after: %+v, direct %q", a, list(paths.DirectList))
+	}
+
+	// programs: the direct ones stand before the tunnel's; by its name a
+	// program is every copy, by its path that copy
+	write(paths.DirectList, `C:\Apps\chrome.exe`, `D:\Other\game.exe`)
+	write(paths.TunnelList)
+	if a = add("tunnel", "chrome.exe"); !a.OK || list(paths.DirectList) != `D:\Other\game.exe` {
+		t.Fatalf("a copy of the program: %+v, direct %q", a, list(paths.DirectList))
+	}
+	write(paths.BlockList, "game.exe")
+	if a = add("direct", `C:\Games\game.exe`); !a.OK || list(paths.BlockList) != "" {
+		t.Fatalf("every copy forbidden: %+v, forbidden %q", a, list(paths.BlockList))
+	}
+	// a program's other copy routes other connections
+	write(paths.BlockList, `E:\x\game.exe`)
+	if a = add("direct", `C:\Games\game.exe`); list(paths.BlockList) != `E:\x\game.exe` {
+		t.Fatalf("another copy: %+v, forbidden %q", a, list(paths.BlockList))
+	}
+	// a site's line leaves a program's alone, and the other way round
+	write(paths.TunnelList, "chrome.exe", "+.example.net")
+	if add("direct", "+.example.net"); list(paths.TunnelList) != "chrome.exe" {
+		t.Fatalf("another kind: tunnel %q", list(paths.TunnelList))
+	}
+}
+
+func TestLiveOverlap(t *testing.T) {
+	for _, c := range []struct {
+		v, line  string
+		over, in bool
+	}{
+		{"api.example.com", "+.example.com", true, false},
+		{"api.example.com", "api.example.com", true, true},
+		{"api.example.com", "+.api.example.com", true, false},
+		{"api.example.com", "*.example.com", true, false},
+		{"api.example.com", "example.com", false, false},
+		{"example.com", ".example.com", false, false},
+		{"example.com", "*.example.com", false, false},
+		{"+.example.com", "a.b.example.com", true, true},
+		{"+.example.com", "example.com", true, true},
+		{"+.example.com", "*.example.com", true, true},
+		{"+.example.com", "+.com", true, false},
+		{"+.example.com", "badexample.com", false, false},
+		{"10.20.30.40", "10.0.0.0/8", true, false},
+		{"10.0.0.0/8", "10.20.30.40", true, true},
+		{"10.0.0.0/8", "11.0.0.0/8", false, false},
+		{"2001:db8::1", "2001:db8::/32", true, false},
+		{"chrome.exe", "Chrome.EXE", true, true},
+		{"chrome.exe", `C:\a\chrome.exe`, true, true},
+		{`C:\a\chrome.exe`, "chrome.exe", true, false},
+		{`C:\a\chrome.exe`, `D:\b\chrome.exe`, false, false},
+		{"example.com", "93.184.216.34", false, false},
+	} {
+		if over, in := liveOverlap(c.v)(c.line); over != c.over || in != c.in {
+			t.Errorf("%s vs %s: over %v in %v, want %v %v", c.v, c.line, over, in, c.over, c.in)
+		}
+	}
+}
+
 // The presets switched on stand above "Always via tunnel" and a direct site
 // or address: the same rule is taken out of them, and one that takes it by a
 // wider line is said. A preset switched off, and a program sent direct --

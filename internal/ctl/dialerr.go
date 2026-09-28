@@ -195,7 +195,9 @@ func (l *LiveClient) Groups() (map[string]string, error) {
 
 // DialErrors reads the core's log as it comes and hands on the failed
 // dials, until ctx ends or the core closes the stream -- it restarted.
-func (l *LiveClient) DialErrors(ctx context.Context, each func(DialErr)) error {
+// opened is called once the core has taken the stream, before its first
+// line: the caller learns there which core the lines are of.
+func (l *LiveClient) DialErrors(ctx context.Context, opened func(), each func(DialErr)) error {
 	// info, not warning: a connection the forbidden list refused is only
 	// an info line, "using REJECT"
 	req, err := http.NewRequestWithContext(ctx, "GET", l.a.base+"/logs?level=info", nil)
@@ -217,6 +219,7 @@ func (l *LiveClient) DialErrors(ctx context.Context, each func(DialErr)) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("GET /logs: %s", resp.Status)
 	}
+	opened()
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(nil, 1<<20)
 	for sc.Scan() {

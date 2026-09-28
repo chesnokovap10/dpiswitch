@@ -165,8 +165,12 @@ follows the rules as they are now.</li>
 anywhere else lets it go.</li>
 <li><b>A row right-clicked</b> opens a menu. On top, what to send: the whole domain (<code>+.example.com</code>),
 the name alone, the address or the program; then where: <b>Direct</b>, <b>Via the tunnel</b>, <b>Via the
-second tunnel</b> (its own list), <b>To a preset</b>, <b>Forbid</b>. It goes to that list and out of the
-others, which would route it otherwise, and the open connections it moves are moved. The presets switched
+second tunnel</b> (its own list), <b>To a preset</b>, <b>Forbid</b>. It goes to that list, and the open
+connections it moves are moved. A list whose rules come first loses every line routing it, a wider one too
+(<code>+.example.com</code> for api.example.com, <code>10.0.0.0/8</code> for an address in it), and the answer
+names what went; a list whose rules come after loses the same line and the narrower ones only. The order:
+Forbidden, the programs sent direct, the second tunnel, Always via tunnel, the sites and addresses sent
+direct. The presets switched
 on stand above "Always via tunnel" and a direct site or address: <b>Via the tunnel</b> and <b>Direct</b> take
 the same line out of them, and the names under a whole domain; a preset that takes it by a wider line is
 named, and routes it while it is on. <b>File location</b>
