@@ -59,6 +59,7 @@
 - [DNS](#dns)
 - [IPv6](#ipv6)
 - [Второй туннель](#второй-туннель)
+- [Live](#live)
 - [Если сайт не открывается](#если-сайт-не-открывается)
 - [Права и файлы](#права-и-файлы)
 - [Команды](#команды)
@@ -102,12 +103,12 @@
 |---|---|
 | **Обзор** | Сколько сайтов идёт напрямую, заблокировано, медленнее, не проверено; состояние обоих туннелей, замена `.conf`; последние события |
 | **Вердикты** | Все вердикты по вкладкам «Напрямую», «Заблокированы», «Медленнее», «Не проверено», фильтр по имени, «Сбросить все вердикты…» |
-| **Списки маршрутов** | «Всегда напрямую», «Всегда через туннель», «Программы в обход туннеля» |
+| **Списки маршрутов** | «Всегда напрямую», «Всегда через туннель», «Запрещено»: сайты, адреса и программы в каждом |
 | **Второй туннель** | Подключение awg2, пресеты (YouTube, Telegram, ИИ-сервисы, Instagram/Facebook/X; их можно изменить, удалить и добавить свои) и свои сайты |
 | **Настройки** | Детектор, сроки, IPv6, DNS; каждое изменение применяется сразу |
 | **Логи** | Лог контроллера и службы, ядра, трея и интерфейса |
 | **Справка** | То, что описано ниже; ссылки из неё ведут прямо к нужному полю, и оно подсвечивается |
-| **Live** | Соединения ядра раз в секунду: программа, хост, IP, порт, тип (TLS, QUIC, HTTP…), маршрут, скорость и объём в обе стороны; открытые, простаивающие, закрытые и неудавшиеся (с причиной: тайм-аут, отказ, DNS…), цвет строки — маршрут. Закрытые и ошибки хранятся весь запуск ядра. Щелчок закрепляет строку, правый щелчок — меню: напрямую, в туннель, во второй туннель, в пресет, запретить, расположение файла |
+| **Live** | Соединения ядра раз в секунду — открытые, закрытые, ошибки и запрещённые попытки за весь запуск ядра; щелчок закрепляет строку, правый щелчок отправляет её сайт, адрес или программу в нужный список. Подробнее — в разделе [Live](#live) |
 
 В шапке — состояние службы и туннелей, переключатель авто-переключения и кнопка «Старт»/«Стоп».
 Внизу боковой панели — установка и удаление службы, автозапуск трея и выбор языка (English / Русский).
@@ -253,6 +254,56 @@ Claude, Gemini, Grok, Copilot, DeepL и др.), Instagram, Facebook, X и ваш
 изменённые теряют ваши правки, ваши собственные пресеты остаются. Если своих пресетов нет, программа
 снова следует своим пресетам, включая обновлённые списки новых версий.
 
+### Live
+
+Соединения, которые держит ядро, обновляются раз в секунду: программа, хост, адрес, порт, тип, маршрут,
+скорость и объём в обе стороны. Цвет строки — маршрут: зелёный — напрямую, голубой — первый туннель,
+сиреневый — второй, серый — проверки детектора. Наведите на маршрут, чтобы увидеть группу и правило,
+которое его выбрало. Тип (TLS, QUIC, HTTP) определяется по порту, и метка у него пунктирная; если ядро
+прочитало имя сайта из самого трафика, протокол подтверждён, и метка сплошная.
+
+- **Вкладки.** «Открытые», «Закрытые», «Ошибки» (ядро не смогло соединиться: тайм-аут, отказ, сброс, имя
+  не найдено…), «Запрещено» (попытки, которые отклонил список «Запрещено») и «Все». Та же ошибка той же
+  программы к тому же адресу тем же маршрутом, по тому же правилу и по той же причине — не новая строка,
+  а «×N» на прежней. Фильтр по хосту,
+  программе и адресу, по маршруту и галка «Скрыть проверки детектора».
+- **История.** Программа опрашивает ядро раз в секунду с запуска трея, открыта страница или нет. Закрытые
+  соединения и ошибки хранятся весь запуск ядра, сколько бы времени ни прошло, — последние 100 000 каждого
+  вида. Когда ядро запускается заново, история начинается сначала: служба помечает каждый запуск ядра, так
+  что перезапуск виден, даже если он случился между двумя опросами. «Очистить» убирает закрытые и ошибки на
+  всех открытых страницах. История живёт в памяти трея и при его перезапуске собирается заново. Соединение,
+  которое открылось и закрылось быстрее секунды, может не попасть в таблицу.
+- **Пауза** останавливает таблицу, а не сбор: закрытое и не удавшееся за это время появится, когда вы
+  продолжите. Страница в фоне ничего не получает, а вернувшись, берёт только пропущенное.
+- **Щелчок по строке** выделяет её и закрепляет на месте: при сортировке по скорости остальные строки
+  двигаются вокруг неё, а закрывшееся соединение остаётся на своём месте, уже закрытым. Щелчок в любом
+  другом месте, смена вкладки, фильтра или сортировки снимает выделение. **✕** в строке закрывает
+  соединение в ядре: программа переподключится, и новое соединение пойдёт по текущим правилам.
+- **Правый щелчок по строке** открывает меню. Сверху — что отправить: весь домен (`+.example.com`),
+  только это имя, адрес или программу. Ниже — куда: **Напрямую**, **В туннель**, **Во второй туннель**
+  (его свой список), **В пресет** (выключенные пресеты приглушены: пока пресет выключен, он ничего не
+  направляет), **Запретить**. **Расположение файла** открывает папку программы с выделенным файлом.
+
+Строка из меню попадает в выбранный список, а открытые соединения, которых это касается, сразу
+переносятся. Чтобы она действительно пошла выбранным путём, меню убирает её оттуда, где правила
+сработали бы раньше. Правила ядра проверяются в таком порядке:
+
+1. «Запрещено»;
+2. программы из «Всегда напрямую»;
+3. второй туннель: включённые пресеты, затем его свой список;
+4. «Всегда через туннель»;
+5. сайты и адреса из «Всегда напрямую»;
+6. вердикты детектора.
+
+Из списков, чьи правила стоят **раньше** выбранного, убираются все строки, которые её направляют, в том
+числе более широкие: `+.example.com` для `api.example.com`, `10.0.0.0/8` для адреса из этой сети,
+программа по имени для её копии по пути. Широкая строка убирается целиком — исключение для одного имени в
+списке не записать, — поэтому в ответе перечислено, что и откуда убрано. Из списков, чьи правила стоят
+**позже**, убираются только та же строка и более узкие: более широкая там ничему не мешает. Из включённых
+пресетов «В туннель» и «Напрямую» (для сайта или адреса) убирают ту же строку и более узкие; если пресет
+забирает её более широкой строкой, меню его назовёт — пока он включён, он направляет её сам. Списки и
+пресеты меняются одной операцией: если какой-то файл не записался, уже записанные возвращаются как были.
+
 ### Если сайт не открывается
 
 1. Найдите его фильтром на странице **Вердикты**. Если он идёт напрямую, а не должен, добавьте его во
@@ -262,7 +313,8 @@ Claude, Gemini, Grok, Copilot, DeepL и др.), Instagram, Facebook, X и ваш
    начнёт заново.
 3. Если сайт должен видеть ваш настоящий адрес (банк, госуслуги), добавьте его во **Всегда напрямую**.
 4. В **логах** виден каждый вердикт с причиной.
-5. На странице **Live** видно, каким маршрутом и по какому правилу идут его соединения прямо сейчас.
+5. На странице **Live** видно, каким маршрутом и по какому правилу идут его соединения прямо сейчас, а
+   правым щелчком по строке сайт можно сразу отправить в нужный список.
 
 ### Права и файлы
 
@@ -272,8 +324,9 @@ Claude, Gemini, Grok, Copilot, DeepL и др.), Instagram, Facebook, X и ваш
 
 - `%ProgramFiles%\DPI Switch` — программа; служба и трей запускаются отсюда.
 - `%ProgramData%\dpiswitch` — данные службы: конфиг ядра, вердикты (`controller-state.json`), каждая
-  проба (`reports.jsonl`), логи (`logs\service.log`, `logs\mihomo.log`). Писать туда могут только
-  SYSTEM и администраторы, пользователи — читать.
+  проба (`reports.jsonl`), логи (`logs\service.log`, `logs\mihomo.log`), метка запуска ядра, по
+  которой Live узнаёт новый запуск (`core-run.txt`). Писать туда могут только SYSTEM и администраторы,
+  пользователи — читать.
 - `%ProgramData%\dpiswitch\user` — то, что вы меняете в интерфейсе: `.conf`, списки, настройки.
   Писать туда можете только вы; служба это читает и никогда туда не пишет. Файлы с приватными
   ключами читаете только вы и служба.
@@ -371,6 +424,7 @@ your real ISP. Everything else stays in the tunnel.
 - [DNS](#dns-1)
 - [IPv6](#ipv6-1)
 - [The second tunnel](#the-second-tunnel)
+- [Live](#live-1)
 - [When a site does not open](#when-a-site-does-not-open)
 - [Permissions and files](#permissions-and-files)
 - [Commands](#commands)
@@ -419,7 +473,7 @@ their own port and access key).
 | **Settings** | Detector, terms, IPv6, DNS; every change applies at once |
 | **Logs** | The controller and service log, the core's, the tray and UI's |
 | **Help** | What is described below; its links lead straight to the field meant, which blinks |
-| **Live** | The core's connections, every second: the program, host, IP, port, type (TLS, QUIC, HTTP…), route, speed and bytes both ways; open, idle, closed and failed (with the reason: timed out, refused, DNS…), a row coloured by its route. The closed ones and the failures are kept for the core's whole run. A click pins a row, a right-click opens a menu: direct, via the tunnel, via the second tunnel, to a preset, forbid, file location |
+| **Live** | The core's connections every second — open, closed, failed and forbidden tries over the core's whole run; a click pins a row, a right-click sends its site, address or program to a list. More in [Live](#live-1) |
 
 The header shows the service and tunnels' state, the auto-switch toggle and Start/Stop. The bottom
 of the sidebar holds installing and removing the service, the tray's autostart and the language
@@ -581,6 +635,56 @@ as the program ships them. The deleted ones come back switched off, the edited o
 changes, and your own presets stay. With none of your own, the program follows its presets again,
 the updated lists of new versions included.
 
+### Live
+
+The connections the core holds, refreshed every second: the program, the host, the address, the port,
+the type, the route, the speed and the bytes both ways. A row's colour is its route: green direct, blue
+the first tunnel, violet the second, grey the detector's checks. Hover over a route for the group and
+the rule that chose it. The type (TLS, QUIC, HTTP) is told by the port, with a dashed badge; where the
+core read the site's name from the traffic itself the protocol is confirmed, and the badge is solid.
+
+- **Tabs.** Open, Closed, Failed (the core could not connect: timed out, refused, reset, name not
+  found…), Forbidden (the tries the Forbidden list refused) and All. The same failure of the same
+  program to the same address by the same route and rule, for the same reason, is no new row but "×N"
+  on the old one. A filter by
+  host, program and address, one by route, and "Hide the detector's checks".
+- **History.** The program asks the core every second from the tray's start, whether the page is open
+  or not. The closed connections and the failures are kept for the core's whole run, however old: the
+  last 100,000 of each. When the core starts anew the history starts over: the service names every run
+  of the core it starts, so a restart shows even between two calls. Clear removes the closed ones and
+  the failures on every page open. The history lives in the tray's memory and is gathered anew when the
+  tray restarts. A connection that opened and closed within a second may never show.
+- **Pause** stops the table, not the gathering: what closes and fails meanwhile is there when you
+  resume. A page in the background takes nothing, and coming back takes only what it missed.
+- **A row clicked** is picked and holds its place: sorted by speed, the others move around it, and a
+  connection that closes stays where it was, closed. A click anywhere else, or a change of tab, filter or
+  sort, lets it go. **✕** in a row closes the connection in the core: the program reconnects, and the
+  new connection follows the rules as they are now.
+- **A row right-clicked** opens a menu. On top, what to send: the whole domain (`+.example.com`), the
+  name alone, the address or the program. Then where: **Direct**, **Via the tunnel**, **Via the second
+  tunnel** (its own list), **To a preset** (the ones off are greyed: a preset switched off routes
+  nothing), **Forbid**. **File location** opens the program's folder with its file picked out.
+
+A line sent from the menu goes to the list chosen, and the open connections it moves are moved at once.
+For it to take that route, the menu takes it out of wherever a rule would route it first. The core's
+rules come in this order:
+
+1. Forbidden;
+2. the programs in Always direct;
+3. the second tunnel: its presets switched on, then its own list;
+4. Always via tunnel;
+5. the sites and addresses in Always direct;
+6. the detector's verdicts.
+
+A list whose rules come **before** the one chosen loses every line routing it, a wider one too:
+`+.example.com` for `api.example.com`, `10.0.0.0/8` for an address in it, a program by its name for a
+copy of it by its path. A wider line goes whole — a list cannot hold an exception for one name — so the
+answer names what went, and from where. A list whose rules come **after** it loses the same line and the
+narrower ones only: a wider line there is in nobody's way. Via the tunnel and Direct (a site or an
+address) take the same line and the narrower ones out of the presets switched on; a preset that takes it
+by a wider line is named, and routes it for as long as it is on. The lists and the presets change as
+one: a file failing to write puts back the ones written before it.
+
 ### When a site does not open
 
 1. Look it up on the **Verdicts** page with the filter. If it goes direct and should not, add it to
@@ -590,7 +694,8 @@ the updated lists of new versions included.
    detector starts over.
 3. If a site must see your real address (a bank, government services), add it to **Always direct**.
 4. The **logs** show every verdict with its reason.
-5. The **Live** page shows which route its connections take right now, and by which rule.
+5. The **Live** page shows which route its connections take right now, and by which rule; a
+   right-click on a row sends the site straight to the list it belongs in.
 
 ### Permissions and files
 
@@ -601,7 +706,8 @@ state.
 - `%ProgramFiles%\DPI Switch` — the program; the service and the tray run from here.
 - `%ProgramData%\dpiswitch` — the service's own data: the core's config, the verdicts
   (`controller-state.json`), every probe (`reports.jsonl`), the logs (`logs\service.log`,
-  `logs\mihomo.log`). Writable by SYSTEM and Administrators only, readable by users.
+  `logs\mihomo.log`), the name of the core's run Live tells a new run by (`core-run.txt`). Writable by
+  SYSTEM and Administrators only, readable by users.
 - `%ProgramData%\dpiswitch\user` — what you change in the UI: the `.conf` files, lists, settings.
   Writable by you alone; the service reads it and never writes there. Files holding private keys are
   readable by you and the service only.
