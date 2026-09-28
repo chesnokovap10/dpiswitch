@@ -34,6 +34,33 @@ func TestParseResolverIPv6(t *testing.T) {
 	}
 }
 
+func TestCanonicalResolver(t *testing.T) {
+	cases := map[string]string{
+		"https://84.252.75.74:8443":           "https://84.252.75.74:8443/dns-query",
+		" https://77.88.8.8 ":                 "https://77.88.8.8/dns-query",
+		"https://[2606:4700::1111]:443":       "https://[2606:4700::1111]:443/dns-query",
+		"https://2606:4700:4700::1111":        "https://2606:4700:4700::1111/dns-query",
+		"https://1.1.1.1?ecs=0":               "https://1.1.1.1/dns-query?ecs=0",
+		"https://1.1.1.1/":                    "https://1.1.1.1/",
+		"https://1.1.1.1/resolve":             "https://1.1.1.1/resolve",
+		"https://84.252.75.74:8443/dns-query": "https://84.252.75.74:8443/dns-query",
+		"tls://77.88.8.1":                     "tls://77.88.8.1",
+		"10.8.1.0":                            "10.8.1.0",
+		"ftp://x":                             "ftp://x",
+	}
+	for in, want := range cases {
+		if got := CanonicalResolver(in); got != want {
+			t.Errorf("%q: %q, want %q", in, got, want)
+		}
+		if r, err := ParseResolver(in); err == nil {
+			// the same server the test asks, now spelled out
+			if c, _ := ParseResolver(CanonicalResolver(in)); c.Path != r.Path || c.Host != r.Host || c.Port != r.Port {
+				t.Errorf("%q: canonical form parses to %+v, not %+v", in, c, r)
+			}
+		}
+	}
+}
+
 // A response carries both an A and an AAAA record for the same name; each
 // query type must pick out its own and ignore the other. Before this the
 // parser only knew type A, so an IPv6-only host looked like "no records".

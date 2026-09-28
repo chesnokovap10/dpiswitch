@@ -3,6 +3,7 @@ package ctl
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -121,5 +122,37 @@ func TestPatchSettingsKeepsOtherFields(t *testing.T) {
 	}
 	if LoadSettings(p).Attempts != 3 {
 		t.Fatal("a rejected save must leave the file as it was")
+	}
+}
+
+// A DoH address without a path is saved with the one the test asked: the
+// core asks "/" otherwise, and the server that passed the test answers 404.
+// A file written before this is read the same way.
+func TestDoHPathSaved(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "settings.json")
+	_, err := UpdateSettings(p, func(s *Settings) error {
+		s.DirectDNS = []string{"https://84.252.75.74:8443", "tls://77.88.8.1"}
+		s.TunnelDNS = []string{"https://1.1.1.1/dns-query"}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(p)
+	if !strings.Contains(string(b), `"https://84.252.75.74:8443/dns-query"`) {
+		t.Fatalf("path not written:\n%s", b)
+	}
+	got := LoadSettings(p)
+	if got.DirectDNS[1] != "tls://77.88.8.1" || got.TunnelDNS[0] != "https://1.1.1.1/dns-query" {
+		t.Fatalf("other entries changed: %v %v", got.DirectDNS, got.TunnelDNS)
+	}
+
+	old := `{"direct_dns":["https://77.88.8.8"],"tunnel_dns":["https://9.9.9.9:5053"]}`
+	if err := os.WriteFile(p, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got = LoadSettings(p)
+	if got.DirectDNS[0] != "https://77.88.8.8/dns-query" || got.TunnelDNS[0] != "https://9.9.9.9:5053/dns-query" {
+		t.Fatalf("old file not repaired: %v %v", got.DirectDNS, got.TunnelDNS)
 	}
 }

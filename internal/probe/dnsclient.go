@@ -84,6 +84,26 @@ func ParseResolver(s string) (Resolver, error) {
 	return r, nil
 }
 
+// CanonicalResolver writes the path ParseResolver assumes into the address
+// itself. The core takes a DoH address's path as given and asks "/" when
+// there is none: "https://IP:8443" passed the test here, which asked
+// /dns-query, and the core then got 404 from the same server.
+func CanonicalResolver(s string) string {
+	s = strings.TrimSpace(s)
+	r, err := ParseResolver(s)
+	if err != nil || r.Scheme != "https" {
+		return s
+	}
+	_, rest, _ := strings.Cut(s, "://")
+	if strings.Contains(rest, "/") {
+		return s
+	}
+	if i := strings.IndexByte(s, '?'); i >= 0 {
+		return s[:i] + "/dns-query" + s[i:]
+	}
+	return s + "/dns-query"
+}
+
 // Lookup: A records of a name via this resolver, over the dialer's path.
 // Plain udp:// is asked over UDP, through the listener's UDP ASSOCIATE, as
 // the core asks it: it used to go over TCP to the same server, and a network
