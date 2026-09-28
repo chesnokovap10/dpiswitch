@@ -45,6 +45,12 @@
   </form>
   <div class="actions">
     <button type="button" data-open="dlg-preset-new">{{.T "Add…"}}</button>
+    {{if .Data.Restorable}}
+    <form method="post" action="/act/presetrestore" data-swap="presets"
+      data-confirm="{{.T "Put the program's presets back as it ships them? The deleted ones come back switched off, the edited ones lose your changes. Your own presets stay as they are."}}">
+      <button data-busy="{{.T "Restoring…"}}">{{.T "Restore built-in presets…"}}</button>
+    </form>
+    {{end}}
     {{template "msg" .}}
     {{/* the rows' delete buttons send this form: one cannot sit inside another */}}
     <form id="presetdel" method="post" action="/act/presetdel" data-swap="presets"></form>

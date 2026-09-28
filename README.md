@@ -248,6 +248,11 @@ Claude, Gemini, Grok, Copilot, DeepL и др.), Instagram, Facebook, X и ваш
 создаёт новый — он сразу включён. Всё это применяется так же сразу, без перезапуска ядра. Пока вы ничего
 не меняли, используются пресеты программы.
 
+Когда встроенный пресет удалён или изменён, появляется кнопка **Вернуть встроенные пресеты…**: она
+возвращает их в том виде, в каком их поставляет программа. Удалённые возвращаются выключенными,
+изменённые теряют ваши правки, ваши собственные пресеты остаются. Если своих пресетов нет, программа
+снова следует своим пресетам, включая обновлённые списки новых версий.
+
 ### Если сайт не открывается
 
 1. Найдите его фильтром на странице **Вердикты**. Если он идёт напрямую, а не должен, добавьте его во
@@ -570,6 +575,11 @@ The presets are yours to change: **Edit** opens a preset's name, description and
 (sites, addresses and programs, as in the lists; `#` starts a comment), **Delete** removes it,
 **Add…** makes a new one, switched on at once. These apply at once too, with no core restart. Until
 you change any, the program's own presets are used.
+
+Once a built-in preset is deleted or edited, **Restore built-in presets…** appears: it puts them back
+as the program ships them. The deleted ones come back switched off, the edited ones lose your
+changes, and your own presets stay. With none of your own, the program follows its presets again,
+the updated lists of new versions included.
 
 ### When a site does not open
 

@@ -113,3 +113,57 @@ func TestPresetEdit(t *testing.T) {
 		}
 	}
 }
+
+// The button to put the shipped presets back shows only when one is deleted
+// or edited. A deleted one comes back switched off, an edited one switched
+// on stays on with the shipped lines, and the user's own preset stays.
+func TestPresetRestore(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	post := func(path string, form url.Values) string {
+		t.Helper()
+		w := do(t, h, "POST", path, form, nil)
+		if w.Code != 200 {
+			t.Fatalf("%s: %d %s", path, w.Code, w.Body.String())
+		}
+		return w.Body.String()
+	}
+	page := func() string { return do(t, h, "GET", "/frag/awg2/presets", nil, nil).Body.String() }
+	if strings.Contains(page(), "/act/presetrestore") {
+		t.Fatal("nothing to restore, yet the button shows")
+	}
+
+	post("/act/preset", url.Values{"field": {"youtube"}, "value": {"1"}})
+	post("/act/preset", url.Values{"field": {"ai"}, "value": {"1"}})
+	post("/act/presetsave", url.Values{"id": {"youtube"}, "title": {"YouTube"}, "lines": {"edited.example"}})
+	post("/act/presetdel", url.Values{"id": {"ai"}})
+	post("/act/presetsave", url.Values{"id": {""}, "title": {"Mine"}, "lines": {"my.example"}})
+	if !strings.Contains(page(), "/act/presetrestore") {
+		t.Fatal("a shipped preset edited and one deleted, yet no button")
+	}
+
+	body := post("/act/presetrestore", nil)
+	if !strings.Contains(body, "msg ok") || strings.Contains(body, "/act/presetrestore") {
+		t.Fatalf("not restored: %s", body)
+	}
+	all := presets.Load()
+	yt, _ := findPreset(all, "youtube")
+	shipped, _ := presets.Shipped("youtube")
+	if !slices.Equal(yt.Lines, shipped.Lines) {
+		t.Fatalf("youtube not as shipped: %v", yt.Lines)
+	}
+	if _, ok := findPreset(all, "ai"); !ok {
+		t.Fatal("the deleted preset did not come back")
+	}
+	if all[len(all)-1].Title != "Mine" {
+		t.Fatalf("the user's own preset lost: %+v", all[len(all)-1])
+	}
+	on := ctl.LoadSettings(paths.Settings()).Awg2Presets
+	if !slices.Contains(on, "youtube") || slices.Contains(on, "ai") || !slices.Contains(on, all[len(all)-1].ID) {
+		t.Fatalf("switched on after the restore: %v", on)
+	}
+	ctl.SyncUserFiles()
+	if !ctl.PresetWritten(yt, true) {
+		t.Fatal("the service did not write youtube as shipped")
+	}
+}

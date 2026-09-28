@@ -186,7 +186,11 @@ var ru = map[string]string{
 	"This preset is no longer there: it was deleted in another window": "Этого пресета больше нет: его удалили в другом окне",
 	"Preset added and switched on":                                     "Пресет добавлен и включён",
 	"Preset deleted":                                                   "Пресет удалён",
-	"The presets are too large: 4 MB at most, all of them together":    "Пресеты слишком велики: не больше 4 МБ на все вместе",
+	"Restore built-in presets…":                                        "Вернуть встроенные пресеты…",
+	"Restoring…":                                                       "Восстановление…",
+	"Put the program's presets back as it ships them? The deleted ones come back switched off, the edited ones lose your changes. Your own presets stay as they are.": "Вернуть пресеты программы в исходный вид? Удалённые вернутся выключенными, изменённые потеряют ваши правки. Ваши собственные пресеты останутся как есть.",
+	"Built-in presets restored":                                     "Встроенные пресеты возвращены",
+	"The presets are too large: 4 MB at most, all of them together": "Пресеты слишком велики: не больше 4 МБ на все вместе",
 
 	// settings
 	"Put every setting on this page back to its default? DNS included. Presets and lists are not touched.": "Вернуть все настройки этой страницы к значениям по умолчанию? Включая DNS. Пресеты и списки не затрагиваются.",

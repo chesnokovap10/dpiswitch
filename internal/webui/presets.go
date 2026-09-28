@@ -219,3 +219,67 @@ func (s *Server) actPresetDel(w http.ResponseWriter, r *http.Request) {
 	}
 	s.part(w, r, "awg2", "presets", ok, msg)
 }
+
+// actPresetRestore puts the shipped presets back as the program ships them:
+// the deleted ones come back switched off, the edited ones lose the edits,
+// the user's own stay as they are. What an edited preset switched on routes
+// anew is moved.
+func (s *Server) actPresetRestore(w http.ResponseWriter, r *http.Request) {
+	var was []presets.Preset
+	err := paths.UserReady()
+	if err == nil {
+		was, err = presets.Restore()
+	}
+	// the deleted ones come back switched off, as the program ships them: a
+	// settings file edited by hand may still name one
+	var back []string
+	for _, p := range presets.Builtin() {
+		if _, ok := findPreset(was, p.ID); !ok {
+			back = append(back, p.ID)
+		}
+	}
+	var on []string
+	if err == nil {
+		on = ctl.LoadSettings(paths.Settings()).Awg2Presets
+		if slices.ContainsFunc(on, func(id string) bool { return slices.Contains(back, id) }) {
+			var set ctl.Settings
+			set, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
+				set.Awg2Presets = slices.DeleteFunc(set.Awg2Presets, func(id string) bool { return slices.Contains(back, id) })
+				return nil
+			})
+			on = set.Awg2Presets
+		}
+	}
+	// an edited preset switched on routes as shipped now
+	var moved []string
+	var now []presets.Preset
+	if err == nil {
+		for _, p := range presets.Builtin() {
+			old, ok := findPreset(was, p.ID)
+			if !ok || !slices.Contains(on, p.ID) {
+				continue
+			}
+			if c := changed(ctl.PresetRules(old), ctl.PresetRules(p)); len(c) > 0 {
+				moved = append(moved, c...)
+				now = append(now, p)
+			}
+		}
+	}
+	n := 0
+	var cerr error
+	if len(now) > 0 {
+		n, cerr = closeMoved([]string{ctl.PresetsProvider}, rulesMatch(moved), func() bool {
+			for _, p := range now {
+				if !ctl.PresetWritten(p, true) {
+					return false
+				}
+			}
+			return true
+		})
+	}
+	ok, msg := saved(r, err, n, cerr)
+	if ok && n == 0 {
+		ok, msg = done(r, nil, "Built-in presets restored")
+	}
+	s.part(w, r, "awg2", "presets", ok, msg)
+}

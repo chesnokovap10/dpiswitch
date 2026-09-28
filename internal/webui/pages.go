@@ -188,6 +188,8 @@ type awg2 struct {
 	Online  []netprocs.Proc
 	// a preset's save refused: its dialog opens again on what was sent
 	Draft *presetDraft
+	// a shipped preset deleted or edited: there is something to put back
+	Restorable bool
 }
 
 func awg2Data() awg2 {
@@ -197,9 +199,11 @@ func awg2Data() awg2 {
 	}
 	d := awg2{Hosts: readEntries(paths.Awg2List)}
 	d.Online = onlineApps(d.Hosts)
-	for _, p := range presets.Load() {
+	all := presets.Load()
+	for _, p := range all {
 		d.Presets = append(d.Presets, preset{Preset: p, Rules: len(ctl.PresetRules(p)), On: on[p.ID]})
 	}
+	d.Restorable = presets.Restorable(all)
 	return d
 }
 

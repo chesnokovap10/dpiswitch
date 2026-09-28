@@ -12,9 +12,10 @@
 // The user edits them, deletes them and adds their own on the second
 // tunnel's page. Until the first such change the shipped ones are used; from
 // then on the user's file holds the whole set, what is left of the shipped
-// ones included. The service turns the ones switched on into core rules, all
-// in one file (see ctl.SyncUserFiles): a preset added or deleted needs
-// neither a restart nor a config.yaml change.
+// ones included -- until the user puts the shipped ones back (see Restore).
+// The service turns the ones switched on into core rules, all in one file
+// (see ctl.SyncUserFiles): a preset added or deleted needs neither a
+// restart nor a config.yaml change.
 package presets
 
 import (
@@ -23,7 +24,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io/fs"
+	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
@@ -89,6 +93,23 @@ func Shipped(id string) (Preset, bool) {
 		}
 	}
 	return Preset{}, false
+}
+
+// Restorable: whether Restore would change ps -- a shipped preset is
+// deleted, or is not as the program ships it: edited, or shipped anew by a
+// later version
+func Restorable(ps []Preset) bool {
+	have := map[string]Preset{}
+	for _, p := range ps {
+		have[p.ID] = p
+	}
+	for _, b := range builtin() {
+		p, ok := have[b.ID]
+		if !ok || p.Title != b.Title || p.Note != b.Note || !slices.Equal(p.Lines, b.Lines) {
+			return true
+		}
+	}
+	return false
 }
 
 // clone: callers edit what they get; the shipped set is shared
@@ -180,6 +201,35 @@ func Update(change func([]Preset) ([]Preset, error)) error {
 	if err != nil {
 		return err
 	}
+	return write(ps)
+}
+
+// Restore puts the shipped presets back as the program ships them -- the
+// deleted ones too, in their places -- and keeps the user's own after them.
+// It returns the presets as they were. With none of the user's own the
+// user's file goes: the program's presets are followed again, the lists of
+// a later version included.
+func Restore() ([]Preset, error) {
+	mu.Lock()
+	defer mu.Unlock()
+	was := Load()
+	ps := Builtin()
+	for _, p := range was {
+		if _, ok := Shipped(p.ID); !ok {
+			ps = append(ps, p)
+		}
+	}
+	if len(ps) > len(builtin()) {
+		return was, write(ps)
+	}
+	if err := os.Remove(paths.UserPresets()); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return was, err
+	}
+	return was, nil
+}
+
+// write: the whole set into the user's file; mu held
+func write(ps []Preset) error {
 	seen := map[string]bool{}
 	for _, p := range ps {
 		if !ValidID(p.ID) || seen[p.ID] {
