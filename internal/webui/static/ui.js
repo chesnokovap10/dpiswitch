@@ -206,8 +206,9 @@ async function poll(el) {
     const html = await r.text();
     if (!current()) return;
     const top = el.scrollTop;
+    const bottom = top + el.clientHeight >= el.scrollHeight - 4;
     el.innerHTML = html;
-    el.scrollTop = el.dataset.follow !== undefined && followOn() ? el.scrollHeight : top;
+    el.scrollTop = el.dataset.follow !== undefined && follows(bottom) ? el.scrollHeight : top;
   } catch (e) {
     // the body cut off by the timeout: the next period tries again
   } finally {
@@ -242,18 +243,24 @@ document.addEventListener('input', e => {
   }, 200);
 });
 
-// "follow" on the log page: kept per browser, it is a viewing preference
-function followOn() {
+// A part with data-follow shows its newest lines, at the bottom: on the log
+// page as its "follow" switch says, kept per browser -- a viewing
+// preference; elsewhere while it is scrolled to the bottom. With no switch
+// it never followed: the overview's events showed their oldest lines, the
+// newest hidden below.
+function follows(atBottom) {
   const c = document.getElementById('follow');
-  return c ? c.checked : false;
+  return c ? c.checked : atBottom;
 }
 (function () {
   const c = document.getElementById('follow');
-  if (!c) return;
-  try { c.checked = localStorage.getItem('follow') !== '0'; } catch (e) {}
-  c.addEventListener('change', () => { try { localStorage.setItem('follow', c.checked ? '1' : '0'); } catch (e) {} });
-  const log = document.getElementById('log');
-  if (log) log.scrollTop = log.scrollHeight;
+  if (c) {
+    try { c.checked = localStorage.getItem('follow') !== '0'; } catch (e) {}
+    c.addEventListener('change', () => { try { localStorage.setItem('follow', c.checked ? '1' : '0'); } catch (e) {} });
+  }
+  for (const el of document.querySelectorAll('[data-follow]')) {
+    if (follows(true)) el.scrollTop = el.scrollHeight;
+  }
 })();
 
 // The page scrolls in <main>, not the window, and "back" restores only the

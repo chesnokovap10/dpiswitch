@@ -21,14 +21,19 @@ import (
 
 type overview struct {
 	Events []string
-	DNS    string // the first tunnel's DNS, from its .conf
+	// the first tunnel's DNS: the settings' own, else the .conf's -- the
+	// .conf's was shown whatever the settings said
+	DNS    string
+	DNSSet bool // from the settings
 }
 
 var logDate = regexp.MustCompile(`^\d{4}/\d\d/\d\d `)
 
 func overviewData(v *view) overview {
 	o := overview{}
-	if c, err := awgconf.ParseFile(paths.SourceConf()); err == nil {
+	if set := ctl.LoadSettings(paths.Settings()); len(set.TunnelDNS) > 0 {
+		o.DNS, o.DNSSet = strings.Join(set.TunnelDNS, ", "), true
+	} else if c, err := awgconf.ParseFile(paths.SourceConf()); err == nil {
 		o.DNS = strings.Join(c.DNS(), ", ")
 	}
 	if t, err := tail(paths.ServiceLog(), 16); err == nil && t != "" {

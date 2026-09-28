@@ -455,6 +455,64 @@ func TestResetStopped(t *testing.T) {
 	}
 }
 
+// The overview: a config counts as loaded when the user's .conf is there,
+// whatever the service has built; the tunnel's DNS is the one in use; a
+// tunnel's state says what the service is doing; the mode that sets the
+// verdicts aside is said under their counts.
+func TestOverview(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	if st := collectStatus(); st.HasConfig {
+		t.Fatal("a config loaded with none there")
+	}
+	conf := "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.8.1.3/32\nDNS = 10.8.1.1\n" +
+		"[Peer]\nPublicKey = cA==\nEndpoint = vpn.example.org:51820\n"
+	if err := os.WriteFile(paths.SourceConf(), []byte(conf), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(paths.Config()); err == nil {
+		t.Fatal("setup: the service's config.yaml is there")
+	}
+	if st := collectStatus(); !st.HasConfig || st.Endpoint != "vpn.example.org:51820" {
+		t.Fatalf("the .conf loaded, the service not started: has config %v, endpoint %q", st.HasConfig, st.Endpoint)
+	}
+
+	base := s.statusFn()
+	base.HasConfig = true
+	with := func(f func(*status)) string {
+		st := base
+		f(&st)
+		s.statusFn = func() status { return st }
+		return do(t, h, "GET", "/overview", nil, nil).Body.String()
+	}
+	body := with(func(*status) {})
+	if strings.Contains(body, "Getting started") || !strings.Contains(body, "10.8.1.1") || strings.Contains(body, "from the settings") {
+		t.Fatalf("the .conf's DNS:\n%s", body)
+	}
+	set := ctl.DefaultSettings()
+	set.TunnelDNS = []string{"tls://9.9.9.9"}
+	if err := ctl.SaveSettings(paths.Settings(), set); err != nil {
+		t.Fatal(err)
+	}
+	if body := with(func(*status) {}); !strings.Contains(body, "tls://9.9.9.9") || strings.Contains(body, "10.8.1.1") ||
+		!strings.Contains(body, "from the settings") {
+		t.Fatalf("the settings' tunnel DNS is not the one shown:\n%s", body)
+	}
+	for want, f := range map[string]func(*status){
+		"service not installed": func(st *status) { st.Installed, st.ServiceRun = false, false },
+		`pill warn">starting…`:  func(st *status) { st.ServiceRun, st.Pending, st.ServiceText = false, true, "starting" },
+		"service stopped":       func(st *status) { st.ServiceRun = false },
+		"Observe only is on":    func(st *status) { st.Mode = ctl.ModeObserve },
+	} {
+		if body := with(f); !strings.Contains(body, want) {
+			t.Errorf("no %q:\n%s", want, body)
+		}
+	}
+	if body := with(func(*status) {}); strings.Contains(body, "is on: the verdicts are recorded") {
+		t.Error("a mode note with auto-switch on")
+	}
+}
+
 // A list takes sites, addresses and programs in one box, each written the
 // one way, once, sites first; the core gets each kind in a file of its own.
 func TestListSave(t *testing.T) {

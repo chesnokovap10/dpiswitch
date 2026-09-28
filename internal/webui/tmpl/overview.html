@@ -28,6 +28,7 @@
     <a class="tile" href="/verdicts?cat=slow"><b>{{$s.Slower}}</b><span>{{.T "slower than tunnel"}}</span></a>
     <a class="tile" href="/verdicts?cat=unknown"><b>{{$s.Unverified}}</b><span>{{.T "could not verify"}}</span></a>
   </div>
+  {{- template "vnote" .}}
   <div class="cols2">
     <div class="box">
       <h3>{{.T "Main tunnel"}} · awg</h3>
@@ -35,7 +36,7 @@
       <div class="kv">
         <span>{{.T "State"}}</span><div>{{template "tunstate" (tun . $s.TunnelAlive $s.TunnelNote)}}</div>
         <span>Endpoint</span><div>{{$s.Endpoint}}</div>
-        <span>DNS</span><div>{{with .Data.DNS}}{{.}}{{else}}<span class="muted">—</span>{{end}}</div>
+        <span>DNS</span><div>{{with .Data.DNS}}{{.}}{{if $.Data.DNSSet}} <a class="muted" href="/settings#dns">({{$.T "from the settings"}})</a>{{end}}{{else}}<span class="muted">—</span>{{end}}</div>
         <span>{{.T "Carries"}}</span><div>{{.T "everything not sent direct or to awg2"}}</div>
       </div>
       <div class="actions"><button type="button" data-open="dlg-config">{{.T "Replace config…"}}</button></div>
@@ -47,7 +48,7 @@
       <div class="kv">
         <span>{{.T "State"}}</span><div>{{template "tunstate" (tun . $s.Awg2Alive $s.Awg2Note)}}</div>
         <span>Endpoint</span><div>{{$s.Endpoint2}}</div>
-        <span>{{.T "Carries"}}</span><div><a href="/awg2">{{.Tf "%d presets, %d custom sites" $s.Presets $s.Awg2Hosts}}</a></div>
+        <span>{{.T "Carries"}}</span><div><a href="/awg2">{{.Tf "%d presets, %d in your own list" $s.Presets $s.Awg2Hosts}}</a></div>
         <span>{{.T "If it is down"}}</span><div>{{.T "its sites go through awg"}}</div>
       </div>
       <div class="actions">

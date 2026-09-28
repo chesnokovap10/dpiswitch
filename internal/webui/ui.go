@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -352,9 +351,6 @@ func collectStatus() status {
 		Version:    version.Version,
 	}
 	st.PathOK = !st.Installed || winsvc.SameBuild()
-	if _, err := os.Stat(paths.Config()); err == nil {
-		st.HasConfig = true
-	}
 	if st.Installed {
 		if state, err := winsvc.State(); err == nil {
 			st.ServiceRun = state == svc.Running
@@ -362,11 +358,15 @@ func collectStatus() status {
 			st.ServiceText = winsvc.StateText(state)
 		}
 	}
-	if c, err := awgconf.ParseFile(paths.SourceConf()); err == nil {
-		st.Endpoint = c.Peer["Endpoint"]
+	// a config is loaded when the user's .conf is there: config.yaml, which
+	// this used to look for, is built by the service -- one stopped when a
+	// .conf was loaded, or not started yet, left the overview saying "No
+	// config loaded yet" over the one just loaded
+	first, err := awgconf.ParseFile(paths.SourceConf())
+	if err == nil {
+		st.HasConfig, st.Endpoint = true, first.Peer["Endpoint"]
 	}
 	// attached is what the service attaches: a .conf it leaves out is said so
-	first, _ := awgconf.ParseFile(paths.SourceConf())
 	if c, err := awgconf.Second(first); c != nil {
 		st.Awg2, st.Endpoint2 = true, c.Peer["Endpoint"]
 	} else if err != nil {
