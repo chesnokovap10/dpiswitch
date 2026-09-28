@@ -10,8 +10,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -217,26 +219,48 @@ func readList(path string) []string {
 }
 
 // tailWindow: how much of a log's end tail reads. The log tab refreshes
-// every five seconds, and reading all of mihomo.log for 400 lines took
+// every three seconds, and reading all of mihomo.log for 400 lines took
 // 4.4 ms and 8.7 MB each time; 400 lines are some 80 KB.
 const tailWindow = 256 << 10
 
-// tail: the last lines of a log, read from its end only.
+// tail: the last lines of a log, read from its end only. A log rotated
+// goes on in its previous copy, path.1: the service's is rotated as it
+// starts, the core's as it grows, and a log just rotated showed a few lines
+// -- the end of the run before the restart, the very lines looked for, was
+// out of sight.
 func tail(path string, lines int) (string, error) {
-	f, err := os.Open(path)
+	ls, err := tailLines(path, lines)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return "", err
+	}
+	if len(ls) < lines {
+		prev, perr := tailLines(path+".1", lines-len(ls))
+		if perr == nil {
+			ls, err = append(prev, ls...), nil
+		}
+	}
 	if err != nil {
 		return "", err
+	}
+	return strings.Join(ls, "\n"), nil
+}
+
+// tailLines: the last lines of one file, none for an empty one.
+func tailLines(path string, lines int) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
 	}
 	defer f.Close()
 	fi, err := f.Stat()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	off := max(fi.Size()-tailWindow, 0)
 	b := make([]byte, fi.Size()-off)
 	n, err := f.ReadAt(b, off)
 	if err != nil && err != io.EOF {
-		return "", err
+		return nil, err
 	}
 	b = b[:n]
 	if off > 0 {
@@ -245,14 +269,18 @@ func tail(path string, lines int) (string, error) {
 			b = b[i+1:]
 		}
 	}
-	ls := strings.Split(strings.TrimRight(string(b), "\r\n"), "\n")
+	text := strings.TrimRight(string(b), "\r\n")
+	if text == "" {
+		return nil, nil
+	}
+	ls := strings.Split(text, "\n")
 	if len(ls) > lines {
 		ls = ls[len(ls)-lines:]
 	}
 	for i, l := range ls {
 		ls[i] = strings.TrimSuffix(l, "\r")
 	}
-	return strings.Join(ls, "\n"), nil
+	return ls, nil
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

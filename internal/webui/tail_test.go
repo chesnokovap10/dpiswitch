@@ -56,6 +56,25 @@ func TestTail(t *testing.T) {
 	if _, err := tail(filepath.Join(dir, "missing.log"), 400); err == nil {
 		t.Error("a missing log gave no error")
 	}
+
+	// a log just rotated goes on in its .1: the end of the run before
+	cur := write("rot.log", "new 1\nnew 2\nnew 3\n")
+	write("rot.log.1", "old 1\nold 2\nold 3\nold 4\n")
+	if got, err := tail(cur, 5); err != nil || got != "old 3\nold 4\nnew 1\nnew 2\nnew 3" {
+		t.Errorf("rotated: %q %v", got, err)
+	}
+	if got, err := tail(cur, 2); err != nil || got != "new 2\nnew 3" {
+		t.Errorf("enough in the log itself: %q %v", got, err)
+	}
+	// just emptied, or not there yet: the previous copy alone
+	write("rot.log", "")
+	if got, err := tail(cur, 2); err != nil || got != "old 3\nold 4" {
+		t.Errorf("emptied: %q %v", got, err)
+	}
+	os.Remove(cur)
+	if got, err := tail(cur, 2); err != nil || got != "old 3\nold 4" {
+		t.Errorf("renamed away: %q %v", got, err)
+	}
 }
 
 // A second copy opens the UI that answers as DPI Switch with its key, not

@@ -400,6 +400,7 @@ var ru = map[string]string{
 	"Tray and UI":            "Трей и интерфейс",
 	"Follow the end":         "Следить за концом",
 	"Last 400 lines, refreshed every 3 seconds": "Последние 400 строк, обновление каждые 3 секунды",
+	"The log cannot be read:":                   "Лог не читается:",
 
 	// tray: menu, tooltip, messages (cmd/dpiswitch)
 	"Settings…":                              "Настройки…",

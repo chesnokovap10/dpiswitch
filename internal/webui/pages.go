@@ -1,6 +1,8 @@
 package webui
 
 import (
+	"errors"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -326,7 +328,11 @@ func logsData(r *http.Request) logs {
 		d.Name = "service"
 	}
 	t, err := tail(logFiles[d.Name](), 400)
-	if err != nil || t == "" {
+	switch {
+	case err != nil && !errors.Is(err, fs.ErrNotExist):
+		// a log there and not readable was shown as none at all
+		t = tr(lang(r), "The log cannot be read:") + " " + err.Error()
+	case t == "":
 		t = "—"
 	}
 	d.Text = t

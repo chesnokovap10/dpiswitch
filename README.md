@@ -106,7 +106,7 @@
 | **Списки маршрутов** | «Всегда напрямую», «Всегда через туннель», «Запрещено»: сайты, адреса и программы в каждом |
 | **Второй туннель** | Подключение awg2, пресеты (YouTube, Telegram, ИИ-сервисы, Instagram/Facebook/X; их можно изменить, удалить и добавить свои) и свои сайты |
 | **Настройки** | Детектор, сроки, IPv6, DNS; каждое изменение применяется сразу |
-| **Логи** | Лог контроллера и службы, ядра, трея и интерфейса |
+| **Логи** | Лог контроллера и службы, ядра, трея и интерфейса; последние 400 строк, вместе с предыдущим файлом после ротации |
 | **Справка** | То, что описано ниже; ссылки из неё ведут прямо к нужному полю, и оно подсвечивается |
 | **Live** | Соединения ядра раз в секунду — открытые, закрытые, ошибки и запрещённые попытки за весь запуск ядра; щелчок закрепляет строку, правый щелчок отправляет её сайт, адрес или программу в нужный список. Подробнее — в разделе [Live](#live) |
 
@@ -491,7 +491,7 @@ their own port and access key).
 | **Routing lists** | "Always direct", "Always via tunnel", "Forbidden": sites, addresses and programs in each |
 | **Second tunnel** | Attaching awg2, presets (YouTube, Telegram, AI services, Instagram/Facebook/X; edit them, delete them, add your own) and your own list |
 | **Settings** | Detector, terms, IPv6, DNS; every change applies at once |
-| **Logs** | The controller and service log, the core's, the tray and UI's |
+| **Logs** | The controller and service log, the core's, the tray and UI's; the last 400 lines, the previous file's included after a rotation |
 | **Help** | What is described below; its links lead straight to the field meant, which blinks |
 | **Live** | The core's connections every second — open, closed, failed and forbidden tries over the core's whole run; a click pins a row, a right-click sends its site, address or program to a list. More in [Live](#live-1) |
 

@@ -193,9 +193,16 @@ const due = new Map();
 // action's answer used to leave the mark behind, and the part never
 // refreshed again.
 const busy = new WeakMap();
+// Nor is text selected in a part, to be copied: a log line selected was
+// gone within three seconds.
+function selectedIn(el) {
+  const s = getSelection();
+  return s && !s.isCollapsed && (el.contains(s.anchorNode) || el.contains(s.focusNode));
+}
 async function poll(el) {
   // a field being edited is not replaced under the user's hands
   if (el.contains(document.activeElement) && document.activeElement !== el) return;
+  if (selectedIn(el)) return;
   // a newer request -- the filter's, an action's -- wins over this one
   const current = ticket(el);
   const mark = {};
@@ -204,17 +211,45 @@ async function poll(el) {
     const r = await fetch(el.dataset.poll || el.dataset.sync, {signal: AbortSignal.timeout(15000)}).catch(() => null);
     if (!r || !r.ok) return;
     const html = await r.text();
-    if (!current()) return;
+    if (!current() || selectedIn(el)) return;
     const top = el.scrollTop;
     const bottom = top + el.clientHeight >= el.scrollHeight - 4;
+    const follow = el.dataset.follow !== undefined && follows(bottom);
+    const at = el.dataset.follow !== undefined && !follow ? readingAt(el) : null;
     el.innerHTML = html;
-    el.scrollTop = el.dataset.follow !== undefined && follows(bottom) ? el.scrollHeight : top;
+    if (follow) el.scrollTop = el.scrollHeight;
+    else if (!at || !backTo(el, at)) el.scrollTop = top;
   } catch (e) {
     // the body cut off by the timeout: the next period tries again
   } finally {
     if (busy.get(el) === mark) busy.delete(el);
   }
 }
+// Where a reader is in a part of lines, one to a row: the line at the top
+// of the view, and how far into it. A log's last 400 lines are a window
+// that slides, and with "follow" off the text being read went up out of
+// view as lines were added -- 30 lines in three seconds, 30 lines up. It is
+// found again by its text, at or above where it was.
+function readingAt(el) {
+  const cs = getComputedStyle(el);
+  const lh = parseFloat(cs.lineHeight), pad = parseFloat(cs.paddingTop) || 0;
+  if (!(lh > 0)) return null;
+  const pos = Math.max(el.scrollTop - pad, 0);
+  const i = Math.floor(pos / lh);
+  const lines = el.textContent.split('\n');
+  return i < lines.length ? {i, text: lines[i], off: el.scrollTop - pad - i * lh, lh, pad} : null;
+}
+function backTo(el, at) {
+  const lines = el.textContent.split('\n');
+  for (let j = Math.min(at.i, lines.length - 1); j >= 0; j--) {
+    if (lines[j] === at.text) {
+      el.scrollTop = at.pad + j * at.lh + at.off;
+      return true;
+    }
+  }
+  return false;
+}
+
 setInterval(() => {
   const now = Date.now();
   for (const el of document.querySelectorAll('[data-poll]')) {
