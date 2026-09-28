@@ -2,9 +2,12 @@ package webui
 
 import (
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
+
+	"golang.org/x/net/idna"
 
 	"dpiswitch/internal/awgconf"
 	"dpiswitch/internal/ctl"
@@ -40,12 +43,14 @@ func overviewData(v *view) overview {
 
 type vrow struct {
 	Domain  string
-	Addr    bool // a bare address with a verdict of its own
-	Fam     int  // a whole domain: its clean subdomains
+	Uni     string // a name in Russian or other letters, as it is written; Domain is its punycode
+	Addr    bool   // a bare address with a verdict of its own
+	Fam     int    // a whole domain: its clean subdomains
 	Verdict string
 	Reason  string
 	Decided time.Time
 	Expires time.Time
+	Idle    bool // see ctl.DirectEntry.Idle
 	Node    string
 }
 
@@ -54,6 +59,23 @@ type verdicts struct {
 	Q      string
 	Rows   []vrow
 	Counts map[string]int
+}
+
+// Query: the tab and the filter for the parts that refresh themselves. It
+// was written into their address unescaped: "c++" came back as "c  ", and
+// "50%" as no filter at all.
+func (d verdicts) Query() string { return url.Values{"cat": {d.Cat}, "q": {d.Q}}.Encode() }
+
+// unicodeName: a punycode name as it is written, "" for any other
+func unicodeName(dom string) string {
+	if !strings.Contains(dom, "xn--") {
+		return ""
+	}
+	u, err := idna.ToUnicode(dom)
+	if err != nil || u == dom {
+		return ""
+	}
+	return u
 }
 
 // verdictCats: the verdict table's tabs and what goes under each
@@ -83,32 +105,42 @@ func verdictsData(r *http.Request) verdicts {
 			}
 		}
 	}
+	// a row is found by what it shows: a whole domain by its "+.", a name
+	// in Russian letters by them as well as by its punycode
 	q := strings.ToLower(d.Q)
-	keep := func(dom string) bool { return q == "" || strings.Contains(dom, q) }
+	keep := func(r vrow) bool {
+		return q == "" || strings.Contains(r.Domain, q) || strings.Contains(r.Uni, q)
+	}
 	row := func(e ctl.DirectEntry) vrow {
 		r := vrow{Domain: e.Domain, Verdict: e.Verdict, Reason: e.Reason,
-			Decided: e.DecidedAt, Expires: e.ExpiresAt, Node: e.TestedIP}
+			Decided: e.DecidedAt, Expires: e.ExpiresAt, Idle: e.Idle, Node: e.TestedIP}
 		if strings.HasPrefix(r.Domain, "@") {
 			r.Domain, r.Addr = r.Domain[1:], true
 		}
+		r.Uni = unicodeName(r.Domain)
 		return r
+	}
+	add := func(r vrow) {
+		if keep(r) {
+			d.Rows = append(d.Rows, r)
+		}
 	}
 	if d.Cat == "direct" {
 		for _, f := range snap.Families {
-			if keep(f.Domain) {
-				d.Rows = append(d.Rows, vrow{Domain: "+." + f.Domain, Fam: f.Clean})
+			r := vrow{Domain: "+." + f.Domain, Fam: f.Clean}
+			if u := unicodeName(f.Domain); u != "" {
+				r.Uni = "+." + u
 			}
+			add(r)
 		}
 		for _, e := range snap.Details {
-			if keep(e.Domain) {
-				d.Rows = append(d.Rows, row(e))
-			}
+			add(row(e))
 		}
 		return d
 	}
 	for _, e := range snap.Others {
-		if verdictCats[d.Cat](probe.Verdict(e.Verdict)) && keep(e.Domain) {
-			d.Rows = append(d.Rows, row(e))
+		if verdictCats[d.Cat](probe.Verdict(e.Verdict)) {
+			add(row(e))
 		}
 	}
 	return d

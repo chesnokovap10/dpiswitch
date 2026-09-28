@@ -102,7 +102,7 @@
 | Страница | Что там |
 |---|---|
 | **Обзор** | Сколько сайтов идёт напрямую, заблокировано, медленнее, не проверено; состояние обоих туннелей, замена `.conf`; последние события |
-| **Вердикты** | Все вердикты по вкладкам «Напрямую», «Заблокированы», «Медленнее», «Не проверено», фильтр по имени, «Сбросить все вердикты…» |
+| **Вердикты** | Все вердикты по вкладкам «Напрямую», «Заблокированы», «Медленнее», «Не проверено», фильтр по имени (русские имена ищутся и показываются как есть), «Сбросить все вердикты…» |
 | **Списки маршрутов** | «Всегда напрямую», «Всегда через туннель», «Запрещено»: сайты, адреса и программы в каждом |
 | **Второй туннель** | Подключение awg2, пресеты (YouTube, Telegram, ИИ-сервисы, Instagram/Facebook/X; их можно изменить, удалить и добавить свои) и свои сайты |
 | **Настройки** | Детектор, сроки, IPv6, DNS; каждое изменение применяется сразу |
@@ -202,7 +202,8 @@
 - Заблокированный сайт пробуют снова через интервал перепроверки (по умолчанию час). Каждая проверка
   подряд с тем же итогом удваивает ожидание — до потолка паузы (сутки).
 - Имена перепроверяются, только пока к ним кто-то ходит. Имя, к которому сутки никто не обращался,
-  оставляют в покое, а через десять дней забывают.
+  оставляют в покое, а через десять дней забывают. Если его срок уже вышел, на странице «Вердикты»
+  у него написано «при следующем обращении».
 
 ### Домены целиком
 
@@ -486,7 +487,7 @@ their own port and access key).
 | Page | What is there |
 |---|---|
 | **Overview** | How many sites go direct, are blocked, slower, unverified; both tunnels' state, replacing a `.conf`; recent events |
-| **Verdicts** | Every verdict in the "Direct", "Blocked", "Slower", "Unverified" tabs, a name filter, "Reset all verdicts…" |
+| **Verdicts** | Every verdict in the "Direct", "Blocked", "Slower", "Unverified" tabs, a name filter (names in Russian letters are found and shown as written), "Reset all verdicts…" |
 | **Routing lists** | "Always direct", "Always via tunnel", "Forbidden": sites, addresses and programs in each |
 | **Second tunnel** | Attaching awg2, presets (YouTube, Telegram, AI services, Instagram/Facebook/X; edit them, delete them, add your own) and your own list |
 | **Settings** | Detector, terms, IPv6, DNS; every change applies at once |
@@ -586,7 +587,8 @@ moment than about the path.
 - A blocked site is tried again after the re-check interval (1 hour by default). Each check in a row
   that finds the same doubles the wait, up to the pause cap (1 day).
 - Names are re-checked only while something still goes to them. One nothing has used for a day is
-  left alone, and after ten days it is forgotten.
+  left alone, and after ten days it is forgotten. If its term is over, the Verdicts page says "when
+  next used" for it.
 
 ### Whole domains
 

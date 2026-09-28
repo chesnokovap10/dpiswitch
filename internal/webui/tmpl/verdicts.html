@@ -1,14 +1,15 @@
 {{define "content"}}{{$d := .Data}}
 <div class="page">
   <div class="bar">
-    <div class="tabs" id="vtabs" data-poll="/frag/verdicts/tabs?cat={{$d.Cat}}&q={{$d.Q}}" data-every="10">{{template "tabs" .}}</div>
+    <div class="tabs" id="vtabs" data-poll="/frag/verdicts/tabs?{{$d.Query}}" data-every="10">{{template "tabs" .}}</div>
     <input type="search" id="vfilter" placeholder="{{.T "Filter by name"}}" value="{{$d.Q}}" data-filter="vtable vtabs" style="width:240px">
     <span class="spacer"></span>
     <form method="post" action="/act/reset" data-confirm="{{.T "Reset every verdict? All traffic goes through the tunnel until the detector checks the sites again. For when a site broke after going direct."}}">
       <button class="danger" id="vreset" data-busy="{{.T "Resetting…"}}">{{.T "Reset all verdicts…"}}</button>
     </form>
   </div>
-  <div class="tablebox" id="vtable" data-poll="/frag/verdicts/table?cat={{$d.Cat}}&q={{$d.Q}}" data-every="10">{{template "table" .}}</div>
+  <div id="vnote" data-sync="/frag/verdicts/vnote" style="display:contents">{{template "vnote" .}}</div>
+  <div class="tablebox" id="vtable" data-poll="/frag/verdicts/table?{{$d.Query}}" data-every="10">{{template "table" .}}</div>
 </div>
 {{end}}
 
@@ -25,18 +26,28 @@
 <table>
   <thead><tr><th>{{.T "Name"}}</th><th>{{.T "Decided"}}</th><th>{{.T "Checked again in"}}</th><th>{{.T "Node probed"}}</th></tr></thead>
   <tbody>{{range $d.Rows}}
-    {{if .Fam}}<tr><td><b>{{.Domain}}</b></td><td colspan="3" class="muted">{{$v.Tf "whole domain: %d clean subdomains, none blocked" .Fam}}</td></tr>
-    {{else}}<tr><td>{{.Domain}}{{if .Addr}} <span class="muted">({{$v.T "address, no name"}})</span>{{end}}</td><td class="nw">{{$v.Time .Decided}}</td><td class="nw">{{$v.Left .Expires}}</td><td class="muted nw">{{.Node}}</td></tr>{{end}}
+    {{if .Fam}}<tr><td><b>{{.Domain}}</b>{{template "uni" .}}</td><td colspan="3" class="muted">{{$v.Tf "whole domain: %d clean subdomains, none blocked" .Fam}}</td></tr>
+    {{else}}<tr><td>{{.Domain}}{{template "uni" .}}{{if .Addr}} <span class="muted">({{$v.T "address, no name"}})</span>{{end}}</td><td class="nw">{{$v.Time .Decided}}</td><td class="nw">{{template "left" (row $v .)}}</td><td class="muted nw">{{.Node}}</td></tr>{{end}}
   {{end}}</tbody>
 </table>
 {{else}}
 <table>
   <thead><tr><th>{{.T "Name"}}</th><th>{{.T "Why"}}</th><th>{{.T "Decided"}}</th><th>{{.T "Checked again in"}}</th></tr></thead>
   <tbody>{{range $d.Rows}}
-    <tr><td>{{.Domain}}{{if .Addr}} <span class="muted">({{$v.T "address, no name"}})</span>{{end}}</td>
+    <tr><td>{{.Domain}}{{template "uni" .}}{{if .Addr}} <span class="muted">({{$v.T "address, no name"}})</span>{{end}}</td>
       <td><span class="pill {{if eq $d.Cat "blocked"}}bad{{else if eq $d.Cat "slow"}}warn{{end}}">{{$v.VName .Verdict}}</span><small>{{.Reason}}</small></td>
-      <td class="nw">{{$v.Time .Decided}}</td><td class="nw">{{$v.Left .Expires}}</td></tr>
+      <td class="nw">{{$v.Time .Decided}}</td><td class="nw">{{template "left" (row $v .)}}</td></tr>
   {{end}}</tbody>
 </table>
 {{end}}
 {{end}}
+
+{{define "uni"}}{{with .Uni}} <span class="muted">({{.}})</span>{{end}}{{end}}
+
+{{/* a term that is over waits for the name to be used again, when nothing
+   has gone to it for a day: "due now" was said for days */}}
+{{define "left"}}{{if .R.Idle}}<span title="{{.V.T "Nothing has gone to the name for a day: it is checked again when something does."}}">{{.V.T "when next used"}}</span>{{else}}{{.V.Left .R.Expires}}{{end}}{{end}}
+
+{{/* the mode decides whether the verdicts apply: said while they do not */}}
+{{define "vnote"}}{{if eq .St.Mode "observe"}}<p class="hint warn-t" style="margin:0">{{.T "Observe only is on: the verdicts are recorded, not applied. Everything but the forbidden goes direct until auto-switch is on."}}</p>
+{{- else if eq .St.Mode "tunnel"}}<p class="hint warn-t" style="margin:0">{{.T "Tunnel only is on: the verdicts are recorded, not applied. Everything goes through the tunnels until auto-switch is on."}}</p>{{end}}{{end}}

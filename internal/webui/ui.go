@@ -49,6 +49,8 @@ func init() {
 		// tun: a tunnel's state for the "tunstate" template
 		"tun": func(v *view, alive bool, note string) tunArg { return tunArg{v, v.St, alive, note} },
 		"dur": func(v *view, opts []durOpt, cur int) durArg { return durArg{v, opts, cur} },
+		// row: a verdict row with the page, for the templates that need both
+		"row": func(v *view, r vrow) rowArg { return rowArg{v, r} },
 		// dl: one of the domain lists for the "domainlist" template
 		"el": func(v *view, kind, title, hint string, entries []string, online []netprocs.Proc) entryList {
 			return entryList{v, kind, title, hint, entries, online}
@@ -75,6 +77,11 @@ type durArg struct {
 	V    *view
 	Opts []durOpt
 	Cur  int
+}
+
+type rowArg struct {
+	V *view
+	R vrow
 }
 
 // view: what every template gets. Data holds the page's own values.

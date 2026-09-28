@@ -246,11 +246,11 @@ func (s *Server) actDetach2(w http.ResponseWriter, r *http.Request) {
 // actReset drops every verdict: all traffic returns to the tunnel. The
 // service does it -- it holds the verdicts in memory (see ctl.takeReset);
 // the request is a file it looks for every second.
+//
+// A stopped service keeps its verdicts and applies them when it starts: the
+// request waits for it, as the tray's does. The page used to refuse it with
+// "there is nothing to reset".
 func (s *Server) actReset(w http.ResponseWriter, r *http.Request) {
-	if st, err := winsvc.State(); err != nil || st != svc.Running {
-		s.redirect(w, r, errors.New(tr(lang(r), "The service is not running: there is nothing to reset")), "")
-		return
-	}
 	req := paths.ResetRequest()
 	if err := paths.UserReady(); err != nil {
 		s.redirect(w, r, err, "")
@@ -258,6 +258,10 @@ func (s *Server) actReset(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := os.WriteFile(req, []byte(time.Now().Format(time.RFC3339)+"\n"), 0o644); err != nil {
 		s.redirect(w, r, err, "")
+		return
+	}
+	if !serviceRunning() {
+		s.redirect(w, r, nil, "Reset requested: the service takes it when it starts, before it applies a verdict")
 		return
 	}
 	for i := 0; i < 40; i++ {

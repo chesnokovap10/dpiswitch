@@ -1,8 +1,10 @@
 package webui
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io/fs"
 	"net"
 	"net/http"
@@ -78,7 +80,7 @@ func TestPagesRender(t *testing.T) {
 	h := s.Handler()
 	frags := map[string][]string{
 		"overview": {"summary", "events"},
-		"verdicts": {"tabs", "table"},
+		"verdicts": {"tabs", "table", "vnote"},
 		"lists":    {"list-direct", "list-tunnel", "list-block"},
 		"awg2":     {"awg2state", "presets", "list-awg2"},
 		"settings": {"form", "dns"},
@@ -366,6 +368,90 @@ func TestResolverReasonsTranslated(t *testing.T) {
 		if _, ok := ru[re.Why]; !ok {
 			t.Errorf("%q: no Russian for %q", in, re.Why)
 		}
+	}
+}
+
+// The verdict tables: a row is found by what it shows, a name in Russian
+// letters is shown in them, an expired verdict nothing uses is not "due
+// now", the filter survives the tables' own refresh, and the mode that sets
+// the verdicts aside is said.
+func TestVerdictsPage(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	now := time.Now()
+	e := func(v string, expires, seen time.Duration) map[string]any {
+		return map[string]any{"verdict": v, "decided_at": now.Add(-48 * time.Hour),
+			"expires_at": now.Add(expires), "last_seen": now.Add(seen)}
+	}
+	day := 24 * time.Hour
+	st := map[string]any{"current": "AS1", "networks": map[string]any{"AS1": map[string]any{
+		"a.xn--e1afmkfd.xn--p1ai": e("CLEAN", day, 0),
+		"b.xn--e1afmkfd.xn--p1ai": e("CLEAN", day, 0),
+		"c.xn--e1afmkfd.xn--p1ai": e("CLEAN", day, 0),
+		"idle.test":               e("BLOCKED_TLS", -time.Hour, -3*day),
+		"busy.test":               e("BLOCKED_TCP", -time.Hour, -time.Minute),
+	}}}
+	b, _ := json.Marshal(st)
+	if err := os.WriteFile(paths.State(), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	get := func(target string) string {
+		w := do(t, h, "GET", target, nil, nil)
+		if w.Code != 200 {
+			t.Fatalf("%s: %d", target, w.Code)
+		}
+		// as the browser reads it: html/template writes "+" as "&#43;"
+		return html.UnescapeString(w.Body.String())
+	}
+	body := get("/verdicts?q=" + url.QueryEscape("Пример"))
+	if !strings.Contains(body, "(+.пример.рф)") || strings.Count(body, ".пример.рф)") != 4 {
+		t.Fatalf("the Russian name is not found or not shown:\n%s", body)
+	}
+	// a whole domain by the "+." it is shown with
+	body = get("/frag/verdicts/table?cat=direct&q=" + url.QueryEscape("+.xn--e1afmkfd"))
+	if !strings.Contains(body, "+.xn--e1afmkfd.xn--p1ai") || strings.Contains(body, "a.xn--e1afmkfd") {
+		t.Fatalf("the whole domain is not found by its +.:\n%s", body)
+	}
+	body = get("/frag/verdicts/table?cat=blocked")
+	if !regexp.MustCompile(`(?s)idle\.test.*when next used`).MatchString(body) || strings.Count(body, "when next used") != 1 ||
+		!regexp.MustCompile(`(?s)busy\.test.*due now`).MatchString(body) {
+		t.Fatalf("idle and due verdicts:\n%s", body)
+	}
+	// the parts refresh with the filter as typed
+	body = get("/verdicts?cat=blocked&q=" + url.QueryEscape("c++ 50%"))
+	for _, part := range []string{"tabs", "table"} {
+		if !strings.Contains(body, `data-poll="/frag/verdicts/`+part+`?cat=blocked&q=c%2B%2B+50%25"`) {
+			t.Fatalf("%s: the filter is not in its address as typed:\n%s", part, body)
+		}
+	}
+	// the mode that sets the verdicts aside
+	for mode, want := range map[string]string{ctl.ModeOn: "", ctl.ModeObserve: "Observe only is on", ctl.ModeTunnel: "Tunnel only is on"} {
+		st := s.statusFn()
+		st.Mode = mode
+		s.statusFn = func() status { return st }
+		note := get("/frag/verdicts/vnote")
+		if want == "" && strings.TrimSpace(note) != "" || want != "" && !strings.Contains(note, want) {
+			t.Errorf("%s: note %q", mode, note)
+		}
+		if want != "" && !strings.Contains(get("/verdicts"), want) {
+			t.Errorf("%s: the page has no note", mode)
+		}
+	}
+}
+
+// A reset asked for while the service is stopped waits for it to start, as
+// the tray's does: its verdicts are applied when it does.
+func TestResetStopped(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	if w := do(t, h, "POST", "/act/reset", url.Values{}, map[string]string{"Referer": "http://127.0.0.1:8080/verdicts"}); w.Code != http.StatusSeeOther {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	if _, err := os.Stat(paths.ResetRequest()); err != nil {
+		t.Fatalf("no request left: %v", err)
+	}
+	if b := do(t, h, "GET", "/verdicts", nil, nil).Body.String(); !strings.Contains(b, "the service takes it when it starts") {
+		t.Fatalf("the page does not say the reset waits:\n%s", b)
 	}
 }
 

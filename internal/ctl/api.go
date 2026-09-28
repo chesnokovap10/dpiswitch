@@ -33,7 +33,7 @@ func Defaults() Config {
 		TTL:           7 * 24 * time.Hour,
 		FailTTL:       time.Hour,
 		MaxBackoff:    24 * time.Hour,
-		Idle:          24 * time.Hour,
+		Idle:          idleTerm,
 		SettingsPath:  paths.Settings(),
 		Families:      true,
 		DirectDNS:     DefaultSettings().apply(Config{}).DirectDNS,
@@ -83,6 +83,11 @@ func Run(ctx context.Context, cfg Config) {
 		cfg = set.apply(cfg)
 	}
 
+	// a reset asked for while the controller was not running is taken now,
+	// before the verdicts it drops are applied: the list used to be written
+	// from them first
+	takeReset(cfg, a, st)
+
 	mode := "APPLY"
 	switch cfg.modeNow() {
 	case ModeObserve:
@@ -110,9 +115,6 @@ func Run(ctx context.Context, cfg Config) {
 	}
 
 	w := newWatcher(ctx, cfg, a)
-
-	// a reset asked for while the controller was not running is taken now
-	takeReset(cfg, a, st)
 	go watchReset(ctx, cfg, a, st)
 
 	wake := make(chan struct{}, 1)
@@ -223,6 +225,18 @@ type DirectEntry struct {
 	TestedIP  string    `json:"tested_ip"`
 	Reason    string    `json:"reason"`
 	Verdict   string    `json:"verdict,omitempty"`
+	// Idle: the term is over and nothing has gone to the name for the idle
+	// term -- it is checked again when something does (see state.expired).
+	// The UI said "due now" for days.
+	Idle bool `json:"idle,omitempty"`
+}
+
+// idleTerm: Config.Idle as the service runs it
+const idleTerm = 24 * time.Hour
+
+func directEntry(dom string, e *entry, now time.Time) DirectEntry {
+	return DirectEntry{dom, e.DecidedAt, e.ExpiresAt, e.TestedIP, e.Reason, string(e.Verdict),
+		now.After(e.ExpiresAt) && !e.lastSeen().After(now.Add(-idleTerm))}
 }
 
 func Load(statePath string) Snapshot {
@@ -243,15 +257,16 @@ func Load(statePath string) Snapshot {
 	if LoadSettings(paths.Settings()).Families {
 		s.Families = st.families(id)
 	}
+	now := time.Now()
 	for _, d := range s.Direct {
 		if e, ok := st.get(id, d); ok {
-			s.Details = append(s.Details, DirectEntry{d, e.DecidedAt, e.ExpiresAt, e.TestedIP, e.Reason, string(e.Verdict)})
+			s.Details = append(s.Details, directEntry(d, e, now))
 		}
 	}
 	st.mu.Lock()
 	for dom, e := range st.Networks[id] {
 		if e.Verdict != probe.Clean {
-			s.Others = append(s.Others, DirectEntry{dom, e.DecidedAt, e.ExpiresAt, e.TestedIP, e.Reason, string(e.Verdict)})
+			s.Others = append(s.Others, directEntry(dom, e, now))
 		}
 	}
 	st.mu.Unlock()
