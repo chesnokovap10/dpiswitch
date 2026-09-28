@@ -67,6 +67,14 @@ func TestLiveRoute(t *testing.T) {
 	}
 }
 
+// testHub: a hub driven by hand. The core's run it asks is the test's to
+// set: the machine's own service may have written one.
+func testHub() *liveHub {
+	h := newLiveHub(nil)
+	h.runOf = func() string { return "" }
+	return h
+}
+
 // watch: a page on a hub driven by hand, without its loop
 func watch(h *liveHub) *liveSub {
 	sub := &liveSub{ch: make(chan []byte, 8)}
@@ -93,7 +101,7 @@ func next(t *testing.T, sub *liveSub) liveMsg {
 // connections, their bytes and speeds, the ones gone -- and nothing for a
 // connection that stood still and was already shown standing.
 func TestLiveUpdate(t *testing.T) {
-	h := newLiveHub(nil)
+	h := testHub()
 	sub := watch(h)
 	t0 := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
 	conn := func(id string, up, down int64, start time.Time) ctl.LiveConn {
@@ -175,7 +183,7 @@ func TestLiveUpdate(t *testing.T) {
 // A new run of the core starts the history anew: seen gone and back, or its
 // totals counted from nothing again. A failure its log told already stays.
 func TestLiveNewRun(t *testing.T) {
-	h := newLiveHub(nil)
+	h := testHub()
 	h.failID = "f-"
 	sub := watch(h)
 	ctx := context.Background()
@@ -194,15 +202,18 @@ func TestLiveNewRun(t *testing.T) {
 	if len(h.closed) != 2 || len(h.failed) != 1 || h.sess != sess {
 		t.Fatalf("the core gone: %d closed, %d failed -- they stay until it runs anew", len(h.closed), len(h.failed))
 	}
-	// the new core's log is read before its connections are
+	// the new core's log is read before its connections are: the same
+	// failure as the old run's is a row of its own
 	fail("new.example", t0.Add(3*time.Second))
+	fail("old.example", t0.Add(3500*time.Millisecond))
 	for len(sub.ch) > 0 {
 		<-sub.ch
 	}
 	h.update(ctl.Live{UploadTotal: 1, DownloadTotal: 1, Conns: []ctl.LiveConn{conn("c")}}, nil, t0.Add(4*time.Second))
 	m := next(t, sub)
 	if m.Kind != "full" || m.Sess == sess || m.Sess != h.sess || len(m.Conns) != 1 || len(m.Closed) != 0 ||
-		len(m.Failed) != 1 || m.Failed[0].Host != "new.example" {
+		len(m.Failed) != 2 || m.Failed[0].Host != "new.example" || m.Failed[1].Host != "old.example" ||
+		m.Failed[1].N != 1 || m.Failed[1].Start != t0.Add(3500*time.Millisecond).UnixMilli() {
 		t.Fatalf("the new run: %+v", m)
 	}
 	// restarted between two calls: the totals are counted from nothing again
@@ -217,10 +228,61 @@ func TestLiveNewRun(t *testing.T) {
 	}
 }
 
+// The service names each run of the core. A core started anew between two
+// calls is told by it, its totals grown past the last run's and all; and a
+// failure the old run counted is not counted on in the new one, though the
+// new core's log tells it before the loop sees the core anew.
+func TestLiveNewRunByMarker(t *testing.T) {
+	h := testHub()
+	h.failID = "f-"
+	run := "100 1"
+	h.runOf = func() string { return run }
+	sub := watch(h)
+	ctx := context.Background()
+	t0 := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	conn := func(id string) ctl.LiveConn {
+		return ctl.LiveConn{ID: id, Host: id + ".example", Port: 443, Network: "tcp", Chains: []string{"DIRECT"}, Start: t0}
+	}
+	e := ctl.DialErr{Network: "tcp", Proxy: "DIRECT", Process: "chrome.exe", Host: "example.com", Port: 443, Err: "i/o timeout"}
+	direct := []string{"DIRECT"}
+	h.update(ctl.Live{UploadTotal: 100, DownloadTotal: 100, Conns: []ctl.LiveConn{conn("a")}}, nil, t0)
+	for i := range 5 {
+		h.failure(ctx, e, direct, t0.Add(time.Duration(i)*time.Second))
+	}
+	h.update(ctl.Live{UploadTotal: 200, DownloadTotal: 200}, nil, t0.Add(5*time.Second))
+	if len(h.failed) != 1 || h.failed[0].N != 5 || len(h.closed) != 1 {
+		t.Fatalf("the old run: %d failed, %d closed", len(h.failed), len(h.closed))
+	}
+	for len(sub.ch) > 0 {
+		<-sub.ch
+	}
+	sess := h.sess
+	run = "200 2"
+	h.failure(ctx, e, direct, t0.Add(6*time.Second))
+	h.update(ctl.Live{UploadTotal: 500, DownloadTotal: 500, Conns: []ctl.LiveConn{conn("b")}}, nil, t0.Add(7*time.Second))
+	m := next(t, sub)
+	if m.Kind != "full" || m.Sess == sess || len(m.Closed) != 0 || len(m.Conns) != 1 {
+		t.Fatalf("started anew, totals grown: %+v", m)
+	}
+	if len(m.Failed) != 1 || m.Failed[0].N != 1 || m.Failed[0].Start != t0.Add(6*time.Second).UnixMilli() {
+		t.Fatalf("the failure in the new run: %+v", m.Failed)
+	}
+	// counted on in its own run
+	h.failure(ctx, e, direct, t0.Add(8*time.Second))
+	if len(h.failed) != 1 || h.failed[0].N != 2 {
+		t.Fatalf("again in the new run: %+v", h.failed)
+	}
+	// the same run: no new history, whatever the totals
+	h.update(ctl.Live{UploadTotal: 1, DownloadTotal: 1, Conns: []ctl.LiveConn{conn("c")}}, nil, t0.Add(9*time.Second))
+	if m = next(t, sub); m.Kind != "tick" || h.sess != m.Sess {
+		t.Fatalf("the same run: %+v", m)
+	}
+}
+
 // A page coming back to the history it holds gets only what came since the
 // last it saw; one holding another gets it all.
 func TestLiveSince(t *testing.T) {
-	h := newLiveHub(nil)
+	h := testHub()
 	h.running = true // no loop: the hub is driven by hand
 	t0 := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
 	conn := func(id string) ctl.LiveConn {
@@ -252,7 +314,7 @@ func TestLiveSince(t *testing.T) {
 
 // The closed ones kept are the newest liveKeep, whatever their age.
 func TestLiveTrim(t *testing.T) {
-	h := newLiveHub(nil)
+	h := testHub()
 	old := time.Now().Add(-30 * 24 * time.Hour).UnixMilli()
 	for i := range liveKeep + 20 {
 		h.closed = append(h.closed, &liveRow{ID: fmt.Sprint(i), End: old})
@@ -558,7 +620,7 @@ func TestLiveWords(t *testing.T) {
 // A failure is a row; the same one again, while its row is listed, is
 // counted on it and goes to the pages once a tick however often it came.
 func TestLiveFailure(t *testing.T) {
-	h := newLiveHub(nil)
+	h := testHub()
 	h.failID = "f-"
 	sub := watch(h)
 	ctx := context.Background()
@@ -615,7 +677,7 @@ func TestLiveFailure(t *testing.T) {
 // count: past liveKeep the rows cut are the ones failed longest ago, and a
 // failure is never cut for its age.
 func TestLiveFailedTrim(t *testing.T) {
-	h := newLiveHub(nil)
+	h := testHub()
 	h.failID = "f-"
 	ctx := context.Background()
 	t0 := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
@@ -664,7 +726,7 @@ func TestKeepLast(t *testing.T) {
 // from one -- it used to come back with the count and the first time from
 // before -- and every page is told.
 func TestLiveClear(t *testing.T) {
-	h := newLiveHub(nil)
+	h := testHub()
 	h.failID = "f-"
 	ctx := context.Background()
 	t0 := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)

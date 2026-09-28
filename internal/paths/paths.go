@@ -122,6 +122,11 @@ func ForceBlock() string      { return Data(BlockList) }
 // ctl.SyncUserFiles
 func ObserveAll() string { return Data("observe-all.txt") }
 
+// CoreRun: which run of the core this is -- the service writes it anew
+// whenever it starts the core, and the UI's live page starts its history
+// over when it changes
+func CoreRun() string { return Data("core-run.txt") }
+
 // second tunnel (awg2): source .conf, custom host list, presets -- the
 // user's set of them, and the rules of the ones switched on, which the
 // service writes for the core

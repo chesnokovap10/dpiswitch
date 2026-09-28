@@ -245,6 +245,12 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 	s.mu.Unlock()
 	s.running.Store(true)
 	log.Printf("core started, pid %d", cmd.Process.Pid)
+	// the UI tells this run from the last by it: a core restarted between
+	// two of its calls looks the same from its API
+	run := fmt.Sprintf("%d %d\n", cmd.Process.Pid, time.Now().UnixNano())
+	if err := paths.ReplaceFile(paths.CoreRun(), []byte(run)); err != nil {
+		log.Printf("core run not written: %v", err)
+	}
 
 	// one-shot per core start: find out whether IPv6 gets through each
 	// tunnel (see ipv6.go). It waits for the tunnels, so it runs aside --

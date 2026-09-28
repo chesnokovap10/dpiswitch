@@ -2,10 +2,12 @@ package webui
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"dpiswitch/internal/paths"
@@ -100,6 +102,95 @@ func TestLiveAddPreset(t *testing.T) {
 	}
 	if a = add("nope", "x.example"); a.OK {
 		t.Fatalf("a preset not there: %+v", a)
+	}
+}
+
+// The presets switched on stand above "Always via tunnel" and a direct site
+// or address: the same rule is taken out of them, and one that takes it by a
+// wider line is said. A preset switched off, and a program sent direct --
+// its rule stands above the presets -- leave the presets as they are.
+func TestLiveAddAbovePresets(t *testing.T) {
+	s, _ := testServer(t)
+	add := func(to, entry string) liveAnswer {
+		t.Helper()
+		return liveAct(t, s, "/act/liveadd", url.Values{"to": {to}, "entry": {entry}}, nil)
+	}
+	lines := func(id string) string {
+		p, _ := findPreset(presets.Load(), id)
+		return strings.Join(p.Lines, ",")
+	}
+	do(t, s.Handler(), "POST", "/act/preset", url.Values{"field": {"ai"}, "value": {"1"}}, nil)
+	youtube := lines("youtube")
+
+	// the whole domain: its names in the preset go too, a.claude.ai and all
+	a := add("direct", "+.claude.ai")
+	if !a.OK || !strings.Contains(a.Msg, "taken out of «AI services»") {
+		t.Fatalf("out of the preset switched on: %+v", a)
+	}
+	for _, l := range strings.Split(lines("ai"), ",") {
+		if l == "claude.ai" || strings.HasSuffix(l, ".claude.ai") {
+			t.Errorf("left in the preset: %s", l)
+		}
+	}
+	if !strings.Contains(lines("ai"), "*.livepreview.claude.app") {
+		t.Error("a line of another domain taken out")
+	}
+	// anthropic.com, a line of the preset, takes api.anthropic.com still
+	a = add("tunnel", "api.anthropic.com")
+	if a.OK || !strings.Contains(a.Msg, "taken out of «AI services»") || !strings.Contains(a.Msg, "«AI services» stands above the lists") {
+		t.Fatalf("a wider line: %+v", a)
+	}
+	if strings.Contains(","+lines("ai")+",", ",api.anthropic.com,") || !strings.Contains(","+lines("ai")+",", ",anthropic.com,") {
+		t.Fatalf("the preset's lines: %s", lines("ai"))
+	}
+	if a = add("direct", "+.youtube.com"); !a.OK || lines("youtube") != youtube {
+		t.Fatalf("a preset switched off: %+v", a)
+	}
+	liveAct(t, s, "/act/liveadd", url.Values{"to": {"preset"}, "preset": {"ai"}, "entry": {"chrome.exe"}}, nil)
+	if a = add("direct", "chrome.exe"); !a.OK || !strings.HasSuffix(lines("ai"), ",chrome.exe") {
+		t.Fatalf("a program sent direct: %+v, %s", a, lines("ai"))
+	}
+}
+
+// The lists change together or not at all: one failing to write, the ones
+// written before it are put back.
+func TestLiveAddAtomic(t *testing.T) {
+	s, _ := testServer(t)
+	liveAct(t, s, "/act/liveadd", url.Values{"to": {"awg2"}, "entry": {"a.example"}}, nil)
+	// the forbidden list is read, and cannot be written: it is read-only.
+	// The second tunnel's list comes before it, and is written first.
+	block := paths.User(paths.BlockList)
+	if err := os.WriteFile(block, []byte("# empty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(block, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(block, 0o644) })
+	if a := liveAct(t, s, "/act/liveadd", url.Values{"to": {"block"}, "entry": {"a.example"}}, nil); a.OK {
+		t.Fatalf("saved: %+v", a)
+	}
+	if got := strings.Join(readEntries(paths.Awg2List), ","); got != "a.example" {
+		t.Fatalf("the second tunnel's list, written before the one that failed: %q", got)
+	}
+}
+
+// Sent at once from several windows, every line lands: each move reads and
+// writes the lists under one lock.
+func TestLiveAddAtOnce(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	var wg sync.WaitGroup
+	for i := range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			do(t, h, "POST", "/act/liveadd", url.Values{"to": {"tunnel"}, "entry": {fmt.Sprintf("s%d.example", i)}}, nil)
+		}()
+	}
+	wg.Wait()
+	if got := readEntries(paths.TunnelList); len(got) != 20 {
+		t.Fatalf("%d of 20 lines kept: %v", len(got), got)
 	}
 }
 

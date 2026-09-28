@@ -9,8 +9,8 @@ import (
 	"time"
 )
 
-// Live: the core's open connections for the UI's live page, one call per
-// refresh while the page is open. The core keeps no closed ones: what the
+// Live: the core's open connections for the UI's live page, one call a
+// second for as long as the UI runs. The core keeps no closed ones: what the
 // page shows as closed is what left the list between two calls.
 
 // LiveConn: one open connection as the core tracks it.
@@ -45,8 +45,8 @@ type Live struct {
 var ErrCoreDown = errors.New("the core is not running")
 
 // LiveClient asks one core again and again, on connections kept open: the
-// live page calls it every second. They are its own, and Release closes
-// them: with the page closed nothing is left open to the core.
+// UI's live page calls it every second. They are its own, and Release closes
+// them.
 type LiveClient struct {
 	a      *api
 	tr     *http.Transport

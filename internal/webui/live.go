@@ -25,6 +25,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"regexp"
 	"slices"
 	"sort"
@@ -97,7 +98,8 @@ type liveRow struct {
 	// page coming back asks for what came after the last it saw
 	Seq int64 `json:"seq,omitempty"`
 
-	queued bool // among the failures the next tick sends
+	queued bool   // among the failures the next tick sends
+	run    string // the core's run a failure came in, see coreRun
 }
 
 type liveUpd struct {
@@ -151,6 +153,7 @@ type liveSub struct{ ch chan []byte }
 
 type liveHub struct {
 	source func() liveSource
+	runOf  func() string // which run of the core this is: coreRun, or a test's
 
 	mu      sync.Mutex
 	subs    map[*liveSub]struct{}
@@ -158,14 +161,15 @@ type liveHub struct {
 	stopFn  context.CancelFunc
 	wg      sync.WaitGroup // the loop and its log reader; tests wait on it
 
-	ready  bool
-	at     time.Time // the last answer
-	open   map[string]*liveRow
-	closed []*liveRow // in the order they closed
-	tot    liveTotals
-	down   string
-	err    string
-	downAt time.Time // when the core was seen gone; zero while it answers
+	ready   bool
+	at      time.Time // the last answer
+	open    map[string]*liveRow
+	closed  []*liveRow // in the order they closed
+	tot     liveTotals
+	down    string
+	err     string
+	downAt  time.Time // when the core was seen gone; zero while it answers
+	lastRun string    // the core's run at the last answer
 
 	// the history: a new one when the core runs anew or a page clears it.
 	// seq counts what closed and failed in it.
@@ -180,8 +184,18 @@ type liveHub struct {
 }
 
 func newLiveHub(source func() liveSource) *liveHub {
-	return &liveHub{source: source, subs: map[*liveSub]struct{}{}, open: map[string]*liveRow{},
+	return &liveHub{source: source, runOf: coreRun, subs: map[*liveSub]struct{}{}, open: map[string]*liveRow{},
 		failKey: map[string]*liveRow{}, sess: newLiveSess()}
+}
+
+// coreRun: which run of the core this is, as the service wrote it when it
+// started the core -- "" from a service that writes none
+func coreRun() string {
+	b, err := os.ReadFile(paths.CoreRun())
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // newLiveSess: a history's name. Not the clock's: on Windows it may read
@@ -326,12 +340,15 @@ func (h *liveHub) update(live ctl.Live, err error, now time.Time) {
 		h.send(m)
 		return
 	}
-	// a new run of the core: seen gone and back, or restarted between two
-	// calls -- its totals counted from nothing again, and not one of the
-	// connections it held is left. What the last run left goes, and the
-	// pages are sent the state anew.
-	anew := !h.downAt.IsZero()
-	if !anew && !h.at.IsZero() && (live.UploadTotal < h.tot.Up || live.DownloadTotal < h.tot.Down) {
+	// a new run of the core: seen gone and back, or started anew between
+	// two calls -- the service names each run it starts. What the last run
+	// left goes, and the pages are sent the state anew. From a service that
+	// names none, a run is known by its totals counted from nothing again
+	// with not one of the connections held before left: totals alone may
+	// have grown past the last run's by the next call.
+	run := h.runOf()
+	anew := !h.downAt.IsZero() || run != "" && h.lastRun != "" && run != h.lastRun
+	if !anew && run == "" && !h.at.IsZero() && (live.UploadTotal < h.tot.Up || live.DownloadTotal < h.tot.Down) {
 		anew = !slices.ContainsFunc(live.Conns, func(c ctl.LiveConn) bool { return h.open[c.ID] != nil })
 	}
 	if anew {
@@ -339,9 +356,9 @@ func (h *liveHub) update(live ctl.Live, err error, now time.Time) {
 		if cut.IsZero() {
 			cut = h.at
 		}
-		h.newRun(cut.UnixMilli())
+		h.newRun(run, cut.UnixMilli())
 	}
-	h.downAt = time.Time{}
+	h.downAt, h.lastRun = time.Time{}, run
 	h.down, h.err = "", ""
 	m.Down, m.Err = "", ""
 	dt := now.Sub(h.at).Seconds()
@@ -403,11 +420,18 @@ func (h *liveHub) update(live ctl.Live, err error, now time.Time) {
 }
 
 // newRun: the core runs anew. Its last run's connections, the ones closed
-// and the failures go; a failure the new run's log told already stays --
-// it came after cut, the last the old run was seen.
-func (h *liveHub) newRun(cut int64) {
+// and the failures go, and with them what counts a failure again; a failure
+// the new run's log told already stays -- its own run's, or, where the
+// service names no runs, one that came after cut, the last the old run was
+// seen.
+func (h *liveHub) newRun(run string, cut int64) {
 	h.open, h.closed = map[string]*liveRow{}, nil
-	h.keepFailed(slices.DeleteFunc(h.failed, func(r *liveRow) bool { return r.End <= cut }))
+	h.keepFailed(slices.DeleteFunc(h.failed, func(r *liveRow) bool {
+		if run != "" && r.run != "" {
+			return r.run != run
+		}
+		return r.End <= cut
+	}))
 	h.at, h.tot = time.Time{}, liveTotals{}
 	h.sess = newLiveSess()
 	log.Printf("ui: live: the core runs anew: the history starts over")
@@ -470,7 +494,19 @@ func (h *liveHub) failure(ctx context.Context, e ctl.DialErr, chain []string, no
 	key := strings.Join([]string{e.Network, route, rule, e.Process, dst, fmt.Sprint(e.Port), fmt.Sprint(e.Probe), why}, "|")
 	ms := now.UnixMilli()
 	h.seq++
-	if r := h.failKey[key]; r != nil {
+	// the run is asked here, not taken from the last call: the new core's
+	// log may be read before its connections are
+	run := h.runOf()
+	// a failure of another run is not counted on: the new core's log may
+	// tell one before the loop sees the core anew. Where the service names no
+	// runs, one from before the core was seen gone is another run's.
+	other := func(r *liveRow) bool {
+		if r.run != "" && run != "" {
+			return r.run != run
+		}
+		return !h.downAt.IsZero() && r.End <= h.downAt.UnixMilli()
+	}
+	if r := h.failKey[key]; r != nil && !other(r) {
 		r.N++
 		r.End, r.Err, r.Seq = ms, e.Err, h.seq
 		if e.IP != "" {
@@ -487,7 +523,7 @@ func (h *liveHub) failure(ctx context.Context, e ctl.DialErr, chain []string, no
 	h.failSeq++
 	r := &liveRow{ID: h.failID + fmt.Sprint(h.failSeq), Host: e.Host, Dom: liveDomain(e.Host), IP: e.IP, Port: e.Port,
 		Net: e.Network, Route: liveRoute(chain), Chain: route, Rule: rule, Probe: e.Probe, Proc: e.Process,
-		Start: ms, Act: ms, End: ms, Err: e.Err, Why: why, N: 1, Seq: h.seq}
+		Start: ms, Act: ms, End: ms, Err: e.Err, Why: why, N: 1, Seq: h.seq, run: run}
 	r.Proto, _ = liveProto(r.Net, e.Port, false)
 	h.failed = append(h.failed, r)
 	h.failKey[key] = r
@@ -813,9 +849,9 @@ func liveWords(v *view) liveData {
 		"stopped":       v.T("The core is not running: the service is stopped or starting."),
 		"error":         v.T("The core does not answer:"),
 		"live":          v.T("live"),
-		"liveHint":      v.T("The core is asked every second while this page is in view"),
+		"liveHint":      v.T("The table follows the core every second"),
 		"paused":        v.T("on pause"),
-		"pausedHint":    v.T("Nothing is asked of the core until you resume"),
+		"pausedHint":    v.T("The table stands still until you resume; the program gathers what closes and fails all the same"),
 		"noOpen":        v.T("No open connections."),
 		"noClosed":      v.T("None closed yet: they show here as they close while the page is open."),
 		"noMatch":       v.T("Nothing matches the filter."),
