@@ -113,8 +113,11 @@ func (s *Server) actLiveAdd(w http.ResponseWriter, r *http.Request) {
 	slices.Sort(outs)
 	var msg string
 	switch {
-	case mv.had && len(mv.outOf) == 0:
+	case mv.had:
 		msg = fmt.Sprintf(tr(lang(r), "“%s” has %s already"), name, v)
+		if mv.moved > 0 {
+			msg += fmt.Sprintf(tr(lang(r), "; open connections moved: %d"), mv.moved)
+		}
 	case mv.moved > 0:
 		msg = fmt.Sprintf(tr(lang(r), "Added to “%s”: %s; open connections moved: %d"), name, v, mv.moved)
 	default:
@@ -125,6 +128,13 @@ func (s *Server) actLiveAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	if mv.off {
 		msg += tr(lang(r), ". The preset is off: it routes nothing until it is switched on")
+	}
+	// the auto-switch mode stands above the lists: said, not left to find
+	switch mode := ctl.LoadSettings(paths.Settings()).Mode(); {
+	case mode == ctl.ModeObserve && to != "direct" && to != "block":
+		msg += tr(lang(r), ". Observe only is on: everything but the forbidden goes direct, this too, until auto-switch is on")
+	case mode == ctl.ModeTunnel && to == "direct":
+		msg += tr(lang(r), ". Tunnel only is on: Always direct is set aside until auto-switch is on")
 	}
 	ok := true
 	if len(mv.still) > 0 {

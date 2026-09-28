@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/paths"
 	"dpiswitch/internal/presets"
 )
@@ -168,6 +169,50 @@ func TestLiveAddOverlap(t *testing.T) {
 	write(paths.TunnelList, "chrome.exe", "+.example.net")
 	if add("direct", "+.example.net"); list(paths.TunnelList) != "chrome.exe" {
 		t.Fatalf("another kind: tunnel %q", list(paths.TunnelList))
+	}
+}
+
+// A line the list has already is said so, the other lists cleaned all the
+// same; and the auto-switch mode that stands above the lists is said: Observe
+// only sends all but the forbidden direct, Tunnel only sets Always direct
+// aside.
+func TestLiveAddSaid(t *testing.T) {
+	s, _ := testServer(t)
+	add := func(to, entry string) liveAnswer {
+		t.Helper()
+		return liveAct(t, s, "/act/liveadd", url.Values{"to": {to}, "entry": {entry}}, nil)
+	}
+	if err := writeEntries(paths.DirectList, []string{"api.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeEntries(paths.TunnelList, []string{"+.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	a := add("direct", "api.example.com")
+	if !strings.HasPrefix(a.Msg, "“Always direct” has api.example.com already") ||
+		!strings.Contains(a.Msg, "taken out of «Always via tunnel»: +.example.com") || len(readEntries(paths.TunnelList)) != 0 {
+		t.Fatalf("there already, the others cleaned: %+v", a)
+	}
+
+	mode := func(m string) {
+		t.Helper()
+		if _, err := ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error { set.SetMode(m); return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mode(ctl.ModeObserve)
+	if a = add("tunnel", "t.example"); !strings.Contains(a.Msg, "Observe only is on") {
+		t.Errorf("observe only, to the tunnel: %s", a.Msg)
+	}
+	if a = add("block", "b.example"); strings.Contains(a.Msg, "is on") {
+		t.Errorf("observe only, forbidden: %s", a.Msg)
+	}
+	mode(ctl.ModeTunnel)
+	if a = add("direct", "d.example"); !strings.Contains(a.Msg, "Tunnel only is on") {
+		t.Errorf("tunnel only, direct: %s", a.Msg)
+	}
+	if a = add("awg2", "w.example"); strings.Contains(a.Msg, "is on") {
+		t.Errorf("tunnel only, the second tunnel: %s", a.Msg)
 	}
 }
 

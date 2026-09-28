@@ -358,7 +358,12 @@ func (h *liveHub) update(live ctl.Live, err error, now time.Time) {
 		}
 		h.newRun(run, cut.UnixMilli())
 	}
-	h.downAt, h.lastRun = time.Time{}, run
+	h.downAt = time.Time{}
+	// a name not read -- the service replacing the file that moment -- is
+	// no run of its own: the next one read is told from the last known
+	if run != "" {
+		h.lastRun = run
+	}
 	h.down, h.err = "", ""
 	m.Down, m.Err = "", ""
 	dt := now.Sub(h.at).Seconds()

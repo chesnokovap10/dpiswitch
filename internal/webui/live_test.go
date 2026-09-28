@@ -284,6 +284,32 @@ func TestLiveNewRunByMarker(t *testing.T) {
 	}
 }
 
+// A run's name not read at one call -- the service replacing the file that
+// moment -- is no run of its own: it used to wipe the last one known, and a
+// core started anew by the next call went by unseen.
+func TestLiveRunNameNotRead(t *testing.T) {
+	h := testHub()
+	run := "100 1"
+	h.runOf = func() string { return run }
+	sub := watch(h)
+	t0 := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	conn := func(id string) ctl.LiveConn {
+		return ctl.LiveConn{ID: id, Port: 443, Network: "tcp", Chains: []string{"DIRECT"}, Start: t0}
+	}
+	h.update(ctl.Live{UploadTotal: 10, DownloadTotal: 10, Conns: []ctl.LiveConn{conn("a")}}, nil, t0)
+	run = ""
+	h.update(ctl.Live{UploadTotal: 20, DownloadTotal: 20, Conns: []ctl.LiveConn{conn("a")}}, nil, t0.Add(time.Second))
+	for len(sub.ch) > 0 {
+		<-sub.ch
+	}
+	sess := h.sess
+	run = "200 2"
+	h.update(ctl.Live{UploadTotal: 900, DownloadTotal: 900, Conns: []ctl.LiveConn{conn("b")}}, nil, t0.Add(2*time.Second))
+	if m := next(t, sub); m.Kind != "full" || m.Sess == sess || len(m.Closed) != 0 {
+		t.Fatalf("a core started anew past a name not read: %+v", m)
+	}
+}
+
 // A page coming back to the history it holds gets only what came since the
 // last it saw; one holding another gets it all.
 func TestLiveSince(t *testing.T) {

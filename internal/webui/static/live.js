@@ -247,6 +247,9 @@
   }
 
   const NUM = {port: 1, ds: 1, us: 1, down: 1, up: 1, start: 1};
+  // one collator for every comparison: localeCompare with options makes one
+  // each time, and sorting a long history by a name took seconds
+  const coll = new Intl.Collator(locale, {numeric: true});
   function cmp(a, b) {
     const k = pref.sort;
     let d;
@@ -255,10 +258,33 @@
       const x = k === 'route' ? label(a) : a[k] || '', y = k === 'route' ? label(b) : b[k] || '';
       // the blank ones last, whichever way
       if (!x !== !y) return x ? -1 : 1;
-      d = x.localeCompare(y, locale, {numeric: true});
+      d = coll.compare(x, y);
     }
     if (pref.desc) d = -d;
     return d || b.start - a.start || (a.id < b.id ? -1 : 1);
+  }
+
+  // The first k rows in the order of cmp, sorted: what the table draws. A
+  // history of the core's whole run holds up to a hundred thousand rows a
+  // tab, and sorting them all every second froze the page; the rows that
+  // make it to the table are picked out first (quickselect), and only they
+  // are sorted. cmp orders every two rows apart, so the pick is exact.
+  function firstSorted(list, k) {
+    if (list.length <= 2 * k) return list.sort(cmp).slice(0, k);
+    let lo = 0, hi = list.length - 1;
+    while (lo < hi) {
+      const p = list[lo + Math.floor(Math.random() * (hi - lo + 1))];
+      let i = lo, j = hi;
+      while (i <= j) {
+        while (cmp(list[i], p) < 0) i++;
+        while (cmp(list[j], p) > 0) j--;
+        if (i <= j) { const t = list[i]; list[i] = list[j]; list[j] = t; i++; j--; }
+      }
+      if (k - 1 <= j) hi = j;
+      else if (k - 1 >= i) lo = i;
+      else break;
+    }
+    return list.slice(0, k).sort(cmp);
   }
 
   const hay = r => r._hay ||
@@ -277,17 +303,17 @@
         list.push(r);
       }
     }
-    list.sort(cmp);
     const found = list.length;
+    const rows = firstSorted(list, MAX);
     // the row picked stays where it was picked, whatever became of it since
     if (sel) {
-      const i = list.indexOf(sel);
-      if (i >= 0) list.splice(i, 1);
-      list.splice(Math.min(selAt, list.length, MAX - 1), 0, sel);
+      const i = rows.indexOf(sel);
+      if (i >= 0) rows.splice(i, 1);
+      rows.splice(Math.min(selAt, rows.length, MAX - 1), 0, sel);
     }
-    const n = Math.min(list.length, MAX);
+    const n = Math.min(rows.length, MAX);
     for (let i = 0; i < n; i++) {
-      const r = list[i];
+      const r = rows[i];
       paint(r);
       r._tr.classList.toggle('sel', r === sel);
       const at = tbody.children[i];
@@ -446,12 +472,15 @@
 
   // What goes to a list: the whole domain, the name alone, the address or
   // the program -- as the lists write them. The whole domain comes first:
-  // a site's own names come and go (rr3.sn-4g5e.googlevideo.com).
+  // a site's own names come and go (rr3.sn-4g5e.googlevideo.com). The
+  // address only for a connection with no name: a list's address routes the
+  // connections made to it by address, and a named one would go on as it
+  // went.
   function whats(r) {
     const out = [];
     if (r.dom) out.push(['+.' + r.dom, W.whatDomain]);
     if (r.host && r.host !== r.dom) out.push([r.host, W.whatName]);
-    if (r.ip) out.push([r.ip, W.whatAddr]);
+    if (r.ip && !r.host) out.push([r.ip, W.whatAddr]);
     // the detector's checks are its own: its program is not the user's
     if (r.proc && !r.probe) out.push([r.proc, W.whatProg]);
     return out;
