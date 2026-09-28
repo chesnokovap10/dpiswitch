@@ -3,7 +3,7 @@
   <div class="box" id="awg2state" data-poll="/frag/awg2/awg2state" data-every="10">{{template "awg2state" .}}</div>
   <div class="cols2 fill">
     <div class="box" id="presets">{{template "presets" .}}</div>
-    <div class="box" id="hosts">{{template "hosts" .}}</div>
+    <div class="box" id="list-awg2">{{template "list-awg2" .}}</div>
   </div>
 </div>
 {{template "confdialog" .Dlg "config2"}}
@@ -40,11 +40,4 @@
 {{end}}
 
 
-{{define "hosts"}}
-  <h3>{{.T "Your sites via the second tunnel"}}</h3>
-  <p class="hint">{{.T "One per line: example.com for that name only, +.example.com for the domain and everything under it."}}</p>
-  <form method="post" action="/act/awg2hosts" data-swap="hosts">
-    <textarea name="hosts" class="grow" spellcheck="false" placeholder="+.example.com">{{lines .Data.Hosts}}</textarea>
-    <div class="actions"><button class="primary">{{.T "Save"}}</button>{{template "msg" .}}<span class="spacer"></span><span class="muted">{{.Tf "%d entries" (len .Data.Hosts)}}</span></div>
-  </form>
-{{end}}
+{{define "list-awg2"}}{{template "entrylist" (el . "awg2" (.T "Yours via the second tunnel") (.T "Always through the second tunnel, beside the presets.") .Data.Hosts .Data.Online)}}{{end}}

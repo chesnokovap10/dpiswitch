@@ -15,13 +15,11 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"dpiswitch/internal/paths"
 	"dpiswitch/internal/session"
 )
 
@@ -105,9 +103,7 @@ func (s *Server) Handler() http.Handler {
 		"/act/detach2":   s.actDetach2,
 		"/act/reset":     s.actReset,
 		"/act/list":      s.actList,
-		"/act/apps":      s.actApps,
 		"/act/preset":    s.actPreset,
-		"/act/awg2hosts": s.actAwg2Hosts,
 		"/act/set":       s.actSet,
 		"/act/dns":       s.actDNS,
 		"/act/dnstest":   s.actDNSTest,
@@ -209,73 +205,6 @@ func readList(path string) []string {
 		out = []string{}
 	}
 	return out
-}
-
-func writeList(path, kind string, hosts []string) error {
-	seen := map[string]bool{}
-	var clean []string
-	for _, h := range hosts {
-		h = strings.ToLower(strings.TrimSpace(h))
-		h = strings.TrimPrefix(h, "http://")
-		h = strings.TrimPrefix(h, "https://")
-		if i := strings.IndexAny(h, "/:"); i > 0 {
-			h = h[:i]
-		}
-		if h == "" || seen[h] {
-			continue
-		}
-		seen[h] = true
-		clean = append(clean, h)
-	}
-	sort.Strings(clean)
-
-	var b strings.Builder
-	fmt.Fprintf(&b, "# always %s -- list maintained by the user\n", kind)
-	b.WriteString("# +.example.com also covers subdomains\n")
-	for _, h := range clean {
-		b.WriteString(h + "\n")
-	}
-	return paths.ReplaceFile(path, []byte(b.String()))
-}
-
-// excluded programs. The file holds ready classical core rules:
-// a name without a path -> PROCESS-NAME (survives updates to a new path),
-// a full path -> PROCESS-PATH (when several exes share a name).
-// The core watches the file itself, no API reload needed.
-func writeApps(path string, apps []string) error {
-	seen := map[string]bool{}
-	var rules []string
-	for _, a := range apps {
-		a = strings.Trim(strings.TrimSpace(a), `"`)
-		if a == "" {
-			continue
-		}
-		// a comma is the field separator in a core rule
-		if strings.Contains(a, ",") {
-			return fmt.Errorf("%q: commas in the name are not supported", a)
-		}
-		if !strings.HasSuffix(strings.ToLower(a), ".exe") {
-			return fmt.Errorf("%q: a program name with .exe is required, e.g. telegram.exe", a)
-		}
-		kind := "PROCESS-NAME"
-		if strings.ContainsAny(a, `\/`) {
-			kind = "PROCESS-PATH"
-			a = filepath.Clean(a)
-		}
-		if seen[strings.ToLower(a)] {
-			continue
-		}
-		seen[strings.ToLower(a)] = true
-		rules = append(rules, kind+","+a)
-	}
-	sort.Slice(rules, func(i, j int) bool { return strings.ToLower(rules[i]) < strings.ToLower(rules[j]) })
-
-	var b strings.Builder
-	b.WriteString("# programs whose traffic bypasses the tunnel -- list maintained by the user\n")
-	for _, r := range rules {
-		b.WriteString(r + "\n")
-	}
-	return paths.ReplaceFile(path, []byte(b.String()))
 }
 
 // tailWindow: how much of a log's end tail reads. The log tab refreshes

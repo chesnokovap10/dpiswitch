@@ -3,6 +3,7 @@ package ctl
 import (
 	"context"
 	"log"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -260,13 +261,20 @@ func closeRerouted(cfg Config, a *api, from, to string) int {
 	return n
 }
 
-// userListsDirect: whether the user's direct lists, as the core now reads
-// them, send a connection direct. An excluded program stands above every
-// list; the always-direct names only above the detector's rules and MATCH,
-// so those only take a connection one of these routed.
+// userListsDirect: whether the user's direct list, as the core now reads it,
+// sends a connection direct. A program in it stands above every other list;
+// its names and addresses only above the detector's rules and MATCH, so
+// those only take a connection one of these routed -- an address only one
+// that carries no name, as the core's rule asks no resolving.
 func userListsDirect() func(connection) bool {
 	apps := listRules(paths.ForceDirectApps())
 	names := listRules(paths.ForceDirect())
+	var nets []netip.Prefix
+	for _, r := range listRules(paths.Data(paths.IPList(paths.DirectList))) {
+		if p, err := netip.ParsePrefix(r); err == nil {
+			nets = append(nets, p)
+		}
+	}
 	return func(c connection) bool {
 		for _, r := range apps {
 			kind, v, _ := strings.Cut(r, ",")
@@ -279,6 +287,15 @@ func userListsDirect() func(connection) bool {
 			return false
 		}
 		dom := c.domain()
+		if dom == "" {
+			a, err := netip.ParseAddr(c.Metadata.DestinationIP)
+			for _, p := range nets {
+				if err == nil && p.Contains(a.Unmap()) {
+					return true
+				}
+			}
+			return false
+		}
 		for _, r := range names {
 			if MatchDomainRule(r, dom) {
 				return true

@@ -178,6 +178,8 @@ td small{display:block;color:var(--muted)}
 .st.closed{width:auto;height:auto;border-radius:0;line-height:1}
 .st.closed::before{content:"✕";color:var(--muted);font-size:11px}
 .st.failed{background:var(--bad)}
+/* refused by the forbidden list: a stop sign, not a failure */
+.st.blocked{background:var(--bad);border-radius:2px}
 .pb{display:inline-block;padding:0 7px;border-radius:99px;font-size:11px;line-height:17px;border:1px solid transparent}
 .pb.p-TLS{background:var(--tls-bg);color:var(--tls)}
 .pb.p-QUIC{background:var(--quic-bg);color:var(--quic)}

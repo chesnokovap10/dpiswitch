@@ -54,10 +54,11 @@ func Defaults() Config {
 	}
 }
 
-// pinnedLists: the rule-provider files routing names above the detector.
-// A disabled preset is written empty, so every preset file is read.
+// pinnedLists: the rule-provider files routing names above the detector --
+// the forbidden ones too: a probe would reach them past the rules. A
+// disabled preset is written empty, so every preset file is read.
 func pinnedLists() []string {
-	out := []string{paths.Awg2Hosts(), paths.ForceTunnel()}
+	out := []string{paths.Awg2Hosts(), paths.ForceTunnel(), paths.ForceBlock()}
 	for _, p := range presets.All {
 		out = append(out, paths.Preset(p.ID))
 	}

@@ -15,17 +15,24 @@ only costs a detour.</div>
 <tr><th>#</th><th>Rule</th><th>Route</th></tr>
 <tr><td>1</td><td>The tunnel servers themselves</td><td>direct (otherwise the tunnel would loop into itself)</td></tr>
 <tr><td>2</td><td>Addresses inside the tunnels (their DNS server)</td><td>that tunnel</td></tr>
-<tr><td>3</td><td>Local networks: the router, printers, shares, <code>.local</code> and <code>.lan</code> names</td><td>direct</td></tr>
-<tr><td>4</td><td><a href="/lists#list-apps">Programs bypassing the tunnel</a></td><td>direct, all their traffic</td></tr>
-<tr><td>5</td><td><a href="/awg2#presets">Second tunnel</a>: presets and your sites</td><td>awg2; if it is down, awg; if both are down, direct</td></tr>
-<tr><td>6</td><td><a href="/lists#list-tunnel">Always via tunnel</a></td><td>awg</td></tr>
-<tr><td>7</td><td><a href="/lists#list-direct">Always direct</a></td><td>direct</td></tr>
-<tr><td>8</td><td>Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name)</td><td>direct</td></tr>
-<tr><td>9</td><td>Everything else</td><td>awg; if it is down, direct</td></tr>
+<tr><td>3</td><td><a href="/lists#list-block">Forbidden</a>: programs, sites, addresses</td><td>refused, in every mode</td></tr>
+<tr><td>4</td><td>Local networks: the router, printers, shares, <code>.local</code> and <code>.lan</code> names</td><td>direct</td></tr>
+<tr><td>5</td><td>Everything, while "Observe only" is chosen</td><td>direct</td></tr>
+<tr><td>6</td><td>Programs in <a href="/lists#list-direct">Always direct</a></td><td>direct, all their traffic</td></tr>
+<tr><td>7</td><td><a href="/awg2#presets">Second tunnel</a>: presets and your list (programs, sites, addresses)</td><td>awg2; if it is down, awg; if both are down, direct</td></tr>
+<tr><td>8</td><td><a href="/lists#list-tunnel">Always via tunnel</a>: programs, sites, addresses</td><td>awg</td></tr>
+<tr><td>9</td><td><a href="/lists#list-direct">Always direct</a>: sites and addresses</td><td>direct</td></tr>
+<tr><td>10</td><td>Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name)</td><td>direct</td></tr>
+<tr><td>11</td><td>Everything else</td><td>awg; if it is down, direct</td></tr>
 </table>
 <p>The core decides once, when a connection opens. When you change a list or a preset here, the
 open connections the change moves are closed, and the programs reconnect over the new route. Turning
 auto-switch off closes the connections the detector sent direct.</p>
+<p>Every list takes sites (<code>example.com</code>, <code>+.example.com</code> for the domain and all under
+it), addresses and networks (<code>1.2.3.4</code>, <code>192.168.0.0/16</code>) and programs
+(<code>telegram.exe</code>, or a full path for one copy) in any mix. An address counts for connections
+made to it by address: a browser reaches sites by name, so add a site by its name. The tries the
+Forbidden list refuses show on a tab of their own in <a href="/live">Live</a>.</p>
 
 <h4>How a site is checked</h4>
 <ol>
@@ -83,10 +90,9 @@ the traffic goes.</p>
 <li><b>Observe only</b>: everything goes direct, the presets, the custom awg2 list and "Always via tunnel"
 included. Blocked sites do not open in this mode. The detector checks everything, the sites of those
 lists too.</li>
-<li><b>Tunnel only</b>: everything goes through awg and awg2, "Always direct" and the programs bypassing
-the tunnel included. The presets and the custom awg2 list still go to awg2.</li>
+<li><b>Tunnel only</b>: everything goes through awg and awg2, the "Always direct" list included. The presets and the custom awg2 list still go to awg2.</li>
 </ul>
-<p>The local network and the tunnels' own addresses go direct in every mode. Switching applies within a
+<p>The local network and the tunnels' own addresses go direct, and the Forbidden list is refused, in every mode. Switching applies within a
 second: the open connections the mode sends another way are closed, and the programs reconnect the new
 way. The verdicts are kept in every mode.</p>
 

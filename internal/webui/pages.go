@@ -138,25 +138,15 @@ func (v *view) VName(verdict string) string {
 // --- routing lists ---
 
 type lists struct {
-	Direct, Tunnel, Apps []string
-	Online               []netprocs.Proc
+	Direct, Tunnel, Block []string
+	Online                []netprocs.Proc
 }
 
 func listsData() lists {
-	l := lists{Direct: readList(paths.User(paths.DirectList)), Tunnel: readList(paths.User(paths.TunnelList)), Apps: readApps()}
-	l.Online = onlineApps(l.Apps)
+	l := lists{Direct: readEntries(paths.DirectList), Tunnel: readEntries(paths.TunnelList),
+		Block: readEntries(paths.BlockList)}
+	l.Online = onlineApps(append(append(append([]string{}, l.Direct...), l.Tunnel...), l.Block...))
 	return l
-}
-
-// readApps: the program list as the user wrote it -- the file holds rules
-func readApps() []string {
-	apps := []string{}
-	for _, l := range readList(paths.User(paths.AppsList)) {
-		if i := strings.IndexByte(l, ','); i > 0 {
-			apps = append(apps, strings.TrimSpace(l[i+1:]))
-		}
-	}
-	return apps
 }
 
 // onlineApps: the programs with open sockets, less the ones already listed
@@ -195,6 +185,7 @@ type preset struct {
 type awg2 struct {
 	Presets []preset
 	Hosts   []string
+	Online  []netprocs.Proc
 }
 
 func awg2Data() awg2 {
@@ -202,7 +193,8 @@ func awg2Data() awg2 {
 	for _, id := range ctl.LoadSettings(paths.Settings()).Awg2Presets {
 		on[id] = true
 	}
-	d := awg2{Hosts: readList(paths.User(paths.Awg2List))}
+	d := awg2{Hosts: readEntries(paths.Awg2List)}
+	d.Online = onlineApps(d.Hosts)
 	for _, p := range presets.All {
 		d.Presets = append(d.Presets, preset{Preset: p, Rules: len(p.Rules()), On: on[p.ID]})
 	}

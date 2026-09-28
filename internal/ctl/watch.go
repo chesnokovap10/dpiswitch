@@ -263,7 +263,7 @@ const minAddrCycles = 2
 // probe without it would test something other than the real traffic. UDP
 // (STUN and the like) cannot be judged without knowing its protocol.
 func addrProbeable(c connection, tunnelProxy string) bool {
-	return !c.fromProbe() &&
+	return !c.fromProbe() && !c.pinned() &&
 		strings.EqualFold(c.Metadata.Network, "tcp") &&
 		c.port() > 0 && c.port() != 443 &&
 		(c.viaTunnel(tunnelProxy) || c.byProvider(ObserveProvider))

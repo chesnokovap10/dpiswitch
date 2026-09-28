@@ -11,6 +11,7 @@
       <button type="button" data-tab="open" class="on">{{.T "Open"}} <span class="n" id="n-open"></span></button>
       <button type="button" data-tab="closed">{{.T "Closed"}} <span class="n" id="n-closed"></span></button>
       <button type="button" data-tab="failed">{{.T "Failed"}} <span class="n" id="n-failed"></span></button>
+      <button type="button" data-tab="blocked">{{.T "Forbidden"}} <span class="n" id="n-blocked"></span></button>
       <button type="button" data-tab="all">{{.T "All"}}</button>
     </div>
     <div class="tabs" id="lroutes">
@@ -24,7 +25,7 @@
     <span class="spacer"></span>
     <span class="muted" id="lstate"></span>
     <button type="button" id="lpause">{{.T "Pause"}}</button>
-    <button type="button" id="lclear" title="{{.T "Removes the closed connections and the failures; the same failure after it starts a row of its own"}}">{{.T "Clear"}}</button>
+    <button type="button" id="lclear" title="{{.T "Removes the closed connections, the failures and the forbidden tries; the same one after it starts a row of its own"}}">{{.T "Clear"}}</button>
   </div>
   <div class="flash bad" id="lbanner" hidden></div>
   <div class="tablebox">

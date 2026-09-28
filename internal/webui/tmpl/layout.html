@@ -119,6 +119,25 @@
 
 {{define "msg"}}{{if .Msg}}<span class="msg {{if .Msg.OK}}ok{{else}}bad{{end}}">{{.Msg.Text}}</span>{{end}}{{end}}
 
+{{/* one of the user's lists: sites, addresses and programs, see entries.go */}}
+{{define "entrylist"}}{{$v := .V}}
+  <h3>{{.Title}}</h3>
+  {{/* the lists page says how to write a line once, above its three */}}
+  <p class="hint">{{.Hint}}{{if eq .Kind "awg2"}} {{$v.T "One per line: a site (example.com; +.example.com for the domain and all under it), an address or a network (1.2.3.4, 192.168.0.0/16: for connections made to it by address), a program (telegram.exe; a full path for that copy only)."}}{{end}}</p>
+  <form method="post" action="/act/list" data-swap="list-{{.Kind}}">
+    <input type="hidden" name="kind" value="{{.Kind}}">
+    <div class="row" style="margin-bottom:8px">
+      <select name="add" style="flex:1;min-width:0">
+        <option value="">{{$v.Tf "Online now: %d programs" (len .Online)}}</option>
+        {{range .Online}}<option value="{{.Name}}" title="{{.Path}}">{{.Name}} · {{$v.Tf "%d conn." .Conns}}</option>{{end}}
+      </select>
+      <button name="op" value="add">{{$v.T "Add"}}</button>
+    </div>
+    <textarea name="entries" class="grow" spellcheck="false" placeholder="example.com&#10;+.example.org&#10;192.168.1.0/24&#10;telegram.exe">{{lines .Entries}}</textarea>
+    <div class="actions"><button class="primary" name="op" value="save">{{$v.T "Save"}}</button>{{template "msg" $v}}<span class="spacer"></span><span class="muted">{{$v.Tf "%d entries" (len .Entries)}}</span></div>
+  </form>
+{{end}}
+
 {{define "tunstate"}}{{$v := .V}}{{with .S}}{{if not .ServiceRun}}<span class="pill">{{$v.T "service stopped"}}</span>{{else if $.Alive}}<span class="pill ok">{{$v.T "responding"}} · {{$.Note}}</span>{{else}}<span class="pill bad">{{$v.T "not responding"}}</span> <span class="muted">{{$.Note}}</span>{{end}}{{end}}{{end}}
 
 {{define "durs"}}{{$v := .V}}{{range .Opts}}<option value="{{.Min}}" {{if eq .Min $.Cur}}selected{{end}}>{{if .Label}}{{$v.T .Label}}{{else}}{{$v.Tf "%d min" .Min}}{{end}}</option>{{end}}{{end}}

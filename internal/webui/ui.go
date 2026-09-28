@@ -18,6 +18,7 @@ import (
 	"dpiswitch/internal/autostart"
 	"dpiswitch/internal/awgconf"
 	"dpiswitch/internal/ctl"
+	"dpiswitch/internal/netprocs"
 	"dpiswitch/internal/paths"
 	"dpiswitch/internal/supervisor"
 	"dpiswitch/internal/tray"
@@ -49,8 +50,8 @@ func init() {
 		"tun": func(v *view, alive bool, note string) tunArg { return tunArg{v, v.St, alive, note} },
 		"dur": func(v *view, opts []durOpt, cur int) durArg { return durArg{v, opts, cur} },
 		// dl: one of the domain lists for the "domainlist" template
-		"dl": func(v *view, kind, title, hint string, hosts []string) dlArg {
-			return dlArg{v, kind, title, hint, hosts}
+		"el": func(v *view, kind, title, hint string, entries []string, online []netprocs.Proc) entryList {
+			return entryList{v, kind, title, hint, entries, online}
 		},
 	}
 	for _, p := range pageNames {
@@ -74,12 +75,6 @@ type durArg struct {
 	V    *view
 	Opts []durOpt
 	Cur  int
-}
-
-type dlArg struct {
-	V                 *view
-	Kind, Title, Hint string
-	Hosts             []string
 }
 
 // view: what every template gets. Data holds the page's own values.
@@ -378,7 +373,7 @@ func collectStatus() status {
 	set := ctl.LoadSettings(paths.Settings())
 	st.Mode = set.Mode()
 	st.Presets = len(set.Awg2Presets)
-	st.Awg2Hosts = len(readList(paths.User(paths.Awg2List)))
+	st.Awg2Hosts = len(readEntries(paths.Awg2List))
 
 	snap := ctl.LoadCached(paths.State())
 	st.NetworkID = snap.NetworkID

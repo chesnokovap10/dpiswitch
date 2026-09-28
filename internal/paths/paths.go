@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const AppName = "dpiswitch"
@@ -68,17 +69,26 @@ func UserDir() string { return filepath.Join(DataDir(), "user") }
 // User: a file the user writes, by name
 func User(name string) string { return filepath.Join(UserDir(), name) }
 
-// the user's lists: the user edits the copy in UserDir, the core reads the
-// service's copy of the same name in the data directory
+// the user's lists: sites, addresses and programs, one per line. The user
+// edits the file in UserDir; the core reads the service's copies in the data
+// directory, one per kind -- the names under the list's own name, the
+// addresses in IPList, the programs in AppList.
 const (
 	DirectList = "force-direct.txt"
 	TunnelList = "force-tunnel.txt"
-	AppsList   = "force-direct-apps.txt"
+	BlockList  = "force-block.txt"
 	Awg2List   = "awg2-hosts.txt"
+	// AppsList: the programs bypassing the tunnel, a user list of its own
+	// before the direct list took programs; read until that list is saved
+	AppsList = "force-direct-apps.txt"
 )
 
 // UserLists: every list the user edits
-var UserLists = []string{DirectList, TunnelList, AppsList, Awg2List}
+var UserLists = []string{DirectList, TunnelList, BlockList, Awg2List}
+
+// IPList, AppList: the files of a user list's addresses and programs
+func IPList(list string) string  { return strings.TrimSuffix(list, ".txt") + "-ip.txt" }
+func AppList(list string) string { return strings.TrimSuffix(list, ".txt") + "-apps.txt" }
 
 // UserReady: whether the user's directory is there to write in -- the
 // service makes it when it is installed.
@@ -105,7 +115,8 @@ func Reports() string         { return Data("reports.jsonl") }
 func Verified() string        { return Data("direct-verified.txt") }
 func VerifiedAddr() string    { return Data("direct-verified-addr.txt") }
 func ForceDirect() string     { return Data(DirectList) }
-func ForceDirectApps() string { return Data(AppsList) }
+func ForceDirectApps() string { return Data(AppList(DirectList)) }
+func ForceBlock() string      { return Data(BlockList) }
 
 // ObserveAll: the catch-all the service writes for observe only, see
 // ctl.SyncUserFiles

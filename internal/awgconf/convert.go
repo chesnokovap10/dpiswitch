@@ -404,11 +404,6 @@ func (c *Conf) Render() (string, error) {
 		w("    format: text")
 		w("    path: ./preset-%s.txt", p.ID)
 	}
-	w("  awg2-hosts:")
-	w("    type: file")
-	w("    behavior: domain")
-	w("    format: text")
-	w("    path: ./awg2-hosts.txt")
 	w("  # observe only: everything goes direct -- the service writes the")
 	w("  # catch-all here in that mode and leaves the file empty otherwise")
 	w("  observe-all:")
@@ -416,22 +411,20 @@ func (c *Conf) Render() (string, error) {
 	w("    behavior: classical")
 	w("    format: text")
 	w("    path: ./observe-all.txt")
-	w("  # user lists: the controller never touches or rewrites them")
-	w("  force-direct-apps:")
-	w("    type: file")
-	w("    behavior: classical")
-	w("    format: text")
-	w("    path: ./force-direct-apps.txt")
-	w("  force-tunnel:")
-	w("    type: file")
-	w("    behavior: domain")
-	w("    format: text")
-	w("    path: ./force-tunnel.txt")
-	w("  force-direct:")
-	w("    type: file")
-	w("    behavior: domain")
-	w("    format: text")
-	w("    path: ./force-direct.txt")
+	w("  # the user's lists -- direct, via the tunnel, forbidden, via awg2 -- each")
+	w("  # in three: names, addresses and programs. The service writes them from")
+	w("  # what the user wrote; the controller never touches them")
+	for _, l := range paths.UserLists {
+		for _, f := range []struct{ file, behavior string }{
+			{l, "domain"}, {paths.IPList(l), "ipcidr"}, {paths.AppList(l), "classical"},
+		} {
+			w("  %s:", strings.TrimSuffix(f.file, ".txt"))
+			w("    type: file")
+			w("    behavior: %s", f.behavior)
+			w("    format: text")
+			w("    path: ./%s", f.file)
+		}
+	}
 	w("  # detector memory: rewritten by the controller")
 	w("  direct-verified:")
 	w("    type: file")
@@ -466,8 +459,8 @@ func (c *Conf) Render() (string, error) {
 		}
 	}
 	w("")
-	w("  # 2. addressing INSIDE the tunnels. It lives in ULA space, which the next")
-	w("  #    block sends direct -- including the DNS server inside the tunnel.")
+	w("  # 2. addressing INSIDE the tunnels. It lives in ULA space, which the local")
+	w("  #    networks block sends direct -- including the DNS server inside the tunnel.")
 	w("  #    These have to come first, or that DNS would be dialled on the local")
 	w("  #    network, where nothing answers.")
 	writeInsideRules(w, c, tunDNS, "tunnel")
@@ -475,7 +468,13 @@ func (c *Conf) Render() (string, error) {
 		writeInsideRules(w, c2, split(c2.Interface["DNS"]), "tunnel2")
 	}
 	w("")
-	w("  # 3. local networks -- the LAN, the router, printers, network shares.")
+	w("  # 3. forbidden: refused in every mode, above everything but the tunnels'")
+	w("  #    own addresses -- a local address the user named included")
+	w("  - RULE-SET,force-block-apps,REJECT")
+	w("  - RULE-SET,force-block,REJECT")
+	w("  - RULE-SET,force-block-ip,REJECT,no-resolve")
+	w("")
+	w("  # 4. local networks -- the LAN, the router, printers, network shares.")
 	w("  # Nothing here is reachable from the other end of a tunnel anyway.")
 	w("  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve")
 	w("  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve")
@@ -501,33 +500,38 @@ func (c *Conf) Render() (string, error) {
 		w("  - DOMAIN,%s,DIRECT", d)
 	}
 	w("")
-	w("  # 4. observe only: everything else goes direct, above every list below.")
-	w("  #    Tunnel only needs no rule of its own: the service writes the two")
-	w("  #    direct lists empty in that mode.")
+	w("  # 5. observe only: everything else goes direct, above every list below.")
+	w("  #    Tunnel only needs no rule of its own: the service writes the direct")
+	w("  #    list empty in that mode.")
 	w("  - RULE-SET,observe-all,DIRECT")
 	w("")
-	w("  # 5. excluded programs: all their traffic bypasses the tunnel")
+	w("  # 6. programs sent direct: all their traffic bypasses the tunnels")
 	w("  - RULE-SET,force-direct-apps,DIRECT")
 	w("")
-	w("  # 6. second tunnel: presets and custom list -- the detector leaves them alone")
+	w("  # 7. second tunnel: presets and the user's awg2 list -- the detector leaves them alone")
 	for _, p := range presets.All {
 		w("  - RULE-SET,preset-%s,tunnel2", p.ID)
 	}
+	w("  - RULE-SET,awg2-hosts-apps,tunnel2")
 	w("  - RULE-SET,awg2-hosts,tunnel2")
+	w("  - RULE-SET,awg2-hosts-ip,tunnel2,no-resolve")
 	w("")
-	w("  # 7. user's always-tunnel list -- beats detector verdicts")
+	w("  # 8. the user's always-tunnel list -- beats detector verdicts and always-direct names")
+	w("  - RULE-SET,force-tunnel-apps,tunnel")
 	w("  - RULE-SET,force-tunnel,tunnel")
+	w("  - RULE-SET,force-tunnel-ip,tunnel,no-resolve")
 	w("")
-	w("  # 8. user's always-direct list")
+	w("  # 9. the user's always-direct names and addresses")
 	w("  - RULE-SET,force-direct,DIRECT")
+	w("  - RULE-SET,force-direct-ip,DIRECT,no-resolve")
 	w("")
-	w("  # 9. detector verdicts")
+	w("  # 10. detector verdicts")
 	w("  - RULE-SET,direct-verified,DIRECT")
 	w("  # the same verdicts by the address that was probed, for connections that")
 	w("  # carry no name at all (a speedtest client dialling a bare IP on 20000)")
 	w("  - RULE-SET,direct-verified-addr,DIRECT,no-resolve")
 	w("")
-	w("  # 10. everything else goes to the first tunnel")
+	w("  # 11. everything else goes to the first tunnel")
 	w("  - MATCH,tunnel")
 	return b.String(), nil
 }
@@ -761,9 +765,11 @@ func Regenerate() (bool, error) {
 // EnsureLists creates missing list files: a provider without
 // its file prevents the core from starting
 func EnsureLists() {
-	for _, p := range []string{paths.ForceDirect(), paths.ForceTunnel(),
-		paths.Verified(), paths.VerifiedAddr(), paths.ForceDirectApps(), paths.Awg2Hosts(),
-		paths.ObserveAll()} {
+	files := []string{paths.Verified(), paths.VerifiedAddr(), paths.ObserveAll()}
+	for _, l := range paths.UserLists {
+		files = append(files, paths.Data(l), paths.Data(paths.IPList(l)), paths.Data(paths.AppList(l)))
+	}
+	for _, p := range files {
 		if _, err := os.Stat(p); err != nil {
 			os.WriteFile(p, []byte("# empty\n"), 0o644)
 		}

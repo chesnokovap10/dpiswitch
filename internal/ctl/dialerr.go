@@ -94,6 +94,39 @@ func ParseDialErr(line string) (DialErr, bool) {
 	return e, true
 }
 
+// rejectRe: the core's line for a connection a rule refused
+// (tunnel.logMetadata), at the info level:
+//
+//	[TCP] 198.18.0.1:50427(chrome.exe) --> example.com:443 match RuleSet(force-block) using REJECT
+var rejectRe = regexp.MustCompile(`^\[(TCP|UDP)\] (\S+?)(?:\(([^)]*)\))? --> (\S+) match (\w+)\(([^)]*)\) using REJECT`)
+
+// Forbidden: what a connection refused by the user's forbidden list failed
+// with, see FailKind
+const Forbidden = "forbidden by the list"
+
+// ParseReject reads one line of the core's log for a connection the user's
+// forbidden list refused; false for any other. The core makes it without an
+// error -- a refused one is closed at once, never an open one to be seen.
+func ParseReject(line string) (DialErr, bool) {
+	m := rejectRe.FindStringSubmatch(strings.TrimSpace(line))
+	if m == nil || !strings.HasPrefix(m[6], "force-block") {
+		return DialErr{}, false
+	}
+	e := DialErr{Network: strings.ToLower(m[1]), Proxy: "REJECT", Rule: m[5], RulePayload: m[6], Err: Forbidden}
+	e.Process, _, _ = strings.Cut(m[3], ",")
+	host, port, err := net.SplitHostPort(m[4])
+	if err != nil {
+		return DialErr{}, false
+	}
+	e.Port, _ = strconv.Atoi(port)
+	if net.ParseIP(host) != nil {
+		e.IP = host
+	} else {
+		e.Host = strings.TrimSuffix(strings.ToLower(host), ".")
+	}
+	return e, true
+}
+
 // failKinds: what a dial error comes down to, by the words in it -- the
 // first that matches. Go's own words and Windows' (WSAECONNRESET is "an
 // existing connection was forcibly closed"), and the core's resolver's.
@@ -118,6 +151,9 @@ var eofRe = regexp.MustCompile(`\b(unexpected )?eof\b`)
 // Checked against the 2,174 dial warnings in the core's logs of the machine
 // it was written on (September 2026): all but one fell into a kind.
 func FailKind(err string) string {
+	if err == Forbidden {
+		return "forbidden"
+	}
 	e := strings.ToLower(err)
 	for _, k := range failKinds {
 		for _, w := range k.words {
@@ -157,10 +193,12 @@ func (l *LiveClient) Groups() (map[string]string, error) {
 	return out, nil
 }
 
-// DialErrors reads the core's warnings as they come and hands on the failed
+// DialErrors reads the core's log as it comes and hands on the failed
 // dials, until ctx ends or the core closes the stream -- it restarted.
 func (l *LiveClient) DialErrors(ctx context.Context, each func(DialErr)) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", l.a.base+"/logs?level=warning", nil)
+	// info, not warning: a connection the forbidden list refused is only
+	// an info line, "using REJECT"
+	req, err := http.NewRequestWithContext(ctx, "GET", l.a.base+"/logs?level=info", nil)
 	if err != nil {
 		return err
 	}
@@ -188,7 +226,14 @@ func (l *LiveClient) DialErrors(ctx context.Context, each func(DialErr)) error {
 		if json.Unmarshal(sc.Bytes(), &ev) != nil {
 			continue
 		}
-		if e, ok := ParseDialErr(ev.Payload); ok {
+		var e DialErr
+		var ok bool
+		if strings.Contains(ev.Payload, " using REJECT") {
+			e, ok = ParseReject(ev.Payload)
+		} else if strings.Contains(ev.Payload, " error: ") {
+			e, ok = ParseDialErr(ev.Payload)
+		}
+		if ok {
 			each(e)
 		}
 	}

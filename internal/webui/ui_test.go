@@ -78,8 +78,8 @@ func TestPagesRender(t *testing.T) {
 	frags := map[string][]string{
 		"overview": {"summary", "events"},
 		"verdicts": {"tabs", "table"},
-		"lists":    {"list-direct", "list-tunnel", "list-apps"},
-		"awg2":     {"awg2state", "presets", "hosts"},
+		"lists":    {"list-direct", "list-tunnel", "list-block"},
+		"awg2":     {"awg2state", "presets", "list-awg2"},
 		"settings": {"form", "dns"},
 		"logs":     {"log"},
 	}
@@ -139,7 +139,7 @@ func TestTranslations(t *testing.T) {
 		t.Fatal(err)
 	}
 	goKey := regexp.MustCompile(`(?:v\.Tf?\(|tr\(lang\(r\), |done\(r, [a-z]+, |redirect\(w, r, [^,"]+, )"([^"]+)"|note = "([^"]+)"|return "(Config[^"]+)"|\{\d+, "([^"]+)"\}`)
-	for _, f := range []string{"actions.go", "ui.go", "pages.go", "live.go"} {
+	for _, f := range []string{"actions.go", "ui.go", "pages.go", "live.go", "entries.go"} {
 		b, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
@@ -233,35 +233,80 @@ func TestSettingInstant(t *testing.T) {
 	}
 }
 
-// A list is saved as the core reads it: lower case, names only, once each.
+// A list takes sites, addresses and programs in one box, each written the
+// one way, once, sites first; the core gets each kind in a file of its own.
 func TestListSave(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
-	w := do(t, h, "POST", "/act/list", url.Values{"kind": {"tunnel"},
-		"hosts": {"Example.com\nhttps://sub.example.org/path\n\n+.example.net\nexample.com"}}, nil)
+	in := strings.Join([]string{"Example.com", "https://sub.example.org/path", "", "+.example.net", "example.com",
+		"192.168.12.0/16", "1.2.3.4", "Telegram.exe"}, "\n")
+	w := do(t, h, "POST", "/act/list", url.Values{"kind": {"tunnel"}, "entries": {in}}, nil)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "msg ok") {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
-	want := []string{"+.example.net", "example.com", "sub.example.org"}
-	if got := readList(paths.User(paths.TunnelList)); strings.Join(got, ",") != strings.Join(want, ",") {
+	want := []string{"+.example.net", "example.com", "sub.example.org", "1.2.3.4", "192.168.0.0/16", "Telegram.exe"}
+	if got := readEntries(paths.TunnelList); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("got %v, want %v", got, want)
 	}
-	// the core reads the service's copy, made from the user's
+	// the core reads the service's copies, made from the user's
 	if ctl.Synced(paths.TunnelList) {
 		t.Fatal("synced before the service ran")
 	}
 	ctl.SyncUserFiles()
-	if got := readList(paths.ForceTunnel()); strings.Join(got, ",") != strings.Join(want, ",") || !ctl.Synced(paths.TunnelList) {
-		t.Fatalf("service copy %v, want %v", got, want)
+	if !ctl.Synced(paths.TunnelList) {
+		t.Fatal("not synced after the service ran")
 	}
-	// a program is added by name and saved at once
-	w = do(t, h, "POST", "/act/apps", url.Values{"apps": {"a.exe"}, "add": {"b.exe"}, "op": {"add"}}, nil)
-	if got := readApps(); strings.Join(got, ",") != "a.exe,b.exe" {
-		t.Fatalf("apps %v: %s", got, w.Body.String())
+	for f, want := range map[string]string{
+		paths.ForceTunnel():                         "+.example.net,example.com,sub.example.org",
+		paths.Data(paths.IPList(paths.TunnelList)):  "1.2.3.4/32,192.168.0.0/16",
+		paths.Data(paths.AppList(paths.TunnelList)): "PROCESS-NAME,Telegram.exe",
+	} {
+		if got := strings.Join(readList(f), ","); got != want {
+			t.Errorf("%s: %s, want %s", f, got, want)
+		}
 	}
-	w = do(t, h, "POST", "/act/apps", url.Values{"apps": {"a.exe"}, "add": {""}, "op": {"add"}}, nil)
+
+	// a program is added by name and saved at once, to any of the lists
+	w = do(t, h, "POST", "/act/list", url.Values{"kind": {"block"}, "entries": {"a.exe"}, "add": {"b.exe"}, "op": {"add"}}, nil)
+	if got := readEntries(paths.BlockList); strings.Join(got, ",") != "a.exe,b.exe" {
+		t.Fatalf("forbidden %v: %s", got, w.Body.String())
+	}
+	w = do(t, h, "POST", "/act/list", url.Values{"kind": {"block"}, "entries": {"a.exe"}, "add": {""}, "op": {"add"}}, nil)
 	if !strings.Contains(w.Body.String(), "msg bad") {
 		t.Fatalf("an empty pick was not refused: %s", w.Body.String())
+	}
+	// a line of no kind refuses the save, and the list stays as it was
+	w = do(t, h, "POST", "/act/list", url.Values{"kind": {"block"}, "entries": {"c.exe\nbad host"}}, nil)
+	if !strings.Contains(w.Body.String(), "msg bad") || strings.Join(readEntries(paths.BlockList), ",") != "a.exe,b.exe" {
+		t.Fatalf("a bad line was saved: %s", w.Body.String())
+	}
+	// and what was typed stays in the box to be fixed
+	if !strings.Contains(w.Body.String(), "bad host</textarea>") {
+		t.Fatalf("the typed lines were lost: %s", w.Body.String())
+	}
+	if w := do(t, h, "POST", "/act/list", url.Values{"kind": {"nope"}}, nil); w.Code != 400 {
+		t.Fatalf("an unknown list: %d", w.Code)
+	}
+}
+
+// The programs' list of its own from before shows in the direct list, and
+// goes with the direct list's first save.
+func TestListOldApps(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	os.WriteFile(paths.User(paths.AppsList), []byte("PROCESS-NAME,wow.exe\n"), 0o644)
+	if got := readEntries(paths.DirectList); strings.Join(got, ",") != "wow.exe" {
+		t.Fatalf("old programs not shown: %v", got)
+	}
+	w := do(t, h, "POST", "/act/list", url.Values{"kind": {"direct"}, "entries": {"wow.exe\nbank.example"}}, nil)
+	if !strings.Contains(w.Body.String(), "msg ok") {
+		t.Fatalf("%s", w.Body.String())
+	}
+	if _, err := os.Stat(paths.User(paths.AppsList)); err == nil {
+		t.Fatal("the old list is still there")
+	}
+	if got := readEntries(paths.DirectList); strings.Join(got, ",") != "bank.example,wow.exe" {
+		t.Fatalf("after the save: %v", got)
 	}
 }
 
@@ -278,14 +323,34 @@ func TestListWaitsForService(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 		ctl.SyncUserFiles()
 	}()
-	w := do(t, h, "POST", "/act/list", url.Values{"kind": {"direct"}, "hosts": {"a.example"}}, nil)
+	w := do(t, h, "POST", "/act/list", url.Values{"kind": {"direct"}, "entries": {"a.example"}}, nil)
 	if !strings.Contains(w.Body.String(), "msg ok") || !ctl.Synced(paths.DirectList) {
 		t.Fatalf("not taken: %s", w.Body.String())
 	}
 	// no service to take it: the save is kept, the move is not claimed
-	w = do(t, h, "POST", "/act/list", url.Values{"kind": {"direct"}, "hosts": {"b.example"}}, nil)
-	if !strings.Contains(w.Body.String(), "msg bad") || readList(paths.User(paths.DirectList))[0] != "b.example" {
+	w = do(t, h, "POST", "/act/list", url.Values{"kind": {"direct"}, "entries": {"b.example"}}, nil)
+	if !strings.Contains(w.Body.String(), "msg bad") || readEntries(paths.DirectList)[0] != "b.example" {
 		t.Fatalf("an untaken save: %s", w.Body.String())
+	}
+}
+
+// A change moves the open connections to what it names: a site by its
+// name, an address only for a connection with none, a program by its name
+// or path.
+func TestEntryMatch(t *testing.T) {
+	m := entryMatch([]string{"+.example.com", "10.1.0.0/16", "x.exe"})
+	for c, want := range map[ctl.Conn]bool{
+		{Host: "www.example.com"}:                   true,
+		{Host: "example.org"}:                       false,
+		{IP: "10.1.2.3"}:                            true,
+		{Host: "a.example.org", IP: "10.1.2.3"}:     false,
+		{IP: "10.2.0.1"}:                            false,
+		{Host: "a.test", Process: "X.EXE"}:          true,
+		{Host: "a.test", ProcessPath: `C:\y\x.exe`}: false,
+	} {
+		if got := m(c); got != want {
+			t.Errorf("%+v: %v, want %v", c, got, want)
+		}
 	}
 }
 

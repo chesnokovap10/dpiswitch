@@ -10,20 +10,80 @@ import (
 	"dpiswitch/internal/presets"
 )
 
-// The core gets from a user list only what the UI would have written: a
-// line that is neither a comment nor a rule of the list's kind is dropped.
-func TestCleanList(t *testing.T) {
-	in := "# mine\nexample.com\n+.example.org\n\nDOMAIN-SUFFIX,evil.com\nbad host\nMATCH,DIRECT\n"
-	got := string(CleanList(paths.DirectList, []byte(in)))
-	if got != "# mine\nexample.com\n+.example.org\n" {
-		t.Fatalf("domain list: %q", got)
+// A line of a user list is a site, an address or a program, written the one
+// way the core reads it; anything else is refused.
+func TestParseEntry(t *testing.T) {
+	for in, want := range map[string]struct {
+		kind int
+		v    string
+	}{
+		"Example.COM":                       {EntryName, "example.com"},
+		"+.example.org":                     {EntryName, "+.example.org"},
+		"https://www.example.com:8443/path": {EntryName, "www.example.com"},
+		"1.2.3.4":                           {EntryIP, "1.2.3.4"},
+		"1.2.3.4/32":                        {EntryIP, "1.2.3.4"},
+		"192.168.12.0/16":                   {EntryIP, "192.168.0.0/16"},
+		"10.0.0.0/8":                        {EntryIP, "10.0.0.0/8"},
+		"2001:DB8::1":                       {EntryIP, "2001:db8::1"},
+		"2001:db8::/32":                     {EntryIP, "2001:db8::/32"},
+		"https://1.2.3.4:8443/x":            {EntryIP, "1.2.3.4"},
+		"[2001:db8::1]:443":                 {EntryIP, "2001:db8::1"},
+		"Telegram.exe":                      {EntryApp, "Telegram.exe"},
+		`"C:\Games\Steam\steam.exe"`:        {EntryApp, `C:\Games\Steam\steam.exe`},
+	} {
+		kind, v, err := ParseEntry(in)
+		if err != nil || kind != want.kind || v != want.v {
+			t.Errorf("%q: %d %q %v, want %d %q", in, kind, v, err, want.kind, want.v)
+		}
 	}
-	apps := "PROCESS-NAME,telegram.exe\nPROCESS-PATH,C:/a b/x.exe\nMATCH,DIRECT\nPROCESS-NAME,a,b.exe\nDOMAIN,x.com\n"
-	if got := string(CleanList(paths.AppsList, []byte(apps))); got != "PROCESS-NAME,telegram.exe\nPROCESS-PATH,C:/a b/x.exe\n" {
-		t.Fatalf("apps: %q", got)
+	for _, bad := range []string{"bad host", "MATCH,DIRECT", "a,b.exe", "300.1.1.1/8", ""} {
+		if _, _, err := ParseEntry(bad); err == nil {
+			t.Errorf("%q taken", bad)
+		}
 	}
-	if got := string(CleanList(paths.TunnelList, nil)); got != "# empty\n" {
-		t.Fatalf("empty: %q", got)
+}
+
+// A list goes to the core as three files, one per kind; lines of none of
+// them are left out, and the program list's old "PROCESS-NAME,x" lines are
+// read as programs.
+func TestSplitList(t *testing.T) {
+	in := strings.Join([]string{"# mine", "example.com", "1.2.3.4", "192.168.12.0/16", "telegram.exe",
+		"C:/a b/x.exe", "PROCESS-NAME,old.exe", "DOMAIN-SUFFIX,evil.com", "MATCH,DIRECT", "bad host"}, "\n")
+	got := splitList([]byte(in)).bodies(paths.DirectList)
+	want := map[string]string{
+		paths.DirectList:                "example.com\n",
+		paths.IPList(paths.DirectList):  "1.2.3.4/32\n192.168.0.0/16\n",
+		paths.AppList(paths.DirectList): "PROCESS-NAME,telegram.exe\nPROCESS-PATH,C:\\a b\\x.exe\nPROCESS-NAME,old.exe\n",
+	}
+	for f, w := range want {
+		if string(got[f]) != w {
+			t.Errorf("%s: %q, want %q", f, got[f], w)
+		}
+	}
+	if b := splitList(nil).bodies(paths.TunnelList); string(b[paths.TunnelList]) != "# empty\n" {
+		t.Fatalf("empty: %q", b[paths.TunnelList])
+	}
+}
+
+// The programs' list of its own from before is taken into the direct list
+// until that is saved.
+func TestSyncOldApps(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(paths.User(paths.AppsList), []byte("PROCESS-NAME,wow.exe\n"), 0o644)
+	SyncUserFiles()
+	if got := listRules(paths.ForceDirectApps()); len(got) != 1 || got[0] != "PROCESS-NAME,wow.exe" {
+		t.Fatalf("old program list not taken: %v", got)
+	}
+	os.WriteFile(paths.User(paths.DirectList), []byte("bank.example\n10.1.0.0/16\n"), 0o644)
+	SyncUserFiles()
+	if got := listRules(paths.ForceDirectApps()); len(got) != 1 || !Synced(paths.DirectList) {
+		t.Fatalf("programs lost beside the direct list: %v", got)
+	}
+	if got := listRules(paths.Data(paths.IPList(paths.DirectList))); len(got) != 1 || got[0] != "10.1.0.0/16" {
+		t.Fatalf("addresses: %v", got)
 	}
 }
 

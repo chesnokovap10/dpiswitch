@@ -262,7 +262,7 @@ func (s *Server) actReset(w http.ResponseWriter, r *http.Request) {
 // The service copies the user's list to the file the core reads (see
 // ctl.SyncUserFiles): taken tells when it has. The provider is reloaded
 // then, and the connections closed: see ctl.ReloadProviders.
-func closeMoved(provider string, match func(ctl.Conn) bool, taken func() bool) (int, error) {
+func closeMoved(providers []string, match func(ctl.Conn) bool, taken func() bool) (int, error) {
 	if !serviceRunning() {
 		return 0, nil // no core: nothing is open through it
 	}
@@ -273,7 +273,7 @@ func closeMoved(provider string, match func(ctl.Conn) bool, taken func() bool) (
 		time.Sleep(syncWait / 50)
 	}
 	secret := ctl.SecretFromConfig(paths.Config())
-	if err := ctl.ReloadProviders(apiAddr, secret, provider); err != nil {
+	if err := ctl.ReloadProviders(apiAddr, secret, providers...); err != nil {
 		log.Printf("ui: %v", err)
 		return 0, err
 	}
@@ -349,77 +349,6 @@ func splitLines(s string) []string {
 	return out
 }
 
-// saveDomains writes the user's copy of a domain list and closes what the
-// change moved. err is the list's own, closeErr the connections'.
-func (s *Server) saveDomains(name, kind string, entries []string) (n int, err, closeErr error) {
-	if err := paths.UserReady(); err != nil {
-		return 0, err, nil
-	}
-	path := paths.User(name)
-	s.listMu.Lock()
-	old := readList(path)
-	err = writeList(path, kind, entries)
-	cur := readList(path)
-	s.listMu.Unlock()
-	if err != nil {
-		return 0, err, nil
-	}
-	n, closeErr = closeMoved(providerOf(name), domainMatch(changed(old, cur)),
-		func() bool { return ctl.Synced(name) })
-	return n, nil, closeErr
-}
-
-func (s *Server) actList(w http.ResponseWriter, r *http.Request) {
-	kind := r.FormValue("kind")
-	name := map[string]string{"direct": paths.DirectList, "tunnel": paths.TunnelList}[kind]
-	if name == "" {
-		http.Error(w, "kind must be direct or tunnel", http.StatusBadRequest)
-		return
-	}
-	n, err, cerr := s.saveDomains(name, kind, splitLines(r.FormValue("hosts")))
-	ok, msg := saved(r, err, n, cerr)
-	s.part(w, r, "lists", "list-"+kind, ok, msg)
-}
-
-// actApps saves the program list; "add" puts a program from the online
-// list into it and saves at once -- it used to land in the field only,
-// waiting for a Save that was easy to miss.
-func (s *Server) actApps(w http.ResponseWriter, r *http.Request) {
-	apps := splitLines(r.FormValue("apps"))
-	if r.FormValue("op") == "add" {
-		a := strings.TrimSpace(r.FormValue("add"))
-		if a == "" {
-			s.part(w, r, "lists", "list-apps", false, tr(lang(r), "Pick a program from the list first"))
-			return
-		}
-		apps = append(apps, a)
-	}
-	err := paths.UserReady()
-	var old, cur []string
-	if err == nil {
-		s.listMu.Lock()
-		old = readApps()
-		err = writeApps(paths.User(paths.AppsList), apps)
-		cur = readApps()
-		s.listMu.Unlock()
-	}
-	n := 0
-	var cerr error
-	if err == nil {
-		moved := changed(old, cur)
-		n, cerr = closeMoved("force-direct-apps", func(c ctl.Conn) bool {
-			for _, a := range moved {
-				if strings.EqualFold(a, c.Process) || strings.EqualFold(a, c.ProcessPath) {
-					return true
-				}
-			}
-			return false
-		}, func() bool { return ctl.Synced(paths.AppsList) })
-	}
-	ok, msg := saved(r, err, n, cerr)
-	s.part(w, r, "lists", "list-apps", ok, msg)
-}
-
 // --- second tunnel ---
 
 // actPreset turns one preset on or off at once: the settings say which are
@@ -459,7 +388,7 @@ func (s *Server) actPreset(w http.ResponseWriter, r *http.Request) {
 	n := 0
 	var cerr error
 	if err == nil {
-		n, cerr = closeMoved("preset-"+p.ID, presetMatch(*p), func() bool { return presets.Written(p.ID, on) })
+		n, cerr = closeMoved([]string{"preset-" + p.ID}, presetMatch(*p), func() bool { return presets.Written(p.ID, on) })
 	}
 	ok, msg := saved(r, err, n, cerr)
 	s.part(w, r, "awg2", "presets", ok, msg)
@@ -492,12 +421,6 @@ func presetMatch(p presets.Preset) func(ctl.Conn) bool {
 		}
 		return false
 	}
-}
-
-func (s *Server) actAwg2Hosts(w http.ResponseWriter, r *http.Request) {
-	n, err, cerr := s.saveDomains(paths.Awg2List, "via the second tunnel", splitLines(r.FormValue("hosts")))
-	ok, msg := saved(r, err, n, cerr)
-	s.part(w, r, "awg2", "hosts", ok, msg)
 }
 
 // saved: the result of a list saved, with the connections it moved when

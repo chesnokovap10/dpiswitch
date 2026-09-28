@@ -61,6 +61,28 @@ func TestParseDialErr(t *testing.T) {
 	}
 }
 
+// A try the user's forbidden list refused is only an info line of the core;
+// a refusal by any other rule is not the list's.
+func TestParseReject(t *testing.T) {
+	e, ok := ParseReject("[TCP] 198.18.0.1:50427(chrome.exe) --> Example.com.:443 match RuleSet(force-block) using REJECT")
+	if !ok || e.Network != "tcp" || e.Process != "chrome.exe" || e.Host != "example.com" || e.Port != 443 ||
+		e.RulePayload != "force-block" || e.Proxy != "REJECT" || e.Err != Forbidden {
+		t.Fatalf("%v %+v", ok, e)
+	}
+	e, ok = ParseReject("[TCP] 198.18.0.1:1 --> [2001:db8::1]:443 match RuleSet(force-block-ip) using REJECT")
+	if !ok || e.IP != "2001:db8::1" || e.Host != "" || e.Process != "" {
+		t.Fatalf("an address: %v %+v", ok, e)
+	}
+	for _, l := range []string{
+		"[TCP] 198.18.0.1:1 --> a.example:443 match RuleSet(other) using REJECT",
+		"[TCP] 198.18.0.1:1 --> a.example:443 match RuleSet(force-block) using DIRECT",
+	} {
+		if _, ok := ParseReject(l); ok {
+			t.Errorf("taken: %s", l)
+		}
+	}
+}
+
 func TestFailKind(t *testing.T) {
 	for err, want := range map[string]string{
 		"interface not found":                                            "nonet",
@@ -86,15 +108,19 @@ func TestFailKind(t *testing.T) {
 	}
 }
 
-// The log is read as it comes, and what is not a failed dial is skipped.
+// The log is read as it comes: a failed dial and a try the forbidden list
+// refused are handed on, every other line is skipped.
 func TestDialErrors(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/logs" || r.URL.Query().Get("level") != "warning" || r.Header.Get("Authorization") != "Bearer s3" {
+		if r.URL.Path != "/logs" || r.URL.Query().Get("level") != "info" || r.Header.Get("Authorization") != "Bearer s3" {
 			http.Error(w, "no", http.StatusBadRequest)
 			return
 		}
-		for _, p := range []string{"[Metadata] not valid", "[TCP] dial DIRECT 127.0.0.1:1 --> 1.2.3.4:443 error: i/o timeout"} {
-			fmt.Fprintf(w, "{\"type\":\"warning\",\"payload\":%q}\n", p)
+		for _, p := range []string{"[Metadata] not valid",
+			"[TCP] 198.18.0.1:5(chrome.exe) --> a.example:443 match RuleSet(force-tunnel) using tunnel[awg]",
+			"[TCP] dial DIRECT 127.0.0.1:1 --> 1.2.3.4:443 error: i/o timeout",
+			"[UDP] 198.18.0.1:6(chrome.exe) --> ads.example:443 match RuleSet(force-block) using REJECT"} {
+			fmt.Fprintf(w, "{\"type\":\"info\",\"payload\":%q}\n", p)
 		}
 		w.(http.Flusher).Flush()
 		<-r.Context().Done()
@@ -106,10 +132,11 @@ func TestDialErrors(t *testing.T) {
 	defer cancel()
 	var got []DialErr
 	err := l.DialErrors(ctx, func(e DialErr) {
-		got = append(got, e)
-		cancel()
+		if got = append(got, e); len(got) == 2 {
+			cancel()
+		}
 	})
-	if len(got) != 1 || got[0].IP != "1.2.3.4" || !got[0].Probe {
+	if len(got) != 2 || got[0].IP != "1.2.3.4" || !got[0].Probe || got[1].Host != "ads.example" || FailKind(got[1].Err) != "forbidden" {
 		t.Fatalf("%v: %+v", err, got)
 	}
 

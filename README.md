@@ -404,8 +404,8 @@ their own port and access key).
 |---|---|
 | **Overview** | How many sites go direct, are blocked, slower, unverified; both tunnels' state, replacing a `.conf`; recent events |
 | **Verdicts** | Every verdict in the "Direct", "Blocked", "Slower", "Unverified" tabs, a name filter, "Reset all verdicts…" |
-| **Routing lists** | "Always direct", "Always via tunnel", "Programs bypassing the tunnel" |
-| **Second tunnel** | Attaching awg2, presets (YouTube, Telegram, AI services, Instagram/Facebook/X) and your own sites |
+| **Routing lists** | "Always direct", "Always via tunnel", "Forbidden": sites, addresses and programs in each |
+| **Second tunnel** | Attaching awg2, presets (YouTube, Telegram, AI services, Instagram/Facebook/X) and your own list |
 | **Settings** | Detector, terms, IPv6, DNS; every change applies at once |
 | **Logs** | The controller and service log, the core's, the tray and UI's |
 | **Help** | What is described below; its links lead straight to the field meant, which blinks |
@@ -443,17 +443,24 @@ Every new connection is matched against these rules from the top; the first one 
 |---|---|---|
 | 1 | The tunnel servers themselves | direct (otherwise the tunnel would loop into itself) |
 | 2 | Addresses inside the tunnels (their DNS server) | that tunnel |
-| 3 | Local networks: the router, printers, shares, `.local` and `.lan` names | direct |
-| 4 | Programs bypassing the tunnel (`qbittorrent.exe`, etc.) | direct, all their traffic |
-| 5 | Second tunnel: presets and your sites | awg2; if it is down, awg; if both are down, direct |
-| 6 | Always via tunnel | awg |
-| 7 | Always direct | direct |
-| 8 | Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name) | direct |
-| 9 | Everything else | awg; if it is down, direct |
+| 3 | Forbidden: programs, sites, addresses | refused, in every mode |
+| 4 | Local networks: the router, printers, shares, `.local` and `.lan` names | direct |
+| 5 | Everything, while "Observe only" is chosen | direct |
+| 6 | Programs in Always direct (`qbittorrent.exe`, etc.) | direct, all their traffic |
+| 7 | Second tunnel: presets and your list (programs, sites, addresses) | awg2; if it is down, awg; if both are down, direct |
+| 8 | Always via tunnel: programs, sites, addresses | awg |
+| 9 | Always direct: sites and addresses | direct |
+| 10 | Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name) | direct |
+| 11 | Everything else | awg; if it is down, direct |
 
 The core decides once, when a connection opens. When you change a list or a preset, the open
 connections the change moves are closed, and the programs reconnect over the new route. Turning
 auto-switch off closes the connections the detector sent direct.
+
+Every list takes sites (`example.com`, `+.example.com` for the domain and all under it), addresses and
+networks (`1.2.3.4`, `192.168.0.0/16`) and programs (`telegram.exe`, or a full path for one copy) in
+any mix. An address counts for connections made to it by address: a browser reaches sites by name, so
+add a site by its name. The tries the Forbidden list refuses show on a tab of their own in Live.
 
 ### How a site is checked
 
@@ -512,10 +519,10 @@ traffic goes.
 - **Observe only**: everything goes direct, the presets, the custom awg2 list and "Always via tunnel"
   included. Blocked sites do not open in this mode. The detector checks everything, the sites of those
   lists too.
-- **Tunnel only**: everything goes through awg and awg2, "Always direct" and the programs bypassing the
-  tunnel included. The presets and the custom awg2 list still go to awg2.
+- **Tunnel only**: everything goes through awg and awg2, the "Always direct" list included. The presets and the custom awg2 list still go to awg2.
 
-The local network and the tunnels' own addresses go direct in every mode. Switching applies within a
+The local network and the tunnels' own addresses go direct, and the Forbidden list is refused, in
+every mode. Switching applies within a
 second: the open connections the mode sends another way are closed, and the programs reconnect the new
 way. The verdicts are kept in every mode.
 

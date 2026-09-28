@@ -20,8 +20,8 @@
   const IDLE = 30000; // no traffic this long: idle
   const MAX = 1000;   // rows drawn at most; the filter narrows the rest
 
-  // id -> row; closed and failed ones in the order they came
-  const open = new Map(), closed = new Map(), failed = new Map();
+  // id -> row; closed, failed and forbidden ones in the order they came
+  const open = new Map(), closed = new Map(), failed = new Map(), blocked = new Map();
   let now = 0, keep = [500, 600], tot = null, ready = false, down = '', err = '';
   let es = null, paused = false, dropped = false;
 
@@ -113,19 +113,22 @@
     }
     trim(closed);
     trim(failed);
+    trim(blocked);
     draw();
   }
 
   // A failure comes again when the same one fails again: the row on the
-  // page takes its new count and time.
+  // page takes its new count and time. A try the forbidden list refused
+  // comes the same way, and is listed apart.
   function fail(r) {
     if (r.end <= clearedAt) return;
-    const o = failed.get(r.id);
-    if (!o) { failed.set(r.id, r); return; }
+    const m = r.route === 'reject' ? blocked : failed;
+    const o = m.get(r.id);
+    if (!o) { m.set(r.id, r); return; }
     o.n = r.n; o.end = r.end; o.err = r.err; o._hay = null;
     if (o.ip !== r.ip) { o.ip = r.ip; if (o._ip) o._ip.textContent = r.ip || ''; }
-    failed.delete(o.id);
-    failed.set(o.id, o);
+    m.delete(o.id);
+    m.set(o.id, o);
   }
 
   // the same ones the server keeps: the newest, none too old. Every row is
@@ -190,15 +193,15 @@
 
   function paint(r) {
     if (!r._tr) mk(r);
-    const st = r.why ? 'failed' : r.end ? 'closed' : now - r.act > IDLE ? 'idle' : 'open';
+    const st = r.why ? (r.route === 'reject' ? 'blocked' : 'failed') : r.end ? 'closed' : now - r.act > IDLE ? 'idle' : 'open';
     if (r._state !== st) {
       r._state = st;
       r._st.className = 'st ' + st;
       r._tr.classList.toggle('closed', st === 'closed');
-      r._tr.classList.toggle('failed', st === 'failed');
+      r._tr.classList.toggle('failed', st === 'failed' || st === 'blocked');
       if (st === 'closed') r._x.textContent = '';
     }
-    const t = st === 'failed' ? W.failed : st === 'closed' ? fmt(W.closedAgo, dur(now - r.end)) : st === 'idle' ? W.idle : W.open;
+    const t = st === 'failed' ? W.failed : st === 'blocked' ? W.blocked : st === 'closed' ? fmt(W.closedAgo, dur(now - r.end)) : st === 'idle' ? W.idle : W.open;
     if (r._st.title !== t) r._st.title = t;
     let v;
     if (r.why) {
@@ -235,8 +238,8 @@
 
   function draw() {
     const q = $('lfilter').value.trim().toLowerCase();
-    const all = [open, closed, failed];
-    const maps = pref.tab === 'all' ? all : [{open, closed, failed}[pref.tab] || open];
+    const all = [open, closed, failed, blocked];
+    const maps = pref.tab === 'all' ? all : [{open, closed, failed, blocked}[pref.tab] || open];
     const list = [], count = new Map(all.map(m => [m, 0]));
     for (const m of all) {
       for (const r of m.values()) {
@@ -259,11 +262,13 @@
     $('n-open').textContent = count.get(open);
     $('n-closed').textContent = count.get(closed);
     $('n-failed').textContent = count.get(failed);
+    $('n-blocked').textContent = count.get(blocked);
     let e = '';
     if (!ready) e = W.loading;
     else if (list.length > MAX) e = fmt(W.shown, MAX, list.length);
     else if (!list.length) {
-      e = q || pref.route ? W.noMatch : pref.tab === 'closed' ? W.noClosed : pref.tab === 'failed' ? W.noFailed : W.noOpen;
+      e = q || pref.route ? W.noMatch : pref.tab === 'closed' ? W.noClosed : pref.tab === 'failed' ? W.noFailed :
+        pref.tab === 'blocked' ? W.noBlocked : W.noOpen;
     }
     $('lempty').textContent = e;
     $('lempty').hidden = !e;
@@ -333,7 +338,7 @@
     state();
   });
   $('lclear').addEventListener('click', () => {
-    for (const m of [closed, failed]) {
+    for (const m of [closed, failed, blocked]) {
       for (const r of m.values()) if (r._tr) r._tr.remove();
       m.clear();
     }
