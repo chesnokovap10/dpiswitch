@@ -31,6 +31,18 @@ type dnsResult struct {
 	Ms     int64
 	IPs    []string
 	Error  string
+	// the address as written (Was) did not answer and its other DoH
+	// spelling did: this one, which the box takes instead (see
+	// probe.DoHPathAlternative)
+	Fixed, Was string
+}
+
+// dnsTest: what the DNS test shows, and the box's new text when an address
+// was fixed -- the page puts it in the box, see data-fill in ui.js
+type dnsTest struct {
+	Results []dnsResult
+	Field   string
+	Fill    string
 }
 
 // testDNS checks resolvers over the same path the core will use: direct
@@ -49,30 +61,43 @@ func testDNS(path string, servers []string) []dnsResult {
 		wg.Add(1)
 		go func(i int, srv string) {
 			defer wg.Done()
-			res := dnsResult{Server: srv, Kind: "DNS"}
-			rs, err := probe.ParseResolver(srv)
-			if err == nil {
-				switch {
-				case len(srv) > 8 && srv[:8] == "https://":
-					res.Kind = "DoH"
-				case len(srv) > 6 && srv[:6] == "tls://":
-					res.Kind = "DoT"
-				}
-				// the time of a query on a connection already up: the first
-				// one's handshake is paid once, and showed a server two or
-				// three times slower than it answers
-				var rtt time.Duration
-				res.IPs, rtt, err = rs.Ping(d, "whoami.akamai.net")
-				res.Ms = rtt.Milliseconds()
-			}
-			if err != nil {
-				res.Error = probe.Truncate(err.Error(), 120)
-			} else {
-				res.OK = len(res.IPs) > 0
-			}
-			out[i] = res
+			out[i] = pingDNS(d, srv)
 		}(i, srv)
 	}
 	wg.Wait()
 	return out
+}
+
+// pingEither: probe.PingEither; the tests put a script here
+var pingEither = probe.PingEither
+
+// pingDNS: one resolver asked, over d -- a DoH server that answers the other
+// spelling of its address only is taken on that one (see probe.PingEither)
+func pingDNS(d probe.Dialer, srv string) dnsResult {
+	res := dnsResult{Server: srv, Kind: "DNS"}
+	rs, err := probe.ParseResolver(srv)
+	if err == nil {
+		switch rs.Scheme {
+		case "https":
+			res.Kind = "DoH"
+		case "tls":
+			res.Kind = "DoT"
+		}
+		// the time of a query on a connection already up: the first
+		// one's handshake is paid once, and showed a server two or
+		// three times slower than it answers
+		var rtt time.Duration
+		var used string
+		res.IPs, rtt, used, err = pingEither(d, srv, "whoami.akamai.net")
+		res.Ms = rtt.Milliseconds()
+		if err == nil && used != srv {
+			res.Server, res.Fixed, res.Was = used, used, srv
+		}
+	}
+	if err != nil {
+		res.Error = probe.Truncate(err.Error(), 120)
+	} else {
+		res.OK = len(res.IPs) > 0
+	}
+	return res
 }

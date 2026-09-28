@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -34,29 +35,70 @@ func TestParseResolverIPv6(t *testing.T) {
 	}
 }
 
-func TestCanonicalResolver(t *testing.T) {
+// The other spelling of a DoH address: no path and /dns-query each stand
+// for the other; any other path, and any other scheme, has none.
+func TestDoHPathAlternative(t *testing.T) {
 	cases := map[string]string{
 		"https://84.252.75.74:8443":           "https://84.252.75.74:8443/dns-query",
-		" https://77.88.8.8 ":                 "https://77.88.8.8/dns-query",
+		"https://84.252.75.74:8443/dns-query": "https://84.252.75.74:8443",
+		" https://77.88.8.8/ ":                "https://77.88.8.8/dns-query",
+		"https://77.88.8.8/dns-query/":        "https://77.88.8.8",
 		"https://[2606:4700::1111]:443":       "https://[2606:4700::1111]:443/dns-query",
 		"https://2606:4700:4700::1111":        "https://2606:4700:4700::1111/dns-query",
 		"https://1.1.1.1?ecs=0":               "https://1.1.1.1/dns-query?ecs=0",
-		"https://1.1.1.1/":                    "https://1.1.1.1/",
-		"https://1.1.1.1/resolve":             "https://1.1.1.1/resolve",
-		"https://84.252.75.74:8443/dns-query": "https://84.252.75.74:8443/dns-query",
-		"tls://77.88.8.1":                     "tls://77.88.8.1",
-		"10.8.1.0":                            "10.8.1.0",
-		"ftp://x":                             "ftp://x",
+		"https://1.1.1.1/dns-query?ecs=0":     "https://1.1.1.1?ecs=0",
+		"https://1.1.1.1/resolve":             "",
+		"tls://77.88.8.1":                     "",
+		"10.8.1.0":                            "",
+		"ftp://x":                             "",
 	}
 	for in, want := range cases {
-		if got := CanonicalResolver(in); got != want {
-			t.Errorf("%q: %q, want %q", in, got, want)
+		got, ok := DoHPathAlternative(in)
+		if got != want || ok != (want != "") {
+			t.Errorf("%q: %q %v, want %q", in, got, ok, want)
 		}
-		if r, err := ParseResolver(in); err == nil {
-			// the same server the test asks, now spelled out
-			if c, _ := ParseResolver(CanonicalResolver(in)); c.Path != r.Path || c.Host != r.Host || c.Port != r.Port {
-				t.Errorf("%q: canonical form parses to %+v, not %+v", in, c, r)
-			}
+	}
+}
+
+// A DoH address is asked on the path it gives, none being "/" -- as the
+// core asks it, so the test answers for the core.
+func TestDoHAsksPathGiven(t *testing.T) {
+	var mu sync.Mutex
+	var asked []string
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		asked = append(asked, r.URL.Path)
+		mu.Unlock()
+		q, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/dns-message")
+		w.Write(answerWith(q, binary.BigEndian.Uint16(q)))
+	}))
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	defer srv.Close()
+	roots := x509.NewCertPool()
+	roots.AddCert(srv.Certificate())
+	resolverRoots = roots
+	defer func() { resolverRoots = nil }()
+	socks := newSocksStub(t, srv.Listener.Addr().String())
+	d := Dialer{Addr: socks.ln.Addr().String(), Timeout: 5 * time.Second}
+	base := "https://127.0.0.1:" + strconv.Itoa(srv.Listener.Addr().(*net.TCPAddr).Port)
+	for addr, want := range map[string]string{base: "/", base + "/dns-query": "/dns-query"} {
+		mu.Lock()
+		asked = nil
+		mu.Unlock()
+		r, err := ParseResolver(addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.Lookup(d, "a.example.org"); err != nil {
+			t.Fatalf("%s: %v", addr, err)
+		}
+		mu.Lock()
+		got := append([]string(nil), asked...)
+		mu.Unlock()
+		if len(got) != 1 || got[0] != want {
+			t.Errorf("%s asked %v, want %s", addr, got, want)
 		}
 	}
 }
@@ -388,6 +430,58 @@ func TestPingWarm(t *testing.T) {
 		}
 		if slow := rtt >= 100*time.Millisecond; slow != once {
 			t.Errorf("once=%v: %v timed, the setup counted = %v", once, rtt, slow)
+		}
+	}
+}
+
+// Every spelling of a DoH address against servers that answer on one path
+// only: what answers as written is kept, what does not is tried the other
+// way and taken on that one, and a server that answers neither way fails
+// with the error the address as written met.
+func TestPingEither(t *testing.T) {
+	roots := x509.NewCertPool()
+	resolverRoots = roots
+	defer func() { resolverRoots = nil }()
+	// a DoH server answering on path only ("-" for none at all), and the
+	// dialer that reaches it
+	server := func(path string) (string, Dialer) {
+		srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != path {
+				http.NotFound(w, r)
+				return
+			}
+			q, _ := io.ReadAll(r.Body)
+			w.Header().Set("Content-Type", "application/dns-message")
+			w.Write(answerWith(q, binary.BigEndian.Uint16(q)))
+		}))
+		srv.EnableHTTP2 = true
+		srv.StartTLS()
+		t.Cleanup(srv.Close)
+		roots.AddCert(srv.Certificate())
+		socks := newSocksStub(t, srv.Listener.Addr().String())
+		return "https://127.0.0.1:" + strconv.Itoa(srv.Listener.Addr().(*net.TCPAddr).Port),
+			Dialer{Addr: socks.ln.Addr().String(), Timeout: 5 * time.Second}
+	}
+	root, dRoot := server("/")
+	query, dQuery := server("/dns-query")
+	none, dNone := server("-")
+	for _, c := range []struct {
+		name, addr string
+		d          Dialer
+		used       string // "" -- fails
+	}{
+		{"no path, answers", root, dRoot, root},
+		{"no path fails, /dns-query answers", query, dQuery, query + "/dns-query"},
+		{"/dns-query answers", query + "/dns-query", dQuery, query + "/dns-query"},
+		{"/dns-query fails, no path answers", root + "/dns-query", dRoot, root},
+		{"neither answers", none + "/dns-query", dNone, ""},
+	} {
+		ips, _, used, err := PingEither(c.d, c.addr, "a.example.org")
+		switch {
+		case c.used == "" && (err == nil || used != c.addr || !strings.Contains(err.Error(), "404")):
+			t.Errorf("%s: %v %q %v, want the address's own 404", c.name, ips, used, err)
+		case c.used != "" && (err != nil || used != c.used || len(ips) != 1):
+			t.Errorf("%s: %v %q %v, want %s", c.name, ips, used, err, c.used)
 		}
 	}
 }

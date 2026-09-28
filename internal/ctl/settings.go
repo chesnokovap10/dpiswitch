@@ -166,8 +166,6 @@ func SaveSettings(path string, s Settings) error {
 }
 
 func saveSettings(path string, s Settings) error {
-	s.DirectDNS = canonicalDNS(s.DirectDNS)
-	s.TunnelDNS = canonicalDNS(s.TunnelDNS)
 	if err := s.Validate(); err != nil {
 		return err
 	}
@@ -306,21 +304,8 @@ func cleanDNS(in []string) []string {
 			continue
 		}
 		if _, err := probe.ParseResolver(d); err == nil {
-			out = append(out, probe.CanonicalResolver(d))
+			out = append(out, d)
 		}
-	}
-	return out
-}
-
-// canonicalDNS: the addresses as the core will use them, see
-// probe.CanonicalResolver. Broken entries stay for Validate to name.
-func canonicalDNS(in []string) []string {
-	if in == nil {
-		return nil
-	}
-	out := make([]string, len(in))
-	for i, d := range in {
-		out[i] = probe.CanonicalResolver(d)
 	}
 	return out
 }

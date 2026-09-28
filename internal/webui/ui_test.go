@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"errors"
 	"io/fs"
 	"net"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/paths"
 	"dpiswitch/internal/presets"
+	"dpiswitch/internal/probe"
 )
 
 // testServer: the UI over an empty data directory, with a fixed status --
@@ -454,5 +456,59 @@ func TestSameConfBothTunnels(t *testing.T) {
 	// the first one replaced by another of its own: fine
 	if err := saveConf1(conf(k1, "198.51.100.10")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The DNS test tries the other spelling of a DoH address the server did not
+// answer -- no path and /dns-query, each for the other -- and hands the box
+// the spelling that answered. What answers as written stays as written.
+func TestDNSTestFixesPath(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	answers := map[string]bool{ // what the servers answer on
+		"https://a.test":                 true, // no path, works
+		"https://b.test/dns-query":       true, // no path fails, /dns-query works
+		"https://c.test/dns-query":       true, // /dns-query works
+		"https://d.test:8443":            true, // /dns-query fails, no path works
+		"https://e.test/dns-query?ecs=0": false,
+		"tls://f.test":                   true,
+	}
+	// as probe.PingEither does it, over the servers above
+	old := pingEither
+	pingEither = func(_ probe.Dialer, srv, _ string) ([]string, time.Duration, string, error) {
+		if answers[srv] {
+			return []string{"192.0.2.1"}, time.Millisecond, srv, nil
+		}
+		if alt, ok := probe.DoHPathAlternative(srv); ok && answers[alt] {
+			return []string{"192.0.2.1"}, time.Millisecond, alt, nil
+		}
+		return nil, 0, srv, errors.New("HTTP 404")
+	}
+	defer func() { pingEither = old }()
+
+	lines := func(l ...string) string { return strings.Join(l, "\n") }
+	in := lines("https://a.test", "https://b.test", "https://c.test/dns-query",
+		"https://d.test:8443/dns-query", "https://e.test/dns-query?ecs=0", "tls://f.test")
+	w := do(t, h, "POST", "/act/dnstest?path=direct", url.Values{"direct_dns": {in}}, nil)
+	if w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	want := lines("https://a.test", "https://b.test/dns-query", "https://c.test/dns-query",
+		"https://d.test:8443", "https://e.test/dns-query?ecs=0", "tls://f.test")
+	if !strings.Contains(body, `data-fill="direct_dns">`+want+`</span>`) {
+		t.Fatalf("the box is not handed the spellings that answer:\n%s", body)
+	}
+	if n := strings.Count(body, "pill warn"); n != 2 {
+		t.Fatalf("%d addresses marked fixed, want 2:\n%s", n, body)
+	}
+	if n := strings.Count(body, "pill bad"); n != 1 {
+		t.Fatalf("%d failed, want 1 (e.test answers neither way):\n%s", n, body)
+	}
+
+	// nothing to fix: the box is left alone
+	w = do(t, h, "POST", "/act/dnstest?path=direct", url.Values{"direct_dns": {lines("https://a.test", "https://c.test/dns-query")}}, nil)
+	if strings.Contains(w.Body.String(), "data-fill") {
+		t.Fatalf("a box with nothing to fix was refilled:\n%s", w.Body.String())
 	}
 }

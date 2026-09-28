@@ -77,31 +77,39 @@ func ParseResolver(s string) (Resolver, error) {
 	if u.Fragment != "" {
 		return r, fmt.Errorf("%q: a #… suffix is not allowed here", r.Raw)
 	}
+	// a DoH path as given, none included: the core asks "/" then, and the
+	// test must ask what the core will
 	r.Path = u.EscapedPath()
-	if r.Scheme == "https" && r.Path == "" {
-		r.Path = "/dns-query"
-	}
 	return r, nil
 }
 
-// CanonicalResolver writes the path ParseResolver assumes into the address
-// itself. The core takes a DoH address's path as given and asks "/" when
-// there is none: "https://IP:8443" passed the test here, which asked
-// /dns-query, and the core then got 404 from the same server.
-func CanonicalResolver(s string) string {
+// DoHPathAlternative: the other spelling of a DoH address, for a server
+// that answers the one the user did not write -- no path and /dns-query,
+// each tried when the other fails. Any other path has no alternative.
+func DoHPathAlternative(s string) (string, bool) {
 	s = strings.TrimSpace(s)
-	r, err := ParseResolver(s)
-	if err != nil || r.Scheme != "https" {
-		return s
+	if r, err := ParseResolver(s); err != nil || r.Scheme != "https" {
+		return "", false
 	}
-	_, rest, _ := strings.Cut(s, "://")
-	if strings.Contains(rest, "/") {
-		return s
+	scheme, rest, _ := strings.Cut(s, "://")
+	end := len(rest)
+	if i := strings.IndexAny(rest, "/?"); i >= 0 {
+		end = i
 	}
-	if i := strings.IndexByte(s, '?'); i >= 0 {
-		return s[:i] + "/dns-query" + s[i:]
+	host, path := rest[:end], rest[end:]
+	query := ""
+	if i := strings.IndexByte(path, '?'); i >= 0 {
+		path, query = path[:i], path[i:]
 	}
-	return s + "/dns-query"
+	switch path {
+	case "", "/":
+		path = "/dns-query"
+	case "/dns-query", "/dns-query/":
+		path = ""
+	default:
+		return "", false
+	}
+	return scheme + "://" + host + path + query, true
 }
 
 // Lookup: A records of a name via this resolver, over the dialer's path.
@@ -281,6 +289,31 @@ func (r Resolver) Ping(d Dialer, name string) ([]string, time.Duration, error) {
 	t := time.Now()
 	ips, err := r.Lookup(d, name)
 	return ips, time.Since(t), err
+}
+
+// PingEither: Ping, and for a DoH address that did not answer, its other
+// spelling (see DoHPathAlternative) -- a server answers on one path only.
+// used is the address that answered, s or the other spelling; when neither
+// did, the error is the one s itself met.
+func PingEither(d Dialer, s, name string) (ips []string, rtt time.Duration, used string, err error) {
+	r, err := ParseResolver(s)
+	if err != nil {
+		return nil, 0, s, err
+	}
+	ips, rtt, err = r.Ping(d, name)
+	if err == nil && len(ips) > 0 {
+		return ips, rtt, s, nil
+	}
+	alt, ok := DoHPathAlternative(s)
+	if !ok {
+		return ips, rtt, s, err
+	}
+	if r2, err2 := ParseResolver(alt); err2 == nil {
+		if ips2, rtt2, err2 := r2.Ping(d, name); err2 == nil && len(ips2) > 0 {
+			return ips2, rtt2, alt, nil
+		}
+	}
+	return ips, rtt, s, err
 }
 
 func (r Resolver) pingStream(d Dialer, name string) ([]string, time.Duration, error) {

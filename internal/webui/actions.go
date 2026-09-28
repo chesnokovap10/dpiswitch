@@ -616,14 +616,29 @@ func (s *Server) actDNSTest(w http.ResponseWriter, r *http.Request) {
 	if path != "tunnel" {
 		path = "direct"
 	}
-	servers := splitLines(r.FormValue(path + "_dns"))
+	field := path + "_dns"
+	servers := splitLines(r.FormValue(field))
+	fromConf := false
 	if len(servers) == 0 && path == "tunnel" {
 		if c, err := awgconf.ParseFile(paths.SourceConf()); err == nil {
-			servers = c.DNS()
+			servers, fromConf = c.DNS(), true
 		}
 	}
+	t := dnsTest{Results: testDNS(path, servers), Field: field}
+	// a fixed address goes into the box in place of the one written; the
+	// .conf's own servers are not in the box
+	lines, fixed := make([]string, len(servers)), false
+	for i, res := range t.Results {
+		lines[i] = servers[i]
+		if res.Fixed != "" {
+			lines[i], fixed = res.Fixed, true
+		}
+	}
+	if fixed && !fromConf {
+		t.Fill = strings.Join(lines, "\n")
+	}
 	v := &view{Lang: lang(r), Page: "settings"}
-	v.Data = testDNS(path, servers)
+	v.Data = t
 	render(w, v, "dnsres")
 }
 

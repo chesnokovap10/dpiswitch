@@ -70,12 +70,15 @@
       <div class="dnsres" id="dnsres-direct"></div>
       <div class="dnsres" id="dnsres-tunnel"></div>
     </div>
-    <p class="hint" style="margin-top:8px">{{.TH "One per line: <code>https://IP/dns-query</code> (DoH), <code>tls://IP</code> (DoT), <code>IP</code> (plain DNS, often blocked by ISPs). An address, not a name, where possible."}}</p>
+    <p class="hint" style="margin-top:8px">{{.TH "One per line: <code>https://IP/dns-query</code> (DoH), <code>tls://IP</code> (DoT), <code>IP</code> (plain DNS, often blocked by ISPs). An address, not a name, where possible. The test finds whether a DoH server wants <code>/dns-query</code> and fixes the address."}}</p>
     <div class="actions"><button class="primary">{{.T "Save DNS"}}</button>{{template "msg" .}}<span class="muted">{{.T "Saving restarts the core: the tunnel drops for a couple of seconds."}}</span></div>
   </form>
 {{end}}
 
-{{define "dnsres"}}{{$v := .}}{{range .Data}}
+{{define "dnsres"}}{{$v := .}}{{with .Data}}{{range .Results}}
   {{if .OK}}<span class="pill ok">{{.Ms}} ms</span>{{else}}<span class="pill bad">{{$v.T "error"}}</span>{{end}}
-  {{.Kind}} {{.Server}} {{if .OK}}<span class="muted">→ {{$v.T "resolved by"}} {{join .IPs ", "}}</span>{{else}}<span class="muted">{{.Error}}</span>{{end}}<br>
-{{else}}<span class="muted">{{$v.T "Nothing to test"}}</span>{{end}}{{end}}
+  {{.Kind}} {{.Server}} {{if .OK}}<span class="muted">→ {{$v.T "resolved by"}} {{join .IPs ", "}}</span>{{else}}<span class="muted">{{.Error}}</span>{{end}}
+  {{if .Fixed}}<span class="pill warn" title="{{$v.Tf "%s does not answer: the server takes this spelling" .Was}}">{{$v.T "fixed"}}</span>{{end}}<br>
+{{else}}<span class="muted">{{$v.T "Nothing to test"}}</span>{{end}}
+{{if .Fill}}<span class="muted">{{$v.T "The box now holds the spelling each server answers. Save DNS to keep it."}}</span>
+<span hidden data-fill="{{.Field}}">{{.Fill}}</span>{{end}}{{end}}{{end}}

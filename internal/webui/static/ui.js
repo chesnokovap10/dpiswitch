@@ -57,6 +57,13 @@ async function send(url, body, target, changed) {
     const keep = changed !== undefined && a && el.contains(a) && a.name && a.name !== changed &&
       'value' in a ? {name: a.name, value: a.value, s: a.selectionStart, e: a.selectionEnd} : null;
     el.innerHTML = html;
+    // an answer may carry a new value for a field outside it: the DNS test
+    // puts the address that answered in place of the one written
+    for (const f of el.querySelectorAll('[data-fill]')) {
+      const t = document.querySelector('[name="' + CSS.escape(f.dataset.fill) + '"]');
+      if (t) t.value = f.textContent;
+      f.remove();
+    }
     if (keep) {
       const b = el.querySelector('[name="' + CSS.escape(keep.name) + '"]');
       if (b) {
