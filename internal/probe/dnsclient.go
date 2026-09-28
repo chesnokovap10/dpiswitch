@@ -34,11 +34,22 @@ type Resolver struct {
 	Path   string
 }
 
+// ResolverError: an address ParseResolver refuses. Why is one of a few
+// fixed sentences, so the settings page can say it in its own language.
+type ResolverError struct{ Raw, Why string }
+
+func (e *ResolverError) Error() string {
+	if e.Raw == "" {
+		return e.Why
+	}
+	return fmt.Sprintf("%q: %s", e.Raw, e.Why)
+}
+
 func ParseResolver(s string) (Resolver, error) {
 	s = strings.TrimSpace(s)
 	r := Resolver{Raw: s}
 	if s == "" {
-		return r, errors.New("empty resolver address")
+		return r, &ResolverError{r.Raw, "empty resolver address"}
 	}
 	if !strings.Contains(s, "://") {
 		s = "udp://" + s
@@ -56,26 +67,26 @@ func ParseResolver(s string) (Resolver, error) {
 	}
 	u, err := url.Parse(s)
 	if err != nil {
-		return r, fmt.Errorf("%q: %v", r.Raw, err)
+		return r, &ResolverError{r.Raw, "not a server address"}
 	}
 	r.Scheme = strings.ToLower(u.Scheme)
 	r.Host = u.Hostname()
 	defPort := map[string]int{"https": 443, "tls": 853, "tcp": 53, "udp": 53}
 	p, ok := defPort[r.Scheme]
 	if !ok {
-		return r, fmt.Errorf("%q: supported schemes are https://, tls://, tcp://, udp://", r.Raw)
+		return r, &ResolverError{r.Raw, "supported schemes are https://, tls://, tcp://, udp://"}
 	}
 	r.Port = p
 	if ps := u.Port(); ps != "" {
 		if r.Port, err = strconv.Atoi(ps); err != nil || r.Port < 1 || r.Port > 65535 {
-			return r, fmt.Errorf("%q: invalid port", r.Raw)
+			return r, &ResolverError{r.Raw, "invalid port"}
 		}
 	}
 	if r.Host == "" {
-		return r, fmt.Errorf("%q: no server specified", r.Raw)
+		return r, &ResolverError{r.Raw, "no server specified"}
 	}
 	if u.Fragment != "" {
-		return r, fmt.Errorf("%q: a #… suffix is not allowed here", r.Raw)
+		return r, &ResolverError{r.Raw, "a #… suffix is not allowed here"}
 	}
 	// a DoH path as given, none included: the core asks "/" then, and the
 	// test must ask what the core will

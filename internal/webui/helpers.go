@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"errors"
 	"net/netip"
 	"sync"
 	"time"
@@ -94,9 +95,15 @@ func pingDNS(d probe.Dialer, srv string) dnsResult {
 			res.Server, res.Fixed, res.Was = used, used, srv
 		}
 	}
-	if err != nil {
+	var re *probe.ResolverError
+	switch {
+	case errors.As(err, &re):
+		// the server is named beside it: the reason alone, which the page
+		// translates
+		res.Error = re.Why
+	case err != nil:
 		res.Error = probe.Truncate(err.Error(), 120)
-	} else {
+	default:
 		res.OK = len(res.IPs) > 0
 	}
 	return res

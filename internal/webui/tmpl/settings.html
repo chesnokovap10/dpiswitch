@@ -1,6 +1,6 @@
 {{define "content"}}
 <div class="page scroll">
-  <div id="sform">{{template "form" .}}</div>
+  <div id="sform" data-sync="/frag/settings/form">{{template "form" .}}</div>
   <div class="box" id="dns">{{template "dns" .}}</div>
   <div class="actions" style="padding-top:0">
     <form method="post" action="/act/defaults" data-confirm="{{.T "Put every setting on this page back to its default? DNS included. Presets and lists are not touched."}}">
@@ -36,15 +36,15 @@
   <div class="g">{{.T "Terms"}}</div>
 
   <div>{{.T "Keep direct for"}}</div>
-  <div><select id="clean_ttl_min" name="clean_ttl_min">{{template "durs" (dur . ($d.DurOpts $s.CleanTTLMin) $s.CleanTTLMin)}}</select></div>
+  <div><select id="clean_ttl_min" name="clean_ttl_min">{{template "durs" (dur . ($d.DurOpts "clean_ttl_min" $s.CleanTTLMin) $s.CleanTTLMin)}}</select></div>
   <div class="h">{{.T "How long a clean site goes direct before it is checked again."}}{{template "rowmsg" ($d.MsgFor "clean_ttl_min")}}</div>
 
   <div>{{.T "Re-check blocked after"}}</div>
-  <div><select name="fail_ttl_min">{{template "durs" (dur . ($d.DurOpts $s.FailTTLMin) $s.FailTTLMin)}}</select></div>
+  <div><select name="fail_ttl_min">{{template "durs" (dur . ($d.DurOpts "fail_ttl_min" $s.FailTTLMin) $s.FailTTLMin)}}</select></div>
   <div class="h">{{.T "Blocks get lifted: a blocked site is tried again after this, then less and less often."}}{{template "rowmsg" ($d.MsgFor "fail_ttl_min")}}</div>
 
   <div>{{.T "Pause cap"}}</div>
-  <div><select name="max_backoff_min">{{template "durs" (dur . ($d.DurOpts $s.MaxBackoffMin) $s.MaxBackoffMin)}}</select></div>
+  <div><select name="max_backoff_min">{{template "durs" (dur . ($d.DurOpts "max_backoff_min" $s.MaxBackoffMin) $s.MaxBackoffMin)}}</select></div>
   <div class="h">{{.T "The longest wait between checks of a site that keeps failing. Not less than the re-check above."}}{{template "rowmsg" ($d.MsgFor "max_backoff_min")}}</div>
 
   <div class="g">{{.T "Network"}}</div>
@@ -77,7 +77,7 @@
 
 {{define "dnsres"}}{{$v := .}}{{with .Data}}{{range .Results}}
   {{if .OK}}<span class="pill ok">{{.Ms}} ms</span>{{else}}<span class="pill bad">{{$v.T "error"}}</span>{{end}}
-  {{.Kind}} {{.Server}} {{if .OK}}<span class="muted">→ {{$v.T "resolved by"}} {{join .IPs ", "}}</span>{{else}}<span class="muted">{{.Error}}</span>{{end}}
+  {{.Kind}} {{.Server}} {{if .OK}}<span class="muted">→ {{$v.T "resolved by"}} {{join .IPs ", "}}</span>{{else}}<span class="muted">{{$v.T .Error}}</span>{{end}}
   {{if .Fixed}}<span class="pill warn" title="{{$v.Tf "%s does not answer: the server takes this spelling" .Was}}">{{$v.T "fixed"}}</span>{{end}}<br>
 {{else}}<span class="muted">{{$v.T "Nothing to test"}}</span>{{end}}
 {{if .Fill}}<span class="muted">{{$v.T "The box now holds the spelling each server answers. Save DNS to keep it."}}</span>

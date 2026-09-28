@@ -234,6 +234,141 @@ func TestSettingInstant(t *testing.T) {
 	}
 }
 
+// A term offers only what the settings take: the blocked re-check once
+// offered 30 days, which was always refused, and the pause cap offers
+// nothing below the re-check. A value set by hand is among the choices.
+func TestSettingsTerms(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	set := ctl.DefaultSettings()
+	set.FailTTLMin, set.MaxBackoffMin = 7, 180
+	if err := ctl.SaveSettings(paths.Settings(), set); err != nil {
+		t.Fatal(err)
+	}
+	body := do(t, h, "GET", "/settings", nil, nil).Body.String()
+	options := func(name string) []int {
+		m := regexp.MustCompile(`(?s)<select[^>]*name="` + name + `">(.*?)</select>`).FindStringSubmatch(body)
+		if m == nil {
+			t.Fatalf("no %s select:\n%s", name, body)
+		}
+		var out []int
+		for _, v := range regexp.MustCompile(`value="(\d+)"`).FindAllStringSubmatch(m[1], -1) {
+			n, _ := strconv.Atoi(v[1])
+			out = append(out, n)
+		}
+		return out
+	}
+	for _, c := range []struct {
+		name   string
+		lo, hi int
+		has    int
+	}{
+		{"clean_ttl_min", 10, 43200, 10080},
+		{"fail_ttl_min", 5, 10080, 7},
+		{"max_backoff_min", 7, 43200, 180},
+	} {
+		opts := options(c.name)
+		found := false
+		for _, n := range opts {
+			if n < c.lo || n > c.hi {
+				t.Errorf("%s offers %d, outside %d..%d", c.name, n, c.lo, c.hi)
+			}
+			found = found || n == c.has
+		}
+		if !found {
+			t.Errorf("%s: %d not among %v", c.name, c.has, opts)
+		}
+	}
+	// every choice offered is taken
+	for _, name := range []string{"clean_ttl_min", "fail_ttl_min", "max_backoff_min"} {
+		for _, n := range options(name) {
+			w := do(t, h, "POST", "/act/set", url.Values{"field": {name}, "value": {strconv.Itoa(n)}}, nil)
+			if strings.Contains(w.Body.String(), "msg bad") {
+				t.Errorf("%s=%d offered but refused", name, n)
+			}
+			if err := ctl.SaveSettings(paths.Settings(), set); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
+// A DNS save refused keeps what was typed, and says why in the page's
+// language; the core restart is announced only when there is one.
+func TestDNSSave(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	ru := map[string]string{"Cookie": "lang=ru"}
+	typed := "https://77.88.8.8/dns-query\nudp://9.9.9.9:99999"
+	w := do(t, h, "POST", "/act/dns", url.Values{"direct_dns": {typed}, "tunnel_dns": {"10.8.0.1"}}, ru)
+	body := w.Body.String()
+	if !strings.Contains(body, "msg bad") || !strings.Contains(body, "неверный порт") {
+		t.Fatalf("the refusal is not said in Russian:\n%s", body)
+	}
+	if !strings.Contains(body, "udp://9.9.9.9:99999</textarea>") || !strings.Contains(body, ">10.8.0.1</textarea>") {
+		t.Fatalf("what was typed is lost:\n%s", body)
+	}
+	if got := ctl.LoadSettings(paths.Settings()); len(got.TunnelDNS) != 0 {
+		t.Fatalf("a refused save was written: %+v", got)
+	}
+	// the same in the DNS test
+	w = do(t, h, "POST", "/act/dnstest?path=direct", url.Values{"direct_dns": {"quic://1.1.1.1"}}, ru)
+	if !strings.Contains(w.Body.String(), "поддерживаются только") {
+		t.Fatalf("the test's reason is not in Russian:\n%s", w.Body.String())
+	}
+
+	restart := "the core restarts"
+	save := func(direct string) string {
+		return do(t, h, "POST", "/act/dns", url.Values{"direct_dns": {direct}, "tunnel_dns": {""}}, nil).Body.String()
+	}
+	def := strings.Join(ctl.DefaultSettings().DirectDNS, "\n")
+	if b := save(def); strings.Contains(b, restart) || !strings.Contains(b, "msg ok") {
+		t.Fatalf("a save changing nothing announced a restart:\n%s", b)
+	}
+	if b := save("tls://77.88.8.1"); !strings.Contains(b, restart) {
+		t.Fatalf("a change did not announce the restart:\n%s", b)
+	}
+	// IPv6 goes into the core too
+	ipv6 := func(v string) string {
+		return do(t, h, "POST", "/act/set", url.Values{"field": {"ipv6"}, "value": {v}}, nil).Body.String()
+	}
+	if b := ipv6("0"); !strings.Contains(b, restart) {
+		t.Fatalf("IPv6 switched did not announce the restart:\n%s", b)
+	}
+	if b := ipv6("0"); strings.Contains(b, restart) {
+		t.Fatalf("IPv6 left as it was announced a restart:\n%s", b)
+	}
+	// defaults put the DNS back: that restarts the core too
+	if w := do(t, h, "POST", "/act/defaults", url.Values{}, nil); w.Code != http.StatusSeeOther {
+		t.Fatalf("defaults: %d", w.Code)
+	}
+	if b := do(t, h, "GET", "/settings", nil, nil).Body.String(); !strings.Contains(b, "Settings reset to defaults: "+restart) {
+		t.Fatalf("defaults changing the DNS did not announce the restart:\n%s", b)
+	}
+	// a stopped service restarts nothing
+	st := s.statusFn()
+	st.ServiceRun = false
+	s.statusFn = func() status { return st }
+	if b := save("tls://77.88.8.1"); strings.Contains(b, restart) || !strings.Contains(b, "msg ok") {
+		t.Fatalf("a stopped service announced a restart:\n%s", b)
+	}
+}
+
+// Each reason a DNS address is refused for has its Russian.
+func TestResolverReasonsTranslated(t *testing.T) {
+	for _, in := range []string{"", "udp://1.1.1.1 8.8.8.8", "quic://1.1.1.1", "udp://1.1.1.1:0", "https:///dns-query", "tls://1.1.1.1#x"} {
+		_, err := probe.ParseResolver(in)
+		var re *probe.ResolverError
+		if !errors.As(err, &re) {
+			t.Errorf("%q: %v, not a ResolverError", in, err)
+			continue
+		}
+		if _, ok := ru[re.Why]; !ok {
+			t.Errorf("%q: no Russian for %q", in, re.Why)
+		}
+	}
+}
+
 // A list takes sites, addresses and programs in one box, each written the
 // one way, once, sites first; the core gets each kind in a file of its own.
 func TestListSave(t *testing.T) {

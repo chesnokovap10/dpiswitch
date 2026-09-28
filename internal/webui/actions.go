@@ -19,6 +19,7 @@ import (
 	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/paths"
 	"dpiswitch/internal/presets"
+	"dpiswitch/internal/probe"
 	"dpiswitch/internal/winsvc"
 )
 
@@ -52,10 +53,23 @@ func (s *Server) part(w http.ResponseWriter, r *http.Request, page, name string,
 // done: the message for a result, translated
 func done(r *http.Request, err error, okText string, args ...any) (bool, string) {
 	if err != nil {
-		// the settings' own checks speak in fixed sentences: translated too
-		return false, tr(lang(r), err.Error())
+		return false, errText(lang(r), err)
 	}
 	return true, fmt.Sprintf(tr(lang(r), okText), args...)
+}
+
+// errText: an error as the page says it. The settings' own checks speak in
+// fixed sentences: translated too. A DNS address refused names itself
+// before its reason, which used to stay in English.
+func errText(l string, err error) string {
+	var re *probe.ResolverError
+	switch {
+	case !errors.As(err, &re):
+		return tr(l, err.Error())
+	case re.Raw == "":
+		return tr(l, re.Why)
+	}
+	return fmt.Sprintf("%q: %s", re.Raw, tr(l, re.Why))
 }
 
 // redirect finishes a plain form: the message waits on the page it came from.
@@ -468,11 +482,12 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown setting", http.StatusBadRequest)
 		return
 	}
-	note := "Saved"
+	note, restart := "Saved", false
 	err := paths.UserReady()
 	if err == nil {
 		_, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
 			var err error
+			was := *set
 			switch field {
 			case "auto_switch":
 				err = setMode(set, val)
@@ -480,7 +495,7 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 				set.Families = val == "1"
 			case "ipv6":
 				set.IPv6 = val == "1"
-				note = "Saved: the core restarts, the tunnel drops for a couple of seconds"
+				restart = !set.SameCore(was)
 			case "clean_ttl_min":
 				set.CleanTTLMin, err = num()
 			case "fail_ttl_min":
@@ -501,6 +516,9 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 			return err
 		})
 	}
+	if field == "ipv6" {
+		note = s.coreNote(restart)
+	}
 	ok, msg := done(r, err, note)
 	s.partField(w, r, field, ok, msg)
 }
@@ -515,35 +533,64 @@ func (s *Server) partField(w http.ResponseWriter, r *http.Request, field string,
 	render(w, v, "form")
 }
 
+// actDNS saves both boxes. A refused save keeps what was typed: the boxes
+// used to come back with the saved servers, and a typo in one line lost
+// every line written.
 func (s *Server) actDNS(w http.ResponseWriter, r *http.Request) {
+	direct, tunnel := splitLines(r.FormValue("direct_dns")), splitLines(r.FormValue("tunnel_dns"))
+	if tunnel == nil {
+		tunnel = []string{}
+	}
+	restart := false
 	err := paths.UserReady()
 	if err == nil {
 		_, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
-			set.DirectDNS = splitLines(r.FormValue("direct_dns"))
-			set.TunnelDNS = splitLines(r.FormValue("tunnel_dns"))
-			if set.TunnelDNS == nil {
-				set.TunnelDNS = []string{}
-			}
+			was := *set
+			set.DirectDNS, set.TunnelDNS = direct, tunnel
+			restart = !set.SameCore(was)
 			return nil
 		})
 	}
-	ok, msg := done(r, err, "Saved: the core restarts, the tunnel drops for a couple of seconds")
-	s.part(w, r, "settings", "dns", ok, msg)
+	ok, msg := done(r, err, s.coreNote(restart))
+	s.fresh()
+	v := &view{Lang: lang(r), Page: "settings", Path: back(r), St: s.status(), Msg: &flash{ok, msg}}
+	d := settingsData()
+	if err != nil {
+		d.S.DirectDNS, d.S.TunnelDNS = direct, tunnel
+	}
+	v.Data = d
+	render(w, v, "dns")
+}
+
+// coreNote: the message for a save; one that changed what the core is
+// built from restarts a running core. It used to be said on every DNS
+// save -- one that changed nothing, one with the service stopped.
+func (s *Server) coreNote(changed bool) string {
+	if changed && s.status().ServiceRun {
+		return "Saved: the core restarts, the tunnel drops for a couple of seconds"
+	}
+	return "Saved"
 }
 
 // actDefaults puts every setting back to its default -- the second
 // tunnel's presets aside: they are not on this page.
 func (s *Server) actDefaults(w http.ResponseWriter, r *http.Request) {
+	restart := false
 	err := paths.UserReady()
 	if err == nil {
 		_, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
 			d := ctl.DefaultSettings()
 			d.Awg2Presets = set.Awg2Presets
+			restart = !d.SameCore(*set)
 			*set = d
 			return nil
 		})
 	}
-	s.redirect(w, r, err, "Settings reset to defaults")
+	note := "Settings reset to defaults"
+	if restart && s.status().ServiceRun {
+		note = "Settings reset to defaults: the core restarts, the tunnel drops for a couple of seconds"
+	}
+	s.redirect(w, r, err, note)
 }
 
 // actDNSTest checks resolvers over the path the core uses them on.

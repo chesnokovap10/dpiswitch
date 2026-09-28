@@ -2,7 +2,8 @@
 // would otherwise reload for. A form with data-swap="id" is sent in the
 // background and the server's answer replaces that element's content; a
 // form with data-instant sends each control the moment it changes; an
-// element with data-poll="url" refreshes itself every data-every seconds.
+// element with data-poll="url" refreshes itself every data-every seconds,
+// one with data-sync="url" when an action elsewhere on the page answers.
 'use strict';
 
 // Answers can come back out of order: a refresh started before a change
@@ -66,6 +67,14 @@ async function send(url, body, target, changed) {
     }
     // a dialog whose save was refused comes back open, on what was typed
     for (const d of el.querySelectorAll('dialog[data-show]')) d.showModal();
+    // an action may change what other parts show: the mode is in the header
+    // and in the settings, and one changed in either left the other showing
+    // the old one. The rest are drawn afresh now, not in five seconds or
+    // never; those with no period of their own are data-sync.
+    for (const p of document.querySelectorAll('[data-poll],[data-sync]')) {
+      if (p === el || p.contains(el) || el.contains(p)) continue;
+      if (p.dataset.poll) due.set(p, 0); else poll(p);
+    }
     if (keep) {
       const b = el.querySelector('[name="' + CSS.escape(keep.name) + '"]');
       if (b) {
@@ -192,7 +201,7 @@ async function poll(el) {
   const mark = {};
   busy.set(el, mark);
   try {
-    const r = await fetch(el.dataset.poll, {signal: AbortSignal.timeout(15000)}).catch(() => null);
+    const r = await fetch(el.dataset.poll || el.dataset.sync, {signal: AbortSignal.timeout(15000)}).catch(() => null);
     if (!r || !r.ok) return;
     const html = await r.text();
     if (!current()) return;

@@ -216,6 +216,21 @@ const (
 	slowPctMax               = 500
 )
 
+// TermRange: the values Validate lets a term take, in minutes, by its
+// field. The settings page offers no choice outside them: the blocked
+// re-check once offered 30 days, and picking it was always refused.
+func (s Settings) TermRange(field string) (lo, hi int) {
+	switch field {
+	case "clean_ttl_min":
+		return cleanTTLMin, cleanTTLMax
+	case "fail_ttl_min":
+		return failTTLMin, failTTLMax
+	case "max_backoff_min":
+		return s.FailTTLMin, maxBackoffMax
+	}
+	return 0, 0
+}
+
 func (s Settings) Validate() error {
 	switch {
 	case s.CleanTTLMin < cleanTTLMin || s.CleanTTLMin > cleanTTLMax:

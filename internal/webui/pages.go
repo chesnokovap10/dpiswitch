@@ -243,19 +243,20 @@ func settingsData() settings {
 	return d
 }
 
-// DurOpts: the choices of a term, with a value set by hand in the file
-// among them -- shown, not lost on the next save.
-func (d settings) DurOpts(cur int) []durOpt {
-	for _, o := range d.Durs {
-		if o.Min == cur {
-			return d.Durs
-		}
-	}
+// DurOpts: the choices of a term the settings let it take, with a value set
+// by hand in the file among them -- shown, not lost on the next save.
+func (d settings) DurOpts(field string, cur int) []durOpt {
+	lo, hi := d.S.TermRange(field)
 	out := []durOpt{}
 	added := false
 	for _, o := range d.Durs {
-		if !added && cur < o.Min {
-			out = append(out, durOpt{cur, "" /* shown in minutes */})
+		if o.Min < lo || o.Min > hi {
+			continue
+		}
+		if !added && cur <= o.Min {
+			if cur < o.Min {
+				out = append(out, durOpt{cur, "" /* shown in minutes */})
+			}
 			added = true
 		}
 		out = append(out, o)
