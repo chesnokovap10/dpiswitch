@@ -9,6 +9,6 @@
 </div>
 {{end}}
 
-{{define "list-direct"}}{{template "entrylist" (el . "direct" (.T "Always direct") (.T "Never through a tunnel, whatever the detector finds: banks, government services, whatever must see your real address. A program here goes direct entirely, above every list.") .Data.Direct .Data.Online)}}{{end}}
+{{define "list-direct"}}{{template "entrylist" (el . "direct" (.T "Always direct") (.T "Never through a tunnel, whatever the detector finds: banks, government services, whatever must see your real address. A program here goes direct entirely, above every list but Forbidden.") .Data.Direct .Data.Online)}}{{end}}
 {{define "list-tunnel"}}{{template "entrylist" (el . "tunnel" (.T "Always via tunnel") (.T "Always through the first tunnel: the detector's verdicts and \"Always direct\" do not apply. A program here goes through the tunnel entirely.") .Data.Tunnel .Data.Online)}}{{end}}
 {{define "list-block"}}{{template "entrylist" (el . "block" (.T "Forbidden") (.T "Refused in every mode: the connection is closed at once. A program here is cut off from the network entirely.") .Data.Block .Data.Online)}}{{end}}

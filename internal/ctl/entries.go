@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode"
+
+	"golang.org/x/net/idna"
 
 	"dpiswitch/internal/paths"
 )
@@ -55,11 +58,33 @@ func ParseEntry(s string) (kind int, v string, err error) {
 	if ip, ok := parseIP(h); ok {
 		return EntryIP, ip, nil
 	}
+	// an IPv6 address in brackets, a port after it or none: the port was cut
+	// at the address's own last colon
+	if strings.HasPrefix(h, "[") {
+		if end := strings.IndexByte(h, ']'); end > 0 {
+			if ip, ok := parseIP(h[1:end]); ok {
+				return EntryIP, ip, nil
+			}
+		}
+	}
 	if i := strings.LastIndexByte(h, ':'); i > 0 {
 		h = h[:i]
 	}
-	if ip, ok := parseIP(strings.Trim(h, "[]")); ok {
+	if ip, ok := parseIP(h); ok {
 		return EntryIP, ip, nil
+	}
+	// a name as DNS writes it, with the root's dot
+	h = strings.TrimSuffix(h, ".")
+	// A name in its own letters -- пример.рф -- goes as DNS and the traffic
+	// carry it, in punycode: the core sees nothing else, and the rule never
+	// fired. The "+." before it stays as it is.
+	if strings.IndexFunc(h, func(r rune) bool { return r > unicode.MaxASCII }) >= 0 {
+		pre := h[:len(h)-len(strings.TrimLeft(h, "+.*"))]
+		a, err := idna.Lookup.ToASCII(h[len(pre):])
+		if err != nil {
+			return 0, "", fmt.Errorf("%q: neither a site, an address nor a program", s)
+		}
+		h = pre + a
 	}
 	// digits and dots alone are an address gone wrong, not a name
 	if domainRule.MatchString(h) && strings.Trim(h, "0123456789.") != "" {

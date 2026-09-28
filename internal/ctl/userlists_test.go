@@ -28,6 +28,12 @@ func TestParseEntry(t *testing.T) {
 		"https://1.2.3.4:8443/x":            {EntryIP, "1.2.3.4"},
 		"[2001:db8::1]:443":                 {EntryIP, "2001:db8::1"},
 		"Telegram.exe":                      {EntryApp, "Telegram.exe"},
+		"пример.рф":                         {EntryName, "xn--e1afmkfd.xn--p1ai"},
+		"+.Госуслуги.рф":                    {EntryName, "+.xn--c1aapkosapc.xn--p1ai"},
+		"https://пример.рф/путь":            {EntryName, "xn--e1afmkfd.xn--p1ai"},
+		"example.com.":                      {EntryName, "example.com"},
+		"http://[2001:db8::1]/x":            {EntryIP, "2001:db8::1"},
+		"[2001:db8::1]":                     {EntryIP, "2001:db8::1"},
 		`"C:\Games\Steam\steam.exe"`:        {EntryApp, `C:\Games\Steam\steam.exe`},
 	} {
 		kind, v, err := ParseEntry(in)

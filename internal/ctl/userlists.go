@@ -42,7 +42,7 @@ func wantCopies(name, mode string) (map[string][]byte, bool, error) {
 		return map[string][]byte{name: setAsideBody, paths.IPList(name): setAsideBody,
 			paths.AppList(name): setAsideBody}, true, nil
 	}
-	u, err := paths.ReadUserFile(paths.User(name), userListMax)
+	u, err := paths.ReadUserFile(paths.User(name), UserListMax)
 	have := err == nil
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, false, err
@@ -50,7 +50,7 @@ func wantCopies(name, mode string) (map[string][]byte, bool, error) {
 	if name == paths.DirectList {
 		// the programs bypassing the tunnel had a list of their own: it is
 		// taken in until the direct list is next saved, which removes it
-		a, err := paths.ReadUserFile(paths.User(paths.AppsList), userListMax)
+		a, err := paths.ReadUserFile(paths.User(paths.AppsList), UserListMax)
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return nil, false, err
 		}
@@ -79,7 +79,9 @@ func Synced(name string) bool {
 	return true
 }
 
-const userListMax = 4 << 20
+// UserListMax: the most of a user's list the service reads; the UI writes
+// none larger
+const UserListMax = 4 << 20
 
 // providerOf: the rule-provider a list file is -- its name without .txt
 func providerOf(name string) string { return strings.TrimSuffix(name, ".txt") }

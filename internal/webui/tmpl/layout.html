@@ -123,7 +123,10 @@
 {{define "entrylist"}}{{$v := .V}}
   <h3>{{.Title}}</h3>
   {{/* the lists page says how to write a line once, above its three */}}
-  <p class="hint">{{.Hint}}{{if eq .Kind "awg2"}} {{$v.T "One per line: a site (example.com; +.example.com for the domain and all under it), an address or a network (1.2.3.4, 192.168.0.0/16: for connections made to it by address), a program (telegram.exe; a full path for that copy only)."}}{{end}}</p>
+  <p class="hint">{{.Hint}}{{if eq .Kind "awg2"}} {{$v.T "One per line: a site (example.com; +.example.com for the domain and all under it), an address or a network (1.2.3.4, 192.168.0.0/16: for connections made to it by address), a program (telegram.exe; a full path for that copy only)."}}{{end}}
+  {{- /* the auto-switch mode stands above the lists: said where it sets one aside */}}
+  {{- if and (eq .Kind "direct") (eq $v.St.Mode "tunnel")}} <span class="warn-t">{{$v.T "Tunnel only is on: this list is set aside until auto-switch is on."}}</span>{{end}}
+  {{- if and (ne .Kind "direct") (ne .Kind "block") (eq $v.St.Mode "observe")}} <span class="warn-t">{{$v.T "Observe only is on: everything but the forbidden goes direct, this list too, until auto-switch is on."}}</span>{{end}}</p>
   <form method="post" action="/act/list" data-swap="list-{{.Kind}}">
     <input type="hidden" name="kind" value="{{.Kind}}">
     <div class="row" style="margin-bottom:8px">

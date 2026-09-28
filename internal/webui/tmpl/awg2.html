@@ -36,7 +36,8 @@
 
 {{define "presets"}}{{$v := .}}
   <h3>{{.T "Presets"}}</h3>
-  <p class="hint">{{.T "Always through the second tunnel, above every other list. If awg2 is down, through awg; if both are down, direct. A switch applies at once, open connections included."}}</p>
+  <p class="hint">{{.T "Always through the second tunnel, above every other list. If awg2 is down, through awg; if both are down, direct. A switch applies at once, open connections included."}}
+  {{- if eq .St.Mode "observe"}} <span class="warn-t">{{.T "Observe only is on: everything but the forbidden goes direct, the presets too, until auto-switch is on."}}</span>{{end}}</p>
   <form method="post" action="/act/preset" data-swap="presets" data-instant="1" class="presets">
     {{range .Data.Presets}}
     <div class="p">

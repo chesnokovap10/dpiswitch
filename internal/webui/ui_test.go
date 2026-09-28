@@ -2,6 +2,7 @@ package webui
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"net"
 	"net/http"
@@ -286,6 +287,60 @@ func TestListSave(t *testing.T) {
 	}
 	if w := do(t, h, "POST", "/act/list", url.Values{"kind": {"nope"}}, nil); w.Code != 400 {
 		t.Fatalf("an unknown list: %d", w.Code)
+	}
+}
+
+// A list the service would not read -- larger than it takes -- is refused,
+// what was pasted kept in the box; it used to be saved, and never taken.
+// A name in its own letters is kept as the core sees it, in punycode.
+func TestListLimits(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	var big strings.Builder
+	for i := 0; big.Len() <= ctl.UserListMax; i++ {
+		fmt.Fprintf(&big, "s%07d.example.com\n", i)
+	}
+	w := do(t, h, "POST", "/act/list", url.Values{"kind": {"block"}, "entries": {big.String()}}, nil)
+	if body := w.Body.String(); !strings.Contains(body, "msg bad") || !strings.Contains(body, "s0000000.example.com") {
+		t.Fatalf("too large: %d %.300s", w.Code, body)
+	}
+	if _, err := os.Stat(paths.User(paths.BlockList)); err == nil {
+		t.Fatal("a list too large was written")
+	}
+	w = do(t, h, "POST", "/act/list", url.Values{"kind": {"direct"}, "entries": {"госуслуги.рф\n+.пример.рф"}}, nil)
+	if got := strings.Join(readEntries(paths.DirectList), ","); !strings.Contains(w.Body.String(), "msg ok") ||
+		got != "+.xn--e1afmkfd.xn--p1ai,xn--c1aapkosapc.xn--p1ai" {
+		t.Fatalf("names in their own letters: %q", got)
+	}
+}
+
+// The auto-switch mode stands above the lists, and is said where it sets
+// one aside: Tunnel only the direct list, Observe only the tunnels' lists
+// and the presets.
+func TestListModeNotes(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	st := s.statusFn()
+	s.statusFn = func() status { return st }
+	get := func(frag string) string { return do(t, h, "GET", "/frag/"+frag, nil, nil).Body.String() }
+	for _, c := range []struct {
+		mode, frag, want string
+		said             bool
+	}{
+		{ctl.ModeTunnel, "lists/list-direct", "Tunnel only is on", true},
+		{ctl.ModeTunnel, "lists/list-tunnel", "is on:", false},
+		{ctl.ModeObserve, "lists/list-tunnel", "Observe only is on", true},
+		{ctl.ModeObserve, "awg2/list-awg2", "Observe only is on", true},
+		{ctl.ModeObserve, "awg2/presets", "Observe only is on", true},
+		{ctl.ModeObserve, "lists/list-direct", "is on:", false},
+		{ctl.ModeObserve, "lists/list-block", "is on:", false},
+		{ctl.ModeOn, "lists/list-direct", "is on:", false},
+		{ctl.ModeOn, "lists/list-tunnel", "is on:", false},
+	} {
+		st.Mode = c.mode
+		if got := strings.Contains(get(c.frag), c.want); got != c.said {
+			t.Errorf("%s, %s: said %v, want %v", c.mode, c.frag, got, c.said)
+		}
 	}
 }
 

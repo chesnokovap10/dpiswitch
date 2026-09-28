@@ -83,13 +83,26 @@ func normEntries(lines []string) (out []string, bad string) {
 	return out, bad
 }
 
-func writeEntries(name string, entries []string) error {
+// errListTooLarge: a list the service would not read -- it used to be saved,
+// and was never taken
+var errListTooLarge = errors.New("The list is too large: 4 MB at most")
+
+// listBody: a user's list as its file holds it
+func listBody(entries []string) []byte {
 	var b strings.Builder
 	b.WriteString("# sites, addresses and programs, one per line -- list maintained by the user\n")
 	for _, e := range entries {
 		b.WriteString(e + "\n")
 	}
-	return paths.ReplaceFile(paths.User(name), []byte(b.String()))
+	return []byte(b.String())
+}
+
+func writeEntries(name string, entries []string) error {
+	body := listBody(entries)
+	if len(body) > ctl.UserListMax {
+		return errListTooLarge
+	}
+	return paths.ReplaceFile(paths.User(name), body)
 }
 
 // entryMatch: the open connections these entries route. An address counts
@@ -189,6 +202,11 @@ func (s *Server) actList(w http.ResponseWriter, r *http.Request) {
 	if bad != "" {
 		s.refuse(w, r, page, kind, lines,
 			fmt.Sprintf(tr(lang(r), "%q is neither a site, an address nor a program: nothing saved"), bad))
+		return
+	}
+	// what was pasted stays in the box to be cut down
+	if len(listBody(entries)) > ctl.UserListMax {
+		s.refuse(w, r, page, kind, lines, tr(lang(r), errListTooLarge.Error()))
 		return
 	}
 	n, err, cerr := s.saveEntries(name, entries)
