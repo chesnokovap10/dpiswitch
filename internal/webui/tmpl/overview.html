@@ -55,6 +55,7 @@
         <form method="post" action="/act/detach2" data-confirm="{{.T "Detach the second tunnel? Its presets and sites go through the first tunnel. The service restarts."}}"><button class="danger" data-busy="{{.T "Applying…"}}">{{.T "Detach"}}</button></form>
       </div>
       {{else}}
+      {{if $s.Awg2Err}}<p class="bad-t">{{.T "The config loaded cannot be used:"}} {{.T $s.Awg2Err}}</p>{{end}}
       <p class="hint">{{.T "Not attached. A second server for chosen services only: YouTube, Telegram, AI services, your own sites. Until it is attached, they go through the first tunnel."}}</p>
       <div class="actions"><button type="button" data-open="dlg-config2">{{.T "Attach…"}}</button></div>
       {{end}}

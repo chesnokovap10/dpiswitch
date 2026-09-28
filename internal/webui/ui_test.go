@@ -525,6 +525,48 @@ func TestSameConfBothTunnels(t *testing.T) {
 	}
 }
 
+// A second tunnel's .conf the core could not use is refused when loaded --
+// it used to be taken, and left out of the config by the service with a
+// line in its log alone -- and one found on disk is said so, not shown as
+// attached.
+func TestSecondConfUsable(t *testing.T) {
+	s, _ := testServer(t)
+	conf := func(iface, peer string) string {
+		return "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n" + iface +
+			"[Peer]\nPublicKey = cA==\n" + peer
+	}
+	for name, text := range map[string]string{
+		"no IPv4 address": conf("Address = fd00::2/128\n", "Endpoint = 198.51.100.8:51820\n"),
+		"two IPv4":        conf("Address = 10.8.1.3/32, 10.8.1.4/32\n", "Endpoint = 198.51.100.8:51820\n"),
+		"a bad MTU":       conf("Address = 10.8.1.3/32\nMTU = big\n", "Endpoint = 198.51.100.8:51820\n"),
+		"a bad port":      conf("Address = 10.8.1.3/32\n", "Endpoint = 198.51.100.8:port\n"),
+		"a bad Endpoint":  conf("Address = 10.8.1.3/32\n", "Endpoint = bad host!:51820\n"),
+	} {
+		if err := saveConf2(text); err == nil {
+			t.Errorf("%s: taken", name)
+		}
+	}
+	if _, err := os.Stat(paths.SourceConf2()); err == nil {
+		t.Fatal("a refused config was written")
+	}
+
+	st := s.statusFn()
+	st.Awg2, st.Awg2Err = false, "the config has no IPv4 address"
+	s.statusFn = func() status { return st }
+	for _, l := range []string{"en", "ru"} {
+		for _, target := range []string{"/frag/awg2/awg2state", "/overview"} {
+			body := do(t, s.Handler(), "GET", target, nil, map[string]string{"Cookie": "lang=" + l}).Body.String()
+			want := map[string]string{"en": "cannot be used: the config has no IPv4 address", "ru": "нельзя использовать: в конфиге нет IPv4-адреса"}[l]
+			if !strings.Contains(body, want) {
+				t.Errorf("%s %s: the reason is not said:\n%s", l, target, body)
+			}
+			if target != "/overview" && !strings.Contains(body, "/act/detach2") {
+				t.Errorf("%s: no way to remove it", l)
+			}
+		}
+	}
+}
+
 // The DNS test tries the other spelling of a DoH address the server did not
 // answer -- no path and /dns-query, each for the other -- and hands the box
 // the spelling that answered. What answers as written stays as written.

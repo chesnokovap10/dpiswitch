@@ -17,6 +17,13 @@
       <span class="spacer"></span>
       <button type="button" data-open="dlg-config2">{{.T "Replace config…"}}</button>
       <form method="post" action="/act/detach2" data-confirm="{{.T "Detach the second tunnel? Its presets and sites go through the first tunnel. The service restarts."}}"><button class="danger" data-busy="{{.T "Applying…"}}">{{.T "Detach"}}</button></form>
+    {{else if $s.Awg2Err}}
+      {{/* a .conf loaded that the service leaves out: said, not shown as attached */}}
+      <span class="pill bad">{{.T "not attached"}}</span>
+      <span class="bad-t">{{.T "The config loaded cannot be used:"}} {{.T $s.Awg2Err}}</span>
+      <span class="spacer"></span>
+      <button type="button" class="primary" data-open="dlg-config2">{{.T "Replace config…"}}</button>
+      <form method="post" action="/act/detach2" data-confirm="{{.T "Remove the config that cannot be used? The presets and sites go through the first tunnel, as they do now."}}"><button class="danger" data-busy="{{.T "Applying…"}}">{{.T "Remove"}}</button></form>
     {{else}}
       <span class="pill warn">{{.T "not attached"}}</span>
       <span class="muted">{{.T "Until a second server is attached, the presets and sites below go through the first tunnel."}}</span>

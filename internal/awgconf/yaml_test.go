@@ -124,3 +124,44 @@ func TestRenderSkipsSameKey(t *testing.T) {
 		}
 	}
 }
+
+// Second: the second tunnel's .conf as the config takes it -- none, one the
+// core could not use, one with the first tunnel's key, one it takes.
+func TestSecond(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	conf := func(key, addr string) string {
+		return "[Interface]\nPrivateKey = " + key + "\nAddress = " + addr + "\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.8:51820\n"
+	}
+	k1, k2 := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	first, err := Parse(conf(k1, "10.8.1.3/32"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, err := Second(first); c != nil || err != nil {
+		t.Fatalf("none loaded: %v, %v", c, err)
+	}
+	for _, tc := range []struct {
+		text string
+		ok   bool
+		err  error
+	}{
+		{conf(k2, "fd00::2/128"), false, nil},
+		{conf(k1, "10.8.1.4/32"), false, ErrSameKey},
+		{conf(k2, "10.8.1.4/32"), true, nil},
+	} {
+		if err := os.WriteFile(paths.SourceConf2(), []byte(tc.text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		c, err := Second(first)
+		if (c != nil) != tc.ok || tc.err != nil && err != tc.err || !tc.ok && err == nil {
+			t.Errorf("%q: %v, %v", tc.text, c, err)
+		}
+	}
+	// with no first tunnel to tell by, the key is not asked
+	if c, _ := Second(nil); c == nil {
+		t.Error("no first tunnel: the second left out")
+	}
+}

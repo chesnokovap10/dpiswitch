@@ -1,10 +1,6 @@
 package webui
 
 import (
-	"errors"
-	"fmt"
-	"net"
-
 	"dpiswitch/internal/awgconf"
 	"dpiswitch/internal/paths"
 )
@@ -13,17 +9,19 @@ import (
 // Other traffic is unaffected -- it still goes through awg + the detector.
 
 // saveConf2 checks and stores the second tunnel's .conf. Loading and
-// removing it changes config.yaml, so the service restarts afterwards.
+// removing it changes config.yaml, so the service restarts afterwards. A
+// .conf the core could not use is refused here: it used to be taken, and
+// the service left it out of the config with a line in its log alone.
 func saveConf2(text string) error {
 	c, err := awgconf.Parse(text)
 	if err != nil {
 		return err
 	}
-	if _, _, err := net.SplitHostPort(c.Peer["Endpoint"]); err != nil {
-		return fmt.Errorf("cannot parse Endpoint: %w", err)
+	if err := c.Usable(); err != nil {
+		return err
 	}
 	if c1, err := awgconf.ParseFile(paths.SourceConf()); err == nil && awgconf.SameKey(c1, c) {
-		return errors.New("this is the same config as the first tunnel")
+		return awgconf.ErrSameKey
 	}
 	if err := paths.UserReady(); err != nil {
 		return err

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -46,8 +45,12 @@ func (s *Supervisor) checkIPv6(ctx context.Context) {
 	}
 	hc := newHealthChecker("127.0.0.1:9090", ctl.SecretFromConfig(paths.Config()))
 
+	// the second tunnel as the config has it: a .conf loaded and left out
+	// of the config was waited for a minute, and the first tunnel's answer
+	// with it
 	names := []string{"awg"}
-	if _, err := os.Stat(paths.SourceConf2()); err == nil {
+	first, _ := awgconf.ParseFile(paths.SourceConf())
+	if c2, _ := awgconf.Second(first); c2 != nil {
 		names = append(names, "awg2")
 	}
 

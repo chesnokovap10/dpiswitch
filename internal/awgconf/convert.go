@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -162,6 +163,44 @@ func (c *Conf) DNS() []string {
 	return out
 }
 
+// Usable: whether the core can make a tunnel of the .conf -- its endpoint,
+// its addresses and its numbers as the config needs them. The UI asks it of
+// a .conf it saves, and the service of one it renders.
+func (c *Conf) Usable() error {
+	if _, _, err := c.addrs(); err != nil {
+		return err
+	}
+	return c.check()
+}
+
+// ErrSameKey: the two tunnels' configs have one key: to their servers they
+// are one peer, and both would keep dropping
+var ErrSameKey = errors.New("this is the same config as the first tunnel")
+
+// Second: the second tunnel's .conf as the config takes it. nil and no
+// error when none is loaded; nil and why, when one is and the core could
+// not use it -- the first tunnel's key included, first given. The config,
+// the UI's state of the tunnel and the service's IPv6 check go by it alike:
+// the UI said "attached" of a .conf the service had left out.
+func Second(first *Conf) (*Conf, error) {
+	if _, err := os.Stat(paths.SourceConf2()); err != nil {
+		return nil, nil
+	}
+	c, err := ParseFile(paths.SourceConf2())
+	if err != nil {
+		return nil, err
+	}
+	if err := c.Usable(); err != nil {
+		return nil, err
+	}
+	if first != nil && SameKey(first, c) {
+		// the UI refuses it either way; a pair from before that, or files
+		// put there by hand, must not bring both tunnels down
+		return nil, ErrSameKey
+	}
+	return c, nil
+}
+
 // Render builds the mihomo configuration from a parsed .conf.
 func (c *Conf) Render() (string, error) {
 	host, _, err := net.SplitHostPort(c.Peer["Endpoint"])
@@ -177,21 +216,9 @@ func (c *Conf) Render() (string, error) {
 	}
 	// the second tunnel, if loaded; a broken second source
 	// must not break the first one, so the error only goes to the log
-	var c2 *Conf
-	if _, err := os.Stat(paths.SourceConf2()); err == nil {
-		if cc, err := ParseFile(paths.SourceConf2()); err != nil {
-			log.Printf("second tunnel not attached: %v", err)
-		} else if _, _, err := cc.addrs(); err != nil {
-			log.Printf("second tunnel not attached: %v", err)
-		} else if err := cc.check(); err != nil {
-			log.Printf("second tunnel not attached: %v", err)
-		} else if SameKey(c, cc) {
-			// the UI refuses it either way; a pair from before that, or
-			// files put there by hand, must not bring both tunnels down
-			log.Printf("second tunnel not attached: it has the first tunnel's key")
-		} else {
-			c2 = cc
-		}
+	c2, err := Second(c)
+	if err != nil {
+		log.Printf("second tunnel not attached: %v", err)
 	}
 
 	dns := split(c.Interface["DNS"])

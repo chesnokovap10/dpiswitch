@@ -214,7 +214,13 @@ func (s *Server) actConfig2(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) actDetach2(w http.ResponseWriter, r *http.Request) {
 	err := os.Remove(paths.SourceConf2())
-	if err != nil && !os.IsNotExist(err) {
+	switch {
+	case os.IsNotExist(err):
+		// detached already -- in another window: the service has nothing
+		// to drop, and is not restarted for it
+		s.redirect(w, r, nil, "Second tunnel detached")
+		return
+	case err != nil:
 		s.redirect(w, r, err, "")
 		return
 	}

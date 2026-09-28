@@ -322,6 +322,7 @@ type status struct {
 	Mode        string         `json:"-"` // see ctl.Settings.Mode
 	Endpoint    string         `json:"-"`
 	Awg2        bool           `json:"-"` // a second tunnel is attached
+	Awg2Err     string         `json:"-"` // why the .conf loaded for it is not
 	Awg2Alive   bool           `json:"-"`
 	Awg2Note    string         `json:"-"`
 	Endpoint2   string         `json:"-"`
@@ -357,8 +358,12 @@ func collectStatus() status {
 	if c, err := awgconf.ParseFile(paths.SourceConf()); err == nil {
 		st.Endpoint = c.Peer["Endpoint"]
 	}
-	if c, err := awgconf.ParseFile(paths.SourceConf2()); err == nil {
+	// attached is what the service attaches: a .conf it leaves out is said so
+	first, _ := awgconf.ParseFile(paths.SourceConf())
+	if c, err := awgconf.Second(first); c != nil {
 		st.Awg2, st.Endpoint2 = true, c.Peer["Endpoint"]
+	} else if err != nil {
+		st.Awg2Err = err.Error()
 	}
 	// a running service and a working tunnel are different things: TUN may
 	// be up with a dead peer, and then traffic goes nowhere
