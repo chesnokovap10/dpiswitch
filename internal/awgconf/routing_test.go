@@ -13,7 +13,8 @@
 // Each case goes the whole way: the service writes the lists' files from
 // the user's lists and the settings, the config is rendered as the service
 // renders it, and a connection is walked through its rules and groups the
-// way the core walks it.
+// way the core walks it. What the core does with a group whose tunnels are
+// all down is checked on the real core in core_routing_test.go.
 
 package awgconf
 
@@ -416,6 +417,23 @@ func members(t *testing.T, out, name string) string {
 	return strings.Join(m, " ")
 }
 
+// groupBlock: a group's lines, its name's to the next group's
+func groupBlock(t *testing.T, out, name string) string {
+	t.Helper()
+	i := strings.Index(out, "  - name: "+name+"\n")
+	if i < 0 {
+		t.Fatalf("no group %s", name)
+	}
+	rest := out[i+1:]
+	if j := strings.Index(rest, "\n  - name: "); j >= 0 {
+		rest = rest[:j+1]
+	}
+	if j := strings.Index(rest, "\n\n"); j >= 0 {
+		rest = rest[:j+1]
+	}
+	return " " + rest
+}
+
 const conf2 = "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.9.1.3/32\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.8:51820\n"
 
 // The lists go in their order -- Forbidden, Always via tunnel, Always
@@ -502,6 +520,12 @@ func TestRenderGroups(t *testing.T) {
 		for g, want := range c.want {
 			if got := members(t, out, g); got != want {
 				t.Errorf("%s: group %s has %q, want %q", c.name, g, got, want)
+			}
+			// a group that never goes direct refuses even with no member at
+			// all; the others take their members' last, DIRECT, anyway
+			strict := g == "tunnel-one" || g == "tunnel-any" || g == "tunnel2-strict"
+			if got := groupBlock(t, out, g); strings.Contains(got, "empty-fallback: REJECT\n") != strict {
+				t.Errorf("%s: group %s, empty-fallback REJECT wanted %v:\n%s", c.name, g, strict, got)
 			}
 		}
 		if got := strings.Contains(out, "name: probe-tunnel\n"); got != c.first {

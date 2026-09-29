@@ -472,7 +472,12 @@ func render(c *Conf) (string, error) {
 		return out
 	}
 	direct := []string{"DIRECT"}
-	fallback := func(name string, members []string) {
+	// strict: a group that may never go direct. With all its members down
+	// the core keeps the first one (and the dial fails), but a group with
+	// no member at all -- a provider not loaded yet, a filter matching
+	// nothing -- takes empty-fallback, COMPATIBLE by default: that is
+	// DIRECT. None of ours can be empty today; this keeps it so if one ever is
+	fallback := func(name string, members []string, strict bool) {
 		w("  - name: %s", name)
 		w("    type: fallback")
 		w("    proxies:")
@@ -490,6 +495,9 @@ func render(c *Conf) (string, error) {
 		// margin costs nothing
 		w("    timeout: 15000")
 		w("    lazy: false")
+		if strict {
+			w("    empty-fallback: REJECT")
+		}
 	}
 	choice := ctl.RouteChoice(set)
 	// a select group: the member the settings ask for first, the choice at start
@@ -515,20 +523,20 @@ func render(c *Conf) (string, error) {
 	w("  # the first tunnel, then direct: without it a dead tunnel would mean no")
 	w("  # internet at all. With no first tunnel, direct -- the second one takes")
 	w("  # only its own lists.")
-	fallback(ctl.TunnelSoftGroup, cat(first, direct))
+	fallback(ctl.TunnelSoftGroup, cat(first, direct), false)
 	// the second takes what no list names only behind the first
 	var behind []string
 	if c != nil {
 		behind = second
 	}
-	fallback(ctl.TunnelSoftAnyGroup, cat(first, behind, direct))
+	fallback(ctl.TunnelSoftAnyGroup, cat(first, behind, direct), false)
 	w("  # the tunnels alone, never direct: the always-tunnel list, and tunnel only")
-	fallback(ctl.TunnelOneGroup, orReject(first))
-	fallback(ctl.TunnelAnyGroup, orReject(cat(first, second)))
+	fallback(ctl.TunnelOneGroup, orReject(first), true)
+	fallback(ctl.TunnelAnyGroup, orReject(cat(first, second)), true)
 	w("  # the presets and the awg2 list: the second tunnel, then the first; then")
 	w("  # direct, or in tunnel only refused")
-	fallback(ctl.Tunnel2SoftGroup, cat(second, first, direct))
-	fallback(ctl.Tunnel2StrictGroup, orReject(cat(second, first)))
+	fallback(ctl.Tunnel2SoftGroup, cat(second, first, direct), false)
+	fallback(ctl.Tunnel2StrictGroup, orReject(cat(second, first)), true)
 	w("")
 	selectGroup(ctl.TunnelListsGroup, ctl.TunnelOneGroup, ctl.TunnelAnyGroup)
 	selectGroup(ctl.Tunnel2Group, ctl.Tunnel2SoftGroup, ctl.Tunnel2StrictGroup)

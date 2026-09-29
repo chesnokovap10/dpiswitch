@@ -82,3 +82,19 @@ try {
     Pop-Location
 }
 Write-Host ("done: {0} ({1:N1} MB, tags: {2})" -f $out, ((Get-Item $out).Length / 1MB), $tags)
+
+# the new core on tunnel only's config with the tunnels dead: nothing may go
+# direct. Fallback groups keeping a dead first member, and a member alive
+# until checked, are the core's behaviour, not a promise of it -- an update
+# can change them (see internal\awgconf\core_routing_test.go)
+Write-Host "checking the core: tunnel only never goes direct (~20 s)"
+$prev = $env:DPISWITCH_CORE
+Push-Location $root
+try {
+    $env:DPISWITCH_CORE = $out
+    go test -tags routing -run TestCoreFailClosed -count=1 ./internal/awgconf
+    if ($LASTEXITCODE) { throw "the new core sends tunnel only's traffic direct: do not ship it" }
+} finally {
+    $env:DPISWITCH_CORE = $prev
+    Pop-Location
+}
