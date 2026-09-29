@@ -19,6 +19,19 @@ func sddl(t *testing.T, path string) string {
 	return sd.String()
 }
 
+// sddlName: an account as Windows writes it in SDDL -- a well-known one by
+// its alias, not its SID: the built-in Administrator, which CI builds as,
+// is "LA", and looking for its SID failed on an ACL that was right.
+func sddlName(t *testing.T, sid string) string {
+	t.Helper()
+	sd, err := windows.SecurityDescriptorFromString("D:(A;;FA;;;" + sid + ")")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := strings.TrimSuffix(sd.String(), ")")
+	return s[strings.LastIndex(s, ";")+1:]
+}
+
 // a directory that grants every user modify, inherited -- as the data
 // directory does
 func openDir(t *testing.T) string {
@@ -76,4 +89,19 @@ func TestWriteServiceSecret(t *testing.T) {
 		t.Fatalf("permissions %s: want protected, the owner reading, no users", s)
 	}
 	leftovers(t, dir)
+}
+
+// sddlName gives the alias Windows writes for a well-known account and the
+// SID itself for any other.
+func TestSDDLName(t *testing.T) {
+	for sid, want := range map[string]string{
+		"S-1-5-18":     "SY",
+		"S-1-5-32-544": "BA",
+		"S-1-5-32-545": "BU",
+		"S-1-5-21-1004336348-1177238915-682003330-1001": "S-1-5-21-1004336348-1177238915-682003330-1001",
+	} {
+		if got := sddlName(t, sid); got != want {
+			t.Errorf("%s: %s, want %s", sid, got, want)
+		}
+	}
 }

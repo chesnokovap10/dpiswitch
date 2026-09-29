@@ -94,7 +94,7 @@ func TestSecureDataDir(t *testing.T) {
 	if s := sddl(t, User("source.conf")); strings.Contains(s, "BU)") {
 		t.Fatalf("the moved key is readable by users: %s", s)
 	}
-	if s := sddl(t, UserDir()); strings.Contains(s, "BU)") || !strings.Contains(s, "(A;OIIO;0x1301bf;;;"+me+")") {
+	if s := sddl(t, UserDir()); strings.Contains(s, "BU)") || !strings.Contains(s, "(A;OIIO;0x1301bf;;;"+sddlName(t, me)+")") {
 		t.Fatalf("user directory: %s", s)
 	}
 
