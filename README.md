@@ -416,6 +416,11 @@ dpiswitch version    показать версию
 Проверки перед пушем запускаются локально: `go vet ./...`, `go test ./...` и для `internal/ctl` —
 `go test -race` (`.\build.ps1` сам гоняет vet и тесты перед сборкой и не собирает, если они не прошли).
 
+Маршрутизация проверяется отдельно, по таблицам из справки — каждый режим, каждый набор загруженных
+конфигов, каждый список, с туннелями, падающими по очереди: `go test -tags routing ./internal/awgconf`.
+Обычный `go test` эти проверки пропускает; запускайте их всякий раз, когда меняете правила, группы,
+файлы списков или режимы.
+
 Релиз собирает GitHub Actions (`.github/workflows/release.yml`) на машине GitHub с Windows тем же
 `build.ps1`. Версия ставится в `internal/version/version.go`, заметки к релизу кладутся в
 `.github/release-notes/<версия>.md`, затем Actions → Release → Run workflow с этой версией. Workflow
@@ -821,6 +826,11 @@ the debug symbols are left out: ~30 MB instead of ~80 MB. The TUN runs on the Wi
 
 Checks run locally before a push: `go vet ./...`, `go test ./...` and, for `internal/ctl`,
 `go test -race` (`.\build.ps1` runs vet and the tests itself before building, and stops if they fail).
+
+Routing has checks of its own, by the tables of the help -- every mode, every set of configs loaded,
+every list, with the tunnels going down one after the other: `go test -tags routing ./internal/awgconf`.
+A plain `go test` leaves them out; run them whenever the rules, the groups, the lists' files or the modes
+change.
 
 Releases are built by GitHub Actions (`.github/workflows/release.yml`) on a GitHub Windows machine, with
 the same `build.ps1`. Set the version in `internal/version/version.go`, put the release notes in

@@ -11,30 +11,6 @@ import (
 	"dpiswitch/internal/paths"
 )
 
-// The members the select groups take, by mode and by the second tunnel's
-// switch: tunnel only never goes direct.
-func TestRouteChoice(t *testing.T) {
-	for _, c := range []struct {
-		mode             string
-		awg2             bool
-		lists, two, rest string
-	}{
-		{ModeOn, true, TunnelAnyGroup, Tunnel2SoftGroup, TunnelSoftAnyGroup},
-		{ModeOn, false, TunnelOneGroup, Tunnel2SoftGroup, TunnelSoftGroup},
-		{ModeObserve, true, TunnelAnyGroup, Tunnel2SoftGroup, TunnelSoftAnyGroup},
-		{ModeTunnel, true, TunnelAnyGroup, Tunnel2StrictGroup, TunnelAnyGroup},
-		{ModeTunnel, false, TunnelOneGroup, Tunnel2StrictGroup, TunnelOneGroup},
-	} {
-		s := DefaultSettings()
-		s.SetMode(c.mode)
-		s.SetAwg2(c.awg2)
-		got := RouteChoice(s)
-		if got[TunnelListsGroup] != c.lists || got[Tunnel2Group] != c.two || got[TunnelRestGroup] != c.rest {
-			t.Errorf("%s, awg2 %v: %v", c.mode, c.awg2, got)
-		}
-	}
-}
-
 // The core's select groups take what the settings ask for; asked once per
 // change, and not at all of a core without the member.
 func TestSyncRoutes(t *testing.T) {
