@@ -1,5 +1,7 @@
 {{define "content"}}
-<div class="page">
+{{/* the getting-started box makes the page taller than the window: it
+   scrolls as a whole then, instead of squeezing its boxes */}}
+<div class="page{{if not .St.HasConfig}} scroll{{end}}">
   {{if not .St.HasConfig}}
   <div class="box">
     <h3>{{.T "Getting started"}}</h3>
@@ -12,7 +14,8 @@
   </div>
   {{end}}
   <div id="summary" data-poll="/frag/overview/summary" data-every="10" style="display:flex;flex-direction:column;gap:12px">{{template "summary" .}}</div>
-  <div class="box fill">
+  {{/* ten lines at the least: they shrank to one under the boxes above */}}
+  <div class="box fill" style="min-height:230px">
     <div class="row" style="margin-bottom:8px"><h3 style="margin:0;flex:1">{{.T "Recent events"}}</h3><a href="/logs">{{.T "Full log"}} →</a></div>
     <pre class="fill" id="events" data-poll="/frag/overview/events" data-every="5" data-follow>{{template "events" .}}</pre>
   </div>
