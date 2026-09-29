@@ -112,7 +112,9 @@ var ru = map[string]string{
 	"Config saved. Install the service to start the tunnel": "Конфиг сохранён. Установите службу, чтобы запустить туннель",
 	"Config applied: the service restarted":                 "Конфиг применён: служба перезапущена",
 	"Config saved. Start the service to use it":             "Конфиг сохранён. Запустите службу, чтобы он заработал",
-	"Second tunnel config deleted":                          "Конфиг второго туннеля удалён",
+	"First tunnel config deleted":                           "Конфиг первого туннеля удалён",
+	"Delete the first tunnel's config? To use it again you will load the .conf again. Until then no site is checked, what no list names goes direct -- in Tunnel only it is refused -- and the service restarts.": "Удалить конфиг первого туннеля? Чтобы пользоваться им снова, придётся заново загрузить .conf. До тех пор сайты не проверяются, всё, что не названо в списках, идёт напрямую — в «Только в туннель» отклоняется, — а служба перезапустится.",
+	"Second tunnel config deleted": "Конфиг второго туннеля удалён",
 
 	// verdicts
 	"Filter by name": "Фильтр по имени",

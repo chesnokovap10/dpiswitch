@@ -228,6 +228,22 @@ func (s *Server) actConfig2(w http.ResponseWriter, r *http.Request) {
 	s.redirect(w, r, restartService(), applyNote())
 }
 
+// actDelete1 deletes the first tunnel's config. The service runs without
+// it: what no list names goes direct, and the detector checks nothing.
+func (s *Server) actDelete1(w http.ResponseWriter, r *http.Request) {
+	err := os.Remove(paths.SourceConf())
+	switch {
+	case os.IsNotExist(err):
+		// deleted already -- in another window
+		s.redirect(w, r, nil, "First tunnel config deleted")
+		return
+	case err != nil:
+		s.redirect(w, r, err, "")
+		return
+	}
+	s.redirect(w, r, restartService(), "First tunnel config deleted")
+}
+
 // actDetach2 deletes the second tunnel's config: the button says so. To
 // switch awg2 off for a while there is the switch, which keeps the config.
 func (s *Server) actDetach2(w http.ResponseWriter, r *http.Request) {

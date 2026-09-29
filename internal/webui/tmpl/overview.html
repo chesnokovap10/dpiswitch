@@ -39,7 +39,10 @@
         <span>DNS</span><div>{{with .Data.DNS}}{{.}}{{if $.Data.DNSSet}} <a class="muted" href="/settings#dns">({{$.T "from the settings"}})</a>{{end}}{{else}}<span class="muted">—</span>{{end}}</div>
         <span>{{.T "Carries"}}</span><div>{{.T "everything not sent direct or to awg2"}}</div>
       </div>
-      <div class="actions"><button type="button" data-open="dlg-config">{{.T "Replace config…"}}</button></div>
+      <div class="actions">
+        <button type="button" data-open="dlg-config">{{.T "Replace config…"}}</button>
+        <form method="post" action="/act/delete1" data-confirm="{{.T "Delete the first tunnel's config? To use it again you will load the .conf again. Until then no site is checked, what no list names goes direct -- in Tunnel only it is refused -- and the service restarts."}}"><button class="danger" data-busy="{{.T "Applying…"}}">{{.T "Delete config…"}}</button></form>
+      </div>
       {{else}}<p class="hint">{{.T "No config loaded yet."}} {{.T "Without it what the lists do not name goes direct"}}.</p>{{end}}
     </div>
     <div class="box">

@@ -1074,3 +1074,36 @@ func TestDNSSecondTunnel(t *testing.T) {
 		t.Error("awg2 loaded, said not")
 	}
 }
+
+// The first tunnel's config is deleted by its button, as the second's is;
+// a second delete -- from another window -- is no error.
+func TestDeleteFirst(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	if err := os.WriteFile(paths.SourceConf(), []byte("[Interface]\nPrivateKey = k\nAddress = 10.8.1.3/32\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.7:51820\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st := s.statusFn()
+	st.HasConfig = true
+	s.statusFn = func() status { return st }
+	if b := do(t, h, "GET", "/overview", nil, nil).Body.String(); !strings.Contains(b, `action="/act/delete1"`) {
+		t.Fatal("no delete button with the config loaded")
+	}
+	for i := 0; i < 2; i++ {
+		w := do(t, h, "POST", "/act/delete1", url.Values{}, nil)
+		if w.Code != http.StatusSeeOther {
+			t.Fatalf("delete %d: %d", i, w.Code)
+		}
+		// the message it left on the page it came back to
+		if b := do(t, h, "GET", "/settings", nil, nil).Body.String(); !strings.Contains(b, "First tunnel config deleted") {
+			t.Fatalf("delete %d: not said deleted", i)
+		}
+	}
+	if _, err := os.Stat(paths.SourceConf()); !os.IsNotExist(err) {
+		t.Fatalf("the config is still there: %v", err)
+	}
+	st.HasConfig = false
+	if b := do(t, h, "GET", "/overview", nil, nil).Body.String(); strings.Contains(b, `action="/act/delete1"`) {
+		t.Fatal("a delete button with no config")
+	}
+}
