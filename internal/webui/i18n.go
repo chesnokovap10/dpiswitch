@@ -101,8 +101,9 @@ var ru = map[string]string{
 	"The second tunnel is switched off in this mode: the presets and your own list route nothing, what they name goes the way the other lists and the mode send it.":                                                                     "Второй туннель в этом режиме выключен: пресеты и свой список ничего не маршрутизируют, то, что в них названо, идёт так, как решают остальные списки и режим.",
 	"Switched off, the presets and your own list route nothing: what they name goes the way the other lists and the mode send it. Each auto-switch mode keeps its own switch; Observe only starts switched off every time it is chosen.": "Выключенный, пресеты и свой список ничего не маршрутизируют: то, что в них названо, идёт так, как решают остальные списки и режим. Каждый режим авто-переключения помнит свой переключатель; «Только наблюдать» при каждом выборе начинает с выключенного.",
 	"Use the second tunnel": "Использовать второй туннель",
-	"Detach":                "Отключить",
-	"Detach the second tunnel? Its presets and sites stop routing: they go the way the other lists and the mode send them. The service restarts.": "Отключить второй туннель? Его пресеты и сайты перестанут действовать: пойдут так, как решают остальные списки и режим. Служба перезапустится.",
+	"Delete config…":        "Удалить конфиг…",
+	"Delete the second tunnel's config? To attach it again you will load the .conf again; its presets and list stop routing, and the service restarts. To switch the second tunnel off for a while, use the Use the second tunnel switch instead: the config stays.":             "Удалить конфиг второго туннеля? Чтобы подключить его снова, придётся заново загрузить .conf; его пресеты и список перестанут действовать, служба перезапустится. Чтобы просто выключить второй туннель на время, используйте переключатель «Использовать второй туннель»: конфиг останется.",
+	"Delete the second tunnel's config? To attach it again you will load the .conf again; its presets and list stop routing, and the service restarts. To switch the second tunnel off for a while, use the Use the second tunnel switch on its page instead: the config stays.": "Удалить конфиг второго туннеля? Чтобы подключить его снова, придётся заново загрузить .conf; его пресеты и список перестанут действовать, служба перезапустится. Чтобы просто выключить второй туннель на время, используйте переключатель «Использовать второй туннель» на его странице: конфиг останется.",
 	"Cancel": "Отмена",
 	"Paste the .conf, drop the file on the field or pick it below. Keys stay on this machine. A running service restarts: the tunnel drops for a couple of seconds.": "Вставьте .conf, перетащите файл на поле или выберите его ниже. Ключи остаются на этом компьютере. Работающая служба перезапустится: туннель пропадёт на пару секунд.",
 	"Main tunnel config (awg)":                              "Конфиг основного туннеля (awg)",
@@ -111,7 +112,7 @@ var ru = map[string]string{
 	"Config saved. Install the service to start the tunnel": "Конфиг сохранён. Установите службу, чтобы запустить туннель",
 	"Config applied: the service restarted":                 "Конфиг применён: служба перезапущена",
 	"Config saved. Start the service to use it":             "Конфиг сохранён. Запустите службу, чтобы он заработал",
-	"Second tunnel detached":                                "Второй туннель отключён",
+	"Second tunnel config deleted":                          "Конфиг второго туннеля удалён",
 
 	// verdicts
 	"Filter by name": "Фильтр по имени",
@@ -288,7 +289,7 @@ var ru = map[string]string{
 	"no server specified":                                    "не указан сервер",
 	"a #… suffix is not allowed here":                        "окончание #… здесь не допускается",
 
-	"this is the same config as the second tunnel: replace or detach that one first": "это тот же конфиг, что у второго туннеля: сначала замените или отключите второй",
+	"this is the same config as the second tunnel: replace or delete that one first": "это тот же конфиг, что у второго туннеля: сначала замените или удалите его",
 	"this is the same config as the first tunnel":                                    "это тот же конфиг, что у первого туннеля",
 	"the config has no PrivateKey":                                                   "в конфиге нет PrivateKey",
 	"the config has no Endpoint":                                                     "в конфиге нет Endpoint",

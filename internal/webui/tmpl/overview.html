@@ -53,7 +53,7 @@
       </div>
       <div class="actions">
         <button type="button" data-open="dlg-config2">{{.T "Replace config…"}}</button>
-        <form method="post" action="/act/detach2" data-confirm="{{.T "Detach the second tunnel? Its presets and sites stop routing: they go the way the other lists and the mode send them. The service restarts."}}"><button class="danger" data-busy="{{.T "Applying…"}}">{{.T "Detach"}}</button></form>
+        <form method="post" action="/act/detach2" data-confirm="{{.T "Delete the second tunnel's config? To attach it again you will load the .conf again; its presets and list stop routing, and the service restarts. To switch the second tunnel off for a while, use the Use the second tunnel switch on its page instead: the config stays."}}"><button class="danger" data-busy="{{.T "Applying…"}}">{{.T "Delete config…"}}</button></form>
       </div>
       {{else}}
       {{if $s.Awg2Err}}<p class="bad-t">{{.T "The config loaded cannot be used:"}} {{.T $s.Awg2Err}}</p>{{end}}

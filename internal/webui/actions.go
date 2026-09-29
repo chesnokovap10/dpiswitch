@@ -195,7 +195,7 @@ func saveConf1(text string) error {
 	}
 	// the other way round from saveConf2: one key in both tunnels breaks both
 	if c2, err := awgconf.ParseFile(paths.SourceConf2()); err == nil && awgconf.SameKey(conf, c2) {
-		return errors.New("this is the same config as the second tunnel: replace or detach that one first")
+		return errors.New("this is the same config as the second tunnel: replace or delete that one first")
 	}
 	if err := paths.UserReady(); err != nil {
 		return err
@@ -228,19 +228,21 @@ func (s *Server) actConfig2(w http.ResponseWriter, r *http.Request) {
 	s.redirect(w, r, restartService(), applyNote())
 }
 
+// actDetach2 deletes the second tunnel's config: the button says so. To
+// switch awg2 off for a while there is the switch, which keeps the config.
 func (s *Server) actDetach2(w http.ResponseWriter, r *http.Request) {
 	err := os.Remove(paths.SourceConf2())
 	switch {
 	case os.IsNotExist(err):
-		// detached already -- in another window: the service has nothing
+		// deleted already -- in another window: the service has nothing
 		// to drop, and is not restarted for it
-		s.redirect(w, r, nil, "Second tunnel detached")
+		s.redirect(w, r, nil, "Second tunnel config deleted")
 		return
 	case err != nil:
 		s.redirect(w, r, err, "")
 		return
 	}
-	s.redirect(w, r, restartService(), "Second tunnel detached")
+	s.redirect(w, r, restartService(), "Second tunnel config deleted")
 }
 
 // --- verdicts ---
