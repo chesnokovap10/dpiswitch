@@ -518,8 +518,22 @@
   function closeMenu() {
     menu.hidden = true;
     sub.classList.remove('shown');
+    sub.style.top = '';
     menuRow = null;
   }
+
+  // The presets open beside their item, level with it: near the bottom of
+  // the window they ran off it. Moved up as far as they must to fit -- they
+  // are never taller than the window (60vh), and scroll past that.
+  function fitSub() {
+    sub.style.top = '';
+    const r = sub.getBoundingClientRect();
+    if (!r.height) return; // not shown
+    const over = r.bottom - (innerHeight - 4);
+    if (over > 0) sub.style.top = (-5 - Math.min(over, r.top - 4)) + 'px';
+  }
+  // on hover the list shows at once; the frame after, it has its size
+  sub.parentElement.addEventListener('mouseenter', () => requestAnimationFrame(fitSub));
 
   // the presets as they are now: another tab may have added one
   async function presets() {
@@ -529,6 +543,7 @@
       if (!r.ok) throw new Error(r.status);
       const ps = await r.json();
       sub.textContent = '';
+      requestAnimationFrame(fitSub); // filled while shown: its height changed
       for (const p of ps) {
         const b = document.createElement('button');
         b.type = 'button';
@@ -555,7 +570,10 @@
     for (const c of $('lwhat').children) c.classList.toggle('on', c === b);
   });
   // the presets open on hover, and on a click for those without a mouse
-  $('lpresetbtn').addEventListener('click', () => sub.classList.toggle('shown'));
+  $('lpresetbtn').addEventListener('click', () => {
+    sub.classList.toggle('shown');
+    requestAnimationFrame(fitSub);
+  });
   menu.addEventListener('click', e => {
     const b = e.target.closest('button');
     if (!b || b.disabled) return;
