@@ -596,8 +596,9 @@ func TestListLimits(t *testing.T) {
 }
 
 // The auto-switch mode stands above the lists, and is said where it sets
-// one aside: Tunnel only the direct list, Observe only the tunnels' lists
-// and the presets.
+// one aside: Tunnel only the direct list. Observe only sets none aside --
+// the always-tunnel list routes there too -- but the second tunnel starts
+// off in it, and its list says so.
 func TestListModeNotes(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
@@ -610,15 +611,17 @@ func TestListModeNotes(t *testing.T) {
 	}{
 		{ctl.ModeTunnel, "lists/list-direct", "Tunnel only is on", true},
 		{ctl.ModeTunnel, "lists/list-tunnel", "is on:", false},
-		{ctl.ModeObserve, "lists/list-tunnel", "Observe only is on", true},
-		{ctl.ModeObserve, "awg2/list-awg2", "Observe only is on", true},
-		{ctl.ModeObserve, "awg2/presets", "Observe only is on", true},
+		{ctl.ModeObserve, "lists/list-tunnel", "is on:", false},
+		{ctl.ModeObserve, "lists/list-tunnel", "switched off", false},
+		{ctl.ModeObserve, "awg2/list-awg2", "The second tunnel is switched off", true},
+		{ctl.ModeObserve, "awg2/awg2state", "The second tunnel is switched off", true},
+		{ctl.ModeOn, "awg2/list-awg2", "switched off", false},
 		{ctl.ModeObserve, "lists/list-direct", "is on:", false},
 		{ctl.ModeObserve, "lists/list-block", "is on:", false},
 		{ctl.ModeOn, "lists/list-direct", "is on:", false},
 		{ctl.ModeOn, "lists/list-tunnel", "is on:", false},
 	} {
-		st.Mode = c.mode
+		st.Mode, st.Awg2On = c.mode, c.mode != ctl.ModeObserve
 		if got := strings.Contains(get(c.frag), c.want); got != c.said {
 			t.Errorf("%s, %s: said %v, want %v", c.mode, c.frag, got, c.said)
 		}
@@ -954,5 +957,67 @@ func TestDNSTestFixesPath(t *testing.T) {
 	w = do(t, h, "POST", "/act/dnstest?path=direct", url.Values{"direct_dns": {lines("https://a.test", "https://c.test/dns-query")}}, nil)
 	if strings.Contains(w.Body.String(), "data-fill") {
 		t.Fatalf("a box with nothing to fix was refilled:\n%s", w.Body.String())
+	}
+}
+
+// The second tunnel's switch is kept per auto-switch mode, and observe only
+// starts off each time it is chosen.
+func TestAwg2Switch(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	active := func() bool { return ctl.LoadSettings(paths.Settings()).Awg2Active() }
+	mode := func(m string) {
+		t.Helper()
+		if w := do(t, h, "POST", "/act/auto", url.Values{"value": {m}}, nil); w.Code != 200 {
+			t.Fatalf("mode %s: %d", m, w.Code)
+		}
+	}
+	sw := func(on string) string {
+		t.Helper()
+		w := do(t, h, "POST", "/act/awg2", url.Values{"field": {"awg2"}, "value": {on}}, nil)
+		if w.Code != 200 || strings.Contains(w.Body.String(), `class="msg bad"`) {
+			t.Fatalf("switch %s: %d %s", on, w.Code, w.Body.String())
+		}
+		return w.Body.String()
+	}
+	if !active() {
+		t.Fatal("off to begin with in on")
+	}
+	sw("0")
+	if active() {
+		t.Fatal("not switched off")
+	}
+	mode(ctl.ModeObserve)
+	if active() {
+		t.Fatal("observe only started on")
+	}
+	sw("1")
+	mode(ctl.ModeTunnel)
+	if !active() {
+		t.Fatal("tunnel only never switched: not on")
+	}
+	mode(ctl.ModeOn)
+	if active() {
+		t.Fatal("on forgot it was switched off")
+	}
+	mode(ctl.ModeObserve)
+	if active() {
+		t.Fatal("observe only kept the switch from before")
+	}
+}
+
+// With no first tunnel's config the service starts no core: the second
+// tunnel waits for the first, not a refused connection shown as down.
+func TestAwg2WaitsForFirst(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	st := s.statusFn()
+	st.Installed, st.ServiceRun, st.HasConfig, st.Awg2, st.Awg2On = true, true, false, true, true
+	s.statusFn = func() status { return st }
+	for _, f := range []string{"awg2/awg2state", "awg2/header"} {
+		b := do(t, h, "GET", "/frag/"+f, nil, nil).Body.String()
+		if !strings.Contains(b, "waits for the first tunnel") || strings.Contains(b, "not responding") {
+			t.Errorf("%s: %s", f, b)
+		}
 	}
 }

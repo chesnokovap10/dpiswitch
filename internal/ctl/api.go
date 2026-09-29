@@ -91,7 +91,7 @@ func Run(ctx context.Context, cfg Config) {
 	mode := "APPLY"
 	switch cfg.modeNow() {
 	case ModeObserve:
-		mode = "OBSERVE (everything goes direct)"
+		mode = "OBSERVE (everything direct but the forbidden and the tunnel lists)"
 	case ModeTunnel:
 		mode = "TUNNEL ONLY (everything goes through the tunnels)"
 	}

@@ -17,14 +17,16 @@ only costs a detour.</div>
 <tr><td>2</td><td>Addresses inside the tunnels (their DNS server)</td><td>that tunnel</td></tr>
 <tr><td>3</td><td><a href="/lists#list-block">Forbidden</a>: programs, sites, addresses</td><td>refused, in every mode</td></tr>
 <tr><td>4</td><td>Local networks: the router, printers, shares, <code>.local</code> and <code>.lan</code> names</td><td>direct</td></tr>
-<tr><td>5</td><td>Everything, while "Observe only" is chosen</td><td>direct</td></tr>
-<tr><td>6</td><td>Programs in <a href="/lists#list-direct">Always direct</a></td><td>direct, all their traffic</td></tr>
-<tr><td>7</td><td><a href="/awg2#presets">Second tunnel</a>: presets and your list (programs, sites, addresses)</td><td>awg2; if it is down, awg; if both are down, direct</td></tr>
-<tr><td>8</td><td><a href="/lists#list-tunnel">Always via tunnel</a>: programs, sites, addresses</td><td>awg</td></tr>
+<tr><td>5</td><td>Programs in <a href="/lists#list-direct">Always direct</a></td><td>direct, all their traffic</td></tr>
+<tr><td>6</td><td><a href="/awg2#presets">Second tunnel</a>, while switched on: presets and your list (programs, sites, addresses)</td><td>awg2; if it is down, awg; never direct</td></tr>
+<tr><td>7</td><td><a href="/lists#list-tunnel">Always via tunnel</a>: programs, sites, addresses</td><td>awg only; if it is down, the connection fails</td></tr>
+<tr><td>8</td><td>Everything else, while "Observe only" is chosen</td><td>direct</td></tr>
 <tr><td>9</td><td><a href="/lists#list-direct">Always direct</a>: sites and addresses</td><td>direct</td></tr>
 <tr><td>10</td><td>Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name)</td><td>direct</td></tr>
 <tr><td>11</td><td>Everything else</td><td>awg; if it is down, direct</td></tr>
 </table>
+<p>A line written in several lists goes by the one higher in this table: Forbidden beats everything,
+the second tunnel beats Always via tunnel, and both beat the sites and addresses in Always direct.</p>
 <p>The core decides once, when a connection opens. When you change a list or a preset here, the
 open connections the change moves are closed, and the programs reconnect over the new route. Turning
 auto-switch off closes the connections the detector sent direct.</p>
@@ -88,11 +90,14 @@ bad subdomain removes the rule. It helps services with pools of servers: CDNs, s
 the traffic goes.</p>
 <ul>
 <li><b>On</b>: the verdicts are applied. Unblocked sites go direct, the rest by the lists and through the tunnel.</li>
-<li><b>Observe only</b>: everything goes direct, the presets, the custom awg2 list and "Always via tunnel"
-included. Blocked sites do not open in this mode. The detector checks everything, the sites of those
-lists too.</li>
+<li><b>Observe only</b>: plain direct -- a whitelist. Everything goes direct but Forbidden and
+"Always via tunnel", which go their way as in every mode. The second tunnel starts switched off each time
+this mode is chosen: switch it on on its page, and its presets and list go to awg2 too. The detector checks
+everything that goes direct.</li>
 <li><b>Tunnel only</b>: everything goes through awg and awg2, the "Always direct" list included. The presets and the custom awg2 list still go to awg2.</li>
 </ul>
+<p>The second tunnel's switch is kept per mode: switched off in On, it is off again whenever On is
+chosen, and so for Tunnel only. Switched off, its presets and list route nothing.</p>
 <p>The local network and the tunnels' own addresses go direct, and the Forbidden list is refused, in every mode. Switching applies within a
 second: the open connections the mode sends another way are closed, and the programs reconnect the new
 way. The verdicts are kept in every mode.</p>
@@ -119,8 +124,9 @@ IPv4 only for it.</p>
 <h4>The second tunnel</h4>
 <p>A second AmneziaWG server for chosen services only: YouTube, Telegram, AI services, social networks
 and your own list. It stands above every other list, the detector leaves its names alone. If it is down,
-its sites go through the first tunnel; if both are down, direct. Until it is attached, its presets use the
-first tunnel.</p>
+its sites go through the first tunnel; if both are down, they fail -- never direct. Until it is attached, its
+presets use the first tunnel. <b>Use the second tunnel</b> on its page switches it off and on: switched off,
+its presets and list route nothing, and what they name goes the way the other lists and the mode send it.</p>
 <p>The <a href="/awg2#presets">presets</a> are yours to change: <b>Edit</b> opens a preset's name, description and
 lines (sites, addresses and programs, as in the lists), <b>Delete</b> removes it, <b>Add…</b> makes a new one,
 switched on at once. A change applies at once, like a switch. Once a built-in preset is deleted or edited,

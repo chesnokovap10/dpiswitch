@@ -329,6 +329,7 @@ type status struct {
 	Endpoint    string         `json:"-"`
 	Awg2        bool           `json:"-"` // a second tunnel is attached
 	Awg2Err     string         `json:"-"` // why the .conf loaded for it is not
+	Awg2On      bool           `json:"-"` // switched on in the mode chosen, see ctl.Settings.Awg2Active
 	Awg2Alive   bool           `json:"-"`
 	Awg2Note    string         `json:"-"`
 	Endpoint2   string         `json:"-"`
@@ -372,18 +373,20 @@ func collectStatus() status {
 	} else if err != nil {
 		st.Awg2Err = err.Error()
 	}
+	set := ctl.LoadSettings(paths.Settings())
+	st.Mode, st.Awg2On = set.Mode(), set.Awg2Active()
 	// a running service and a working tunnel are different things: TUN may
-	// be up with a dead peer, and then traffic goes nowhere
-	if st.ServiceRun {
+	// be up with a dead peer, and then traffic goes nowhere. With no first
+	// tunnel's config the service starts no core: there is nothing to ask,
+	// and the core's refused connection read as a tunnel down.
+	if st.ServiceRun && st.HasConfig {
 		secret := ctl.SecretFromConfig(paths.Config())
 		st.TunnelAlive, st.TunnelNote = ctl.TunnelHealth(apiAddr, secret, "awg")
-		if st.Awg2 {
+		if st.Awg2 && st.Awg2On {
 			st.Awg2Alive, st.Awg2Note = ctl.TunnelHealth(apiAddr, secret, "awg2")
 		}
 	}
 	st.NetworkUp = supervisor.NetworkUp()
-	set := ctl.LoadSettings(paths.Settings())
-	st.Mode = set.Mode()
 	st.Presets = len(set.Awg2Presets)
 	st.Awg2Hosts = len(readEntries(paths.Awg2List))
 

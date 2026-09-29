@@ -201,11 +201,16 @@ func TestLiveAddSaid(t *testing.T) {
 		}
 	}
 	mode(ctl.ModeObserve)
-	if a = add("tunnel", "t.example"); !strings.Contains(a.Msg, "Observe only is on") {
+	// the always-tunnel list routes in observe only too: nothing to say
+	if a = add("tunnel", "t.example"); strings.Contains(a.Msg, "is on") || strings.Contains(a.Msg, "switched off") {
 		t.Errorf("observe only, to the tunnel: %s", a.Msg)
 	}
 	if a = add("block", "b.example"); strings.Contains(a.Msg, "is on") {
 		t.Errorf("observe only, forbidden: %s", a.Msg)
+	}
+	// the second tunnel starts off there, and is said so
+	if a = add("awg2", "o.example"); !strings.Contains(a.Msg, "The second tunnel is switched off") {
+		t.Errorf("observe only, the second tunnel: %s", a.Msg)
 	}
 	mode(ctl.ModeTunnel)
 	if a = add("direct", "d.example"); !strings.Contains(a.Msg, "Tunnel only is on") {

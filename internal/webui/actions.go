@@ -417,6 +417,29 @@ func (s *Server) actPreset(w http.ResponseWriter, r *http.Request) {
 	s.part(w, r, "awg2", "presets", ok, msg)
 }
 
+// actAwg2 switches the second tunnel on or off in the auto-switch mode
+// chosen; each mode keeps its own (see ctl.Settings.Awg2Active). Switched
+// off, its presets and list route nothing. What the switch moves is closed,
+// as a preset's switch does.
+func (s *Server) actAwg2(w http.ResponseWriter, r *http.Request) {
+	on := r.FormValue("value") == "1"
+	err := paths.UserReady()
+	if err == nil {
+		_, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
+			set.SetAwg2(on)
+			return nil
+		})
+	}
+	n := 0
+	var cerr error
+	if err == nil {
+		providers := append([]string{ctl.PresetsProvider}, ctl.ListProviders(paths.Awg2List)...)
+		n, cerr = closeMoved(providers, ctl.Awg2Moved(), ctl.Awg2Synced)
+	}
+	ok, msg := saved(r, err, n, cerr)
+	s.part(w, r, "awg2", "awg2state", ok, msg)
+}
+
 // rulesMatch: the connections a preset's core rules take, or took
 func rulesMatch(rules []string) func(ctl.Conn) bool {
 	var suffixes, apps []string

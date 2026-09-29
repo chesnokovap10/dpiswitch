@@ -130,10 +130,10 @@ func (s *Server) actLiveAdd(w http.ResponseWriter, r *http.Request) {
 		msg += tr(lang(r), ". The preset is off: it routes nothing until it is switched on")
 	}
 	// the auto-switch mode stands above the lists: said, not left to find
-	switch mode := ctl.LoadSettings(paths.Settings()).Mode(); {
-	case mode == ctl.ModeObserve && to != "direct" && to != "block":
-		msg += tr(lang(r), ". Observe only is on: everything but the forbidden goes direct, this too, until auto-switch is on")
-	case mode == ctl.ModeTunnel && to == "direct":
+	switch set := ctl.LoadSettings(paths.Settings()); {
+	case (to == "awg2" || to == "preset") && !set.Awg2Active():
+		msg += tr(lang(r), ". The second tunnel is switched off in this mode: this routes nothing until it is switched on")
+	case set.Mode() == ctl.ModeTunnel && to == "direct":
 		msg += tr(lang(r), ". Tunnel only is on: Always direct is set aside until auto-switch is on")
 	}
 	ok := true

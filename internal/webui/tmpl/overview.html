@@ -46,10 +46,10 @@
       <h3>{{.T "Second tunnel"}} · awg2</h3>
       {{if $s.Awg2}}
       <div class="kv">
-        <span>{{.T "State"}}</span><div>{{template "tunstate" (tun . $s.Awg2Alive $s.Awg2Note)}}</div>
+        <span>{{.T "State"}}</span><div>{{template "awg2pill" .}}</div>
         <span>Endpoint</span><div>{{$s.Endpoint2}}</div>
         <span>{{.T "Carries"}}</span><div><a href="/awg2">{{.Tf "%d presets, %d in your own list" $s.Presets $s.Awg2Hosts}}</a></div>
-        <span>{{.T "If it is down"}}</span><div>{{.T "its sites go through awg"}}</div>
+        <span>{{.T "If it is down"}}</span><div>{{.T "its sites go through awg, never direct"}}</div>
       </div>
       <div class="actions">
         <button type="button" data-open="dlg-config2">{{.T "Replace config…"}}</button>

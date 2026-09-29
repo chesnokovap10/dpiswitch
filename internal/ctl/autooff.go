@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/netip"
+	"slices"
 	"strings"
 	"time"
 
@@ -178,9 +179,9 @@ func watchSettings(ctx context.Context, cfg Config, a *api, st *state, last Sett
 		if !ok || haveLast && ns.Equal(last) {
 			continue
 		}
-		was := ModeOn
+		was, awg2Was := ModeOn, true
 		if haveLast {
-			was = last.Mode()
+			was, awg2Was = last.Mode(), last.Awg2Active()
 		}
 		last, haveLast = ns, true
 		cfg.setMode(ns.Mode())
@@ -188,7 +189,7 @@ func watchSettings(ctx context.Context, cfg Config, a *api, st *state, last Sett
 		case now != was:
 			// the settings as they are now: this copy may have started
 			// with auto-switch off, Apply false
-			switchMode(ns.apply(cfg), a, st, was, now)
+			switchMode(ns.apply(cfg), a, st, was, now, awg2Was != ns.Awg2Active())
 		case now == ModeOn:
 			enableAuto(cfg)
 		default:
@@ -205,8 +206,9 @@ func watchSettings(ctx context.Context, cfg Config, a *api, st *state, last Sett
 // mode decides are written first -- the catch-all of observe only, the
 // direct lists tunnel only sets aside -- since a connection closed after
 // reconnects at once, and must meet the new rules. Then the detector's
-// lists, then every open connection the new mode sends another way.
-func switchMode(cfg Config, a *api, st *state, from, to string) {
+// lists, then every open connection the new mode sends another way -- the
+// second tunnel's too, when the new mode has it switched otherwise.
+func switchMode(cfg Config, a *api, st *state, from, to string, awg2Flipped bool) {
 	listMu.Lock()
 	syncUserFiles(a)
 	listMu.Unlock()
@@ -215,17 +217,23 @@ func switchMode(cfg Config, a *api, st *state, from, to string) {
 	} else {
 		disableAuto(cfg, a, false)
 	}
-	n := closeRerouted(cfg, a, from, to)
+	var awg2 func(connection) bool
+	if awg2Flipped {
+		awg2 = awg2Moved()
+	}
+	n := closeRerouted(cfg, a, from, to, awg2)
 	log.Printf("auto-switch: %s -> %s, %d open connections sent the new way", from, to, n)
 }
 
 // closeRerouted closes the open connections a change of mode moves: the core
 // routes a connection once, when it opens. Observe only sends everything
-// direct, tunnel only everything through the tunnels; on sends back what
-// observe only took, and what the user's direct lists take again after
-// tunnel only. The endpoints, the tunnels' inside and the local networks are
-// routed by rules no mode touches, and are left alone.
-func closeRerouted(cfg Config, a *api, from, to string) int {
+// direct but what the always-tunnel list names, tunnel only everything
+// through the tunnels; on sends back what observe only took, and what the
+// user's direct lists take again after tunnel only. awg2, when not nil,
+// picks the connections the second tunnel switched on or off moves. The
+// endpoints, the tunnels' inside and the local networks are routed by rules
+// no mode touches, and are left alone.
+func closeRerouted(cfg Config, a *api, from, to string, awg2 func(connection) bool) int {
 	conns, err := a.connections()
 	if err != nil {
 		log.Printf("cannot read connections: %v", err)
@@ -243,12 +251,13 @@ func closeRerouted(cfg Config, a *api, from, to string) int {
 		var moved bool
 		switch to {
 		case ModeObserve:
-			moved = !c.viaDirect()
+			moved = !c.viaDirect() && !c.byList(paths.TunnelList)
 		case ModeTunnel:
 			moved = c.viaDirect()
 		default:
 			moved = c.byProvider(ObserveProvider) || userDirect != nil && !c.viaDirect() && userDirect(c)
 		}
+		moved = moved || awg2 != nil && awg2(c)
 		if !moved {
 			continue
 		}
@@ -285,6 +294,97 @@ func userListsDirect() func(connection) bool {
 		}
 		if c.Rule != "Match" {
 			return false
+		}
+		dom := c.domain()
+		if dom == "" {
+			a, err := netip.ParseAddr(c.Metadata.DestinationIP)
+			for _, p := range nets {
+				if err == nil && p.Contains(a.Unmap()) {
+					return true
+				}
+			}
+			return false
+		}
+		for _, r := range names {
+			if MatchDomainRule(r, dom) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// byList: the connection was routed by one of a user list's rule-providers
+func (c connection) byList(name string) bool {
+	return slices.ContainsFunc(ListProviders(name), c.byProvider)
+}
+
+// awg2Moved: the connections the second tunnel switched on or off moves --
+// the ones its presets and list routed, and the ones their files, as the
+// core now reads them, take. Read after the files are written.
+func awg2Moved() func(connection) bool {
+	takes := awg2Takes()
+	return func(c connection) bool {
+		return c.byProvider(PresetsProvider) || c.byList(paths.Awg2List) || takes(c)
+	}
+}
+
+// Awg2Moved: awg2Moved for CloseConns -- the UI's switch of the second
+// tunnel. The files are read at the first call: after the service took it.
+func Awg2Moved() func(Conn) bool {
+	var m func(connection) bool
+	return func(v Conn) bool {
+		if m == nil {
+			m = awg2Moved()
+		}
+		var c connection
+		if v.RulePayload != "" {
+			c.Rule, c.RulePayload = "RuleSet", v.RulePayload
+		}
+		c.Metadata.Host, c.Metadata.DestinationIP = v.Host, v.IP
+		c.Metadata.Process, c.Metadata.ProcessPath = v.Process, v.ProcessPath
+		return m(c)
+	}
+}
+
+// awg2Takes: whether the second tunnel's files, as the core now reads them,
+// take a connection. A program by its name or path; a name by the presets'
+// suffixes and the list's lines; an address only on a connection with no
+// name, as those rules ask no resolving.
+func awg2Takes() func(connection) bool {
+	var apps, names []string
+	var nets []netip.Prefix
+	for _, r := range append(listRules(paths.Presets()), listRules(paths.Data(paths.AppList(paths.Awg2List)))...) {
+		f := strings.Split(r, ",")
+		if len(f) < 2 {
+			continue
+		}
+		switch strings.ToUpper(f[0]) {
+		case "PROCESS-NAME", "PROCESS-PATH":
+			apps = append(apps, strings.ToUpper(f[0])+","+f[1])
+		case "DOMAIN-SUFFIX":
+			names = append(names, "+."+f[1])
+		case "DOMAIN":
+			names = append(names, f[1])
+		case "IP-CIDR", "IP-CIDR6":
+			if p, err := netip.ParsePrefix(f[1]); err == nil {
+				nets = append(nets, p)
+			}
+		}
+	}
+	names = append(names, listRules(paths.Awg2Hosts())...)
+	for _, r := range listRules(paths.Data(paths.IPList(paths.Awg2List))) {
+		if p, err := netip.ParsePrefix(r); err == nil {
+			nets = append(nets, p)
+		}
+	}
+	return func(c connection) bool {
+		for _, r := range apps {
+			kind, v, _ := strings.Cut(r, ",")
+			if kind == "PROCESS-NAME" && strings.EqualFold(v, c.Metadata.Process) ||
+				kind == "PROCESS-PATH" && strings.EqualFold(v, c.Metadata.ProcessPath) {
+				return true
+			}
 		}
 		dom := c.domain()
 		if dom == "" {

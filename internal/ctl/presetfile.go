@@ -89,8 +89,11 @@ func presetsBody(all []presets.Preset, enabled []string) []byte {
 }
 
 // PresetWritten: whether the core's file has a preset as on asks -- its
-// rules as they are now when on, nothing of it when off
+// rules as they are now when on, nothing of it when off or when the second
+// tunnel is switched off
 func PresetWritten(p presets.Preset, on bool) bool {
+	// the second tunnel switched off writes none of them
+	on = on && LoadSettings(paths.Settings()).Awg2Active()
 	b, err := os.ReadFile(paths.Presets())
 	if err != nil {
 		return false

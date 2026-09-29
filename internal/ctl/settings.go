@@ -44,6 +44,9 @@ type Settings struct {
 	IPv6 bool `json:"ipv6"`
 	// second tunnel (awg2): the IDs of the presets switched on
 	Awg2Presets []string `json:"awg2_presets"`
+	// second tunnel switched on or off by hand, by auto-switch mode: each
+	// mode keeps its own, see Awg2Active
+	Awg2On map[string]bool `json:"awg2_on,omitempty"`
 	// direct-path resolvers: the core and the prober reach them directly,
 	// so CDNs hand out nodes closest to the user's ISP
 	DirectDNS []string `json:"direct_dns"`
@@ -71,7 +74,7 @@ func (s Settings) Equal(o Settings) bool { return reflect.DeepEqual(s, o) }
 // every one; they differ in where the traffic goes.
 const (
 	ModeOn      = "on"      // verdicts applied: unblocked sites direct, the rest by the lists
-	ModeObserve = "observe" // everything direct, the user's tunnel lists included
+	ModeObserve = "observe" // everything direct but the forbidden and the user's tunnel lists
 	ModeTunnel  = "tunnel"  // everything through awg and awg2, the user's direct lists included
 )
 
@@ -89,13 +92,38 @@ func (s Settings) Mode() string {
 }
 
 // SetMode: the two fields for one of the modes; false for an unknown one.
+// Observe only chosen starts with the second tunnel off, whatever it was
+// switched to there before: that mode is plain direct, and the tunnels only
+// take what the user asks of them there.
 func (s *Settings) SetMode(m string) bool {
 	switch m {
 	case ModeOn, ModeObserve, ModeTunnel:
+		if m == ModeObserve && s.Mode() != ModeObserve {
+			delete(s.Awg2On, ModeObserve)
+		}
 		s.AutoSwitch, s.TunnelOnly = m == ModeOn, m == ModeTunnel
 		return true
 	}
 	return false
+}
+
+// Awg2Active: whether the second tunnel takes its presets and list in the
+// mode chosen. Switched off, they route nothing: what they name goes the
+// way the other lists and the mode send it. Each mode keeps what it was
+// switched to by hand; one never switched is on, observe only off.
+func (s Settings) Awg2Active() bool {
+	if on, ok := s.Awg2On[s.Mode()]; ok {
+		return on
+	}
+	return s.Mode() != ModeObserve
+}
+
+// SetAwg2: the second tunnel switched on or off in the mode chosen.
+func (s *Settings) SetAwg2(on bool) {
+	if s.Awg2On == nil {
+		s.Awg2On = map[string]bool{}
+	}
+	s.Awg2On[s.Mode()] = on
 }
 
 func DefaultSettings() Settings {
@@ -324,6 +352,16 @@ func (s *Settings) clamp() {
 		ps = []string{}
 	}
 	s.Awg2Presets = ps
+	// the modes there are, and none left empty: the file read back holds
+	// nil, and Equal must not see a change in that
+	for m := range s.Awg2On {
+		if m != ModeOn && m != ModeObserve && m != ModeTunnel {
+			delete(s.Awg2On, m)
+		}
+	}
+	if len(s.Awg2On) == 0 {
+		s.Awg2On = nil
+	}
 	s.DirectDNS = cleanDNS(s.DirectDNS)
 	s.TunnelDNS = cleanDNS(s.TunnelDNS)
 	if len(s.DirectDNS) == 0 {

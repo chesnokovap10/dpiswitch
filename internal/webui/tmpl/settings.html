@@ -19,7 +19,7 @@
 
   <div>{{.T "Auto-switch"}}</div>
   <div><select name="auto_switch">{{$m := $s.Mode}}<option value="on" {{if eq $m "on"}}selected{{end}}>{{.T "On"}}</option><option value="observe" {{if eq $m "observe"}}selected{{end}}>{{.T "Observe only"}}</option><option value="tunnel" {{if eq $m "tunnel"}}selected{{end}}>{{.T "Tunnel only"}}</option></select></div>
-  <div class="h">{{.T "On: unblocked sites go direct, the rest by the lists. Observe only: everything goes direct. Tunnel only: everything goes through awg and awg2, the direct lists included. The detector records verdicts in every mode."}}{{template "rowmsg" ($d.MsgFor "auto_switch")}}</div>
+  <div class="h">{{.T "On: unblocked sites go direct, the rest by the lists. Observe only: everything goes direct but Forbidden, Always via tunnel and, while switched on, the second tunnel -- a whitelist; the second tunnel starts switched off there. Tunnel only: everything goes through awg and awg2, the direct lists included. The detector records verdicts in every mode."}}{{template "rowmsg" ($d.MsgFor "auto_switch")}}</div>
 
   <div>{{.T "Whole domains"}}</div>
   <div><select name="families"><option value="1" {{if $s.Families}}selected{{end}}>{{.T "Extend to the domain"}}</option><option value="0" {{if not $s.Families}}selected{{end}}>{{.T "Checked names only"}}</option></select></div>

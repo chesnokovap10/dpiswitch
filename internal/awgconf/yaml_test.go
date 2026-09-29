@@ -165,3 +165,53 @@ func TestSecond(t *testing.T) {
 		t.Error("no first tunnel: the second left out")
 	}
 }
+
+// Observe only goes direct below the lists that name a tunnel, so they route
+// in it too; those lists never fall back to direct, and what no list names
+// still does, through the first tunnel's group.
+func TestRenderRuleOrder(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Parse("[Interface]\nPrivateKey = k\nAddress = 10.8.1.3/32\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.7:51820\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := c.Render()
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := func(line string) int {
+		i := strings.Index(out, "  - "+line+"\n")
+		if i < 0 {
+			t.Fatalf("no rule %q in:\n%s", line, out)
+		}
+		return i
+	}
+	for _, above := range []string{"RULE-SET,force-block,REJECT", "RULE-SET,force-direct-apps,DIRECT",
+		"RULE-SET,presets,tunnel2", "RULE-SET,awg2-hosts,tunnel2", "RULE-SET,force-tunnel,awg"} {
+		if at(above) > at("RULE-SET,observe-all,DIRECT") {
+			t.Errorf("%s below the observe only catch-all", above)
+		}
+	}
+	for _, below := range []string{"RULE-SET,force-direct,DIRECT", "RULE-SET,direct-verified,DIRECT", "MATCH,tunnel"} {
+		if at(below) < at("RULE-SET,observe-all,DIRECT") {
+			t.Errorf("%s above the observe only catch-all", below)
+		}
+	}
+	group := func(name string) string {
+		i := strings.Index(out, "  - name: "+name+"\n")
+		if i < 0 {
+			t.Fatalf("no group %s", name)
+		}
+		g := out[i:]
+		return g[:strings.Index(g, "    url:")]
+	}
+	if !strings.Contains(group("tunnel"), "- DIRECT") {
+		t.Error("the first tunnel's group lost its fallback to direct")
+	}
+	if strings.Contains(group("tunnel2"), "- DIRECT") {
+		t.Error("the second tunnel's group falls back to direct")
+	}
+}

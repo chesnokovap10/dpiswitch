@@ -20,8 +20,9 @@ import (
 
 // Observe only chosen in the UI: within a second the detector's lists are
 // empty, the connections through the tunnels are closed to reconnect direct
-// and the direct ones stay open, and a cycle started before cannot write the
-// rules back.
+// -- but the always-tunnel list's, which stay in the tunnel -- and the
+// direct ones stay open, and a cycle started before cannot write the rules
+// back.
 func TestAutoSwitchOffAtOnce(t *testing.T) {
 	// the change of mode writes the list copies: not the real ones
 	t.Setenv("ProgramData", t.TempDir())
@@ -92,7 +93,7 @@ func TestAutoSwitchOffAtOnce(t *testing.T) {
 	got := append([]string(nil), closed...)
 	mu.Unlock()
 	sort.Strings(got)
-	if want := []string{"pinned-a", "tun", "tun-a"}; !reflect.DeepEqual(got, want) {
+	if want := []string{"tun", "tun-a"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("closed %v, want %v", got, want)
 	}
 	if !strings.Contains(strings.Join(listRules(paths.ObserveAll()), " "), "NETWORK") {
@@ -153,6 +154,7 @@ func TestModeCloses(t *testing.T) {
 				{"id":"lan","rule":"IPCIDR","rulePayload":"192.168.0.0/16","chains":["DIRECT"]},
 				{"id":"tun","rule":"Match","chains":["awg","tunnel"],"metadata":{"host":"t.example"}},
 				{"id":"preset","rule":"RuleSet","rulePayload":"presets","chains":["awg2","tunnel2"]},
+				{"id":"ft","rule":"RuleSet","rulePayload":"force-tunnel","chains":["awg"],"metadata":{"host":"f.example"}},
 				{"id":"d-tun","rule":"Match","chains":["awg","tunnel"],"metadata":{"host":"d.example"}},
 				{"id":"app-tun","rule":"RuleSet","rulePayload":"presets","chains":["awg2","tunnel2"],"metadata":{"process":"X.EXE"}},
 				{"id":"probe","rule":"Match","chains":["awg"],"metadata":{"inboundName":"probe-tunnel","sourceIP":"127.0.0.1"}}]}`))
@@ -164,19 +166,30 @@ func TestModeCloses(t *testing.T) {
 	}))
 	defer srv.Close()
 	a := newAPI(strings.TrimPrefix(srv.URL, "http://"), "")
+	// the second tunnel's list, as the core reads it once switched on
+	os.WriteFile(paths.Awg2Hosts(), []byte("+.t.example\n"), 0o644)
 	for _, c := range []struct {
 		from, to string
+		awg2     bool // switched on or off by the change
 		want     []string
 	}{
-		{ModeOn, ModeObserve, []string{"app-tun", "d-tun", "preset", "tun"}},
-		{ModeOn, ModeTunnel, []string{"app", "det", "obs", "user"}},
-		{ModeObserve, ModeOn, []string{"obs"}},
-		{ModeTunnel, ModeOn, []string{"app-tun", "d-tun", "obs"}},
+		// the always-tunnel list stays in the tunnel in observe only
+		{ModeOn, ModeObserve, false, []string{"app-tun", "d-tun", "preset", "tun"}},
+		{ModeOn, ModeTunnel, false, []string{"app", "det", "obs", "user"}},
+		{ModeObserve, ModeOn, false, []string{"obs"}},
+		{ModeTunnel, ModeOn, false, []string{"app-tun", "d-tun", "obs"}},
+		// awg2 switched on with the mode: what its list takes moves too,
+		// and what its presets routed when it is switched off
+		{ModeTunnel, ModeOn, true, []string{"app-tun", "d-tun", "obs", "preset", "tun"}},
 	} {
 		mu.Lock()
 		closed = nil
 		mu.Unlock()
-		closeRerouted(Config{}, a, c.from, c.to)
+		var awg2 func(connection) bool
+		if c.awg2 {
+			awg2 = awg2Moved()
+		}
+		closeRerouted(Config{}, a, c.from, c.to, awg2)
 		mu.Lock()
 		got := append([]string(nil), closed...)
 		mu.Unlock()
@@ -188,8 +201,9 @@ func TestModeCloses(t *testing.T) {
 }
 
 // The files a mode decides follow the settings: observe only writes the
-// catch-all, tunnel only sets the direct lists aside, and the UI's wait for
-// a saved list still ends in that mode.
+// catch-all and starts with the second tunnel off, tunnel only sets the
+// direct lists aside, and the UI's wait for a saved list still ends in
+// that mode.
 func TestModeFiles(t *testing.T) {
 	t.Setenv("ProgramData", t.TempDir())
 	if err := paths.EnsureDataDir(); err != nil {
@@ -197,14 +211,15 @@ func TestModeFiles(t *testing.T) {
 	}
 	os.WriteFile(paths.User(paths.DirectList), []byte("d.example\n"), 0o644)
 	os.WriteFile(paths.User(paths.TunnelList), []byte("t.example\n"), 0o644)
+	os.WriteFile(paths.User(paths.Awg2List), []byte("a.example\n"), 0o644)
 	set := DefaultSettings()
 	for _, c := range []struct {
-		mode, direct, tunnel string
-		observe              bool
+		mode, direct, tunnel, awg2 string
+		observe                    bool
 	}{
-		{ModeObserve, "d.example", "t.example", true},
-		{ModeTunnel, "", "t.example", false},
-		{ModeOn, "d.example", "t.example", false},
+		{ModeObserve, "d.example", "t.example", "", true},
+		{ModeTunnel, "", "t.example", "a.example", false},
+		{ModeOn, "d.example", "t.example", "a.example", false},
 	} {
 		set.SetMode(c.mode)
 		if err := SaveSettings(paths.Settings(), set); err != nil {
@@ -219,6 +234,13 @@ func TestModeFiles(t *testing.T) {
 		}
 		if got := listRules(paths.ObserveAll()) != nil; got != c.observe {
 			t.Errorf("%s: catch-all %v", c.mode, listRules(paths.ObserveAll()))
+		}
+		// the second tunnel starts off in observe only, on in the others
+		if got := strings.Join(listRules(paths.Awg2Hosts()), " "); got != c.awg2 {
+			t.Errorf("%s: awg2 list %q, want %q", c.mode, got, c.awg2)
+		}
+		if !Awg2Synced() {
+			t.Errorf("%s: the second tunnel's files never count as taken", c.mode)
 		}
 		if !Synced(paths.DirectList) {
 			t.Errorf("%s: the direct list never counts as taken", c.mode)

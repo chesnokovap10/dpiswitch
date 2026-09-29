@@ -111,13 +111,11 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	// not enough -- a verdict made before stayed, was re-checked while the
 	// name was in use, and a pinned host's CLEAN made its siblings a family.
 	// The lists as files, plus what connections showed: a preset's address
-	// ranges pin names no file spells out.
+	// ranges pin names no file spells out. The files are the core's copies:
+	// in every mode they route what they hold -- observe only included --
+	// and a second tunnel switched off leaves its own empty, so what those
+	// name is measured then.
 	lists := loadPinned(cfg.PinnedLists)
-	if cfg.modeNow() == ModeObserve {
-		// observe only sends these direct too, and the user asked to see
-		// them measured; their verdicts go again once the lists route them
-		lists = loadPinned(nil)
-	}
 	seenPinned := map[string]bool{}
 	for _, d := range w.drainPinned() {
 		seenPinned[d] = true

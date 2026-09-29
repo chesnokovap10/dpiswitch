@@ -31,8 +31,14 @@
     <span class="chip"><span class="dot warn"></span>{{.T $s.ServiceText}}…</span>
   {{else if $s.ServiceRun}}
     <span class="chip"><span class="dot ok"></span>{{.T "Service running"}}</span>
+    {{if not $s.HasConfig}}
+    <span class="chip"><span class="dot warn"></span>awg {{.T "no config loaded"}}</span>
+    {{if $s.Awg2}}<span class="chip" title="{{$s.Endpoint2}}"><span class="dot warn"></span>awg2 {{.T "waits for the first tunnel"}}</span>{{end}}
+    {{else}}
     <span class="chip" title="{{$s.Endpoint}}"><span class="dot {{if $s.TunnelAlive}}ok{{else}}bad{{end}}"></span>awg {{if $s.TunnelAlive}}{{$s.TunnelNote}}{{else}}{{.T "not responding"}}{{end}}</span>
-    {{if $s.Awg2}}<span class="chip" title="{{$s.Endpoint2}}"><span class="dot {{if $s.Awg2Alive}}ok{{else}}bad{{end}}"></span>awg2 {{if $s.Awg2Alive}}{{$s.Awg2Note}}{{else}}{{.T "not responding"}}{{end}}</span>{{end}}
+    {{if $s.Awg2}}{{if $s.Awg2On}}<span class="chip" title="{{$s.Endpoint2}}"><span class="dot {{if $s.Awg2Alive}}ok{{else}}bad{{end}}"></span>awg2 {{if $s.Awg2Alive}}{{$s.Awg2Note}}{{else}}{{.T "not responding"}}{{end}}</span>
+    {{- else}}<span class="chip" title="{{$s.Endpoint2}}"><span class="dot"></span>awg2 {{.T "switched off"}}</span>{{end}}{{end}}
+    {{end}}
   {{else}}
     <span class="chip"><span class="dot"></span>{{.T "Service stopped"}}</span>
     {{if not $s.NetworkUp}}<span class="chip"><span class="dot warn"></span>{{.T "no network"}}</span>{{end}}
@@ -126,7 +132,7 @@
   <p class="hint">{{.Hint}}{{if eq .Kind "awg2"}} {{$v.T "One per line: a site (example.com; +.example.com for the domain and all under it), an address or a network (1.2.3.4, 192.168.0.0/16: for connections made to it by address), a program (telegram.exe; a full path for that copy only)."}}{{end}}
   {{- /* the auto-switch mode stands above the lists: said where it sets one aside */}}
   {{- if and (eq .Kind "direct") (eq $v.St.Mode "tunnel")}} <span class="warn-t">{{$v.T "Tunnel only is on: this list is set aside until auto-switch is on."}}</span>{{end}}
-  {{- if and (ne .Kind "direct") (ne .Kind "block") (eq $v.St.Mode "observe")}} <span class="warn-t">{{$v.T "Observe only is on: everything but the forbidden goes direct, this list too, until auto-switch is on."}}</span>{{end}}</p>
+  {{- if and (eq .Kind "awg2") (not $v.St.Awg2On)}} <span class="warn-t">{{$v.T "The second tunnel is switched off in this mode: this list routes nothing until it is switched on."}}</span>{{end}}</p>
   <form method="post" action="/act/list" data-swap="list-{{.Kind}}">
     <input type="hidden" name="kind" value="{{.Kind}}">
     <div class="row" style="margin-bottom:8px">
@@ -144,9 +150,15 @@
 {{/* "service stopped" was said of one not installed, and of one starting */}}
 {{define "tunstate"}}{{$v := .V}}{{with .S}}{{if not .Installed}}<span class="pill">{{$v.T "service not installed"}}</span>{{else if .Pending}}<span class="pill warn">{{$v.T .ServiceText}}…</span>{{else if not .ServiceRun}}<span class="pill">{{$v.T "service stopped"}}</span>{{else if $.Alive}}<span class="pill ok">{{$v.T "responding"}} · {{$.Note}}</span>{{else}}<span class="pill bad">{{$v.T "not responding"}}</span> <span class="muted">{{$.Note}}</span>{{end}}{{end}}{{end}}
 
+{{/* the second tunnel's state: waiting for the first one -- no core runs
+   without it --, switched off in this mode, or its health */}}
+{{define "awg2pill"}}{{$s := .St}}{{if and $s.ServiceRun (not $s.HasConfig)}}<span class="pill warn">{{.T "waits for the first tunnel"}}</span> <span class="muted">{{.T "load the awg1 config: without it the service starts no tunnel"}}</span>
+{{- else if not $s.Awg2On}}<span class="pill">{{.T "switched off"}}</span>
+{{- else}}{{template "tunstate" (tun . $s.Awg2Alive $s.Awg2Note)}}{{end}}{{end}}
+
 {{define "durs"}}{{$v := .V}}{{range .Opts}}<option value="{{.Min}}" {{if eq .Min $.Cur}}selected{{end}}>{{if .Label}}{{$v.T .Label}}{{else}}{{$v.Tf "%d min" .Min}}{{end}}</option>{{end}}{{end}}
 
 {{/* the mode decides whether the verdicts apply: said while they do not; on
    the verdicts page and under the overview's counts */}}
-{{define "vnote"}}{{if eq .St.Mode "observe"}}<p class="hint warn-t" style="margin:0">{{.T "Observe only is on: the verdicts are recorded, not applied. Everything but the forbidden goes direct until auto-switch is on."}}</p>
+{{define "vnote"}}{{if eq .St.Mode "observe"}}<p class="hint warn-t" style="margin:0">{{.T "Observe only is on: the verdicts are recorded, not applied. Everything goes direct but Forbidden, Always via tunnel and the second tunnel while switched on, until auto-switch is on."}}</p>
 {{- else if eq .St.Mode "tunnel"}}<p class="hint warn-t" style="margin:0">{{.T "Tunnel only is on: the verdicts are recorded, not applied. Everything goes through the tunnels until auto-switch is on."}}</p>{{end}}{{end}}

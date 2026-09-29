@@ -774,32 +774,37 @@ func TestCycleStopping(t *testing.T) {
 	}
 }
 
-// Observe only: everything goes direct by the catch-all, and all of it is
-// probed -- a name the user's lists pin to a tunnel included.
+// Observe only: everything the lists leave goes direct by the catch-all,
+// and is probed. What a list the core reads pins to a tunnel stays pinned
+// -- it goes through the tunnel in observe only too; a second tunnel
+// switched off writes its files empty, and what they named is probed then.
 func TestCycleObserveAll(t *testing.T) {
 	s := newScenario(t)
 	s.cfg.Apply = false
 	s.cfg.mode = new(atomic.Value)
 	s.cfg.setMode(ModeObserve)
-	s.see(via("claude.ai", 443, "tcp", "DIRECT", "RuleSet", ObserveProvider),
+	s.see(via("claude.ai", 443, "tcp", "awg2", "RuleSet", PresetsProvider),
 		via("o.example.org", 443, "tcp", "DIRECT", "RuleSet", ObserveProvider))
 	s.script("claude.ai tcp/443", blockedTLS("192.0.2.70"))
 	s.script("o.example.org tcp/443", clean("192.0.2.71"))
 	s.cycle()
-	if !s.wasProbed("claude.ai tcp/443") || !s.wasProbed("o.example.org tcp/443") {
-		t.Fatal("observe only left a name unprobed")
+	if s.wasProbed("claude.ai tcp/443") {
+		t.Fatal("observe only probed a name a list pins")
 	}
-	if e := s.entry("claude.ai"); e == nil || e.Verdict != probe.BlockedTLS {
-		t.Fatalf("pinned name not filed: %v", e)
+	if !s.wasProbed("o.example.org tcp/443") {
+		t.Fatal("observe only left a name unprobed")
 	}
 	if got := listRules(s.cfg.ListPath); got != nil {
 		t.Fatalf("observe only wrote the list: %v", got)
 	}
-	// back on, the list routes the pinned name again: its verdict goes
-	s.cfg.Apply = true
-	s.cfg.setMode(ModeOn)
+	// the second tunnel switched off: its file empty, the name goes direct
+	// by the catch-all, and is measured
+	if err := os.WriteFile(s.cfg.PinnedLists[0], awg2OffBody, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.see(via("claude.ai", 443, "tcp", "DIRECT", "RuleSet", ObserveProvider))
 	s.cycle()
-	if e := s.entry("claude.ai"); e != nil {
-		t.Fatalf("pinned verdict kept once on: %s", e.Verdict)
+	if e := s.entry("claude.ai"); e == nil || e.Verdict != probe.BlockedTLS {
+		t.Fatalf("name no list pins not filed: %v", e)
 	}
 }

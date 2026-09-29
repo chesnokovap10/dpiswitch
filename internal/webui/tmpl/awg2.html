@@ -11,9 +11,13 @@
 
 {{define "awg2state"}}{{$s := .St}}
   <div class="row">
+    {{/* switched on or off by mode: each mode keeps its own, observe only starts off */}}
+    <form method="post" action="/act/awg2" data-swap="awg2state" data-instant="1">
+      <label title="{{.T "Switched off, the presets and your own list route nothing: what they name goes the way the other lists and the mode send it. Each auto-switch mode keeps its own switch; Observe only starts switched off every time it is chosen."}}"><input type="checkbox" name="awg2" {{if $s.Awg2On}}checked{{end}}> {{.T "Use the second tunnel"}}</label>
+    </form>
     {{if $s.Awg2}}
       <span class="pill ok">{{.T "attached"}}</span><span>{{$s.Endpoint2}}</span>
-      {{template "tunstate" (tun . $s.Awg2Alive $s.Awg2Note)}}
+      {{template "awg2pill" .}}
       <span class="spacer"></span>
       <button type="button" data-open="dlg-config2">{{.T "Replace config…"}}</button>
       <form method="post" action="/act/detach2" data-confirm="{{.T "Detach the second tunnel? Its presets and sites go through the first tunnel. The service restarts."}}"><button class="danger" data-busy="{{.T "Applying…"}}">{{.T "Detach"}}</button></form>
@@ -30,14 +34,15 @@
       <span class="spacer"></span>
       <button type="button" class="primary" data-open="dlg-config2">{{.T "Attach…"}}</button>
     {{end}}
+    {{template "msg" .}}
   </div>
+  {{if not $s.Awg2On}}<p class="hint warn-t" style="margin:0">{{.T "The second tunnel is switched off in this mode: the presets and your own list route nothing, what they name goes the way the other lists and the mode send it."}}</p>{{end}}
 {{end}}
 
 
 {{define "presets"}}{{$v := .}}
   <h3>{{.T "Presets"}}</h3>
-  <p class="hint">{{.T "Always through the second tunnel, above every other list. If awg2 is down, through awg; if both are down, direct. A switch applies at once, open connections included."}}
-  {{- if eq .St.Mode "observe"}} <span class="warn-t">{{.T "Observe only is on: everything but the forbidden goes direct, the presets too, until auto-switch is on."}}</span>{{end}}</p>
+  <p class="hint">{{.T "Always through the second tunnel, in every mode, Observe only included. Priority: Forbidden first, then a program in Always direct, then the presets and your own list, then Always via tunnel. If awg2 is down, through awg; never direct. A switch applies at once, open connections included."}}</p>
   <form method="post" action="/act/preset" data-swap="presets" data-instant="1" class="presets">
     {{range .Data.Presets}}
     <div class="p">
@@ -90,4 +95,4 @@
 {{end}}
 
 
-{{define "list-awg2"}}{{template "entrylist" (el . "awg2" (.T "Your own list") (.T "Always through the second tunnel, beside the presets.") .Data.Hosts .Data.Online)}}{{end}}
+{{define "list-awg2"}}{{template "entrylist" (el . "awg2" (.T "Your own list") (.T "Always through the second tunnel, beside the presets and with their priority: below Forbidden and a program in Always direct, above Always via tunnel and everything else. If awg2 is down, through awg; never direct.") .Data.Hosts .Data.Online)}}{{end}}
