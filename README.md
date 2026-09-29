@@ -401,7 +401,14 @@ dpiswitch version    показать версию
   Откройте адрес с ключом, который он печатает.
 
 Проверки перед пушем запускаются локально: `go vet ./...`, `go test ./...` и для `internal/ctl` —
-`go test -race` (`.\build.ps1` сам гоняет vet и тесты перед сборкой).
+`go test -race` (`.\build.ps1` сам гоняет vet и тесты перед сборкой и не собирает, если они не прошли).
+
+Релиз собирает GitHub Actions (`.github/workflows/release.yml`) на машине GitHub с Windows тем же
+`build.ps1`. Версия ставится в `internal/version/version.go`, заметки к релизу кладутся в
+`.github/release-notes/<версия>.md`, затем Actions → Release → Run workflow с этой версией. Workflow
+отказывается выпускать версию второй раз, собирает, упаковывает `dpiswitch-<версия>-windows-amd64.zip` и
+`SHA256SUMS.txt` и публикует релиз с тегом `v<версия>`. Исходники ядра приватные: секрет репозитория
+`MIHOMO_TOKEN` — токен с правом только на чтение `chesnokovap10/mihomo-dpiswitch`.
 
 <p align="right"><a href="#readme">↑ наверх</a></p>
 
@@ -790,6 +797,13 @@ the debug symbols are left out: ~30 MB instead of ~80 MB. The TUN runs on the Wi
   its core are still the real ones. Open the address with the key it prints.
 
 Checks run locally before a push: `go vet ./...`, `go test ./...` and, for `internal/ctl`,
-`go test -race` (`.\build.ps1` runs vet and the tests itself before building).
+`go test -race` (`.\build.ps1` runs vet and the tests itself before building, and stops if they fail).
+
+Releases are built by GitHub Actions (`.github/workflows/release.yml`) on a GitHub Windows machine, with
+the same `build.ps1`. Set the version in `internal/version/version.go`, put the release notes in
+`.github/release-notes/<version>.md`, then Actions → Release → Run workflow with that version. The
+workflow refuses a version already released, builds, packs `dpiswitch-<version>-windows-amd64.zip` and
+`SHA256SUMS.txt`, and publishes the release with the tag `v<version>`. The core's source is private: the
+repository secret `MIHOMO_TOKEN` is a token that can only read `chesnokovap10/mihomo-dpiswitch`.
 
 <p align="right"><a href="#readme">↑ back to top</a> · <a href="#русский">Русский</a></p>

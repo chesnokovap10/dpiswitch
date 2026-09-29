@@ -18,8 +18,12 @@ if (-not $Version) {
 }
 $fileVer = "$Version.0"
 
+# a program failing does not stop a PowerShell script: its exit code is
+# looked at, or failing tests went on to build a release
 go vet ./...
+if ($LASTEXITCODE) { throw "go vet failed" }
 go test ./...
+if ($LASTEXITCODE) { throw "go test failed" }
 
 if ($Race) {
     $env:CGO_ENABLED = "1"
@@ -41,6 +45,7 @@ go run github.com/tc-hib/go-winres@v0.3.3 simply --arch amd64 --out cmd/dpiswitc
     --product-name "DPI Switch" --file-description "DPI Switch" `
     --product-version $fileVer --file-version $fileVer `
     --original-filename dpiswitch.exe --copyright "chesnokovap10"
+if ($LASTEXITCODE) { throw "go-winres failed" }
 
 $tags = ""
 if (-not $NoEmbed) {

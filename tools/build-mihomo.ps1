@@ -35,6 +35,9 @@ git -C $src fetch --quiet $Repo $Commit
 # a previous run left the switches cut: start from the pristine tree
 git -C $src reset --quiet --hard
 git -C $src checkout --quiet --detach $Commit
+# a git command failing does not stop the script: without this check a
+# fetch that failed built whatever commit the copy was on
+if ((git -C $src rev-parse HEAD) -ne $Commit) { throw "the core's source is not at $Commit" }
 
 # Keeps only the listed cases of the "switch proxyType" in a file. A case runs
 # from its "case" line to the next case/default at the same indent.
