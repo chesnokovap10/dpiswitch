@@ -49,9 +49,10 @@ func TestSettingsRoundTrip(t *testing.T) {
 	}
 }
 
-// Three modes in two fields: auto-switch on outranks tunnel only, so a file
-// from before tunnel_only, or a hand edit of auto_switch alone, means what it
-// always did.
+// Three modes in two fields: auto-switch on outranks tunnel only, so a hand
+// edit of auto_switch alone means what it says. A file from before
+// tunnel_only with auto-switch off kept everything in the tunnel, and does
+// so still: read as observe only it would send everything direct.
 func TestSettingsMode(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "settings.json")
 	for _, m := range []string{ModeOn, ModeObserve, ModeTunnel} {
@@ -74,8 +75,21 @@ func TestSettingsMode(t *testing.T) {
 		t.Fatalf("auto_switch set by hand: %+v", s)
 	}
 	os.WriteFile(p, []byte(`{"auto_switch":false}`), 0o644)
-	if s := LoadSettings(p); s.Mode() != ModeObserve {
-		t.Fatalf("a file from before tunnel only: %s", s.Mode())
+	if s := LoadSettings(p); s.Mode() != ModeTunnel {
+		t.Fatalf("a file from before tunnel only, auto-switch off: %s", s.Mode())
+	}
+	os.WriteFile(p, []byte(`{"auto_switch":true}`), 0o644)
+	if s := LoadSettings(p); s.Mode() != ModeOn {
+		t.Fatalf("a file from before tunnel only, auto-switch on: %s", s.Mode())
+	}
+	// and once saved, the mode chosen stays: observe only is kept
+	s := LoadSettings(p)
+	s.SetMode(ModeObserve)
+	if err := SaveSettings(p, s); err != nil {
+		t.Fatal(err)
+	}
+	if got := LoadSettings(p).Mode(); got != ModeObserve {
+		t.Fatalf("observe only saved, read %s", got)
 	}
 }
 

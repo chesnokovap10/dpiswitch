@@ -75,9 +75,9 @@ const (
 	ModeTunnel  = "tunnel"  // everything through awg and awg2, the user's direct lists included
 )
 
-// Mode: auto-switch on outranks tunnel only, so a file written before
-// tunnel_only existed, or a hand edit setting auto_switch alone, means
-// what it always did.
+// Mode: auto-switch on outranks tunnel only, so a hand edit setting
+// auto_switch alone means what it says. A file written before tunnel_only
+// existed is read in LoadSettings.
 func (s Settings) Mode() string {
 	switch {
 	case s.AutoSwitch:
@@ -124,9 +124,26 @@ func LoadSettings(path string) Settings {
 	// the user's file, read by the service as SYSTEM: not through a link
 	if b, err := paths.ReadUserFile(path, 1<<20); err == nil {
 		_ = json.Unmarshal(b, &s)
+		oldObserve(b, &s)
 	}
 	s.clamp()
 	return s
+}
+
+// oldObserve: auto-switch off meant everything through the tunnel, with the
+// verdicts recorded, up to 1.4.2 -- what tunnel only does now; observe only
+// sends everything direct. Every file those versions wrote lacks
+// tunnel_only, and one with auto-switch off read as observe only would have
+// taken a user's traffic out of the tunnel on update. Such a file is read
+// as tunnel only; the next save writes tunnel_only.
+func oldObserve(b []byte, s *Settings) {
+	var raw map[string]json.RawMessage
+	if json.Unmarshal(b, &raw) != nil {
+		return
+	}
+	if _, has := raw["tunnel_only"]; !has && !s.AutoSwitch {
+		s.TunnelOnly = true
+	}
 }
 
 // PatchSettings saves what a UI form sent over what the file holds: a field

@@ -92,13 +92,15 @@ func (s *Server) actAuto(w http.ResponseWriter, r *http.Request) {
 }
 
 // setMode: auto-switch as the header's buttons and the settings' select send
-// it. "off", "1" and "0" come from a page served before tunnel only existed.
+// it. "off", "1" and "0" come from a page served by 1.4.2 or before, where
+// off kept everything in the tunnel -- tunnel only now, not observe only,
+// which sends everything direct (see ctl.oldObserve).
 func setMode(set *ctl.Settings, v string) error {
 	switch v {
 	case "1":
 		v = ctl.ModeOn
 	case "0", "off":
-		v = ctl.ModeObserve
+		v = ctl.ModeTunnel
 	}
 	if !set.SetMode(v) {
 		return fmt.Errorf("unknown auto-switch mode %q", v)

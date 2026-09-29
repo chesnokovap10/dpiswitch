@@ -200,14 +200,16 @@ func TestSettingInstant(t *testing.T) {
 	if got.Attempts != 5 || got.Mode() != ctl.ModeTunnel || len(got.Awg2Presets) != 1 {
 		t.Fatalf("after two changes: %+v", got)
 	}
-	// the header's buttons, and "0" and "off" from a page served before
-	// tunnel only existed
+	// the header's buttons, and "0" and "off" from a page served by 1.4.2 or
+	// before, where off kept everything in the tunnel: tunnel only now
 	for _, c := range []struct{ path, field, value, want string }{
 		{"/act/auto", "", "on", ctl.ModeOn},
-		{"/act/auto", "", "tunnel", ctl.ModeTunnel},
-		{"/act/auto", "", "off", ctl.ModeObserve},
+		{"/act/auto", "", "observe", ctl.ModeObserve},
+		{"/act/auto", "", "off", ctl.ModeTunnel},
 		{"/act/set", "auto_switch", "1", ctl.ModeOn},
-		{"/act/set", "auto_switch", "0", ctl.ModeObserve},
+		{"/act/set", "auto_switch", "0", ctl.ModeTunnel},
+		{"/act/auto", "", "on", ctl.ModeOn},
+		{"/act/auto", "", "tunnel", ctl.ModeTunnel},
 	} {
 		if w := do(t, h, "POST", c.path, url.Values{"field": {c.field}, "value": {c.value}}, nil); w.Code != 200 {
 			t.Fatalf("%s %s: %d", c.path, c.value, w.Code)
