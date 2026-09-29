@@ -492,9 +492,14 @@ func rulesMatch(rules []string) func(ctl.Conn) bool {
 				return true
 			}
 		}
-		for _, n := range nets {
-			if n.contains(c.IP) {
-				return true
+		// the address rules carry no-resolve: they route a connection made
+		// by address, never a named one whose address falls in them (see
+		// entryMatch)
+		if c.Host == "" {
+			for _, n := range nets {
+				if n.contains(c.IP) {
+					return true
+				}
 			}
 		}
 		return false

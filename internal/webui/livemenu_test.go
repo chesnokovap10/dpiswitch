@@ -246,6 +246,23 @@ func TestLiveOverlap(t *testing.T) {
 		{"+.example.com", "*.example.com", true, true},
 		{"+.example.com", "+.com", true, false},
 		{"+.example.com", "badexample.com", false, false},
+		// a wider line is never inside a narrower one
+		{"example.com", "+.example.com", true, false},
+		{"*.example.com", "+.example.com", true, false},
+		{".example.com", "+.example.com", true, false},
+		{"*.example.com", ".example.com", true, false},
+		// ".": every level under it, not the name itself
+		{".example.com", "a.b.example.com", true, true},
+		{".example.com", "*.example.com", true, true},
+		{".example.com", "+.a.example.com", true, true},
+		{".example.com", "example.com", false, false},
+		// "*.": one level under it
+		{"*.example.com", "a.example.com", true, true},
+		{"*.example.com", "*.example.com", true, true},
+		{"*.example.com", "a.b.example.com", false, false},
+		{"*.example.com", "+.a.example.com", true, false},
+		{"*.example.com", "example.com", false, false},
+		{"Example.COM", "example.com", true, true},
 		{"10.20.30.40", "10.0.0.0/8", true, false},
 		{"10.0.0.0/8", "10.20.30.40", true, true},
 		{"10.0.0.0/8", "11.0.0.0/8", false, false},

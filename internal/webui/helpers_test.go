@@ -1,6 +1,32 @@
 package webui
 
-import "testing"
+import (
+	"testing"
+
+	"dpiswitch/internal/ctl"
+	"dpiswitch/internal/presets"
+)
+
+// A preset's address rules carry no-resolve: a named connection whose
+// address falls in them is not theirs, and is not closed when the preset
+// changes. One made by address is.
+func TestRulesMatchNoResolve(t *testing.T) {
+	m := rulesMatch(ctl.PresetRules(presets.Preset{Lines: []string{"1.2.3.0/24", "+.example.org", "app.exe"}}))
+	for _, c := range []struct {
+		conn ctl.Conn
+		want bool
+	}{
+		{ctl.Conn{IP: "1.2.3.4"}, true},
+		{ctl.Conn{Host: "example.com", IP: "1.2.3.4"}, false},
+		{ctl.Conn{Host: "a.example.org", IP: "9.9.9.9"}, true},
+		{ctl.Conn{Host: "example.com", IP: "9.9.9.9", Process: "app.exe"}, true},
+		{ctl.Conn{IP: "1.2.4.4"}, false},
+	} {
+		if got := m(c.conn); got != c.want {
+			t.Errorf("%+v: %v, want %v", c.conn, got, c.want)
+		}
+	}
+}
 
 // the tunnel's server catches port 53: a public server written in the box is
 // answered by the server itself -- marked; its own resolver, the endpoint

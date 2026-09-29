@@ -167,7 +167,7 @@ func (s *Server) moveLine(to, id, v string) (mv liveMove, err error) {
 	kind, _, _ := ctl.ParseEntry(v)
 	same := func(x string) bool { return strings.EqualFold(x, v) }
 	rule := ctl.PresetRules(presets.Preset{Lines: []string{v}})
-	within, overlap := inside(v), liveOverlap(v)
+	overlap := liveOverlap(v)
 	rank := liveRank(to, kind)
 	above := liveRank("preset", kind) < rank
 	on := ctl.LoadSettings(paths.Settings()).Awg2Presets
@@ -222,12 +222,17 @@ func (s *Server) moveLine(to, id, v string) (mv liveMove, err error) {
 				}
 				p.Lines = append(slices.Clone(p.Lines), v)
 			case above && isOn:
+				// the same line and the narrower ones go; a wider line, or
+				// one that routes part of v, is not the menu's to cut
 				var out []string
+				still := false
 				lines := slices.DeleteFunc(slices.Clone(p.Lines), func(l string) bool {
-					if within(l) {
+					over, in := overlap(l)
+					if in {
 						out = append(out, l)
 						return true
 					}
+					still = still || over
 					return false
 				})
 				cut := len(out) > 0
@@ -235,8 +240,7 @@ func (s *Server) moveLine(to, id, v string) (mv liveMove, err error) {
 					p.Lines = lines
 					mv.outOf = append(mv.outOf, liveOut{p.Title, out})
 				}
-				// a wider line of it takes it still
-				if rulesMatch(ctl.PresetRules(*p))(liveConnOf(kind, v)) {
+				if still {
 					mv.still = append(mv.still, p.Title)
 				}
 				if !cut {
@@ -329,8 +333,6 @@ func liveRank(list string, kind int) int {
 // path that copy. Lines of other kinds route other connections.
 func liveOverlap(v string) func(line string) (over, in bool) {
 	kind, val, _ := ctl.ParseEntry(v)
-	whole := kind == ctl.EntryName && strings.IndexAny(val, "+.*") == 0
-	name := strings.TrimLeft(val, "+.*")
 	net := entryPrefix(val)
 	return func(line string) (bool, bool) {
 		k, x, err := ctl.ParseEntry(line)
@@ -339,10 +341,7 @@ func liveOverlap(v string) func(line string) (over, in bool) {
 		}
 		switch kind {
 		case ctl.EntryName:
-			y := strings.TrimLeft(x, "+.*")
-			wide := strings.IndexAny(x, "+.*") == 0
-			in := y == name && (whole || !wide) || whole && strings.HasSuffix(y, "."+name)
-			return in || ctl.MatchDomainRule(x, name), in
+			return nameOverlap(val, x)
 		case ctl.EntryIP:
 			n := entryPrefix(x)
 			if !net.IsValid() || !n.IsValid() {
@@ -359,29 +358,50 @@ func liveOverlap(v string) func(line string) (over, in bool) {
 	}
 }
 
-// inside: whether a preset's line routes nothing the line v does not route
-// -- the same, or narrower: a name under v's whole domain, a network inside
-// v's. The menu takes those out of a preset; a wider one is not its to cut.
-func inside(v string) func(line string) bool {
-	kind, val, _ := ctl.ParseEntry(v)
-	whole := kind == ctl.EntryName && strings.IndexAny(val, "+.*") == 0
-	name := strings.TrimLeft(val, "+.*")
-	net := entryPrefix(val)
-	return func(line string) bool {
-		k, x, err := ctl.ParseEntry(line)
-		if err != nil || k != kind {
-			return false
-		}
-		switch kind {
-		case ctl.EntryName:
-			y := strings.TrimLeft(x, "+.*")
-			return y == name || whole && strings.HasSuffix(y, "."+name)
-		case ctl.EntryIP:
-			n := entryPrefix(x)
-			return net.IsValid() && n.IsValid() && net.Bits() <= n.Bits() && net.Contains(n.Addr())
-		}
-		return strings.EqualFold(x, val)
+// nameOverlap: how the site line x stands to the site line v, each read as
+// ctl.MatchDomainRule reads it -- "example.com" the name alone,
+// "+.example.com" it and every name under it, ".example.com" every name
+// under it, "*.example.com" the names one level under it. in: every name x
+// routes v routes too; over: some name routes by both.
+func nameOverlap(v, x string) (over, in bool) {
+	pv, dv := domainForm(v)
+	px, dx := domainForm(x)
+	under := func(d, of string) bool { return strings.HasSuffix(d, "."+of) }
+	switch pv {
+	case "":
+		in = px == "" && dx == dv
+	case "+.":
+		in = dx == dv || under(dx, dv)
+	case ".":
+		in = under(dx, dv) || (px == "." || px == "*.") && dx == dv
+	case "*.":
+		in = px == "" && under(dx, dv) && !strings.Contains(strings.TrimSuffix(dx, "."+dv), ".") ||
+			px == "*." && dx == dv
 	}
+	if in {
+		return true, true
+	}
+	// a name both route, if there is one, is among these: each line's own
+	// name, and one and two levels under it
+	for _, d := range []string{dv, dx} {
+		for _, h := range []string{d, "zz." + d, "zz.zz." + d} {
+			if ctl.MatchDomainRule(v, h) && ctl.MatchDomainRule(x, h) {
+				return true, false
+			}
+		}
+	}
+	return false, false
+}
+
+// domainForm: a site line's prefix ("", "+.", ".", "*.") and its name
+func domainForm(s string) (prefix, name string) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	for _, p := range []string{"+.", "*.", "."} {
+		if strings.HasPrefix(s, p) {
+			return p, s[len(p):]
+		}
+	}
+	return "", s
 }
 
 // entryPrefix: an address or a network of a list, as a network
@@ -393,17 +413,6 @@ func entryPrefix(s string) netip.Prefix {
 		return netip.PrefixFrom(a, a.BitLen())
 	}
 	return netip.Prefix{}
-}
-
-// liveConnOf: a connection a line routes, to ask a preset whether it takes it
-func liveConnOf(kind int, v string) ctl.Conn {
-	switch kind {
-	case ctl.EntryName:
-		return ctl.Conn{Host: strings.TrimLeft(v, "+.*")}
-	case ctl.EntryIP:
-		return ctl.Conn{IP: entryPrefix(v).Addr().String()}
-	}
-	return ctl.Conn{Process: filepath.Base(v), ProcessPath: v}
 }
 
 // writeLists writes the user's lists given, each whole, in a fixed order.
