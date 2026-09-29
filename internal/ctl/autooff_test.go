@@ -175,12 +175,13 @@ func TestModeCloses(t *testing.T) {
 	}{
 		// the always-tunnel list stays in the tunnel in observe only
 		{ModeOn, ModeObserve, false, []string{"app-tun", "d-tun", "preset", "tun"}},
-		{ModeOn, ModeTunnel, false, []string{"app", "det", "obs", "user"}},
+		// tunnel only keeps the always-direct list direct
+		{ModeOn, ModeTunnel, false, []string{"det", "obs"}},
 		{ModeObserve, ModeOn, false, []string{"obs"}},
-		{ModeTunnel, ModeOn, false, []string{"app-tun", "d-tun", "obs"}},
+		{ModeTunnel, ModeOn, false, []string{"obs"}},
 		// awg2 switched on with the mode: what its list takes moves too,
 		// and what its presets routed when it is switched off
-		{ModeTunnel, ModeOn, true, []string{"app-tun", "d-tun", "obs", "preset", "tun"}},
+		{ModeTunnel, ModeOn, true, []string{"app-tun", "obs", "preset", "tun"}},
 	} {
 		mu.Lock()
 		closed = nil
@@ -201,9 +202,9 @@ func TestModeCloses(t *testing.T) {
 }
 
 // The files a mode decides follow the settings: observe only writes the
-// catch-all and starts with the second tunnel off, tunnel only sets the
-// direct lists aside, and the UI's wait for a saved list still ends in
-// that mode.
+// catch-all and starts with the second tunnel off, tunnel only keeps the
+// direct list -- its way out past the tunnels --, and the UI's wait for a
+// saved list still ends in that mode.
 func TestModeFiles(t *testing.T) {
 	t.Setenv("ProgramData", t.TempDir())
 	if err := paths.EnsureDataDir(); err != nil {
@@ -212,13 +213,15 @@ func TestModeFiles(t *testing.T) {
 	os.WriteFile(paths.User(paths.DirectList), []byte("d.example\n"), 0o644)
 	os.WriteFile(paths.User(paths.TunnelList), []byte("t.example\n"), 0o644)
 	os.WriteFile(paths.User(paths.Awg2List), []byte("a.example\n"), 0o644)
+	// a second tunnel loaded: without one its list routes nothing
+	os.WriteFile(paths.SourceConf2(), []byte("[Interface]\n"), 0o600)
 	set := DefaultSettings()
 	for _, c := range []struct {
 		mode, direct, tunnel, awg2 string
 		observe                    bool
 	}{
 		{ModeObserve, "d.example", "t.example", "", true},
-		{ModeTunnel, "", "t.example", "a.example", false},
+		{ModeTunnel, "d.example", "t.example", "a.example", false},
 		{ModeOn, "d.example", "t.example", "a.example", false},
 	} {
 		set.SetMode(c.mode)

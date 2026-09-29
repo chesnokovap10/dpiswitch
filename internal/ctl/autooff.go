@@ -179,9 +179,9 @@ func watchSettings(ctx context.Context, cfg Config, a *api, st *state, last Sett
 		if !ok || haveLast && ns.Equal(last) {
 			continue
 		}
-		was, awg2Was := ModeOn, true
+		was, awg2Was := ModeOn, Awg2Attached()
 		if haveLast {
-			was, awg2Was = last.Mode(), last.Awg2Active()
+			was, awg2Was = last.Mode(), last.Awg2Carries()
 		}
 		last, haveLast = ns, true
 		cfg.setMode(ns.Mode())
@@ -189,7 +189,7 @@ func watchSettings(ctx context.Context, cfg Config, a *api, st *state, last Sett
 		case now != was:
 			// the settings as they are now: this copy may have started
 			// with auto-switch off, Apply false
-			switchMode(ns.apply(cfg), a, st, was, now, awg2Was != ns.Awg2Active())
+			switchMode(ns.apply(cfg), a, st, was, now, awg2Was != ns.Awg2Carries())
 		case now == ModeOn:
 			enableAuto(cfg)
 		default:
@@ -211,7 +211,7 @@ func watchSettings(ctx context.Context, cfg Config, a *api, st *state, last Sett
 func switchMode(cfg Config, a *api, st *state, from, to string, awg2Flipped bool) {
 	listMu.Lock()
 	syncUserFiles(a)
-	syncTunnelLists(a)
+	syncRoutes(a)
 	listMu.Unlock()
 	if to == ModeOn {
 		turnOn(cfg, a, st)
@@ -229,20 +229,16 @@ func switchMode(cfg Config, a *api, st *state, from, to string, awg2Flipped bool
 // closeRerouted closes the open connections a change of mode moves: the core
 // routes a connection once, when it opens. Observe only sends everything
 // direct but what the always-tunnel list names, tunnel only everything
-// through the tunnels; on sends back what observe only took, and what the
-// user's direct lists take again after tunnel only. awg2, when not nil,
-// picks the connections the second tunnel switched on or off moves. The
-// endpoints, the tunnels' inside and the local networks are routed by rules
-// no mode touches, and are left alone.
+// through the tunnels but what the always-direct list names; on sends back
+// what observe only took. awg2, when not nil, picks the connections the
+// second tunnel switched on or off moves. The endpoints, the tunnels'
+// inside and the local networks are routed by rules no mode touches, and
+// are left alone.
 func closeRerouted(cfg Config, a *api, from, to string, awg2 func(connection) bool) int {
 	conns, err := a.connections()
 	if err != nil {
 		log.Printf("cannot read connections: %v", err)
 		return 0
-	}
-	var userDirect func(connection) bool
-	if to == ModeOn && from == ModeTunnel {
-		userDirect = userListsDirect()
 	}
 	n := 0
 	for _, c := range conns {
@@ -254,9 +250,9 @@ func closeRerouted(cfg Config, a *api, from, to string, awg2 func(connection) bo
 		case ModeObserve:
 			moved = !c.viaDirect() && !c.byList(paths.TunnelList)
 		case ModeTunnel:
-			moved = c.viaDirect()
+			moved = c.viaDirect() && !c.byList(paths.DirectList)
 		default:
-			moved = c.byProvider(ObserveProvider) || userDirect != nil && !c.viaDirect() && userDirect(c)
+			moved = c.byProvider(ObserveProvider)
 		}
 		moved = moved || awg2 != nil && awg2(c)
 		if !moved {
@@ -269,50 +265,6 @@ func closeRerouted(cfg Config, a *api, from, to string, awg2 func(connection) bo
 		n++
 	}
 	return n
-}
-
-// userListsDirect: whether the user's direct list, as the core now reads it,
-// sends a connection direct. A program in it stands above every other list;
-// its names and addresses only above the detector's rules and MATCH, so
-// those only take a connection one of these routed -- an address only one
-// that carries no name, as the core's rule asks no resolving.
-func userListsDirect() func(connection) bool {
-	apps := listRules(paths.ForceDirectApps())
-	names := listRules(paths.ForceDirect())
-	var nets []netip.Prefix
-	for _, r := range listRules(paths.Data(paths.IPList(paths.DirectList))) {
-		if p, err := netip.ParsePrefix(r); err == nil {
-			nets = append(nets, p)
-		}
-	}
-	return func(c connection) bool {
-		for _, r := range apps {
-			kind, v, _ := strings.Cut(r, ",")
-			if strings.EqualFold(kind, "PROCESS-NAME") && strings.EqualFold(v, c.Metadata.Process) ||
-				strings.EqualFold(kind, "PROCESS-PATH") && strings.EqualFold(v, c.Metadata.ProcessPath) {
-				return true
-			}
-		}
-		if c.Rule != "Match" {
-			return false
-		}
-		dom := c.domain()
-		if dom == "" {
-			a, err := netip.ParseAddr(c.Metadata.DestinationIP)
-			for _, p := range nets {
-				if err == nil && p.Contains(a.Unmap()) {
-					return true
-				}
-			}
-			return false
-		}
-		for _, r := range names {
-			if MatchDomainRule(r, dom) {
-				return true
-			}
-		}
-		return false
-	}
 }
 
 // byList: the connection was routed by one of a user list's rule-providers

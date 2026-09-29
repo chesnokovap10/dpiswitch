@@ -69,7 +69,7 @@ func TestLiveAdd(t *testing.T) {
 		t.Fatalf("an unknown list: %d", w.Code)
 	}
 	ru := map[string]string{"Cookie": "lang=ru"}
-	if a = liveAct(t, s, "/act/liveadd", url.Values{"to": {"awg2"}, "entry": {"1.2.3.4"}}, ru); a.Msg != "1.2.3.4 уже есть в «Второй туннель: свой список»" {
+	if a = liveAct(t, s, "/act/liveadd", url.Values{"to": {"awg2"}, "entry": {"1.2.3.4"}}, ru); !strings.HasPrefix(a.Msg, "1.2.3.4 уже есть в «Второй туннель: свой список». Второй туннель не загружен") {
 		t.Fatalf("in Russian: %q", a.Msg)
 	}
 }
@@ -200,6 +200,13 @@ func TestLiveAddSaid(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// a second tunnel not loaded routes nothing, and is said so
+	if a = add("awg2", "n.example"); !strings.Contains(a.Msg, "The second tunnel is not loaded") {
+		t.Errorf("no second tunnel: %s", a.Msg)
+	}
+	if err := os.WriteFile(paths.SourceConf2(), []byte(testConf2), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	mode(ctl.ModeObserve)
 	// the always-tunnel list routes in observe only too: nothing to say
 	if a = add("tunnel", "t.example"); strings.Contains(a.Msg, "is on") || strings.Contains(a.Msg, "switched off") {
@@ -212,8 +219,9 @@ func TestLiveAddSaid(t *testing.T) {
 	if a = add("awg2", "o.example"); !strings.Contains(a.Msg, "The second tunnel is switched off") {
 		t.Errorf("observe only, the second tunnel: %s", a.Msg)
 	}
+	// tunnel only keeps Always direct: nothing to say
 	mode(ctl.ModeTunnel)
-	if a = add("direct", "d.example"); !strings.Contains(a.Msg, "Tunnel only is on") {
+	if a = add("direct", "d.example"); strings.Contains(a.Msg, "is on") {
 		t.Errorf("tunnel only, direct: %s", a.Msg)
 	}
 	if a = add("awg2", "w.example"); strings.Contains(a.Msg, "is on") {
@@ -254,50 +262,33 @@ func TestLiveOverlap(t *testing.T) {
 	}
 }
 
-// The presets switched on stand above "Always via tunnel" and a direct site
-// or address: the same rule is taken out of them, and one that takes it by a
-// wider line is said. A preset switched off, and a program sent direct --
-// its rule stands above the presets -- leave the presets as they are.
-func TestLiveAddAbovePresets(t *testing.T) {
+// testConf2: a second tunnel's .conf the config takes
+const testConf2 = "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.9.1.3/32\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.8:51820\n"
+
+// The presets stand below every list: a line sent to a list leaves them as
+// they are -- the list routes it first --, and a line sent to a preset is
+// taken out of the lists, which would route it before the preset.
+func TestLiveAddBelowLists(t *testing.T) {
 	s, _ := testServer(t)
-	add := func(to, entry string) liveAnswer {
+	add := func(v url.Values) liveAnswer {
 		t.Helper()
-		return liveAct(t, s, "/act/liveadd", url.Values{"to": {to}, "entry": {entry}}, nil)
+		return liveAct(t, s, "/act/liveadd", v, nil)
 	}
 	lines := func(id string) string {
 		p, _ := findPreset(presets.Load(), id)
 		return strings.Join(p.Lines, ",")
 	}
 	do(t, s.Handler(), "POST", "/act/preset", url.Values{"field": {"ai"}, "value": {"1"}}, nil)
-	youtube := lines("youtube")
-
-	// the whole domain: its names in the preset go too, a.claude.ai and all
-	a := add("direct", "+.claude.ai")
-	if !a.OK || !strings.Contains(a.Msg, "taken out of «AI services»") {
-		t.Fatalf("out of the preset switched on: %+v", a)
-	}
-	for _, l := range strings.Split(lines("ai"), ",") {
-		if l == "claude.ai" || strings.HasSuffix(l, ".claude.ai") {
-			t.Errorf("left in the preset: %s", l)
+	ai := lines("ai")
+	for _, to := range []string{"direct", "tunnel"} {
+		a := add(url.Values{"to": {to}, "entry": {"+.claude.ai"}})
+		if !a.OK || strings.Contains(a.Msg, "«AI services»") || lines("ai") != ai {
+			t.Fatalf("to %s: %+v, the preset %s", to, a, lines("ai"))
 		}
 	}
-	if !strings.Contains(lines("ai"), "*.livepreview.claude.app") {
-		t.Error("a line of another domain taken out")
-	}
-	// anthropic.com, a line of the preset, takes api.anthropic.com still
-	a = add("tunnel", "api.anthropic.com")
-	if a.OK || !strings.Contains(a.Msg, "taken out of «AI services»") || !strings.Contains(a.Msg, "«AI services» stands above the lists") {
-		t.Fatalf("a wider line: %+v", a)
-	}
-	if strings.Contains(","+lines("ai")+",", ",api.anthropic.com,") || !strings.Contains(","+lines("ai")+",", ",anthropic.com,") {
-		t.Fatalf("the preset's lines: %s", lines("ai"))
-	}
-	if a = add("direct", "+.youtube.com"); !a.OK || lines("youtube") != youtube {
-		t.Fatalf("a preset switched off: %+v", a)
-	}
-	liveAct(t, s, "/act/liveadd", url.Values{"to": {"preset"}, "preset": {"ai"}, "entry": {"chrome.exe"}}, nil)
-	if a = add("direct", "chrome.exe"); !a.OK || !strings.HasSuffix(lines("ai"), ",chrome.exe") {
-		t.Fatalf("a program sent direct: %+v, %s", a, lines("ai"))
+	a := add(url.Values{"to": {"preset"}, "preset": {"ai"}, "entry": {"+.claude.ai"}})
+	if !a.OK || !strings.Contains(a.Msg, "taken out of «Always via tunnel»") || len(readEntries(paths.TunnelList)) != 0 {
+		t.Fatalf("to the preset: %+v", a)
 	}
 }
 

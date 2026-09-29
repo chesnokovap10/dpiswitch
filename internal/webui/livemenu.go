@@ -131,10 +131,10 @@ func (s *Server) actLiveAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	// the auto-switch mode stands above the lists: said, not left to find
 	switch set := ctl.LoadSettings(paths.Settings()); {
+	case (to == "awg2" || to == "preset") && !ctl.Awg2Attached():
+		msg += tr(lang(r), ". The second tunnel is not loaded: this routes nothing until it is")
 	case (to == "awg2" || to == "preset") && !set.Awg2Active():
 		msg += tr(lang(r), ". The second tunnel is switched off in this mode: this routes nothing until it is switched on")
-	case set.Mode() == ctl.ModeTunnel && to == "direct":
-		msg += tr(lang(r), ". Tunnel only is on: Always direct is set aside until auto-switch is on")
 	}
 	ok := true
 	if len(mv.still) > 0 {
@@ -155,9 +155,11 @@ func (s *Server) actLiveAdd(w http.ResponseWriter, r *http.Request) {
 // same, a narrower one, and a wider one: "+.example.com" in "Always via
 // tunnel" would keep api.example.com sent direct in the tunnel. A list after
 // it loses the same line and the narrower ones only: a wider line there
-// routes other names, and v's before it. The presets switched on stand
-// before "Always via tunnel" and a direct site or address, and lose the same
-// line and the narrower ones; a wider line of theirs is named. The lists and
+// routes other names, and v's before it. The presets stand below every
+// list and lose nothing to one; a line sent to a preset takes it out of the
+// lists above it. The presets switched on that stood before a list lost the
+// same line and the narrower ones, a wider line of theirs named -- the code
+// is kept for an order that puts them there again. The lists and
 // the presets are read and written as one: under the lists' lock, inside
 // the presets' change, and a file failing to write puts back the ones
 // written before it.
@@ -302,21 +304,18 @@ func (s *Server) moveLine(to, id, v string) (mv liveMove, err error) {
 }
 
 // liveRank: where a list's rules of a kind stand among the core's rules --
-// the lower, the sooner they route (see awgconf): Forbidden, the programs
-// sent direct, the second tunnel (its presets, then its own list), Always
-// via tunnel, the sites and addresses sent direct
+// the lower, the sooner they route (see awgconf): Forbidden, Always via
+// tunnel, Always direct, the second tunnel (its presets, then its own
+// list). Each list takes its programs, sites and addresses together.
 func liveRank(list string, kind int) int {
 	switch list {
 	case "block":
 		return 0
-	case "direct":
-		if kind == ctl.EntryApp {
-			return 1
-		}
-		return 4
-	case "preset", "awg2":
-		return 2
 	case "tunnel":
+		return 1
+	case "direct":
+		return 2
+	case "preset", "awg2":
 		return 3
 	}
 	return 5

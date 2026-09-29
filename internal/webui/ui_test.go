@@ -595,10 +595,9 @@ func TestListLimits(t *testing.T) {
 	}
 }
 
-// The auto-switch mode stands above the lists, and is said where it sets
-// one aside: Tunnel only the direct list. Observe only sets none aside --
-// the always-tunnel list routes there too -- but the second tunnel starts
-// off in it, and its list says so.
+// No mode sets a list aside: Tunnel only keeps Always direct, Observe only
+// the always-tunnel list. The second tunnel starts off in Observe only, and
+// its list says so.
 func TestListModeNotes(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
@@ -609,7 +608,8 @@ func TestListModeNotes(t *testing.T) {
 		mode, frag, want string
 		said             bool
 	}{
-		{ctl.ModeTunnel, "lists/list-direct", "Tunnel only is on", true},
+		// tunnel only keeps the direct list: its way out past the tunnels
+		{ctl.ModeTunnel, "lists/list-direct", "is on:", false},
 		{ctl.ModeTunnel, "lists/list-tunnel", "is on:", false},
 		{ctl.ModeObserve, "lists/list-tunnel", "is on:", false},
 		{ctl.ModeObserve, "lists/list-tunnel", "switched off", false},
@@ -621,7 +621,7 @@ func TestListModeNotes(t *testing.T) {
 		{ctl.ModeOn, "lists/list-direct", "is on:", false},
 		{ctl.ModeOn, "lists/list-tunnel", "is on:", false},
 	} {
-		st.Mode, st.Awg2On = c.mode, c.mode != ctl.ModeObserve
+		st.Mode, st.Awg2, st.Awg2On = c.mode, true, c.mode != ctl.ModeObserve
 		if got := strings.Contains(get(c.frag), c.want); got != c.said {
 			t.Errorf("%s, %s: said %v, want %v", c.mode, c.frag, got, c.said)
 		}

@@ -20,20 +20,18 @@ import (
 // settings ask for.
 
 // setAside: the body a user list's copies are written with when the
-// settings set it aside, nil when they take it. Tunnel only sends
-// everything through the tunnels, what the direct list names included; the
-// second tunnel switched off routes nothing, its list included.
+// settings set it aside, nil when they take it. The second tunnel not
+// loaded, or switched off, routes nothing, its list included. (Tunnel only
+// set the direct list aside up to 1.5: it is the way out past the tunnels
+// in that mode now.)
 func setAside(name string, s Settings) []byte {
-	switch {
-	case name == paths.DirectList && s.Mode() == ModeTunnel:
-		return []byte("# tunnel only: set aside, everything goes through the tunnels\n")
-	case name == paths.Awg2List && !s.Awg2Active():
+	if name == paths.Awg2List && !s.Awg2Carries() {
 		return awg2OffBody
 	}
 	return nil
 }
 
-var awg2OffBody = []byte("# second tunnel switched off: set aside\n")
+var awg2OffBody = []byte("# second tunnel not loaded or switched off: set aside\n")
 
 // observeAll: the catch-all file's content in a mode. NETWORK takes every
 // connection and needs no address: MATCH is refused inside a rule-set.
@@ -102,9 +100,9 @@ func ListProviders(name string) []string {
 
 // SyncUserFiles copies what changed and returns the rule-providers whose
 // file it wrote. A user list that is not there leaves the copies as they
-// are. The auto-switch mode is followed here too: tunnel only sets the
-// direct list aside, observe only writes the catch-all; and the second
-// tunnel switched off sets its list and the presets aside.
+// are. The auto-switch mode is followed here too: observe only writes the
+// catch-all; and the second tunnel not loaded or switched off sets its
+// list and the presets aside.
 func SyncUserFiles() []string {
 	// the service syncs before every core start, the controller every
 	// second: one at a time
@@ -139,9 +137,9 @@ func SyncUserFiles() []string {
 }
 
 // wantPresets: the core's presets file as the settings make it -- the ones
-// switched on, none while the second tunnel is off
+// switched on, none while the second tunnel is not loaded or switched off
 func wantPresets(s Settings) []byte {
-	if !s.Awg2Active() {
+	if !s.Awg2Carries() {
 		return awg2OffBody
 	}
 	return presetsBody(presets.Load(), s.Awg2Presets)

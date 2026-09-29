@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -201,6 +200,17 @@ func Second(first *Conf) (*Conf, error) {
 		return nil, ErrSameKey
 	}
 	return c, nil
+}
+
+// the controller asks whether the second tunnel is in the config as this
+// package builds it: a .conf loaded and left out (unusable, or the first
+// tunnel's key) is not
+func init() {
+	ctl.Awg2Attached = func() bool {
+		first, _ := ParseFile(paths.SourceConf())
+		c2, _ := Second(first)
+		return c2 != nil
+	}
 }
 
 // Tunnels: the tunnels the config is built with, by the core's proxy
@@ -429,14 +439,22 @@ func render(c *Conf) (string, error) {
 	if c2 != nil {
 		second = []string{"awg2"}
 	}
-	// a group named for a tunnel with none to take it refuses: never direct
+	// a group with no tunnel to take it refuses, if it may not go direct
 	orReject := func(p []string) []string {
 		if len(p) == 0 {
 			return []string{"REJECT"}
 		}
 		return p
 	}
-	group := func(name string, members []string) {
+	cat := func(ps ...[]string) []string {
+		var out []string
+		for _, p := range ps {
+			out = append(out, p...)
+		}
+		return out
+	}
+	direct := []string{"DIRECT"}
+	fallback := func(name string, members []string) {
 		w("  - name: %s", name)
 		w("    type: fallback")
 		w("    proxies:")
@@ -455,42 +473,48 @@ func render(c *Conf) (string, error) {
 		w("    timeout: 15000")
 		w("    lazy: false")
 	}
-	w("# A fallback group for what no list names. Without it a dead tunnel would")
-	w("# mean no internet at all: MATCH leads to awg, and awg does not answer.")
-	w("# fallback checks the tunnel itself and, when it is down, sends traffic")
-	w("# direct -- no protection at that moment, but connectivity remains. With")
-	w("# no first tunnel it is direct: the second one takes only its own lists.")
-	w("# The groups of the lists named for a tunnel never go direct.")
+	choice := ctl.RouteChoice(set)
+	// a select group: the member the settings ask for first, the choice at start
+	selectGroup := func(name string, members ...string) {
+		want := choice[name]
+		w("  - name: %s", name)
+		w("    type: select")
+		w("    proxies:")
+		w("      - %s", want)
+		for _, m := range members {
+			if m != want {
+				w("      - %s", m)
+			}
+		}
+	}
+	w("# Where a connection goes past the lists that name it depends on the mode")
+	w("# and on the second tunnel switched on or off. Each route is a select group;")
+	w("# the service picks its member as the settings say, with no core restart.")
+	w("# A fallback checks its tunnels and, when one is down, takes the next.")
+	w("# The lists named for a tunnel never go direct, and tunnel only sends")
+	w("# nothing direct but the always-direct list.")
 	w("proxy-groups:")
-	group("tunnel", append(slices.Clone(first), "DIRECT"))
+	w("  # the first tunnel, then direct: without it a dead tunnel would mean no")
+	w("  # internet at all. With no first tunnel, direct -- the second one takes")
+	w("  # only its own lists.")
+	fallback(ctl.TunnelSoftGroup, cat(first, direct))
+	// the second takes what no list names only behind the first
+	var behind []string
+	if c != nil {
+		behind = second
+	}
+	fallback(ctl.TunnelSoftAnyGroup, cat(first, behind, direct))
+	w("  # the tunnels alone, never direct: the always-tunnel list, and tunnel only")
+	fallback(ctl.TunnelOneGroup, orReject(first))
+	fallback(ctl.TunnelAnyGroup, orReject(cat(first, second)))
+	w("  # the presets and the awg2 list: the second tunnel, then the first; then")
+	w("  # direct, or in tunnel only refused")
+	fallback(ctl.Tunnel2SoftGroup, cat(second, first, direct))
+	fallback(ctl.Tunnel2StrictGroup, orReject(cat(second, first)))
 	w("")
-	w("  # the second tunnel for presets and the custom list. If it is down,")
-	w("  # traffic goes through the first tunnel; never direct: named for a")
-	w("  # tunnel, it stays in one. Without a second tunnel the group has no")
-	w("  # awg2, and presets are simply pinned to the first tunnel. With no")
-	w("  # tunnel at all they go direct, as what no list names does.")
-	tunnel2 := append(slices.Clone(second), first...)
-	if len(tunnel2) == 0 {
-		tunnel2 = []string{"DIRECT"}
-	}
-	group("tunnel2", tunnel2)
-	w("")
-	w("  # the always-tunnel list: the first tunnel alone, or -- with the second")
-	w("  # switched on -- the first and then the second. Never direct: with no")
-	w("  # tunnel to take it, refused. The controller picks the member as the")
-	w("  # settings say; the one listed first is the choice at start.")
-	group(ctl.TunnelOneGroup, orReject(first))
-	group(ctl.TunnelAnyGroup, orReject(append(slices.Clone(first), second...)))
-	lists := []string{ctl.TunnelOneGroup, ctl.TunnelAnyGroup}
-	if set.Awg2Active() {
-		lists[0], lists[1] = lists[1], lists[0]
-	}
-	w("  - name: %s", ctl.TunnelListsGroup)
-	w("    type: select")
-	w("    proxies:")
-	for _, p := range lists {
-		w("      - %s", p)
-	}
+	selectGroup(ctl.TunnelListsGroup, ctl.TunnelOneGroup, ctl.TunnelAnyGroup)
+	selectGroup(ctl.Tunnel2Group, ctl.Tunnel2SoftGroup, ctl.Tunnel2StrictGroup)
+	selectGroup(ctl.TunnelRestGroup, ctl.TunnelSoftGroup, ctl.TunnelSoftAnyGroup, ctl.TunnelOneGroup, ctl.TunnelAnyGroup)
 	w("")
 	w("rule-providers:")
 	w("  # second-tunnel presets: the rules of the ones switched on, in one file")
@@ -605,30 +629,28 @@ func render(c *Conf) (string, error) {
 		w("  - DOMAIN,%s,DIRECT", d)
 	}
 	w("")
-	w("  # 5. programs sent direct: all their traffic bypasses the tunnels")
-	w("  - RULE-SET,force-direct-apps,DIRECT")
-	w("")
-	w("  # 6. second tunnel: presets and the user's awg2 list -- the detector leaves")
-	w("  #    them alone. The service writes them empty while awg2 is switched off.")
-	w("  - RULE-SET,%s,tunnel2", ctl.PresetsProvider)
-	w("  - RULE-SET,awg2-hosts-apps,tunnel2")
-	w("  - RULE-SET,awg2-hosts,tunnel2")
-	w("  - RULE-SET,awg2-hosts-ip,tunnel2,no-resolve")
-	w("")
-	w("  # 7. the user's always-tunnel list -- beats detector verdicts and")
-	w("  #    always-direct names, and observe only; never direct")
+	w("  # 5. the user's always-tunnel list: programs, names, addresses -- above")
+	w("  #    every other list but Forbidden, in every mode; never direct")
 	w("  - RULE-SET,force-tunnel-apps,%s", ctl.TunnelListsGroup)
 	w("  - RULE-SET,force-tunnel,%s", ctl.TunnelListsGroup)
 	w("  - RULE-SET,force-tunnel-ip,%s,no-resolve", ctl.TunnelListsGroup)
 	w("")
-	w("  # 8. observe only: everything the lists above leave goes direct.")
-	w("  #    Tunnel only needs no rule of its own: the service writes the direct")
-	w("  #    list empty in that mode.")
-	w("  - RULE-SET,observe-all,DIRECT")
-	w("")
-	w("  # 9. the user's always-direct names and addresses")
+	w("  # 6. the user's always-direct list: programs, names, addresses -- in")
+	w("  #    every mode; in tunnel only the one way out past the tunnels")
+	w("  - RULE-SET,force-direct-apps,DIRECT")
 	w("  - RULE-SET,force-direct,DIRECT")
 	w("  - RULE-SET,force-direct-ip,DIRECT,no-resolve")
+	w("")
+	w("  # 7. second tunnel: presets and the user's awg2 list -- the detector leaves")
+	w("  #    them alone. The service writes them empty while awg2 is not loaded")
+	w("  #    or switched off.")
+	w("  - RULE-SET,%s,%s", ctl.PresetsProvider, ctl.Tunnel2Group)
+	w("  - RULE-SET,awg2-hosts-apps,%s", ctl.Tunnel2Group)
+	w("  - RULE-SET,awg2-hosts,%s", ctl.Tunnel2Group)
+	w("  - RULE-SET,awg2-hosts-ip,%s,no-resolve", ctl.Tunnel2Group)
+	w("")
+	w("  # 8. observe only: everything the lists above leave goes direct")
+	w("  - RULE-SET,observe-all,DIRECT")
 	w("")
 	w("  # 10. detector verdicts")
 	w("  - RULE-SET,direct-verified,DIRECT")
@@ -636,8 +658,9 @@ func render(c *Conf) (string, error) {
 	w("  # carry no name at all (a speedtest client dialling a bare IP on 20000)")
 	w("  - RULE-SET,direct-verified-addr,DIRECT,no-resolve")
 	w("")
-	w("  # 11. everything else goes to the first tunnel")
-	w("  - MATCH,tunnel")
+	w("  # 11. everything else: the tunnels as the mode says -- in tunnel only")
+	w("  #     never direct")
+	w("  - MATCH,%s", ctl.TunnelRestGroup)
 	return b.String(), nil
 }
 

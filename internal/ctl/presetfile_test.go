@@ -47,6 +47,10 @@ func TestPresetsFile(t *testing.T) {
 	if err := paths.EnsureDataDir(); err != nil {
 		t.Fatal(err)
 	}
+	// a second tunnel loaded: without one no preset is written
+	if err := os.WriteFile(paths.SourceConf2(), []byte("[Interface]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	a := presets.Preset{ID: "a", Title: "A", Lines: []string{"a.example"}}
 	b := presets.Preset{ID: "b", Title: "B", Lines: []string{"b.example", "10.0.0.0/8"}}
 	if err := os.WriteFile(paths.Presets(), presetsBody([]presets.Preset{a, b}, []string{"b"}), 0o644); err != nil {

@@ -17,21 +17,53 @@ only costs a detour.</div>
 <tr><td>2</td><td>Addresses inside the tunnels (their DNS server)</td><td>that tunnel</td></tr>
 <tr><td>3</td><td><a href="/lists#list-block">Forbidden</a>: programs, sites, addresses</td><td>refused, in every mode</td></tr>
 <tr><td>4</td><td>Local networks: the router, printers, shares, <code>.local</code> and <code>.lan</code> names</td><td>direct</td></tr>
-<tr><td>5</td><td>Programs in <a href="/lists#list-direct">Always direct</a></td><td>direct, all their traffic</td></tr>
-<tr><td>6</td><td><a href="/awg2#presets">Second tunnel</a>, while switched on: presets and your list (programs, sites, addresses)</td><td>awg2; if it is down, awg; never direct</td></tr>
-<tr><td>7</td><td><a href="/lists#list-tunnel">Always via tunnel</a>: programs, sites, addresses</td><td>awg; if it is down, awg2 while the second tunnel is switched on; never direct</td></tr>
+<tr><td>5</td><td><a href="/lists#list-tunnel">Always via tunnel</a>: programs, sites, addresses</td><td>awg1; if it is down, awg2 while switched on; never direct</td></tr>
+<tr><td>6</td><td><a href="/lists#list-direct">Always direct</a>: programs, sites, addresses</td><td>direct, in every mode</td></tr>
+<tr><td>7</td><td><a href="/awg2#presets">Second tunnel</a>, while loaded and switched on: presets and your list</td><td>awg2; if it is down, awg1; then direct -- in Tunnel only refused</td></tr>
 <tr><td>8</td><td>Everything else, while "Observe only" is chosen</td><td>direct</td></tr>
-<tr><td>9</td><td><a href="/lists#list-direct">Always direct</a>: sites and addresses</td><td>direct</td></tr>
-<tr><td>10</td><td>Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name)</td><td>direct</td></tr>
-<tr><td>11</td><td>Everything else</td><td>awg; if it is down, direct</td></tr>
+<tr><td>9</td><td>Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name)</td><td>direct</td></tr>
+<tr><td>10</td><td>Everything else</td><td>by the mode -- see the tables below</td></tr>
+</table>
+<p>A line written in several lists goes by the one higher in this table: Forbidden → Always via tunnel →
+Always direct → the presets and the awg2 list → the detector.</p>
+<p>How it goes in each auto-switch mode, by the configs loaded. "Clean" are the sites the detector found
+unblocked; the detector works only with awg1 loaded. "awg2 switched on/off" is the <b>Use the second
+tunnel</b> switch; with no awg2 loaded its presets and list do nothing.</p>
+<h5>On</h5>
+<table>
+<tr><th>Loaded</th><th>What no list names</th><th>Presets and the awg2 list</th><th>Always via tunnel</th><th>Always direct</th><th>Forbidden</th></tr>
+<tr><td>nothing</td><td>direct</td><td>direct</td><td>refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>awg1 alone</td><td>clean ones direct, the rest awg1; if awg1 is down, direct</td><td>do nothing (go as the rest)</td><td>awg1; if it is down, refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>awg2 alone, switched on</td><td>direct</td><td>awg2; if it is down, direct</td><td>awg2; if it is down, refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>awg2 alone, switched off</td><td>direct</td><td>do nothing (go direct)</td><td>refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>awg1 + awg2, awg2 switched on</td><td>clean ones direct, the rest awg1; if awg1 is down, awg2; if awg2 is down, direct</td><td>awg2; if it is down, awg1; if both are down, direct</td><td>awg1; if it is down, awg2; if both are down, refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>awg1 + awg2, awg2 switched off</td><td>clean ones direct, the rest awg1; if awg1 is down, direct</td><td>do nothing (go as the rest)</td><td>awg1; if it is down, refused</td><td>direct</td><td>refused</td></tr>
+</table>
+<h5>Observe only</h5>
+<p>The second tunnel is switched off each time this mode is chosen; "switched on" here means by hand.</p>
+<table>
+<tr><th>Loaded</th><th>What no list names</th><th>Presets and the awg2 list</th><th>Always via tunnel</th><th>Always direct</th><th>Forbidden</th></tr>
+<tr><td>nothing</td><td>direct</td><td>direct</td><td>refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>awg1 alone</td><td>direct</td><td>do nothing (go direct)</td><td>awg1; if it is down, refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>awg2 alone, switched on</td><td>direct</td><td>awg2; if it is down, direct</td><td>awg2; if it is down, refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>awg2 alone, switched off</td><td>direct</td><td>do nothing (go direct)</td><td>refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>awg1 + awg2, awg2 switched on</td><td>direct</td><td>awg2; if it is down, awg1; if both are down, direct</td><td>awg1; if it is down, awg2; if both are down, refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>awg1 + awg2, awg2 switched off</td><td>direct</td><td>do nothing (go direct)</td><td>awg1; if it is down, refused</td><td>direct</td><td>refused</td></tr>
+</table>
+<h5>Tunnel only</h5>
+<p>A strict mode: nothing but Always direct goes direct, even with the tunnels down.</p>
+<table>
+<tr><th>Loaded</th><th>What no list names</th><th>Presets and the awg2 list</th><th>Always via tunnel</th><th>Always direct</th><th>Forbidden</th></tr>
+<tr><td>nothing</td><td>refused</td><td>do nothing (go as the rest, that is refused)</td><td>refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>awg1 alone</td><td>all through awg1; if awg1 is down, refused</td><td>do nothing (go as the rest, that is refused)</td><td>awg1; if it is down, refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>awg2 alone, switched on</td><td>all through awg2; if it is down, refused</td><td>awg2; if it is down, refused</td><td>awg2; if it is down, refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>awg2 alone, switched off</td><td>refused</td><td>do nothing (go as the rest, that is refused)</td><td>refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>awg1 + awg2, awg2 switched on</td><td>all through awg1; if awg1 is down, awg2; if awg2 is down, refused</td><td>awg2; if it is down, awg1; if both are down, refused</td><td>awg1; if it is down, awg2; if both are down, refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>awg1 + awg2, awg2 switched off</td><td>all through awg1; if awg1 is down, refused</td><td>do nothing (go as the rest, that is refused)</td><td>awg1; if it is down, refused</td><td>direct</td><td>refused</td></tr>
 </table>
 <p>Without the first tunnel's config the service runs all the same: <a href="/live">Live</a> shows the
-traffic, Forbidden refuses, and what no list names goes direct -- the detector checks nothing, having no
-tunnel to compare with. The second tunnel, if loaded and switched on, takes its presets and list and
-Always via tunnel; everything else does not go to it. With no tunnel at all, the presets and the awg2 list go
-direct too, and Always via tunnel is refused.</p>
-<p>A line written in several lists goes by the one higher in this table: Forbidden beats everything,
-the second tunnel beats Always via tunnel, and both beat the sites and addresses in Always direct.</p>
+traffic, and the lists work as the tables above say. The detector checks nothing then, having no tunnel to
+compare with.</p>
 <p>The core decides once, when a connection opens. When you change a list or a preset here, the
 open connections the change moves are closed, and the programs reconnect over the new route. Turning
 auto-switch off closes the connections the detector sent direct.</p>
@@ -94,12 +126,12 @@ bad subdomain removes the rule. It helps services with pools of servers: CDNs, s
 <p>The detector checks sites and records verdicts in all three modes; the modes differ only in where
 the traffic goes.</p>
 <ul>
-<li><b>On</b>: the verdicts are applied. Unblocked sites go direct, the rest by the lists and through the tunnel.</li>
-<li><b>Observe only</b>: plain direct -- a whitelist. Everything goes direct but Forbidden and
-"Always via tunnel", which go their way as in every mode. The second tunnel starts switched off each time
-this mode is chosen: switch it on on its page, and its presets and list go to awg2 too. The detector checks
-everything that goes direct.</li>
-<li><b>Tunnel only</b>: everything goes through awg and awg2, the "Always direct" list included. The presets and the custom awg2 list still go to awg2.</li>
+<li><b>On</b>: the verdicts are applied. Unblocked sites go direct, the rest by the lists and through awg1.</li>
+<li><b>Observe only</b>: plain direct -- a whitelist. Everything goes direct but the lists, which go their
+way as in every mode. The second tunnel starts switched off each time this mode is chosen: switch it on on
+its page, and its presets and list go to awg2 too. The detector checks everything that goes direct.</li>
+<li><b>Tunnel only</b>: a strict mode. Everything but "Always direct" goes through the tunnels and never
+direct: with the tunnels down it fails. "Always direct" is the one way out past the tunnels.</li>
 </ul>
 <p>The second tunnel's switch is kept per mode: switched off in On, it is off again whenever On is
 chosen, and so for Tunnel only. Switched off, its presets and list route nothing.</p>
@@ -128,9 +160,10 @@ IPv4 only for it.</p>
 
 <h4>The second tunnel</h4>
 <p>A second AmneziaWG server for chosen services only: YouTube, Telegram, AI services, social networks
-and your own list. It stands above every other list, the detector leaves its names alone. If it is down,
-its sites go through the first tunnel; if both are down, they fail -- never direct. The detector measures the direct path against the first tunnel only: what goes to awg2 is never checked, and without awg1 nothing is, even with auto-switch On. Until it is attached, its
-presets use the first tunnel. <b>Use the second tunnel</b> on its page switches it off and on: switched off,
+and your own list. It stands below Forbidden, Always via tunnel and Always direct and above the detector,
+which leaves its names alone. If it is down, its sites go through the first tunnel; if both are down,
+direct -- in Tunnel only refused. The detector measures the direct path against the first tunnel only: what goes to awg2 is never checked, and without awg1 nothing is, even with auto-switch On. Until it is attached, its
+presets and list route nothing. <b>Use the second tunnel</b> on its page switches it off and on: switched off,
 its presets and list route nothing, and what they name goes the way the other lists and the mode send it.</p>
 <p>The <a href="/awg2#presets">presets</a> are yours to change: <b>Edit</b> opens a preset's name, description and
 lines (sites, addresses and programs, as in the lists), <b>Delete</b> removes it, <b>Add…</b> makes a new one,
@@ -196,19 +229,18 @@ For it to take that route, the menu takes it out of wherever a rule would route 
 come in this order:</p>
 <ol>
 <li><a href="/lists#list-block">Forbidden</a>;</li>
-<li>the programs in <a href="/lists#list-direct">Always direct</a>;</li>
-<li>the second tunnel: its <a href="/awg2#presets">presets</a> switched on, then its <a href="/awg2#list-awg2">own list</a>;</li>
 <li><a href="/lists#list-tunnel">Always via tunnel</a>;</li>
-<li>the sites and addresses in Always direct;</li>
+<li><a href="/lists#list-direct">Always direct</a>;</li>
+<li>the second tunnel: its <a href="/awg2#presets">presets</a> switched on, then its <a href="/awg2#list-awg2">own list</a>;</li>
 <li>the detector's verdicts.</li>
 </ol>
 <p>A list whose rules come <b>before</b> the one chosen loses every line routing it, a wider one too:
 <code>+.example.com</code> for <code>api.example.com</code>, <code>10.0.0.0/8</code> for an address in it, a
 program by its name for a copy of it by its path. A wider line goes whole — a list cannot hold an exception
 for one name — so the answer names what went, and from where. A list whose rules come <b>after</b> it loses
-the same line and the narrower ones only: a wider line there is in nobody's way. Via the tunnel and Direct
-(a site or an address) take the same line and the narrower ones out of the presets switched on; a preset
-that takes it by a wider line is named, and routes it for as long as it is on. The lists and the presets
+the same line and the narrower ones only: a wider line there is in nobody's way. The presets stand below every
+list: a line sent to a list leaves them as they are, and a line sent to a preset is taken out of the lists.
+The lists and the presets
 change as one: a file failing to write puts back the ones written before it.</p>
 
 <h4>Files</h4>

@@ -166,9 +166,28 @@ func TestSecond(t *testing.T) {
 	}
 }
 
-// Observe only goes direct below the lists that name a tunnel, so they route
-// in it too; those lists never fall back to direct, and what no list names
-// still does, through the first tunnel's group.
+// members: a group's members as the config lists them
+func members(t *testing.T, out, name string) string {
+	t.Helper()
+	i := strings.Index(out, "  - name: "+name+"\n")
+	if i < 0 {
+		t.Fatalf("no group %s", name)
+	}
+	var m []string
+	for _, l := range strings.Split(out[i:], "\n")[3:] {
+		if !strings.HasPrefix(l, "      - ") {
+			break
+		}
+		m = append(m, strings.TrimPrefix(l, "      - "))
+	}
+	return strings.Join(m, " ")
+}
+
+const conf2 = "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.9.1.3/32\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.8:51820\n"
+
+// The lists go in their order -- Forbidden, Always via tunnel, Always
+// direct, the second tunnel -- above observe only's catch-all, the
+// detector's verdicts and MATCH.
 func TestRenderRuleOrder(t *testing.T) {
 	t.Setenv("ProgramData", t.TempDir())
 	if err := paths.EnsureDataDir(); err != nil {
@@ -189,134 +208,88 @@ func TestRenderRuleOrder(t *testing.T) {
 		}
 		return i
 	}
-	for _, above := range []string{"RULE-SET,force-block,REJECT", "RULE-SET,force-direct-apps,DIRECT",
-		"RULE-SET,presets,tunnel2", "RULE-SET,awg2-hosts,tunnel2", "RULE-SET,force-tunnel,tunnel-lists"} {
-		if at(above) > at("RULE-SET,observe-all,DIRECT") {
-			t.Errorf("%s below the observe only catch-all", above)
-		}
-	}
-	for _, below := range []string{"RULE-SET,force-direct,DIRECT", "RULE-SET,direct-verified,DIRECT", "MATCH,tunnel"} {
-		if at(below) < at("RULE-SET,observe-all,DIRECT") {
-			t.Errorf("%s above the observe only catch-all", below)
-		}
-	}
-	group := func(name string) string {
-		i := strings.Index(out, "  - name: "+name+"\n")
-		if i < 0 {
-			t.Fatalf("no group %s", name)
-		}
-		g := out[i+1:]
-		if j := strings.Index(g, "\n  - "); j >= 0 {
-			g = g[:j]
-		}
-		if j := strings.Index(g, "\n\n"); j >= 0 {
-			g = g[:j]
-		}
-		return g + "\n"
-	}
-	if !strings.Contains(group("tunnel"), "- DIRECT") {
-		t.Error("the first tunnel's group lost its fallback to direct")
-	}
-	if strings.Contains(group("tunnel2"), "- DIRECT") {
-		t.Error("the second tunnel's group falls back to direct")
-	}
-	// no second tunnel: the always-tunnel list has awg alone either way
-	if g := group("tunnel-one"); !strings.Contains(g, "proxies:\n      - awg\n    url") {
-		t.Errorf("the always-tunnel list's tunnel:\n%s", g)
-	}
-	if g := group("tunnel-any"); strings.Contains(g, "DIRECT") || strings.Contains(g, "awg2") {
-		t.Errorf("the always-tunnel list's fallback with no second tunnel:\n%s", g)
-	}
-
-	// a second tunnel: awg, then awg2, listed first while switched on
-	conf2 := "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.9.1.3/32\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.8:51820\n"
-	if err := os.WriteFile(paths.SourceConf2(), []byte(conf2), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, on := range []bool{true, false} {
-		if _, err := ctl.UpdateSettings(paths.Settings(), func(s *ctl.Settings) error { s.SetAwg2(on); return nil }); err != nil {
-			t.Fatal(err)
-		}
-		if out, err = c.Render(); err != nil {
-			t.Fatal(err)
-		}
-		if g := group("tunnel-any"); !strings.Contains(g, "- awg\n      - awg2\n") || strings.Contains(g, "DIRECT") {
-			t.Errorf("awg2 %v: the fallback of the always-tunnel list:\n%s", on, g)
-		}
-		first := "tunnel-one"
-		if on {
-			first = "tunnel-any"
-		}
-		if g := group("tunnel-lists"); !strings.Contains(g, "proxies:\n      - "+first+"\n") {
-			t.Errorf("awg2 %v: %s is not chosen at start:\n%s", on, first, g)
+	order := []string{"RULE-SET,force-block-apps,REJECT", "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
+		"RULE-SET,force-tunnel-apps,tunnel-lists", "RULE-SET,force-tunnel-ip,tunnel-lists,no-resolve",
+		"RULE-SET,force-direct-apps,DIRECT", "RULE-SET,force-direct-ip,DIRECT,no-resolve",
+		"RULE-SET,presets,tunnel2", "RULE-SET,awg2-hosts-ip,tunnel2,no-resolve",
+		"RULE-SET,observe-all,DIRECT", "RULE-SET,direct-verified,DIRECT", "MATCH,tunnel-rest"}
+	for k := 1; k < len(order); k++ {
+		if at(order[k-1]) > at(order[k]) {
+			t.Errorf("%s below %s", order[k-1], order[k])
 		}
 	}
 }
 
-// With no first tunnel the core runs all the same: what no list names goes
-// direct, the second tunnel takes its own lists -- and the always-tunnel
-// list while switched on. With no tunnel at all the presets and the awg2
-// list go direct too, and the always-tunnel list is refused.
-func TestRenderNoFirst(t *testing.T) {
+// The groups by the tunnels loaded: the lists named for a tunnel never go
+// direct; tunnel only's never do; the second tunnel takes what no list
+// names only behind the first. The select groups list first the member the
+// settings ask for.
+func TestRenderGroups(t *testing.T) {
 	t.Setenv("ProgramData", t.TempDir())
 	if err := paths.EnsureDataDir(); err != nil {
 		t.Fatal(err)
 	}
-	group := func(out, name string) string {
-		i := strings.Index(out, "  - name: "+name+"\n")
-		if i < 0 {
-			t.Fatalf("no group %s", name)
-		}
-		g := out[i+1:]
-		if j := strings.Index(g, "    url:"); j >= 0 {
-			g = g[:j]
-		}
-		if j := strings.Index(g, "\n\n"); j >= 0 {
-			g = g[:j]
-		}
-		return g
-	}
-	members := func(out, name string) string {
-		g := group(out, name)
-		var m []string
-		for _, l := range strings.Split(g, "\n") {
-			if strings.HasPrefix(l, "      - ") {
-				l = strings.TrimSpace(l)
-				m = append(m, strings.TrimPrefix(l, "- "))
-			}
-		}
-		return strings.Join(m, " ")
+	c1, err := Parse("[Interface]\nPrivateKey = k\nAddress = 10.8.1.3/32\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.7:51820\n")
+	if err != nil {
+		t.Fatal(err)
 	}
 	for _, c := range []struct {
-		name                      string
-		awg2                      bool
-		tunnel, tunnel2, one, any string
+		name        string
+		first, awg2 bool
+		want        map[string]string
 	}{
-		{"no tunnel", false, "DIRECT", "DIRECT", "REJECT", "REJECT"},
-		{"the second alone", true, "DIRECT", "awg2", "REJECT", "awg2"},
+		{"no tunnel", false, false, map[string]string{
+			"tunnel": "DIRECT", "tunnel-soft-any": "DIRECT", "tunnel-one": "REJECT", "tunnel-any": "REJECT",
+			"tunnel2-soft": "DIRECT", "tunnel2-strict": "REJECT"}},
+		{"the second alone", false, true, map[string]string{
+			"tunnel": "DIRECT", "tunnel-soft-any": "DIRECT", "tunnel-one": "REJECT", "tunnel-any": "awg2",
+			"tunnel2-soft": "awg2 DIRECT", "tunnel2-strict": "awg2"}},
+		{"the first alone", true, false, map[string]string{
+			"tunnel": "awg DIRECT", "tunnel-soft-any": "awg DIRECT", "tunnel-one": "awg", "tunnel-any": "awg",
+			"tunnel2-soft": "awg DIRECT", "tunnel2-strict": "awg"}},
+		{"both", true, true, map[string]string{
+			"tunnel": "awg DIRECT", "tunnel-soft-any": "awg awg2 DIRECT", "tunnel-one": "awg", "tunnel-any": "awg awg2",
+			"tunnel2-soft": "awg2 awg DIRECT", "tunnel2-strict": "awg2 awg"}},
 	} {
 		os.Remove(paths.SourceConf2())
 		if c.awg2 {
-			conf2 := "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.9.1.3/32\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.8:51820\n"
 			if err := os.WriteFile(paths.SourceConf2(), []byte(conf2), 0o600); err != nil {
 				t.Fatal(err)
 			}
 		}
-		out, err := RenderNoFirst()
+		var out string
+		if c.first {
+			out, err = c1.Render()
+		} else {
+			out, err = RenderNoFirst()
+		}
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
-		for g, want := range map[string]string{"tunnel": c.tunnel, "tunnel2": c.tunnel2,
-			"tunnel-one": c.one, "tunnel-any": c.any} {
-			if got := members(out, g); got != want {
+		for g, want := range c.want {
+			if got := members(t, out, g); got != want {
 				t.Errorf("%s: group %s has %q, want %q", c.name, g, got, want)
 			}
 		}
-		if strings.Contains(out, "name: awg\n") || strings.Contains(out, "probe-tunnel") {
-			t.Errorf("%s: a first tunnel in the config:\n%s", c.name, out)
+		if got := strings.Contains(out, "probe-tunnel"); got != c.first {
+			t.Errorf("%s: the tunnel probe listener: %v", c.name, got)
 		}
-		if got := strings.Contains(out, "name: awg2\n"); got != c.awg2 {
-			t.Errorf("%s: awg2 in the config: %v", c.name, got)
+	}
+	// the choice at start: tunnel only, the second tunnel switched off
+	if _, err := ctl.UpdateSettings(paths.Settings(), func(s *ctl.Settings) error {
+		s.SetMode(ctl.ModeTunnel)
+		s.SetAwg2(false)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := c1.Render()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for g, first := range map[string]string{"tunnel-lists": "tunnel-one", "tunnel2": "tunnel2-strict", "tunnel-rest": "tunnel-one"} {
+		if got := members(t, out, g); !strings.HasPrefix(got, first+" ") {
+			t.Errorf("%s lists %q: %s is not chosen at start", g, got, first)
 		}
 	}
 }

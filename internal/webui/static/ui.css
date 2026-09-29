@@ -250,6 +250,7 @@ button.lx:hover{color:var(--bad)}
 .help{max-width:900px;line-height:1.6;font-size:13.5px}
 .help h2{font-size:17px;margin:4px 0 8px}
 .help h4{font-size:14px;margin:18px 0 6px}
+.help h5{font-size:13px;margin:14px 0 4px}
 .help table{margin:6px 0 10px;background:var(--panel);border:1px solid var(--line);border-radius:8px}
 .help td,.help th{padding:5px 10px}
 .help ol,.help ul{padding-left:22px;margin:6px 0}

@@ -747,7 +747,7 @@ func watchReset(ctx context.Context, cfg Config, a *api, st *state) {
 			// request all the same -- is not left for the next cycle
 			listMu.Lock()
 			syncUserFiles(a)
-			syncTunnelLists(a)
+			syncRoutes(a)
 			retryReloads(a)
 			listMu.Unlock()
 		}
