@@ -36,6 +36,42 @@ type dnsResult struct {
 	// spelling did: this one, which the box takes instead (see
 	// probe.DoHPathAlternative)
 	Fixed, Was string
+	// plain DNS to some other server, answered by the tunnel's own: the
+	// servers catch port 53 and hand it to their resolver (see caughtBy)
+	Caught bool
+}
+
+// caughtBy marks the plain-DNS results the tunnel's server answered itself:
+// whoami.akamai.net gives its address (the endpoint) though the box names
+// another server. The tunnel's own resolver (10.8.1.0 and the like) is
+// private and answers so by right -- not marked.
+func caughtBy(endpoint string, res []dnsResult) {
+	ep, err := netip.ParseAddr(endpoint)
+	if err != nil {
+		return
+	}
+	ep = ep.Unmap()
+	for i, r := range res {
+		if r.Kind != "DNS" || !r.OK {
+			continue
+		}
+		rs, err := probe.ParseResolver(r.Server)
+		if err != nil {
+			continue
+		}
+		if a, err := netip.ParseAddr(rs.Host); err == nil {
+			a = a.Unmap()
+			if a == ep || a.IsPrivate() || a.IsLoopback() {
+				continue
+			}
+		}
+		for _, ip := range r.IPs {
+			if a, err := netip.ParseAddr(ip); err == nil && a.Unmap() == ep {
+				res[i].Caught = true
+				break
+			}
+		}
+	}
 }
 
 // dnsTest: what the DNS test shows, and the box's new text when an address

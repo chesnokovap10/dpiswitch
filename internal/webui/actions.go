@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -662,15 +663,22 @@ func (s *Server) actDNSTest(w http.ResponseWriter, r *http.Request) {
 	fromConf := false
 	// an empty box is the tunnel's .conf: those are tested
 	first, _ := awgconf.ParseFile(paths.SourceConf())
-	if len(servers) == 0 && path == "tunnel" && first != nil {
-		servers, fromConf = first.DNS(), true
+	var tun *awgconf.Conf
+	switch path {
+	case "tunnel":
+		tun = first
+	case "tunnel2":
+		tun, _ = awgconf.Second(first)
 	}
-	if len(servers) == 0 && path == "tunnel2" {
-		if c2, _ := awgconf.Second(first); c2 != nil {
-			servers, fromConf = c2.DNS(), true
-		}
+	if len(servers) == 0 && tun != nil {
+		servers, fromConf = tun.DNS(), true
 	}
 	t := dnsTest{Results: testDNS(path, servers), Field: field}
+	if tun != nil {
+		if host, _, err := net.SplitHostPort(tun.Peer["Endpoint"]); err == nil {
+			caughtBy(host, t.Results)
+		}
+	}
 	// a fixed address goes into the box in place of the one written; the
 	// .conf's own servers are not in the box
 	lines, fixed := make([]string, len(servers)), false

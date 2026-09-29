@@ -82,8 +82,9 @@
 
 {{define "dnsres"}}{{$v := .}}{{with .Data}}{{range .Results}}
   {{if .OK}}<span class="pill ok">{{.Ms}} ms</span>{{else}}<span class="pill bad">{{$v.T "error"}}</span>{{end}}
-  {{.Kind}} {{.Server}} {{if .OK}}<span class="muted">→ {{$v.T "resolved by"}} {{join .IPs ", "}}</span>{{else}}<span class="muted">{{$v.T .Error}}</span>{{end}}
-  {{if .Fixed}}<span class="pill warn" title="{{$v.Tf "%s does not answer: the server takes this spelling" .Was}}">{{$v.T "fixed"}}</span>{{end}}<br>
+  {{.Kind}} {{.Server}} {{if .OK}}<span class="muted">→ {{$v.T "resolver's exit"}} {{join .IPs ", "}}</span>{{else}}<span class="muted">{{$v.T .Error}}</span>{{end}}
+  {{if .Fixed}}<span class="pill warn" title="{{$v.Tf "%s does not answer: the server takes this spelling" .Was}}">{{$v.T "fixed"}}</span>{{end}}
+  {{if .Caught}}<span class="pill warn">{{$v.T "caught"}}</span> <span class="muted">{{$v.T "The tunnel's server answered itself: it catches plain DNS, the address written is not used. Another server takes DoH or DoT."}}</span>{{end}}<br>
 {{else}}<span class="muted">{{$v.T "Nothing to test"}}</span>{{end}}
 {{if .Fill}}<span class="muted">{{$v.T "The box now holds the spelling each server answers. Save DNS to keep it."}}</span>
 <span hidden data-fill="{{.Field}}">{{.Fill}}</span>{{end}}{{end}}{{end}}
