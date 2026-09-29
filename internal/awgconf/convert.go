@@ -223,7 +223,8 @@ func (c *Conf) Render() (string, error) { return render(c) }
 // RenderNoFirst builds the configuration with no first tunnel: the core
 // runs all the same -- Live shows what goes where, the lists apply -- and
 // what no list names goes direct. A second tunnel carries its presets and
-// list, and the always-tunnel list; with none, those are refused.
+// list, and the always-tunnel list. With none, the presets and the list go
+// direct; the always-tunnel list, named for a tunnel, is refused.
 func RenderNoFirst() (string, error) { return render(nil) }
 
 // render: the configuration for the first tunnel c, nil for none.
@@ -466,8 +467,13 @@ func render(c *Conf) (string, error) {
 	w("  # the second tunnel for presets and the custom list. If it is down,")
 	w("  # traffic goes through the first tunnel; never direct: named for a")
 	w("  # tunnel, it stays in one. Without a second tunnel the group has no")
-	w("  # awg2, and presets are simply pinned to the first tunnel.")
-	group("tunnel2", orReject(append(slices.Clone(second), first...)))
+	w("  # awg2, and presets are simply pinned to the first tunnel. With no")
+	w("  # tunnel at all they go direct, as what no list names does.")
+	tunnel2 := append(slices.Clone(second), first...)
+	if len(tunnel2) == 0 {
+		tunnel2 = []string{"DIRECT"}
+	}
+	group("tunnel2", tunnel2)
 	w("")
 	w("  # the always-tunnel list: the first tunnel alone, or -- with the second")
 	w("  # switched on -- the first and then the second. Never direct: with no")

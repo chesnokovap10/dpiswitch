@@ -255,8 +255,8 @@ func TestRenderRuleOrder(t *testing.T) {
 
 // With no first tunnel the core runs all the same: what no list names goes
 // direct, the second tunnel takes its own lists -- and the always-tunnel
-// list while switched on --, and a list named for a tunnel with none to
-// take it is refused, never sent direct.
+// list while switched on. With no tunnel at all the presets and the awg2
+// list go direct too, and the always-tunnel list is refused.
 func TestRenderNoFirst(t *testing.T) {
 	t.Setenv("ProgramData", t.TempDir())
 	if err := paths.EnsureDataDir(); err != nil {
@@ -292,7 +292,7 @@ func TestRenderNoFirst(t *testing.T) {
 		awg2                      bool
 		tunnel, tunnel2, one, any string
 	}{
-		{"no tunnel", false, "DIRECT", "REJECT", "REJECT", "REJECT"},
+		{"no tunnel", false, "DIRECT", "DIRECT", "REJECT", "REJECT"},
 		{"the second alone", true, "DIRECT", "awg2", "REJECT", "awg2"},
 	} {
 		os.Remove(paths.SourceConf2())
