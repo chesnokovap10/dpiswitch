@@ -261,7 +261,9 @@
       d = coll.compare(x, y);
     }
     if (pref.desc) d = -d;
-    return d || b.start - a.start || (a.id < b.id ? -1 : 1);
+    // a row against itself is 0: firstSorted's scans stop at the pivot on
+    // that, and with 1 the right one ran past the start of the list
+    return d || b.start - a.start || (a.id === b.id ? 0 : a.id < b.id ? -1 : 1);
   }
 
   // The first k rows in the order of cmp, sorted: what the table draws. A
