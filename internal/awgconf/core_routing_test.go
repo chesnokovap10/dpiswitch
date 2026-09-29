@@ -44,13 +44,7 @@ func TestCoreFailClosed(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the core for ~20 s")
 	}
-	core := os.Getenv("DPISWITCH_CORE")
-	if core == "" {
-		core, _ = filepath.Abs(filepath.Join("..", "..", "dist", "mihomo.exe"))
-	}
-	if _, err := os.Stat(core); err != nil {
-		t.Skipf("no core to run (%v): build it with tools\\build-mihomo.ps1 or set DPISWITCH_CORE", err)
-	}
+	core := coreBinary(t)
 
 	setupRouting(t, ctl.ModeTunnel, "both on")
 	// keys the core takes; the endpoints are TEST-NET addresses nothing
@@ -90,32 +84,7 @@ func TestCoreFailClosed(t *testing.T) {
 		fmt.Fprintf(&ls, "  - name: in-%s\n    type: socks\n    listen: 127.0.0.1\n    port: %d\n    proxy: %s\n", g, socks[g], g)
 	}
 	api := freePort(t)
-	cfg := coreSafe(t, out, ls.String(), api, freePort(t))
-	secret := regexp.MustCompile(`(?m)^secret: '([^']*)'`).FindStringSubmatch(cfg)
-	if secret == nil {
-		t.Fatal("no secret in the config")
-	}
-	if err := os.WriteFile(paths.Config(), []byte(cfg), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	var log bytes.Buffer
-	cmd := exec.Command(core, "-d", paths.DataDir(), "-f", paths.Config())
-	cmd.Stdout, cmd.Stderr = &log, &log
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		cmd.Process.Kill()
-		cmd.Wait()
-		if t.Failed() {
-			t.Logf("the core's log:\n%s", log.String())
-		}
-	})
-	ctrl := &coreAPI{base: fmt.Sprintf("http://127.0.0.1:%d", api), secret: secret[1]}
-	if !ctrl.wait(15 * time.Second) {
-		t.Fatal("the core did not come up")
-	}
+	ctrl, _ := startCore(t, core, coreSafe(t, out, ls.String(), api, freePort(t)), api)
 
 	// one local server per group: a connection it takes is a leak of that group
 	servers := map[string]*sink{}
@@ -167,6 +136,70 @@ func TestCoreFailClosed(t *testing.T) {
 			t.Errorf("both tunnels down: %s is on %q", g, now)
 		}
 	}
+}
+
+// coreBinary: the core the checks run, dist\mihomo.exe or DPISWITCH_CORE;
+// with none there the test is skipped
+func coreBinary(t *testing.T) string {
+	t.Helper()
+	core := os.Getenv("DPISWITCH_CORE")
+	if core == "" {
+		core, _ = filepath.Abs(filepath.Join("..", "..", "dist", "mihomo.exe"))
+	}
+	if _, err := os.Stat(core); err != nil {
+		t.Skipf("no core to run (%v): build it with tools\\build-mihomo.ps1 or set DPISWITCH_CORE", err)
+	}
+	return core
+}
+
+// startCore writes cfg as the data directory's config, runs the core on it
+// and waits for its controller on port api. The core is stopped when the
+// test ends, its log shown if the test failed.
+func startCore(t *testing.T, core, cfg string, api int) (*coreAPI, *coreLog) {
+	t.Helper()
+	secret := regexp.MustCompile(`(?m)^secret: '([^']*)'`).FindStringSubmatch(cfg)
+	if secret == nil {
+		t.Fatal("no secret in the config")
+	}
+	if err := os.WriteFile(paths.Config(), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	log := &coreLog{}
+	cmd := exec.Command(core, "-d", paths.DataDir(), "-f", paths.Config())
+	cmd.Stdout, cmd.Stderr = log, log
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cmd.Process.Kill()
+		cmd.Wait()
+		if t.Failed() {
+			t.Logf("the core's log:\n%s", log.String())
+		}
+	})
+	ctrl := &coreAPI{base: fmt.Sprintf("http://127.0.0.1:%d", api), secret: secret[1]}
+	if !ctrl.wait(15 * time.Second) {
+		t.Fatal("the core did not come up")
+	}
+	return ctrl, log
+}
+
+// coreLog: the core's output, read while it is written
+type coreLog struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *coreLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *coreLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
 }
 
 // coreSafe: the config made to run beside the service and without admin

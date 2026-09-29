@@ -13,8 +13,9 @@
 // Each case goes the whole way: the service writes the lists' files from
 // the user's lists and the settings, the config is rendered as the service
 // renders it, and a connection is walked through its rules and groups the
-// way the core walks it. What the core does with a group whose tunnels are
-// all down is checked on the real core in core_routing_test.go.
+// way the core walks it. The same tables run on the real core, the tunnels
+// alive or dead for real, in core_tables_test.go; what it does with a group
+// whose tunnels are all down, in core_routing_test.go.
 
 package awgconf
 
