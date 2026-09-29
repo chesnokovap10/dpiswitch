@@ -129,7 +129,7 @@ IPv4 only for it.</p>
 <h4>The second tunnel</h4>
 <p>A second AmneziaWG server for chosen services only: YouTube, Telegram, AI services, social networks
 and your own list. It stands above every other list, the detector leaves its names alone. If it is down,
-its sites go through the first tunnel; if both are down, they fail -- never direct. Until it is attached, its
+its sites go through the first tunnel; if both are down, they fail -- never direct. The detector measures the direct path against the first tunnel only: what goes to awg2 is never checked, and without awg1 nothing is, even with auto-switch On. Until it is attached, its
 presets use the first tunnel. <b>Use the second tunnel</b> on its page switches it off and on: switched off,
 its presets and list route nothing, and what they name goes the way the other lists and the mode send it.</p>
 <p>The <a href="/awg2#presets">presets</a> are yours to change: <b>Edit</b> opens a preset's name, description and

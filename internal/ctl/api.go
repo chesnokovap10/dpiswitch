@@ -140,7 +140,7 @@ func Run(ctx context.Context, cfg Config) {
 	health := func() (bool, string, error) {
 		// with no first tunnel there is no path to measure direct against
 		if _, err := os.Stat(paths.SourceConf()); err != nil {
-			return false, "no first tunnel's config loaded", nil
+			return false, "no first tunnel's config loaded: the detector measures against awg1 only", nil
 		}
 		return a.tunnelHealth(cfg.ProxyName)
 	}

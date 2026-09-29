@@ -2,6 +2,7 @@ package ctl
 
 import (
 	"log"
+	"strings"
 	"time"
 )
 
@@ -31,12 +32,17 @@ func (g *gate) allow(now time.Time, health func() (bool, string, error)) bool {
 		return false
 	}
 	ok, note, err := health()
-	if err != nil {
-		ok, note = false, "core API not responding: "+err.Error()
+	switch {
+	case err != nil:
+		ok, note = false, "the tunnel does not answer (core API not responding: "+err.Error()+")"
+	case !ok && note != "" && !strings.HasPrefix(note, "no first tunnel"):
+		note = "the tunnel does not answer (" + note + ")"
+	case !ok && note == "":
+		note = "the tunnel does not answer"
 	}
 	if !ok {
 		if !g.paused {
-			log.Printf("probes paused: the tunnel does not answer (%s)", note)
+			log.Printf("probes paused: %s", note)
 			g.paused = true
 		}
 		return false

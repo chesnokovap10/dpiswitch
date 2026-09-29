@@ -429,7 +429,7 @@ func TestVerdictsPage(t *testing.T) {
 	// the mode that sets the verdicts aside
 	for mode, want := range map[string]string{ctl.ModeOn: "", ctl.ModeObserve: "Observe only is on", ctl.ModeTunnel: "Tunnel only is on"} {
 		st := s.statusFn()
-		st.Mode = mode
+		st.Mode, st.HasConfig = mode, true
 		s.statusFn = func() status { return st }
 		note := get("/frag/verdicts/vnote")
 		if want == "" && strings.TrimSpace(note) != "" || want != "" && !strings.Contains(note, want) {
@@ -1025,5 +1025,24 @@ func TestNoFirstTunnel(t *testing.T) {
 	st.HasConfig = true
 	if b := do(t, h, "GET", "/frag/awg2/awg2state", nil, nil).Body.String(); strings.Contains(b, "is not loaded") {
 		t.Errorf("awg2 state with the first loaded: %s", b)
+	}
+}
+
+// With no first tunnel the detector checks nothing, auto-switch On or not:
+// the overview, the verdicts and the settings say so.
+func TestNoFirstNoProbes(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	st := s.statusFn()
+	st.Installed, st.ServiceRun, st.Mode = true, true, ctl.ModeOn
+	s.statusFn = func() status { return st }
+	for _, has := range []bool{false, true} {
+		st.HasConfig = has
+		for _, pg := range []string{"/overview", "/verdicts", "/settings"} {
+			b := do(t, h, "GET", pg, nil, nil).Body.String()
+			if got := strings.Contains(b, "the detector checks nothing"); got != !has {
+				t.Errorf("first tunnel %v, %s: said %v", has, pg, got)
+			}
+		}
 	}
 }

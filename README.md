@@ -274,7 +274,7 @@ CDN, спидтестам, обновлениям.
 Второй сервер AmneziaWG только для выбранных сервисов: YouTube, Telegram, ИИ-сервисов (ChatGPT,
 Claude, Gemini, Grok, Copilot, DeepL и др.), Instagram, Facebook, X и вашего списка. Он стоит выше
 всех остальных списков, детектор его имена не трогает. Если он лежит, его сайты идут через первый
-туннель; если лежат оба — соединения не проходят, напрямую никогда. Пока он не подключён, пресеты
+туннель; если лежат оба — соединения не проходят, напрямую никогда. Детектор сравнивает прямой путь только с первым туннелем: то, что идёт в awg2, не проверяется никогда, а без awg1 не проверяется ничего, даже при включённом «Вкл». Пока он не подключён, пресеты
 идут через первый туннель. Все
 пресеты по умолчанию выключены. Переключение пресета применяется сразу, включая открытые соединения.
 
@@ -680,7 +680,7 @@ resolves IPv4 only for it. Changing it restarts the core.
 A second AmneziaWG server for chosen services only: YouTube, Telegram, AI services (ChatGPT, Claude,
 Gemini, Grok, Copilot, DeepL and more), Instagram, Facebook, X and your own list. It stands above
 every other list, the detector leaves its names alone. If it is down, its sites go through the first
-tunnel; if both are down, they fail — never direct. Until it is attached, its presets use the first
+tunnel; if both are down, they fail — never direct. The detector measures the direct path against the first tunnel only: what goes to awg2 is never checked, and without awg1 nothing is, even with auto-switch On. Until it is attached, its presets use the first
 tunnel. Every
 preset is off by default. A preset switch applies at once, open connections included.
 
