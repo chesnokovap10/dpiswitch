@@ -2,9 +2,10 @@
 #
 # The source is the private copy of mihomo (see DPISWITCH.md there): the
 # upstream commit the program was tested with, the cut below already made,
-# every dependency in vendor/, and one fix -- a peer's ICMP error no longer
-# ends a UDP session through a WireGuard outbound, which left BitTorrent's
-# uTP and DHT through the tunnel with nothing.
+# every dependency in vendor/, and mipstack ahead of upstream's -- the one
+# where a peer's ICMP error no longer ends a UDP session through a WireGuard
+# outbound, which left BitTorrent's uTP and DHT through the tunnel with
+# nothing.
 #
 # Only what DPI Switch uses is kept:
 #  - outbounds: wireguard (AmneziaWG) only; DIRECT and REJECT are built into
@@ -18,9 +19,9 @@
 # then drops their code. Build tags drop the embedded Tailscale, ZeroTier and
 # EasyTier stacks and Hysteria's fake-TCP; -s -w strips debug symbols.
 param(
-    # pinned commit of the private copy: upstream f103639c, the cut, vendor/,
-    # the ICMP fix
-    [string]$Commit = "bfad17438fc4898d798115880c42b10bc3599368",
+    # pinned commit of the private copy: upstream Alpha 63bd52ec, the cut,
+    # vendor/, mipstack 3ec3a765 (the ICMP fix)
+    [string]$Commit = "7479be4191c42e7ed8694524d35261e24b4aa383",
     [string]$Repo = "https://github.com/chesnokovap10/mihomo-dpiswitch.git"
 )
 
