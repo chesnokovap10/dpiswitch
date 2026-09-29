@@ -1046,3 +1046,31 @@ func TestNoFirstNoProbes(t *testing.T) {
 		}
 	}
 }
+
+// The second tunnel's DNS is its own: saved beside the first's, and the
+// page says which tunnel is not loaded -- its test is off then.
+func TestDNSSecondTunnel(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	body := do(t, h, "POST", "/act/dns", url.Values{"direct_dns": {"https://77.88.8.8/dns-query"},
+		"tunnel_dns": {""}, "tunnel_dns2": {"10.9.0.1"}}, nil).Body.String()
+	if strings.Contains(body, `class="msg bad"`) {
+		t.Fatalf("not saved: %s", body)
+	}
+	set := ctl.LoadSettings(paths.Settings())
+	if strings.Join(set.TunnelDNS2, ",") != "10.9.0.1" || len(set.TunnelDNS) != 0 {
+		t.Fatalf("saved: first %v, second %v", set.TunnelDNS, set.TunnelDNS2)
+	}
+	page := do(t, h, "GET", "/settings", nil, nil).Body.String()
+	for _, want := range []string{"awg1 is not loaded.", "awg2 is not loaded.", `id="tunnel_dns2"`, "10.9.0.1"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the page lacks %q", want)
+		}
+	}
+	if err := os.WriteFile(paths.SourceConf2(), []byte(testConf2), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if page = do(t, h, "GET", "/settings", nil, nil).Body.String(); strings.Contains(page, "awg2 is not loaded.") {
+		t.Error("awg2 loaded, said not")
+	}
+}

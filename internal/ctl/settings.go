@@ -52,6 +52,9 @@ type Settings struct {
 	DirectDNS []string `json:"direct_dns"`
 	// resolvers inside the tunnel; empty -- DNS from the .conf
 	TunnelDNS []string `json:"tunnel_dns"`
+	// resolvers inside the second tunnel; empty -- DNS from its .conf. Its
+	// own: the first server's resolver may answer inside the first tunnel only
+	TunnelDNS2 []string `json:"tunnel_dns2"`
 }
 
 // Yandex: verified reachable directly, does not tamper with answers
@@ -65,7 +68,8 @@ var defaultDirectDNS = []string{"https://77.88.8.8/dns-query", "tls://77.88.8.1"
 // are picked up on the fly
 func (s Settings) SameCore(o Settings) bool {
 	return reflect.DeepEqual(s.DirectDNS, o.DirectDNS) &&
-		reflect.DeepEqual(s.TunnelDNS, o.TunnelDNS) && s.IPv6 == o.IPv6
+		reflect.DeepEqual(s.TunnelDNS, o.TunnelDNS) && reflect.DeepEqual(s.TunnelDNS2, o.TunnelDNS2) &&
+		s.IPv6 == o.IPv6
 }
 
 func (s Settings) Equal(o Settings) bool { return reflect.DeepEqual(s, o) }
@@ -142,6 +146,7 @@ func DefaultSettings() Settings {
 		Attempts:      3,
 		DirectDNS:     append([]string(nil), defaultDirectDNS...),
 		TunnelDNS:     []string{},
+		TunnelDNS2:    []string{},
 	}
 }
 
@@ -301,7 +306,7 @@ func (s Settings) Validate() error {
 			return fmt.Errorf("unknown preset %q", id)
 		}
 	}
-	for _, list := range [][]string{s.DirectDNS, s.TunnelDNS} {
+	for _, list := range [][]string{s.DirectDNS, s.TunnelDNS, s.TunnelDNS2} {
 		for _, d := range list {
 			if _, err := probe.ParseResolver(d); err != nil {
 				return err
@@ -364,6 +369,7 @@ func (s *Settings) clamp() {
 	}
 	s.DirectDNS = cleanDNS(s.DirectDNS)
 	s.TunnelDNS = cleanDNS(s.TunnelDNS)
+	s.TunnelDNS2 = cleanDNS(s.TunnelDNS2)
 	if len(s.DirectDNS) == 0 {
 		s.DirectDNS = d.DirectDNS
 	}

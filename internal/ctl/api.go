@@ -19,6 +19,7 @@ func Defaults() Config {
 	return Config{
 		DirectAddr:    "127.0.0.1:7892",
 		TunnelAddr:    "127.0.0.1:7891", // listener bound directly to awg
+		Tunnel2Addr:   "127.0.0.1:7893", // bound to awg2: the DNS test of the settings
 		APIAddr:       "127.0.0.1:9090",
 		CfgPath:       paths.Config(),
 		ProxyName:     "awg",
@@ -125,8 +126,8 @@ func Run(ctx context.Context, cfg Config) {
 			return
 		}
 		if coreChanged(ns, set, haveSet) && cfg.OnCoreChange != nil {
-			log.Printf("core settings changed (DNS: direct %v, tunnel %v; IPv6 %v) -- restarting the core",
-				ns.DirectDNS, ns.TunnelDNS, ns.IPv6)
+			log.Printf("core settings changed (DNS: direct %v, tunnel %v, second tunnel %v; IPv6 %v) -- restarting the core",
+				ns.DirectDNS, ns.TunnelDNS, ns.TunnelDNS2, ns.IPv6)
 			cfg.OnCoreChange()
 		}
 		cfg = onSettingsChanged(cfg, ns, a, st, netID)

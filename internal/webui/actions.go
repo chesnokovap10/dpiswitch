@@ -566,16 +566,19 @@ func (s *Server) partField(w http.ResponseWriter, r *http.Request, field string,
 // used to come back with the saved servers, and a typo in one line lost
 // every line written.
 func (s *Server) actDNS(w http.ResponseWriter, r *http.Request) {
-	direct, tunnel := splitLines(r.FormValue("direct_dns")), splitLines(r.FormValue("tunnel_dns"))
+	direct, tunnel, tunnel2 := splitLines(r.FormValue("direct_dns")), splitLines(r.FormValue("tunnel_dns")), splitLines(r.FormValue("tunnel_dns2"))
 	if tunnel == nil {
 		tunnel = []string{}
+	}
+	if tunnel2 == nil {
+		tunnel2 = []string{}
 	}
 	restart := false
 	err := paths.UserReady()
 	if err == nil {
 		_, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
 			was := *set
-			set.DirectDNS, set.TunnelDNS = direct, tunnel
+			set.DirectDNS, set.TunnelDNS, set.TunnelDNS2 = direct, tunnel, tunnel2
 			restart = !set.SameCore(was)
 			return nil
 		})
@@ -585,7 +588,7 @@ func (s *Server) actDNS(w http.ResponseWriter, r *http.Request) {
 	v := &view{Lang: lang(r), Page: "settings", Path: back(r), St: s.status(), Msg: &flash{ok, msg}}
 	d := settingsData()
 	if err != nil {
-		d.S.DirectDNS, d.S.TunnelDNS = direct, tunnel
+		d.S.DirectDNS, d.S.TunnelDNS, d.S.TunnelDNS2 = direct, tunnel, tunnel2
 	}
 	v.Data = d
 	render(w, v, "dns")
@@ -625,15 +628,25 @@ func (s *Server) actDefaults(w http.ResponseWriter, r *http.Request) {
 // actDNSTest checks resolvers over the path the core uses them on.
 func (s *Server) actDNSTest(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Query().Get("path")
-	if path != "tunnel" {
+	field := "direct_dns"
+	switch path {
+	case "tunnel":
+		field = "tunnel_dns"
+	case "tunnel2":
+		field = "tunnel_dns2"
+	default:
 		path = "direct"
 	}
-	field := path + "_dns"
 	servers := splitLines(r.FormValue(field))
 	fromConf := false
-	if len(servers) == 0 && path == "tunnel" {
-		if c, err := awgconf.ParseFile(paths.SourceConf()); err == nil {
-			servers, fromConf = c.DNS(), true
+	// an empty box is the tunnel's .conf: those are tested
+	first, _ := awgconf.ParseFile(paths.SourceConf())
+	if len(servers) == 0 && path == "tunnel" && first != nil {
+		servers, fromConf = first.DNS(), true
+	}
+	if len(servers) == 0 && path == "tunnel2" {
+		if c2, _ := awgconf.Second(first); c2 != nil {
+			servers, fromConf = c2.DNS(), true
 		}
 	}
 	t := dnsTest{Results: testDNS(path, servers), Field: field}

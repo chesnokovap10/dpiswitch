@@ -148,7 +148,7 @@ shares them, another ISP starts its own. Without a network the checks pause and 
 <li><b>Direct sites</b> are resolved by the resolvers for direct sites, asked outside the tunnel: CDNs
 then answer with nodes near your ISP. The detector uses the same resolvers, so it tests the node the
 traffic will go to. DoH or DoT by address is the safe choice: many ISPs block or tamper with plain DNS.</li>
-<li><b>Tunnelled sites</b> are resolved inside the tunnel, by its DNS (from the <code>.conf</code> unless set).</li>
+<li><b>Tunnelled sites</b> are resolved inside the tunnel they go through, by that tunnel's own DNS: <a href="/settings#tunnel_dns">awg1's</a> and <a href="/settings#tunnel_dns2">awg2's</a> are set apart, each from its <code>.conf</code> unless set. A <code>.conf</code> with no <code>DNS =</code> and nothing set: the names are resolved by the resolvers for direct sites, outside the tunnel.</li>
 <li>Programs get stand-in addresses from the core (<code>198.18.0.0/16</code>, <code>2001:2::/48</code>) and
 the core resolves the real one on the chosen route. That is why a name, not an address, decides the route.</li>
 </ul>

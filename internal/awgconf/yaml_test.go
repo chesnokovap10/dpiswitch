@@ -165,3 +165,63 @@ func TestSecond(t *testing.T) {
 		t.Error("no first tunnel: the second left out")
 	}
 }
+
+// The second tunnel resolves by its own DNS: the settings' if set, else its
+// .conf's; and it has a listener of its own for the settings' DNS test.
+func TestRenderSecondDNS(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Parse("[Interface]\nPrivateKey = k\nAddress = 10.8.1.3/32\nDNS = 10.8.0.1\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.7:51820\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	two := "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.9.1.3/32\nDNS = 10.9.0.1\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.8:51820\n"
+	out, err := c.Render()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "probe-tunnel2") {
+		t.Error("a listener for a second tunnel not loaded")
+	}
+	if err := os.WriteFile(paths.SourceConf2(), []byte(two), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dnsOf := func(out, proxy string) string {
+		i := strings.Index(out, "  - name: "+proxy+"\n    type: wireguard")
+		if i < 0 {
+			t.Fatalf("no proxy %s", proxy)
+		}
+		rest := out[i:]
+		j := strings.Index(rest, "    dns: ")
+		if j < 0 || strings.Contains(rest[:j], "\n  - name: ") {
+			return ""
+		}
+		return strings.SplitN(rest[j+len("    dns: "):], "\n", 2)[0]
+	}
+	for _, c2dns := range [][]string{nil, {"10.9.9.9"}} {
+		if _, err := ctl.UpdateSettings(paths.Settings(), func(s *ctl.Settings) error {
+			s.TunnelDNS, s.TunnelDNS2 = []string{"10.8.8.8"}, c2dns
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if out, err = c.Render(); err != nil {
+			t.Fatal(err)
+		}
+		want2 := "['10.9.0.1']"
+		if c2dns != nil {
+			want2 = "['10.9.9.9']"
+		}
+		if got := dnsOf(out, "awg2"); got != want2 {
+			t.Errorf("settings %v: awg2 resolves by %s, want %s", c2dns, got, want2)
+		}
+		if got := dnsOf(out, "awg"); got != "['10.8.8.8']" {
+			t.Errorf("awg resolves by %s", got)
+		}
+		if !strings.Contains(out, "  - name: probe-tunnel2\n    type: socks\n    listen: 127.0.0.1\n    port: 7893\n    proxy: awg2\n") {
+			t.Error("no listener through awg2")
+		}
+	}
+}

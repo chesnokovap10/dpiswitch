@@ -60,15 +60,20 @@
   <form method="post" action="/act/dns" data-swap="dns">
     <div class="dnsgrid">
       <b>{{.T "For direct sites"}}</b>
-      <b>{{.T "Inside the tunnel"}}</b>
+      <b>{{.T "Inside the first tunnel (awg1)"}}</b>
+      <b>{{.T "Inside the second tunnel (awg2)"}}</b>
       <p class="hint">{{.T "Asked outside the tunnel, so CDNs pick nodes near your ISP. The detector asks it too: it tests the node the traffic will go to."}}</p>
-      <p class="hint">{{.T "For the sites that go through the tunnel. Empty: the DNS from the .conf"}}{{with $d.ConfDNS}} ({{.}}){{end}}.</p>
+      <p class="hint">{{.T "For the sites that go through awg1. Empty: the DNS from its .conf"}}{{with $d.ConfDNS}} ({{.}}){{end}}.{{if not $d.First}} <span class="warn-t">{{.T "awg1 is not loaded."}}</span>{{end}}</p>
+      <p class="hint">{{.T "For the sites that go through awg2 -- its own: the first server's may not answer through it. Empty: the DNS from its .conf"}}{{with $d.ConfDNS2}} ({{.}}){{end}}.{{if not $d.Second}} <span class="warn-t">{{.T "awg2 is not loaded."}}</span>{{end}}</p>
       <textarea id="direct_dns" name="direct_dns" rows="3" spellcheck="false">{{lines $d.S.DirectDNS}}</textarea>
-      <textarea name="tunnel_dns" rows="3" spellcheck="false" placeholder="{{$d.ConfDNS}}">{{lines $d.S.TunnelDNS}}</textarea>
+      <textarea id="tunnel_dns" name="tunnel_dns" rows="3" spellcheck="false" placeholder="{{$d.ConfDNS}}">{{lines $d.S.TunnelDNS}}</textarea>
+      <textarea id="tunnel_dns2" name="tunnel_dns2" rows="3" spellcheck="false" placeholder="{{$d.ConfDNS2}}">{{lines $d.S.TunnelDNS2}}</textarea>
       <div><button formaction="/act/dnstest?path=direct" data-target="dnsres-direct" data-busy="{{.T "Testing…"}}">{{.T "Test"}}</button></div>
-      <div><button formaction="/act/dnstest?path=tunnel" data-target="dnsres-tunnel" data-busy="{{.T "Testing…"}}">{{.T "Test"}}</button></div>
+      <div><button formaction="/act/dnstest?path=tunnel" data-target="dnsres-tunnel" data-busy="{{.T "Testing…"}}"{{if not $d.First}} disabled title="{{.T "awg1 is not loaded."}}"{{end}}>{{.T "Test"}}</button></div>
+      <div><button formaction="/act/dnstest?path=tunnel2" data-target="dnsres-tunnel2" data-busy="{{.T "Testing…"}}"{{if not $d.Second}} disabled title="{{.T "awg2 is not loaded."}}"{{end}}>{{.T "Test"}}</button></div>
       <div class="dnsres" id="dnsres-direct"></div>
       <div class="dnsres" id="dnsres-tunnel"></div>
+      <div class="dnsres" id="dnsres-tunnel2"></div>
     </div>
     <p class="hint" style="margin-top:8px">{{.TH "One per line: <code>https://IP/dns-query</code> (DoH), <code>tls://IP</code> (DoT), <code>IP</code> (plain DNS, often blocked by ISPs). An address, not a name, where possible. The test finds whether a DoH server wants <code>/dns-query</code> and fixes the address."}}</p>
     <div class="actions"><button class="primary">{{.T "Save DNS"}}</button>{{template "msg" .}}<span class="muted">{{.T "Saving restarts the core: the tunnel drops for a couple of seconds."}}</span></div>

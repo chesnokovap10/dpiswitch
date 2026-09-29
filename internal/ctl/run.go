@@ -25,11 +25,13 @@ import (
 type Config struct {
 	DirectAddr string
 	TunnelAddr string
-	APIAddr    string
-	CfgPath    string
-	ProxyName  string
-	Provider   string
-	ListPath   string
+	// the second tunnel's listener; the detector never probes through it
+	Tunnel2Addr string
+	APIAddr     string
+	CfgPath     string
+	ProxyName   string
+	Provider    string
+	ListPath    string
 	// the same verdicts as addresses, see verifiedAddrs
 	AddrProvider  string
 	AddrListPath  string

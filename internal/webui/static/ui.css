@@ -150,7 +150,7 @@ td small{display:block;color:var(--muted)}
 .presets .p small{display:block;color:var(--muted)}
 .presets .p button{padding:2px 9px;font-size:12px}
 /* DNS: the two columns share rows, so their buttons line up whatever the hints' length */
-.dnsgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:14px;row-gap:6px;align-items:start}
+.dnsgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));column-gap:14px;row-gap:6px;align-items:start}
 .dnsgrid .hint{margin:0}
 .dnsres{font-size:12px;line-height:1.7;min-height:1px}
 

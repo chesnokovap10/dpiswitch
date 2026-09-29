@@ -256,7 +256,11 @@ type durOpt struct {
 type settings struct {
 	S       ctl.Settings
 	ConfDNS string
-	Durs    []durOpt
+	// the second tunnel's DNS from its .conf; First and Second: the
+	// tunnels loaded, whose DNS the page can set and test
+	ConfDNS2      string
+	First, Second bool
+	Durs          []durOpt
 	// the setting just changed, and what came of it: the message is shown
 	// in that setting's row
 	Field string
@@ -276,8 +280,12 @@ var durs = []durOpt{{10, "10 min"}, {30, "30 min"}, {60, "1 h"}, {180, "3 h"}, {
 
 func settingsData() settings {
 	d := settings{S: ctl.LoadSettings(paths.Settings()), Durs: durs}
-	if c, err := awgconf.ParseFile(paths.SourceConf()); err == nil {
-		d.ConfDNS = strings.Join(c.DNS(), ", ")
+	first, err := awgconf.ParseFile(paths.SourceConf())
+	if err == nil {
+		d.ConfDNS, d.First = strings.Join(first.DNS(), ", "), true
+	}
+	if c2, _ := awgconf.Second(first); c2 != nil {
+		d.ConfDNS2, d.Second = strings.Join(c2.DNS(), ", "), true
 	}
 	return d
 }

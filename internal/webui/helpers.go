@@ -53,8 +53,11 @@ type dnsTest struct {
 func testDNS(path string, servers []string) []dnsResult {
 	cfg := ctl.Defaults()
 	d := probe.Dialer{Addr: cfg.DirectAddr, Timeout: 6 * time.Second}
-	if path == "tunnel" {
+	switch path {
+	case "tunnel":
 		d.Addr = cfg.TunnelAddr
+	case "tunnel2":
+		d.Addr = cfg.Tunnel2Addr
 	}
 	out := make([]dnsResult, len(servers))
 	var wg sync.WaitGroup

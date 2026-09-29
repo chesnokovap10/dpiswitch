@@ -90,7 +90,7 @@ type connection struct {
 // every re-check, and a name nothing went to was never forgotten.
 func (c connection) fromProbe() bool {
 	switch c.Metadata.InboundName {
-	case "probe-direct", "probe-tunnel":
+	case "probe-direct", "probe-tunnel", "probe-tunnel2":
 		return true
 	}
 	ip := net.ParseIP(c.Metadata.SourceIP)

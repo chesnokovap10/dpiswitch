@@ -252,7 +252,7 @@ CDN, спидтестам, обновлениям.
   провайдером. Детектор пользуется теми же серверами, так что проверяет тот узел, куда пойдёт трафик.
   Надёжнее всего DoH или DoT по адресу (`https://IP/dns-query`, `tls://IP`): многие провайдеры
   блокируют или подменяют обычный DNS. Кнопка «Проверить» в настройках опрашивает каждый сервер.
-- **Сайты через туннель** резолвятся внутри туннеля, его DNS (из `.conf`, если не задан свой).
+- **Сайты через туннель** резолвятся внутри того туннеля, через который идут, его собственным DNS: у awg1 и awg2 они задаются отдельно, каждый — из своего `.conf`, если не задан свой. Если в `.conf` нет `DNS =` и ничего не задано, имена резолвятся DNS для прямых сайтов, мимо туннеля.
 - Программы получают от ядра подставные адреса (fake-ip: `198.18.0.0/16`, `2001:2::/48`), а настоящий
   ядро узнаёт уже на выбранном маршруте. Поэтому маршрут решает имя, а не адрес. Диапазон IPv6
   намеренно не ULA: Chrome считает `fc00::/7` локальной сетью и блокирует запросы к ней (Local Network
@@ -662,7 +662,7 @@ shares them, another ISP starts its own. Without a network the checks pause and 
   the traffic will go to. DoH or DoT by address (`https://IP/dns-query`, `tls://IP`) is the safe
   choice: many ISPs block or tamper with plain DNS. The "Test" button in the settings asks each
   server.
-- **Tunnelled sites** are resolved inside the tunnel, by its DNS (from the `.conf` unless set).
+- **Tunnelled sites** are resolved inside the tunnel they go through, by that tunnel's own DNS: awg1's and awg2's are set apart, each from its `.conf` unless set. A `.conf` with no `DNS =` and nothing set: the names are resolved by the resolvers for direct sites, outside the tunnel.
 - Programs get stand-in addresses from the core (fake-ip: `198.18.0.0/16`, `2001:2::/48`) and the
   core resolves the real one on the chosen route. That is why a name, not an address, decides the
   route. The IPv6 range is deliberately not ULA: Chrome treats `fc00::/7` as a local network and

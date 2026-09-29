@@ -504,7 +504,7 @@ func TestRenderGroups(t *testing.T) {
 				t.Errorf("%s: group %s has %q, want %q", c.name, g, got, want)
 			}
 		}
-		if got := strings.Contains(out, "probe-tunnel"); got != c.first {
+		if got := strings.Contains(out, "name: probe-tunnel\n"); got != c.first {
 			t.Errorf("%s: the tunnel probe listener: %v", c.name, got)
 		}
 	}

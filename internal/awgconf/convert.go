@@ -268,6 +268,15 @@ func render(c *Conf) (string, error) {
 	if len(set.TunnelDNS) > 0 {
 		tunDNS = set.TunnelDNS
 	}
+	// the second tunnel's own: from the settings, otherwise from its .conf
+	// -- names are resolved by the server the traffic goes through
+	var tun2DNS []string
+	if c2 != nil {
+		tun2DNS = c2.DNS()
+		if len(set.TunnelDNS2) > 0 {
+			tun2DNS = set.TunnelDNS2
+		}
+	}
 	directDNS := set.DirectDNS
 	bootstrap := bootstrapDNS(directDNS)
 	var b strings.Builder
@@ -314,6 +323,15 @@ func render(c *Conf) (string, error) {
 		w("    listen: 127.0.0.1")
 		w("    port: 7891")
 		w("    proxy: awg")
+	}
+	if c2 != nil {
+		// the settings' DNS test through the second tunnel; the detector
+		// never probes through it
+		w("  - name: probe-tunnel2")
+		w("    type: socks")
+		w("    listen: 127.0.0.1")
+		w("    port: 7893")
+		w("    proxy: awg2")
 	}
 	w("")
 	w("tun:")
@@ -572,7 +590,7 @@ func render(c *Conf) (string, error) {
 	if c2 != nil {
 		// the second tunnel uses its own DNS from the .conf: names must be
 		// resolved by the server that traffic will go through
-		c2.writeProxy(w, "awg2", split(c2.Interface["DNS"]), set.IPv6, tunV6.Dead("awg2"))
+		c2.writeProxy(w, "awg2", tun2DNS, set.IPv6, tunV6.Dead("awg2"))
 	}
 	w("")
 	w("rules:")
@@ -594,7 +612,7 @@ func render(c *Conf) (string, error) {
 		writeInsideRules(w, c, tunDNS, "tunnel")
 	}
 	if c2 != nil {
-		writeInsideRules(w, c2, split(c2.Interface["DNS"]), "tunnel2")
+		writeInsideRules(w, c2, tun2DNS, "tunnel2")
 	}
 	w("")
 	w("  # 3. forbidden: refused in every mode, above everything but the tunnels'")
