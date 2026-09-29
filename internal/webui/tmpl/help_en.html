@@ -27,8 +27,8 @@ only costs a detour.</div>
 <p>A line written in several lists goes by the one higher in this table: Forbidden → Always via tunnel →
 Always direct → the presets and the awg2 list → the detector.</p>
 <p>How it goes in each auto-switch mode, by the configs loaded. "Clean" are the sites the detector found
-unblocked; the detector works only with awg1 loaded. "awg2 switched on/off" is the <b>Use the second
-tunnel</b> switch; with no awg2 loaded its presets and list do nothing.</p>
+unblocked; the detector works only with awg1 loaded. "awg2 switched on/off" is the <a href="/awg2#awg2switch"><b>Use the second
+tunnel</b></a> switch; with no awg2 loaded its presets and list do nothing.</p>
 <h5>On</h5>
 <table>
 <tr><th>Loaded</th><th>What no list names</th><th>Presets and the awg2 list</th><th>Always via tunnel</th><th>Always direct</th><th>Forbidden</th></tr>
@@ -61,7 +61,7 @@ tunnel</b> switch; with no awg2 loaded its presets and list do nothing.</p>
 <tr><td>awg1 + awg2, awg2 switched on</td><td>all through awg1; if awg1 is down, awg2; if awg2 is down, refused</td><td>awg2; if it is down, awg1; if both are down, refused</td><td>awg1; if it is down, awg2; if both are down, refused</td><td>direct</td><td>refused</td></tr>
 <tr><td>awg1 + awg2, awg2 switched off</td><td>all through awg1; if awg1 is down, refused</td><td>do nothing (go as the rest, that is refused)</td><td>awg1; if it is down, refused</td><td>direct</td><td>refused</td></tr>
 </table>
-<p>Without the first tunnel's config the service runs all the same: <a href="/live">Live</a> shows the
+<p>Without the first tunnel's config the service runs all the same: <a href="/live#ltable">Live</a> shows the
 traffic, and the lists work as the tables above say. The detector checks nothing then, having no tunnel to
 compare with.</p>
 <p>The core decides once, when a connection opens. When you change a list or a preset here, the
@@ -72,7 +72,7 @@ it), addresses and networks (<code>1.2.3.4</code>, <code>192.168.0.0/16</code>) 
 (<code>telegram.exe</code>, or a full path for one copy) in any mix. A name in its own letters
 (<code>госуслуги.рф</code>) is written as the core sees it, in punycode. An address counts for connections
 made to it by address: a browser reaches sites by name, so add a site by its name. The tries the
-Forbidden list refuses show on a tab of their own in <a href="/live">Live</a>.</p>
+Forbidden list refuses show on a tab of their own in <a href="/live#ltabs">Live</a>.</p>
 
 <h4>How a site is checked</h4>
 <ol>
@@ -123,7 +123,7 @@ domain (<code>+.example.com</code>) goes direct: new subdomains do not wait for 
 bad subdomain removes the rule. It helps services with pools of servers: CDNs, speed tests, updates.</p>
 
 <h4>Auto-switch: on, observe only, tunnel only</h4>
-<p>The detector checks sites and records verdicts in all three modes; the modes differ only in where
+<p>The detector checks sites and records verdicts in all three <a href="/settings#auto_switch">modes</a>; the modes differ only in where
 the traffic goes.</p>
 <ul>
 <li><b>On</b>: the verdicts are applied. Unblocked sites go direct, the rest by the lists and through awg1.</li>
@@ -163,7 +163,7 @@ IPv4 only for it.</p>
 and your own list. It stands below Forbidden, Always via tunnel and Always direct and above the detector,
 which leaves its names alone. If it is down, its sites go through the first tunnel; if both are down,
 direct -- in Tunnel only refused. The detector measures the direct path against the first tunnel only: what goes to awg2 is never checked, and without awg1 nothing is, even with auto-switch On. Until it is attached, its
-presets and list route nothing. <b>Use the second tunnel</b> on its page switches it off and on: switched off,
+presets and list route nothing. <a href="/awg2#awg2switch"><b>Use the second tunnel</b></a> on its page switches it off and on: switched off,
 its presets and list route nothing, and what they name goes the way the other lists and the mode send it.</p>
 <p>The <a href="/awg2#presets">presets</a> are yours to change: <b>Edit</b> opens a preset's name, description and
 lines (sites, addresses and programs, as in the lists), <b>Delete</b> removes it, <b>Add…</b> makes a new one,
@@ -178,7 +178,7 @@ add it to <a href="/lists#list-tunnel">Always via tunnel</a> (<code>+.example.co
 goes through the tunnel and the detector starts over.</li>
 <li>If a site must see your real address (a bank, government services), add it to <a href="/lists#list-direct">Always direct</a>.</li>
 <li>The <a href="/logs#log">logs</a> show every verdict with its reason.</li>
-<li>The <a href="/live">Live</a> page shows which route its connections take right now, and by which rule; a
+<li>The <a href="/live#ltable">Live</a> page shows which route its connections take right now, and by which rule; a
 right-click on a row sends the site straight to the list it belongs in.</li>
 </ol>
 

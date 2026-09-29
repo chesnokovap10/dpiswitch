@@ -12,7 +12,7 @@
 {{define "awg2state"}}{{$s := .St}}
   <div class="row">
     {{/* switched on or off by mode: each mode keeps its own, observe only starts off */}}
-    <form method="post" action="/act/awg2" data-swap="awg2state" data-instant="1">
+    <form method="post" action="/act/awg2" data-swap="awg2state" data-instant="1" id="awg2switch">
       <label title="{{.T "Switched off, the presets and your own list route nothing: what they name goes the way the other lists and the mode send it. Each auto-switch mode keeps its own switch; Observe only starts switched off every time it is chosen."}}"><input type="checkbox" name="awg2" {{if $s.Awg2On}}checked{{end}}> {{.T "Use the second tunnel"}}</label>
     </form>
     {{if $s.Awg2}}
