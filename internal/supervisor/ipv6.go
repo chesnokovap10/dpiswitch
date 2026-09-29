@@ -48,11 +48,7 @@ func (s *Supervisor) checkIPv6(ctx context.Context) {
 	// the second tunnel as the config has it: a .conf loaded and left out
 	// of the config was waited for a minute, and the first tunnel's answer
 	// with it
-	names := []string{"awg"}
-	first, _ := awgconf.ParseFile(paths.SourceConf())
-	if c2, _ := awgconf.Second(first); c2 != nil {
-		names = append(names, "awg2")
-	}
+	names := awgconf.Tunnels()
 
 	// reset at core start, so this is empty unless a previous check in this
 	// same core session already answered

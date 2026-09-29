@@ -9,11 +9,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"net"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -201,18 +203,43 @@ func Second(first *Conf) (*Conf, error) {
 	return c, nil
 }
 
-// Render builds the mihomo configuration from a parsed .conf.
-func (c *Conf) Render() (string, error) {
-	host, _, err := net.SplitHostPort(c.Peer["Endpoint"])
-	if err != nil {
-		return "", fmt.Errorf("cannot parse Endpoint: %w", err)
+// Tunnels: the tunnels the config is built with, by the core's proxy
+// names -- the first if its .conf is there, the second if it is attached.
+func Tunnels() []string {
+	var out []string
+	first, err := ParseFile(paths.SourceConf())
+	if err == nil {
+		out = append(out, "awg")
 	}
+	if c2, _ := Second(first); c2 != nil {
+		out = append(out, "awg2")
+	}
+	return out
+}
 
-	if _, _, err := c.addrs(); err != nil {
-		return "", err
-	}
-	if err := c.check(); err != nil {
-		return "", err
+// Render builds the mihomo configuration from a parsed .conf.
+func (c *Conf) Render() (string, error) { return render(c) }
+
+// RenderNoFirst builds the configuration with no first tunnel: the core
+// runs all the same -- Live shows what goes where, the lists apply -- and
+// what no list names goes direct. A second tunnel carries its presets and
+// list, and the always-tunnel list; with none, those are refused.
+func RenderNoFirst() (string, error) { return render(nil) }
+
+// render: the configuration for the first tunnel c, nil for none.
+func render(c *Conf) (string, error) {
+	var host string
+	if c != nil {
+		var err error
+		if host, _, err = net.SplitHostPort(c.Peer["Endpoint"]); err != nil {
+			return "", fmt.Errorf("cannot parse Endpoint: %w", err)
+		}
+		if _, _, err := c.addrs(); err != nil {
+			return "", err
+		}
+		if err := c.check(); err != nil {
+			return "", err
+		}
 	}
 	// the second tunnel, if loaded; a broken second source
 	// must not break the first one, so the error only goes to the log
@@ -221,10 +248,12 @@ func (c *Conf) Render() (string, error) {
 		log.Printf("second tunnel not attached: %v", err)
 	}
 
-	dns := split(c.Interface["DNS"])
 	set := ctl.LoadSettings(paths.Settings())
 	// tunnel resolvers: from settings, otherwise from the .conf
-	tunDNS := dns
+	var tunDNS []string
+	if c != nil {
+		tunDNS = split(c.Interface["DNS"])
+	}
 	if len(set.TunnelDNS) > 0 {
 		tunDNS = set.TunnelDNS
 	}
@@ -263,14 +292,18 @@ func (c *Conf) Render() (string, error) {
 	w("    listen: 127.0.0.1")
 	w("    port: 7892")
 	w("    proxy: DIRECT")
-	w("  # the tunnel probe listener is bound to awg itself, NOT to the group:")
-	w("  # if the group fell back to DIRECT both probes would go direct and")
-	w("  # the detector would call everything clean -- the costliest mistake")
-	w("  - name: probe-tunnel")
-	w("    type: socks")
-	w("    listen: 127.0.0.1")
-	w("    port: 7891")
-	w("    proxy: awg")
+	if c != nil {
+		// with no first tunnel the detector has nothing to measure against:
+		// it probes nothing, and has no listener
+		w("  # the tunnel probe listener is bound to awg itself, NOT to the group:")
+		w("  # if the group fell back to DIRECT both probes would go direct and")
+		w("  # the detector would call everything clean -- the costliest mistake")
+		w("  - name: probe-tunnel")
+		w("    type: socks")
+		w("    listen: 127.0.0.1")
+		w("    port: 7891")
+		w("    proxy: awg")
+	}
 	w("")
 	w("tun:")
 	w("  enable: true")
@@ -344,7 +377,7 @@ func (c *Conf) Render() (string, error) {
 	for _, z := range localPatterns() {
 		w("    - %s", yq(z))
 	}
-	if net.ParseIP(host) == nil {
+	if c != nil && net.ParseIP(host) == nil {
 		w("    - %s", yq(host))
 	}
 	if c2 != nil {
@@ -387,64 +420,64 @@ func (c *Conf) Render() (string, error) {
 		w("    - %s", yq(d))
 	}
 	w("")
+	// the tunnels there are, by their proxy names
+	var first, second []string
+	if c != nil {
+		first = []string{"awg"}
+	}
+	if c2 != nil {
+		second = []string{"awg2"}
+	}
+	// a group named for a tunnel with none to take it refuses: never direct
+	orReject := func(p []string) []string {
+		if len(p) == 0 {
+			return []string{"REJECT"}
+		}
+		return p
+	}
+	group := func(name string, members []string) {
+		w("  - name: %s", name)
+		w("    type: fallback")
+		w("    proxies:")
+		for _, m := range members {
+			w("      - %s", m)
+		}
+		w("    url: %s", yq(ctl.HealthURL))
+		w("    interval: 30")
+		// the first check runs as the core starts, when the WireGuard
+		// handshake has not finished yet: DNS inside the tunnel is lost and
+		// retried after ~5 s. With the default 5 s the check failed, the
+		// tunnel was considered dead, and until the next check (30 s) the
+		// group sent everything direct -- blocked sites included. Until the
+		// check completes the tunnel counts as alive anyway, so the extra
+		// margin costs nothing
+		w("    timeout: 15000")
+		w("    lazy: false")
+	}
 	w("# A fallback group for what no list names. Without it a dead tunnel would")
 	w("# mean no internet at all: MATCH leads to awg, and awg does not answer.")
 	w("# fallback checks the tunnel itself and, when it is down, sends traffic")
-	w("# direct -- no protection at that moment, but connectivity remains.")
-	w("# The user's always-tunnel list has groups of its own: named for a tunnel,")
-	w("# it never goes direct.")
+	w("# direct -- no protection at that moment, but connectivity remains. With")
+	w("# no first tunnel it is direct: the second one takes only its own lists.")
+	w("# The groups of the lists named for a tunnel never go direct.")
 	w("proxy-groups:")
-	w("  - name: tunnel")
-	w("    type: fallback")
-	w("    proxies:")
-	w("      - awg")
-	w("      - DIRECT")
-	w("    url: %s", yq(ctl.HealthURL))
-	w("    interval: 30")
-	// the first check runs as the core starts, when the WireGuard
-	// handshake has not finished yet: DNS inside the tunnel is lost and retried
-	// after ~5 s. With the default 5 s the check failed, the tunnel
-	// was considered dead, and until the next check (30 s) the group sent
-	// everything direct -- blocked sites included. Until the check completes
-	// the tunnel counts as alive anyway, so the extra margin costs nothing
-	w("    timeout: 15000")
-	w("    lazy: false")
+	group("tunnel", append(slices.Clone(first), "DIRECT"))
 	w("")
 	w("  # the second tunnel for presets and the custom list. If it is down,")
 	w("  # traffic goes through the first tunnel; never direct: named for a")
 	w("  # tunnel, it stays in one. Without a second tunnel the group has no")
 	w("  # awg2, and presets are simply pinned to the first tunnel.")
-	w("  - name: tunnel2")
-	w("    type: fallback")
-	w("    proxies:")
-	if c2 != nil {
-		w("      - awg2")
-	}
-	w("      - awg")
-	w("    url: %s", yq(ctl.HealthURL))
-	w("    interval: 30")
-	w("    timeout: 15000")
-	w("    lazy: false")
+	group("tunnel2", orReject(append(slices.Clone(second), first...)))
 	w("")
-	w("  # the always-tunnel list: awg, or -- with the second tunnel switched on --")
-	w("  # awg and, if it is down, awg2. Never direct. The controller picks the")
-	w("  # member as the settings say; the one listed first is the choice at start.")
-	lists := []string{"awg"}
-	if c2 != nil {
-		w("  - name: %s", ctl.TunnelAnyGroup)
-		w("    type: fallback")
-		w("    proxies:")
-		w("      - awg")
-		w("      - awg2")
-		w("    url: %s", yq(ctl.HealthURL))
-		w("    interval: 30")
-		w("    timeout: 15000")
-		w("    lazy: false")
-		if set.Awg2Active() {
-			lists = []string{ctl.TunnelAnyGroup, "awg"}
-		} else {
-			lists = append(lists, ctl.TunnelAnyGroup)
-		}
+	w("  # the always-tunnel list: the first tunnel alone, or -- with the second")
+	w("  # switched on -- the first and then the second. Never direct: with no")
+	w("  # tunnel to take it, refused. The controller picks the member as the")
+	w("  # settings say; the one listed first is the choice at start.")
+	group(ctl.TunnelOneGroup, orReject(first))
+	group(ctl.TunnelAnyGroup, orReject(append(slices.Clone(first), second...)))
+	lists := []string{ctl.TunnelOneGroup, ctl.TunnelAnyGroup}
+	if set.Awg2Active() {
+		lists[0], lists[1] = lists[1], lists[0]
 	}
 	w("  - name: %s", ctl.TunnelListsGroup)
 	w("    type: select")
@@ -497,11 +530,15 @@ func (c *Conf) Render() (string, error) {
 	w("    format: text")
 	w("    path: ./direct-verified-addr.txt")
 	w("")
-	w("proxies:")
 	// a tunnel the check found IPv6 dead on keeps its address but resolves
 	// IPv4 only -- otherwise every IPv6-only host hangs until its timeout
 	tunV6 := ctl.LoadTunnelIPv6(paths.TunnelIPv6())
-	c.writeProxy(w, "awg", tunDNS, set.IPv6, tunV6.Dead("awg"))
+	if c != nil || c2 != nil {
+		w("proxies:")
+	}
+	if c != nil {
+		c.writeProxy(w, "awg", tunDNS, set.IPv6, tunV6.Dead("awg"))
+	}
 	if c2 != nil {
 		// the second tunnel uses its own DNS from the .conf: names must be
 		// resolved by the server that traffic will go through
@@ -510,7 +547,9 @@ func (c *Conf) Render() (string, error) {
 	w("")
 	w("rules:")
 	w("  # 1. the tunnel endpoints themselves -- always outside the tunnel, or it loops")
-	writeEndpointRule(w, host)
+	if c != nil {
+		writeEndpointRule(w, host)
+	}
 	if c2 != nil {
 		if h2, _, err := net.SplitHostPort(c2.Peer["Endpoint"]); err == nil {
 			writeEndpointRule(w, h2)
@@ -521,7 +560,9 @@ func (c *Conf) Render() (string, error) {
 	w("  #    networks block sends direct -- including the DNS server inside the tunnel.")
 	w("  #    These have to come first, or that DNS would be dialled on the local")
 	w("  #    network, where nothing answers.")
-	writeInsideRules(w, c, tunDNS, "tunnel")
+	if c != nil {
+		writeInsideRules(w, c, tunDNS, "tunnel")
+	}
 	if c2 != nil {
 		writeInsideRules(w, c2, split(c2.Interface["DNS"]), "tunnel2")
 	}
@@ -802,10 +843,13 @@ func (c *Conf) writeProxy(w func(string, ...any), name string, tunDNS []string, 
 // anything changed.
 func Regenerate() (bool, error) {
 	c, err := ParseFile(paths.SourceConf())
+	if errors.Is(err, fs.ErrNotExist) {
+		c, err = nil, nil
+	}
 	if err != nil {
 		return false, err
 	}
-	out, err := c.Render()
+	out, err := render(c)
 	if err != nil {
 		return false, err
 	}

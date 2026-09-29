@@ -53,11 +53,12 @@ func (s *Supervisor) Run(ctx context.Context, apply bool) {
 	// the data directory was made the service's before the log was opened
 	// (see paths.SecureDataDir); the user writes in paths.UserDir only.
 	//
-	// With no .conf the service waits for one instead of stopping: the UI
-	// loads it into UserDir, and the service renders config.yaml from it --
-	// the user may not write the config itself.
-	if !waitSource(ctx) {
-		return
+	// With no .conf the core runs all the same, with no tunnel: Live shows
+	// the traffic, the lists apply, and the rest goes direct. The UI loads a
+	// .conf into UserDir and restarts the service, which renders config.yaml
+	// from it -- the user may not write the config itself.
+	if _, err := os.Stat(paths.SourceConf()); err != nil {
+		log.Println("no first tunnel's config: the core runs without it -- load a .conf in the UI")
 	}
 	awgconf.EnsureLists()
 	ctl.SyncUserFiles()
@@ -106,28 +107,6 @@ func (s *Supervisor) Run(ctx context.Context, apply bool) {
 	}()
 
 	wg.Wait()
-}
-
-// waitSource: whether there is a .conf to run, waiting for one to be loaded;
-// false once the service stops.
-func waitSource(ctx context.Context) bool {
-	said := false
-	for {
-		_, errSrc := os.Stat(paths.SourceConf())
-		_, errCfg := os.Stat(paths.Config())
-		if errSrc == nil || errCfg == nil {
-			return true
-		}
-		if !said {
-			log.Println("no config yet -- load a .conf in the UI")
-			said = true
-		}
-		select {
-		case <-ctx.Done():
-			return false
-		case <-time.After(2 * time.Second):
-		}
-	}
 }
 
 // restart the core with a growing pause: at boot the network
@@ -189,12 +168,10 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 	if err := (ctl.TunnelIPv6{}).Save(paths.TunnelIPv6()); err != nil {
 		log.Printf("IPv6 state not reset: %v", err)
 	}
-	if _, err := os.Stat(paths.SourceConf()); err == nil {
-		if changed, err := awgconf.Regenerate(); err != nil {
-			log.Printf("config not rebuilt, using the old one: %v", err)
-		} else if changed {
-			log.Println("config rebuilt")
-		}
+	if changed, err := awgconf.Regenerate(); err != nil {
+		log.Printf("config not rebuilt, using the old one: %v", err)
+	} else if changed {
+		log.Println("config rebuilt")
 	}
 	s.v6mu.Unlock()
 	// the user's lists as they are now, before the core reads them
@@ -449,7 +426,17 @@ func (s *Supervisor) keepHealthy(ctx context.Context) {
 		// requests a day through the tunnel. Each check counts once: a
 		// result read again says nothing new. One the core stopped renewing
 		// is a failure every time -- the core itself may be stuck.
-		c, err := ctl.LastTunnelCheck(apiAddr, secret, "awg")
+		// the first tunnel carries what no list names; with none, the second
+		// is all there is. With no tunnel there is nothing to go dead.
+		name := watched()
+		if name == "" {
+			fails = 0
+			if !s.waitRecheck(ctx, period) {
+				return
+			}
+			continue
+		}
+		c, err := ctl.LastTunnelCheck(apiAddr, secret, name)
 		news, ok, detail := readCheck(c, err, seen)
 		if !news {
 			if !s.waitRecheck(ctx, period) {
@@ -465,7 +452,7 @@ func (s *Supervisor) keepHealthy(ctx context.Context) {
 			fails = 0
 		} else {
 			fails++
-			log.Printf("tunnel not responding (%s), in a row: %d", detail, fails)
+			log.Printf("tunnel %s not responding (%s), in a row: %d", name, detail, fails)
 			if fails >= failsMax {
 				// another client with the same key is stealing the session on the server.
 				// restarting the core is pointless: it would just seesaw
@@ -492,6 +479,15 @@ func (s *Supervisor) keepHealthy(ctx context.Context) {
 			return
 		}
 	}
+}
+
+// watched: the tunnel keepHealthy restarts the core for, "" for none; a var
+// for tests
+var watched = func() string {
+	if t := awgconf.Tunnels(); len(t) > 0 {
+		return t[0]
+	}
+	return ""
 }
 
 // readCheck: whether a reading of the core's last tunnel check is news, and

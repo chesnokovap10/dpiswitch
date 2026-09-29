@@ -750,7 +750,7 @@ func liveRoute(chains []string) string {
 	switch chains[0] {
 	case "DIRECT":
 		return "direct"
-	case "awg", "tunnel", "tunnel-lists", "tunnel-any":
+	case "awg", "tunnel", "tunnel-lists", "tunnel-one", "tunnel-any":
 		return "awg"
 	case "awg2", "tunnel2":
 		return "awg2"

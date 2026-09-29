@@ -137,7 +137,13 @@ func Run(ctx context.Context, cfg Config) {
 	offline := false // no gateway right now (see the tick below)
 	defer t.Stop()
 	g := &gate{interval: cfg.Interval}
-	health := func() (bool, string, error) { return a.tunnelHealth(cfg.ProxyName) }
+	health := func() (bool, string, error) {
+		// with no first tunnel there is no path to measure direct against
+		if _, err := os.Stat(paths.SourceConf()); err != nil {
+			return false, "no first tunnel's config loaded", nil
+		}
+		return a.tunnelHealth(cfg.ProxyName)
+	}
 	if g.allow(time.Now().Round(0), health) {
 		cycle(cfg, a, st, netID, w)
 	}

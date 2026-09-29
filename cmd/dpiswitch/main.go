@@ -305,6 +305,11 @@ func status() (tray.State, string) {
 		}
 		return tray.StateOff, T("DPI Switch — tunnel off")
 	}
+	// no first tunnel's config: the core runs with no tunnel, and there is
+	// none to go dead -- what no list names goes direct
+	if _, err := os.Stat(paths.SourceConf()); err != nil {
+		return tray.StateOff, T("DPI Switch — no first tunnel's config: what the lists do not name goes direct")
+	}
 	// a running service and a tunnel that passes traffic are different things:
 	// with a dead peer TUN is up but there is no internet
 	alive, note := ctl.TunnelHealth("127.0.0.1:9090",

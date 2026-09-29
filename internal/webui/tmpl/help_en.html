@@ -25,6 +25,11 @@ only costs a detour.</div>
 <tr><td>10</td><td>Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name)</td><td>direct</td></tr>
 <tr><td>11</td><td>Everything else</td><td>awg; if it is down, direct</td></tr>
 </table>
+<p>Without the first tunnel's config the service runs all the same: <a href="/live">Live</a> shows the
+traffic, Forbidden refuses, and what no list names goes direct -- the detector checks nothing, having no
+tunnel to compare with. The second tunnel, if loaded and switched on, takes its presets and list and
+Always via tunnel; everything else does not go to it. With no tunnel to take them, the lists named for a
+tunnel are refused.</p>
 <p>A line written in several lists goes by the one higher in this table: Forbidden beats everything,
 the second tunnel beats Always via tunnel, and both beat the sites and addresses in Always direct.</p>
 <p>The core decides once, when a connection opens. When you change a list or a preset here, the

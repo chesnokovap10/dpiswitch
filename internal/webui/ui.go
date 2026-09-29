@@ -377,11 +377,12 @@ func collectStatus() status {
 	st.Mode, st.Awg2On = set.Mode(), set.Awg2Active()
 	// a running service and a working tunnel are different things: TUN may
 	// be up with a dead peer, and then traffic goes nowhere. With no first
-	// tunnel's config the service starts no core: there is nothing to ask,
-	// and the core's refused connection read as a tunnel down.
-	if st.ServiceRun && st.HasConfig {
+	// tunnel's config the core runs without it: there is no awg to ask.
+	if st.ServiceRun {
 		secret := ctl.SecretFromConfig(paths.Config())
-		st.TunnelAlive, st.TunnelNote = ctl.TunnelHealth(apiAddr, secret, "awg")
+		if st.HasConfig {
+			st.TunnelAlive, st.TunnelNote = ctl.TunnelHealth(apiAddr, secret, "awg")
+		}
 		if st.Awg2 && st.Awg2On {
 			st.Awg2Alive, st.Awg2Note = ctl.TunnelHealth(apiAddr, secret, "awg2")
 		}

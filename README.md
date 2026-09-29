@@ -152,6 +152,12 @@
 | 10 | Вердикты детектора: чистые имена и адреса, на которых их проверяли (для соединений без имени) | напрямую |
 | 11 | Всё остальное | awg; если он лежит — напрямую |
 
+Без конфига первого туннеля служба всё равно работает: Live показывает трафик,
+«Запрещено» отклоняется, а всё, что не названо в списках, идёт напрямую — детектор ничего не проверяет,
+ему не с чем сравнивать. Второй туннель, если загружен и включён, берёт свои пресеты и список и «Всегда
+через туннель»; всё остальное в него не идёт. Если туннеля, чтобы их взять, нет, списки, названные для
+туннеля, отклоняются.
+
 Строка, вписанная в несколько списков, идёт по тому, что выше в таблице: «Запрещено» сильнее всего,
 второй туннель сильнее «Всегда через туннель», и оба сильнее сайтов и адресов из «Всегда напрямую».
 
@@ -552,6 +558,12 @@ Every new connection is matched against these rules from the top; the first one 
 | 9 | Always direct: sites and addresses | direct |
 | 10 | Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name) | direct |
 | 11 | Everything else | awg; if it is down, direct |
+
+Without the first tunnel's config the service runs all the same: Live shows the
+traffic, Forbidden refuses, and what no list names goes direct — the detector checks nothing, having no
+tunnel to compare with. The second tunnel, if loaded and switched on, takes its presets and list and
+Always via tunnel; everything else does not go to it. With no tunnel to take them, the lists named for a
+tunnel are refused.
 
 A line written in several lists goes by the one higher in the table: Forbidden beats everything, the
 second tunnel beats Always via tunnel, and both beat the sites and addresses in Always direct.

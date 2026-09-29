@@ -11,14 +11,16 @@ import (
 	"dpiswitch/internal/paths"
 )
 
-// The always-tunnel list goes to a select group of its own: awg alone, or
-// -- the second tunnel switched on -- a fallback of awg and then awg2. Named
-// for a tunnel, it never goes direct; and a second tunnel switched off
-// carries nothing, this list included. The switch follows the settings file
-// within a second, as the lists do: a group's members are fixed in the
-// config, and changing them there would restart the core.
+// The always-tunnel list goes to a select group of its own: the first
+// tunnel alone, or -- the second tunnel switched on -- a fallback of the
+// first and then the second. A second tunnel switched off carries nothing,
+// this list included. Named for a tunnel, it never goes direct: with no
+// tunnel to take it, it is refused. The switch
+// follows the settings within a second, as the lists do: a group's members
+// are fixed in the config, and changing them there would restart the core.
 const (
 	TunnelListsGroup = "tunnel-lists"
+	TunnelOneGroup   = "tunnel-one"
 	TunnelAnyGroup   = "tunnel-any"
 )
 
@@ -28,10 +30,9 @@ const (
 var tunnelListsSet string
 
 // syncTunnelLists has the core's group take the member the settings ask
-// for. A core with no second tunnel has one member: nothing to choose.
-// listMu held.
+// for; listMu held.
 func syncTunnelLists(a *api) {
-	want := "awg"
+	want := TunnelOneGroup
 	if LoadSettings(paths.Settings()).Awg2Active() {
 		want = TunnelAnyGroup
 	}

@@ -11,16 +11,16 @@ import (
 	"dpiswitch/internal/paths"
 )
 
-// The always-tunnel list's group takes awg alone, or awg and then awg2 with
-// the second tunnel switched on; asked once per change, and not at all of a
-// core with no second tunnel.
+// The always-tunnel list's group takes one tunnel, or the first and then
+// the second with the second tunnel switched on; asked once per change, and
+// not at all of a core without the member.
 func TestSyncTunnelLists(t *testing.T) {
 	t.Setenv("ProgramData", t.TempDir())
 	if err := paths.EnsureDataDir(); err != nil {
 		t.Fatal(err)
 	}
 	var mu sync.Mutex
-	now, all := "awg", `["awg","tunnel-any"]`
+	now, all := "tunnel-one", `["tunnel-one","tunnel-any"]`
 	var puts []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
@@ -62,12 +62,12 @@ func TestSyncTunnelLists(t *testing.T) {
 	set(true)
 	check(TunnelAnyGroup, 1)
 	set(false)
-	check("awg", 2)
-	// a core with no second tunnel: its one member, nothing sent
+	check(TunnelOneGroup, 2)
+	// a core from before, without the member: nothing sent
 	mu.Lock()
-	all = `["awg"]`
+	all = `["tunnel-one"]`
 	mu.Unlock()
 	tunnelListsSet = ""
 	set(true)
-	check("awg", 2)
+	check(TunnelOneGroup, 2)
 }

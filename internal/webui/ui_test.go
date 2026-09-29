@@ -1006,18 +1006,24 @@ func TestAwg2Switch(t *testing.T) {
 	}
 }
 
-// With no first tunnel's config the service starts no core: the second
-// tunnel waits for the first, not a refused connection shown as down.
-func TestAwg2WaitsForFirst(t *testing.T) {
+// With no first tunnel's config the core runs without it: the first is
+// said not loaded, not down, and the second tunnel's page says it takes its
+// own lists only.
+func TestNoFirstTunnel(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
 	st := s.statusFn()
-	st.Installed, st.ServiceRun, st.HasConfig, st.Awg2, st.Awg2On = true, true, false, true, true
+	st.Installed, st.ServiceRun, st.HasConfig, st.Awg2, st.Awg2On, st.Awg2Alive = true, true, false, true, true, true
 	s.statusFn = func() status { return st }
-	for _, f := range []string{"awg2/awg2state", "awg2/header"} {
-		b := do(t, h, "GET", "/frag/"+f, nil, nil).Body.String()
-		if !strings.Contains(b, "waits for the first tunnel") || strings.Contains(b, "not responding") {
-			t.Errorf("%s: %s", f, b)
-		}
+	head := do(t, h, "GET", "/frag/awg2/header", nil, nil).Body.String()
+	if !strings.Contains(head, "awg no config loaded") || strings.Contains(head, "not responding") {
+		t.Errorf("header: %s", head)
+	}
+	if b := do(t, h, "GET", "/frag/awg2/awg2state", nil, nil).Body.String(); !strings.Contains(b, "The first tunnel (awg1) is not loaded") {
+		t.Errorf("awg2 state: %s", b)
+	}
+	st.HasConfig = true
+	if b := do(t, h, "GET", "/frag/awg2/awg2state", nil, nil).Body.String(); strings.Contains(b, "is not loaded") {
+		t.Errorf("awg2 state with the first loaded: %s", b)
 	}
 }

@@ -36,6 +36,7 @@
     {{end}}
     {{template "msg" .}}
   </div>
+  {{if and $s.Awg2 (not $s.HasConfig)}}<p class="hint warn-t" style="margin:0">{{.T "The first tunnel (awg1) is not loaded: the second one takes only its presets and your own list, and Always via tunnel, while switched on. Everything else goes direct, not to awg2."}}</p>{{end}}
   {{if not $s.Awg2On}}<p class="hint warn-t" style="margin:0">{{.T "The second tunnel is switched off in this mode: the presets and your own list route nothing, what they name goes the way the other lists and the mode send it."}}</p>{{end}}
 {{end}}
 
