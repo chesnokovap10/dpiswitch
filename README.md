@@ -146,7 +146,7 @@
 | 4 | Локальные сети: роутер, принтеры, общие папки, имена `.local` и `.lan` | напрямую |
 | 5 | Программы из «Всегда напрямую» (`qbittorrent.exe` и т. п.) | напрямую, весь их трафик |
 | 6 | Второй туннель, пока включён: пресеты и ваш список (программы, сайты, адреса) | awg2; если он лежит — awg; напрямую никогда |
-| 7 | Всегда через туннель: программы, сайты, адреса | только awg; если он лежит — соединение не проходит |
+| 7 | Всегда через туннель: программы, сайты, адреса | awg; если он лежит — awg2, пока второй туннель включён; напрямую никогда |
 | 8 | Всё остальное, пока выбрано «Только наблюдать» | напрямую |
 | 9 | Всегда напрямую: сайты и адреса | напрямую |
 | 10 | Вердикты детектора: чистые имена и адреса, на которых их проверяли (для соединений без имени) | напрямую |
@@ -547,7 +547,7 @@ Every new connection is matched against these rules from the top; the first one 
 | 4 | Local networks: the router, printers, shares, `.local` and `.lan` names | direct |
 | 5 | Programs in Always direct (`qbittorrent.exe`, etc.) | direct, all their traffic |
 | 6 | Second tunnel, while switched on: presets and your list (programs, sites, addresses) | awg2; if it is down, awg; never direct |
-| 7 | Always via tunnel: programs, sites, addresses | awg only; if it is down, the connection fails |
+| 7 | Always via tunnel: programs, sites, addresses | awg; if it is down, awg2 while the second tunnel is switched on; never direct |
 | 8 | Everything else, while "Observe only" is chosen | direct |
 | 9 | Always direct: sites and addresses | direct |
 | 10 | Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name) | direct |

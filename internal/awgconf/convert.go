@@ -248,6 +248,10 @@ func (c *Conf) Render() (string, error) {
 	w("find-process-mode: strict")
 	w("external-controller: 127.0.0.1:9090")
 	w("secret: %s", yq(keepSecret(paths.Config())))
+	w("# the choice of a select group comes from the settings, not from the")
+	w("# core's cache: the one kept there could be stale by a start")
+	w("profile:")
+	w("  store-selected: false")
 	w("")
 	w("# a dedicated listener for the prober: bypasses rules, always direct.")
 	w("# the only way to give the prober a direct path while TUN")
@@ -387,7 +391,7 @@ func (c *Conf) Render() (string, error) {
 	w("# mean no internet at all: MATCH leads to awg, and awg does not answer.")
 	w("# fallback checks the tunnel itself and, when it is down, sends traffic")
 	w("# direct -- no protection at that moment, but connectivity remains.")
-	w("# The user's always-tunnel list goes to awg itself: named for the tunnel,")
+	w("# The user's always-tunnel list has groups of its own: named for a tunnel,")
 	w("# it never goes direct.")
 	w("proxy-groups:")
 	w("  - name: tunnel")
@@ -421,6 +425,33 @@ func (c *Conf) Render() (string, error) {
 	w("    interval: 30")
 	w("    timeout: 15000")
 	w("    lazy: false")
+	w("")
+	w("  # the always-tunnel list: awg, or -- with the second tunnel switched on --")
+	w("  # awg and, if it is down, awg2. Never direct. The controller picks the")
+	w("  # member as the settings say; the one listed first is the choice at start.")
+	lists := []string{"awg"}
+	if c2 != nil {
+		w("  - name: %s", ctl.TunnelAnyGroup)
+		w("    type: fallback")
+		w("    proxies:")
+		w("      - awg")
+		w("      - awg2")
+		w("    url: %s", yq(ctl.HealthURL))
+		w("    interval: 30")
+		w("    timeout: 15000")
+		w("    lazy: false")
+		if set.Awg2Active() {
+			lists = []string{ctl.TunnelAnyGroup, "awg"}
+		} else {
+			lists = append(lists, ctl.TunnelAnyGroup)
+		}
+	}
+	w("  - name: %s", ctl.TunnelListsGroup)
+	w("    type: select")
+	w("    proxies:")
+	for _, p := range lists {
+		w("      - %s", p)
+	}
 	w("")
 	w("rule-providers:")
 	w("  # second-tunnel presets: the rules of the ones switched on, in one file")
@@ -538,10 +569,10 @@ func (c *Conf) Render() (string, error) {
 	w("  - RULE-SET,awg2-hosts-ip,tunnel2,no-resolve")
 	w("")
 	w("  # 7. the user's always-tunnel list -- beats detector verdicts and")
-	w("  #    always-direct names, and observe only: awg itself, never direct")
-	w("  - RULE-SET,force-tunnel-apps,awg")
-	w("  - RULE-SET,force-tunnel,awg")
-	w("  - RULE-SET,force-tunnel-ip,awg,no-resolve")
+	w("  #    always-direct names, and observe only; never direct")
+	w("  - RULE-SET,force-tunnel-apps,%s", ctl.TunnelListsGroup)
+	w("  - RULE-SET,force-tunnel,%s", ctl.TunnelListsGroup)
+	w("  - RULE-SET,force-tunnel-ip,%s,no-resolve", ctl.TunnelListsGroup)
 	w("")
 	w("  # 8. observe only: everything the lists above leave goes direct.")
 	w("  #    Tunnel only needs no rule of its own: the service writes the direct")

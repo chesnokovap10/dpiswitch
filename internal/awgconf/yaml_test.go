@@ -190,7 +190,7 @@ func TestRenderRuleOrder(t *testing.T) {
 		return i
 	}
 	for _, above := range []string{"RULE-SET,force-block,REJECT", "RULE-SET,force-direct-apps,DIRECT",
-		"RULE-SET,presets,tunnel2", "RULE-SET,awg2-hosts,tunnel2", "RULE-SET,force-tunnel,awg"} {
+		"RULE-SET,presets,tunnel2", "RULE-SET,awg2-hosts,tunnel2", "RULE-SET,force-tunnel,tunnel-lists"} {
 		if at(above) > at("RULE-SET,observe-all,DIRECT") {
 			t.Errorf("%s below the observe only catch-all", above)
 		}
@@ -205,13 +205,47 @@ func TestRenderRuleOrder(t *testing.T) {
 		if i < 0 {
 			t.Fatalf("no group %s", name)
 		}
-		g := out[i:]
-		return g[:strings.Index(g, "    url:")]
+		g := out[i+1:]
+		if j := strings.Index(g, "\n  - "); j >= 0 {
+			g = g[:j]
+		}
+		if j := strings.Index(g, "\n\n"); j >= 0 {
+			g = g[:j]
+		}
+		return g + "\n"
 	}
 	if !strings.Contains(group("tunnel"), "- DIRECT") {
 		t.Error("the first tunnel's group lost its fallback to direct")
 	}
 	if strings.Contains(group("tunnel2"), "- DIRECT") {
 		t.Error("the second tunnel's group falls back to direct")
+	}
+	// no second tunnel: the always-tunnel list has awg alone
+	if g := group("tunnel-lists"); strings.Contains(g, "- DIRECT") || strings.Contains(g, "tunnel-any") {
+		t.Errorf("the always-tunnel list's group with no second tunnel:\n%s", g)
+	}
+
+	// a second tunnel: awg, then awg2, listed first while switched on
+	conf2 := "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.9.1.3/32\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.8:51820\n"
+	if err := os.WriteFile(paths.SourceConf2(), []byte(conf2), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, on := range []bool{true, false} {
+		if _, err := ctl.UpdateSettings(paths.Settings(), func(s *ctl.Settings) error { s.SetAwg2(on); return nil }); err != nil {
+			t.Fatal(err)
+		}
+		if out, err = c.Render(); err != nil {
+			t.Fatal(err)
+		}
+		if g := group("tunnel-any"); !strings.Contains(g, "- awg\n      - awg2\n") || strings.Contains(g, "DIRECT") {
+			t.Errorf("awg2 %v: the fallback of the always-tunnel list:\n%s", on, g)
+		}
+		first := "awg"
+		if on {
+			first = "tunnel-any"
+		}
+		if g := group("tunnel-lists"); !strings.Contains(g, "proxies:\n      - "+first+"\n") {
+			t.Errorf("awg2 %v: %s is not chosen at start:\n%s", on, first, g)
+		}
 	}
 }

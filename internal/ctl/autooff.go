@@ -211,6 +211,7 @@ func watchSettings(ctx context.Context, cfg Config, a *api, st *state, last Sett
 func switchMode(cfg Config, a *api, st *state, from, to string, awg2Flipped bool) {
 	listMu.Lock()
 	syncUserFiles(a)
+	syncTunnelLists(a)
 	listMu.Unlock()
 	if to == ModeOn {
 		turnOn(cfg, a, st)

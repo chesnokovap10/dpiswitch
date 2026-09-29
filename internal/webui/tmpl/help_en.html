@@ -19,7 +19,7 @@ only costs a detour.</div>
 <tr><td>4</td><td>Local networks: the router, printers, shares, <code>.local</code> and <code>.lan</code> names</td><td>direct</td></tr>
 <tr><td>5</td><td>Programs in <a href="/lists#list-direct">Always direct</a></td><td>direct, all their traffic</td></tr>
 <tr><td>6</td><td><a href="/awg2#presets">Second tunnel</a>, while switched on: presets and your list (programs, sites, addresses)</td><td>awg2; if it is down, awg; never direct</td></tr>
-<tr><td>7</td><td><a href="/lists#list-tunnel">Always via tunnel</a>: programs, sites, addresses</td><td>awg only; if it is down, the connection fails</td></tr>
+<tr><td>7</td><td><a href="/lists#list-tunnel">Always via tunnel</a>: programs, sites, addresses</td><td>awg; if it is down, awg2 while the second tunnel is switched on; never direct</td></tr>
 <tr><td>8</td><td>Everything else, while "Observe only" is chosen</td><td>direct</td></tr>
 <tr><td>9</td><td><a href="/lists#list-direct">Always direct</a>: sites and addresses</td><td>direct</td></tr>
 <tr><td>10</td><td>Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name)</td><td>direct</td></tr>
