@@ -39,8 +39,13 @@ jobs:
     env:
       VERSION: ${{ inputs.version }}
       GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v4
+      # no token left in the clone's git config: git sent it, not
+      # MIHOMO_TOKEN, for the core's repository too, and could not see it
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Check the version, the notes and the tag
         run: |
@@ -48,11 +53,11 @@ jobs:
           $inFile = (Select-String -Path internal\version\version.go -Pattern 'Version = "(.+)"').Matches.Groups[1].Value
           if ($inFile -ne $env:VERSION) { throw "internal/version/version.go says $inFile, not $env:VERSION" }
           if (-not (Test-Path ".github\release-notes\$env:VERSION.md")) { throw "no notes: .github/release-notes/$env:VERSION.md" }
-          git ls-remote --exit-code --tags origin "refs/tags/v$env:VERSION" | Out-Null
-          if ($LASTEXITCODE -eq 0) { throw "v$env:VERSION is released already" }
-          exit 0
+          $tags = gh api "repos/$env:GITHUB_REPOSITORY/git/matching-refs/tags/v$env:VERSION" --jq '.[].ref'
+          if ($LASTEXITCODE) { throw "the tags could not be read" }
+          if (@($tags) -contains "refs/tags/v$env:VERSION") { throw "v$env:VERSION is released already" }
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
@@ -63,8 +68,9 @@ jobs:
         run: |
           if (-not $env:MIHOMO_TOKEN) { throw "the MIHOMO_TOKEN secret is not set: see the top of .github/workflows/release.yml" }
           git config --global url."https://x-access-token:$($env:MIHOMO_TOKEN)@github.com/chesnokovap10/mihomo-dpiswitch".insteadOf "https://github.com/chesnokovap10/mihomo-dpiswitch"
-          git ls-remote https://github.com/chesnokovap10/mihomo-dpiswitch HEAD | Out-Null
-          if ($LASTEXITCODE) { throw "MIHOMO_TOKEN cannot read chesnokovap10/mihomo-dpiswitch" }
+          # asked outside the clone: nothing of its config in the way
+          git -C $env:RUNNER_TEMP ls-remote https://github.com/chesnokovap10/mihomo-dpiswitch HEAD | Out-Null
+          if ($LASTEXITCODE) { throw "MIHOMO_TOKEN cannot read chesnokovap10/mihomo-dpiswitch: its repository access or its Contents permission" }
 
       # vet, the tests, the core, the Windows resources and the exe
       - name: Build
