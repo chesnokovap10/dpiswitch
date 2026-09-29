@@ -7,11 +7,11 @@
 #
 # Every domain here was seen in real traffic; the CDN zones are separate
 # registrable domains and have to be listed on their own.
-fbcdn.net
-instagram.com
-facebook.com
-cdninstagram.com
-fbsbx.com
++.fbcdn.net
++.instagram.com
++.facebook.com
++.cdninstagram.com
++.fbsbx.com
 # Deliberately absent: facebook.net (the SDK and pixel other sites embed --
 # routing those through Germany would slow down unrelated pages) and
 # whatsapp.com/whatsapp.net (not blocked, works direct).

@@ -1,13 +1,13 @@
 # Telegram: web client, links, CDN and Telegraph domains.
 # The apps also connect to bare IPs -- those ranges are in telegram-cidr.txt
 # (from core.telegram.org/resources/cidr.txt).
-telegram.org
-telegram.me
-t.me
-telegra.ph
-graph.org
-telesco.pe
-tdesktop.com
-telegram-cdn.org
-cdn-telegram.org
-fragment.com
++.telegram.org
++.telegram.me
++.t.me
++.telegra.ph
++.graph.org
++.telesco.pe
++.tdesktop.com
++.telegram-cdn.org
++.cdn-telegram.org
++.fragment.com

@@ -312,13 +312,13 @@ func awg2Takes() func(connection) bool {
 		if len(f) < 2 {
 			continue
 		}
+		if line := PresetNameLine(r); line != "" {
+			names = append(names, line)
+			continue
+		}
 		switch strings.ToUpper(f[0]) {
 		case "PROCESS-NAME", "PROCESS-PATH":
 			apps = append(apps, strings.ToUpper(f[0])+","+f[1])
-		case "DOMAIN-SUFFIX":
-			names = append(names, "+."+f[1])
-		case "DOMAIN":
-			names = append(names, f[1])
 		case "IP-CIDR", "IP-CIDR6":
 			if p, err := netip.ParsePrefix(f[1]); err == nil {
 				nets = append(nets, p)

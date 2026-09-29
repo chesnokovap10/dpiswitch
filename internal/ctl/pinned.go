@@ -43,6 +43,13 @@ func (n nameSet) add(line string) {
 		return
 	}
 	if kind, val, ok := strings.Cut(l, ","); ok {
+		if strings.TrimSpace(kind) == "domain-regex" {
+			// a preset's ".x" or "*.x": read as the lists write it
+			if line := PresetNameLine(l); line != "" {
+				n.add(line)
+			}
+			return
+		}
 		val, _, _ = strings.Cut(val, ",")
 		switch strings.TrimSpace(kind) {
 		case "domain-suffix":

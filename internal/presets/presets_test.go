@@ -130,3 +130,34 @@ func TestRestore(t *testing.T) {
 		t.Fatalf("after the file went: %+v", got)
 	}
 }
+
+// A file from before a version is read as it meant -- a name with
+// everything under it -- and written back with the version: a name written
+// alone after that is the name alone.
+func TestOldFile(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	old := `[{"id":"mine","title":"Mine","lines":["# c","example.com","+.example.org","*.example.net",".example.biz","1.2.3.4","10.0.0.0/8","app.exe"]}]`
+	if err := os.WriteFile(paths.UserPresets(), []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want := "# c,+.example.com,+.example.org,+.example.net,+.example.biz,1.2.3.4,10.0.0.0/8,app.exe"
+	if got := strings.Join(Load()[0].Lines, ","); got != want {
+		t.Fatalf("read as %s", got)
+	}
+	if err := Update(func(ps []Preset) ([]Preset, error) {
+		ps[0].Lines = append(ps[0].Lines, "alone.example")
+		return ps, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(paths.UserPresets())
+	if !strings.Contains(string(b), `"version": 2`) {
+		t.Fatalf("written without the version:\n%s", b)
+	}
+	if got := strings.Join(Load()[0].Lines, ","); got != want+",alone.example" {
+		t.Fatalf("read back as %s", got)
+	}
+}

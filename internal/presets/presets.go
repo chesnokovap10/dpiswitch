@@ -136,8 +136,8 @@ func Load() []Preset {
 	if err != nil {
 		return Builtin()
 	}
-	var ps []Preset
-	if err := json.Unmarshal(b, &ps); err != nil {
+	ps, err := decode(b)
+	if err != nil {
 		return Builtin()
 	}
 	out := []Preset{}
@@ -153,6 +153,53 @@ func Load() []Preset {
 		out = append(out, p)
 	}
 	return out
+}
+
+// fileVersion: the file's format. Up to 1.6.1 it was the bare list of
+// presets, where a name took everything under it; since, a name is what it
+// is in the lists -- "example.com" that name alone, "+.example.com" the
+// domain -- and the file says so.
+const fileVersion = 2
+
+// file: the user's file as it is written
+type file struct {
+	Version int      `json:"version"`
+	Presets []Preset `json:"presets"`
+}
+
+// decode reads the user's file, one from before a version included: its
+// names are read as they meant, each with everything under it.
+func decode(b []byte) ([]Preset, error) {
+	var f file
+	if err := json.Unmarshal(b, &f); err == nil && f.Version > 0 {
+		return f.Presets, nil
+	}
+	var ps []Preset
+	if err := json.Unmarshal(b, &ps); err != nil {
+		return nil, err
+	}
+	for i := range ps {
+		for j, l := range ps[i].Lines {
+			ps[i].Lines[j] = wholeDomain(l)
+		}
+	}
+	return ps, nil
+}
+
+// oldName: a name as the lists write it, with the prefix it may carry --
+// not an address, not a program
+var oldName = regexp.MustCompile(`^(\+\.|\.|\*\.)?[a-z0-9_]([a-z0-9_.-]*[a-z0-9])?$`)
+
+// wholeDomain: a line of a preset from before, as the lists write what it
+// meant -- a name with everything under it: "+.example.com". Addresses,
+// programs and comments stay as they are.
+func wholeDomain(l string) string {
+	t := strings.TrimSpace(l)
+	if t == "" || strings.HasPrefix(t, "#") || !oldName.MatchString(t) ||
+		strings.Trim(t, "0123456789.") == "" || strings.HasSuffix(t, ".exe") {
+		return l
+	}
+	return "+." + strings.TrimLeft(t, "+.*")
 }
 
 // Known: the IDs of the presets there are
@@ -240,7 +287,7 @@ func write(ps []Preset) error {
 	if ps == nil {
 		ps = []Preset{}
 	}
-	b, err := json.MarshalIndent(ps, "", "  ")
+	b, err := json.MarshalIndent(file{Version: fileVersion, Presets: ps}, "", "  ")
 	if err != nil {
 		return err
 	}

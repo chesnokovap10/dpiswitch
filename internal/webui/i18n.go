@@ -201,7 +201,7 @@ var ru = map[string]string{
 	"Preset name":                "Название",
 	"Description":                "Описание",
 	"optional":                   "необязательно",
-	"One per line: a site (example.com: the site and everything under it), an address or a network (1.2.3.4, 91.108.4.0/22: for connections made to it by address), a program (telegram.exe; a full path for that copy only). A line starting with # is a comment.": "По одному в строке: сайт (example.com — сайт и всё под ним), адрес или сеть (1.2.3.4, 91.108.4.0/22 — для соединений прямо по адресу), программа (telegram.exe; полный путь — только эта копия). Строка, начинающаяся с #, — комментарий.",
+	"One per line, as in the lists: a site (example.com; +.example.com for the domain and all under it), an address or a network (1.2.3.4, 192.168.0.0/16: for connections made to it by address), a program (telegram.exe; a full path for that copy only). A line starting with # is a comment.": "По одному в строке, как в списках: сайт (example.com; +.example.com — домен и всё под ним), адрес или сеть (1.2.3.4, 192.168.0.0/16 — для соединений прямо по адресу), программа (telegram.exe; полный путь — только эта копия). Строка, начинающаяся с #, — комментарий.",
 	"Saving…":                "Сохранение…",
 	"Give the preset a name": "Дайте пресету название",
 	"This preset is no longer there: it was deleted in another window": "Этого пресета больше нет: его удалили в другом окне",

@@ -84,8 +84,8 @@
       <label>{{$v.T "Preset name"}}<input type="text" name="title" value="{{.Title}}" maxlength="80" required></label>
       <label>{{$v.T "Description"}}<input type="text" name="note" value="{{.Note}}" maxlength="200" placeholder="{{$v.T "optional"}}"></label>
     </div>
-    <p class="hint">{{$v.T "One per line: a site (example.com: the site and everything under it), an address or a network (1.2.3.4, 91.108.4.0/22: for connections made to it by address), a program (telegram.exe; a full path for that copy only). A line starting with # is a comment."}}</p>
-    <textarea name="lines" rows="14" spellcheck="false" placeholder="example.com&#10;91.108.4.0/22&#10;telegram.exe">{{.Text}}</textarea>
+    <p class="hint">{{$v.T "One per line, as in the lists: a site (example.com; +.example.com for the domain and all under it), an address or a network (1.2.3.4, 192.168.0.0/16: for connections made to it by address), a program (telegram.exe; a full path for that copy only). A line starting with # is a comment."}}</p>
+    <textarea name="lines" rows="14" spellcheck="false" placeholder="example.com&#10;+.example.org&#10;192.168.1.0/24&#10;telegram.exe">{{.Text}}</textarea>
     <div class="actions">
       {{if .Err}}<span class="msg bad">{{.Err}}</span>{{end}}
       <span class="spacer"></span>

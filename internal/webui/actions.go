@@ -467,9 +467,12 @@ func rulesMatch(rules []string) func(ctl.Conn) bool {
 		if len(f) < 2 {
 			continue
 		}
+		if line := ctl.PresetNameLine(rl); line != "" {
+			// a name as the lists write it: matched as a list's line
+			suffixes = append(suffixes, line)
+			continue
+		}
 		switch f[0] {
-		case "DOMAIN-SUFFIX":
-			suffixes = append(suffixes, "+."+f[1])
 		case "IP-CIDR", "IP-CIDR6":
 			if n := parsePrefix(f[1]); n != nil {
 				nets = append(nets, n)

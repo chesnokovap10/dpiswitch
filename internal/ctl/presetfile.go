@@ -3,6 +3,7 @@ package ctl
 import (
 	"net/netip"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -21,8 +22,9 @@ const PresetsProvider = "presets"
 // presetHead starts a preset's section in the core's file
 const presetHead = "# preset "
 
-// PresetRules: a preset's lines as core rules. A site takes everything under
-// it too; an address or a network fires only on connections made to it by
+// PresetRules: a preset's lines as core rules. A site as the lists take it:
+// "example.com" that name alone, "+.example.com" the domain and everything
+// under it (see nameRule); an address or a network fires only on connections made to it by
 // address (no-resolve: it does not make the core resolve every name); a
 // program takes all it sends. A line that is none of the kinds is left out,
 // as in the user's lists: a hand-edited file cannot break the core's parse.
@@ -40,7 +42,7 @@ func PresetRules(p presets.Preset) []string {
 		var r string
 		switch kind {
 		case EntryName:
-			r = "DOMAIN-SUFFIX," + strings.TrimLeft(v, "+.*")
+			r = nameRule(v)
 		case EntryIP:
 			pr, err := netip.ParsePrefix(v)
 			if err != nil {
@@ -64,6 +66,49 @@ func PresetRules(p presets.Preset) []string {
 		}
 	}
 	return out
+}
+
+// nameRule: the core's rule for a name as the lists write it -- and as the
+// core reads it in a list: "x" the name alone, "+.x" x and everything
+// under it, ".x" everything under it, "*.x" one level under it. A preset
+// is a classical rule-provider, where these are rules of their own; its
+// DOMAIN-WILDCARD's * would take dots too, so the last two are regexes.
+func nameRule(v string) string {
+	switch {
+	case strings.HasPrefix(v, "+."):
+		return "DOMAIN-SUFFIX," + v[2:]
+	case strings.HasPrefix(v, "*."):
+		return "DOMAIN-REGEX,^[^.]+" + regexp.QuoteMeta(v[1:]) + "$"
+	case strings.HasPrefix(v, "."):
+		return "DOMAIN-REGEX,^.+" + regexp.QuoteMeta(v) + "$"
+	}
+	return "DOMAIN," + v
+}
+
+// PresetNameLine: a preset's rule on names as the lists write it -- the
+// other way from nameRule; "" for a rule of another kind. What matches a
+// connection against the presets reads them this way, as it reads a list.
+func PresetNameLine(rule string) string {
+	kind, v, ok := strings.Cut(rule, ",")
+	if !ok {
+		return ""
+	}
+	v, _, _ = strings.Cut(v, ",")
+	switch strings.ToUpper(kind) {
+	case "DOMAIN":
+		return v
+	case "DOMAIN-SUFFIX":
+		return "+." + v
+	case "DOMAIN-REGEX":
+		unq := func(s string) string { return strings.ReplaceAll(s, `\.`, ".") }
+		switch {
+		case strings.HasPrefix(v, "^[^.]+") && strings.HasSuffix(v, "$"):
+			return "*" + unq(strings.TrimSuffix(strings.TrimPrefix(v, "^[^.]+"), "$"))
+		case strings.HasPrefix(v, "^.+") && strings.HasSuffix(v, "$"):
+			return unq(strings.TrimSuffix(strings.TrimPrefix(v, "^.+"), "$"))
+		}
+	}
+	return ""
 }
 
 // presetsBody: the core's file for the presets switched on, a section to
