@@ -249,5 +249,18 @@ TCP-соединение, TLS-рукопожатие с именем сайта 
 <p>Всё хранится в <code>{{.St.DataDir}}</code>: конфиги (закрыты от всех, кроме администраторов и вас —
 в них приватные ключи), списки, настройки, вердикты (<code>controller-state.json</code>), каждая проба
 (<code>reports.jsonl</code>) и логи.</p>
+
+<h4>Ссылки</h4>
+<ul>
+<li><b><a href="https://github.com/MetaCubeX/mihomo" target="_blank" rel="noopener">mihomo</a></b> — прокси-ядро,
+на котором работает DPI Switch: TUN, правила, группы, DNS.</li>
+<li><b><a href="https://github.com/amnezia-vpn/amneziawg-go" target="_blank" rel="noopener">AmneziaWG</a></b> —
+WireGuard с маскировкой от DPI; протокол обоих туннелей.</li>
+<li><b><a href="https://github.com/chesnokovap10/dpiswitch" target="_blank" rel="noopener">dpiswitch</a></b> —
+эта программа: служба, детектор блокировок, трей и этот интерфейс.</li>
+<li><b><a href="https://github.com/chesnokovap10/mihomo-dpiswitch" target="_blank" rel="noopener">mihomo-dpiswitch</a></b> —
+копия mihomo для DPI Switch: только нужное программе и её исправления; из неё собирается встроенное ядро.</li>
+</ul>
+<p>Этот код сделан искусственным интеллектом Claude Opus для людей.</p>
 </div>
 {{end}}

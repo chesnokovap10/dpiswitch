@@ -14,7 +14,7 @@
   <img alt="AmneziaWG" src="https://img.shields.io/badge/AmneziaWG-awg%20%2B%20awg2-2563eb?style=flat-square">
   <img alt="mihomo" src="https://img.shields.io/badge/core-mihomo-6b7280?style=flat-square">
   <img alt="Go 1.26+" src="https://img.shields.io/badge/Go-1.26%2B-00ADD8?style=flat-square">
-  <img alt="1.2.0" src="https://img.shields.io/badge/version-1.2.0-127a3d?style=flat-square">
+  <img alt="1.7.0" src="https://img.shields.io/badge/version-1.7.0-127a3d?style=flat-square">
 </p>
 
 <p align="center">
@@ -421,12 +421,12 @@ dpiswitch version    показать версию
 Обычный `go test` эти проверки пропускает; запускайте их всякий раз, когда меняете правила, группы,
 файлы списков или режимы.
 
-Релиз собирает GitHub Actions (`.github/workflows/release.yml`) на машине GitHub с Windows тем же
-`build.ps1`. Версия ставится в `internal/version/version.go`, заметки к релизу кладутся в
-`.github/release-notes/<версия>.md`, затем Actions → Release → Run workflow с этой версией. Workflow
-отказывается выпускать версию второй раз, собирает, упаковывает `dpiswitch-<версия>-windows-amd64.zip` и
-`SHA256SUMS.txt` и публикует релиз с тегом `v<версия>`. Исходники ядра приватные: секрет репозитория
-`MIHOMO_TOKEN` — токен с правом только на чтение `chesnokovap10/mihomo-dpiswitch`.
+Релиз собирается только локально, тем же `build.ps1`; GitHub Actions не используется. Версия ставится в
+`internal/version/version.go`, заметки к релизу кладутся в `.github/release-notes/<версия>.md`. Затем
+удалите `dist\mihomo.exe`, чтобы ядро собралось заново с закреплённого коммита, запустите `.\build.ps1`,
+упакуйте `dist\dpiswitch.exe` в `dpiswitch-<версия>-windows-amd64.zip`, рядом положите `SHA256SUMS.txt`
+(`<sha256>  <имя zip>`, как пишет `sha256sum`), поставьте на коммит тег `v<версия>` и опубликуйте релиз
+на GitHub с этим тегом, архивом, суммами и текстом заметок.
 
 <p align="right"><a href="#readme">↑ наверх</a></p>
 
@@ -832,11 +832,11 @@ every list, with the tunnels going down one after the other: `go test -tags rout
 A plain `go test` leaves them out; run them whenever the rules, the groups, the lists' files or the modes
 change.
 
-Releases are built by GitHub Actions (`.github/workflows/release.yml`) on a GitHub Windows machine, with
-the same `build.ps1`. Set the version in `internal/version/version.go`, put the release notes in
-`.github/release-notes/<version>.md`, then Actions → Release → Run workflow with that version. The
-workflow refuses a version already released, builds, packs `dpiswitch-<version>-windows-amd64.zip` and
-`SHA256SUMS.txt`, and publishes the release with the tag `v<version>`. The core's source is private: the
-repository secret `MIHOMO_TOKEN` is a token that can only read `chesnokovap10/mihomo-dpiswitch`.
+Releases are built locally only, with the same `build.ps1`; GitHub Actions is not used. Set the version
+in `internal/version/version.go` and put the release notes in `.github/release-notes/<version>.md`. Then
+delete `dist\mihomo.exe` so the core is built again from the pinned commit, run `.\build.ps1`, pack
+`dist\dpiswitch.exe` into `dpiswitch-<version>-windows-amd64.zip` with a `SHA256SUMS.txt` beside it
+(`<sha256>  <zip name>`, as `sha256sum` writes it), tag the commit `v<version>` and publish the release
+on GitHub with that tag, the zip, the sums and the notes.
 
 <p align="right"><a href="#readme">↑ back to top</a> · <a href="#русский">Русский</a></p>

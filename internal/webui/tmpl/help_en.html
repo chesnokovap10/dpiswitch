@@ -247,5 +247,18 @@ change as one: a file failing to write puts back the ones written before it.</p>
 <p>Everything is kept in <code>{{.St.DataDir}}</code>: the configs (locked to administrators and you, they
 hold private keys), the lists, the settings, the verdicts (<code>controller-state.json</code>), every probe
 (<code>reports.jsonl</code>) and the logs.</p>
+
+<h4>Links</h4>
+<ul>
+<li><b><a href="https://github.com/MetaCubeX/mihomo" target="_blank" rel="noopener">mihomo</a></b> — the proxy core
+DPI Switch runs on: the TUN, the rules, the groups, DNS.</li>
+<li><b><a href="https://github.com/amnezia-vpn/amneziawg-go" target="_blank" rel="noopener">AmneziaWG</a></b> —
+WireGuard disguised against DPI; the protocol of both tunnels.</li>
+<li><b><a href="https://github.com/chesnokovap10/dpiswitch" target="_blank" rel="noopener">dpiswitch</a></b> —
+this program: the service, the block detector, the tray and this interface.</li>
+<li><b><a href="https://github.com/chesnokovap10/mihomo-dpiswitch" target="_blank" rel="noopener">mihomo-dpiswitch</a></b> —
+the copy of mihomo for DPI Switch: only what the program uses, and its fixes; the embedded core is built from it.</li>
+</ul>
+<p>This code was made by the artificial intelligence Claude Opus, for people.</p>
 </div>
 {{end}}
