@@ -14,6 +14,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/netip"
@@ -129,6 +130,20 @@ func newNetTun() (*netTun, error) {
 		c := gonet.NewTCPConn(&wq, ep)
 		go func() {
 			defer c.Close()
+			// the speed checks: port 9 takes and drops what comes, port 19
+			// sends zeros until the client goes -- any address
+			switch id.LocalPort {
+			case 9:
+				io.Copy(io.Discard, c)
+				return
+			case 19:
+				zeros := make([]byte, 64<<10)
+				for {
+					if _, err := c.Write(zeros); err != nil {
+						return
+					}
+				}
+			}
 			if req, err := http.ReadRequest(bufio.NewReader(c)); err == nil {
 				req.Body.Close()
 			}
