@@ -330,6 +330,13 @@ function point(id) {
   void el.offsetWidth; // restarts the animation on a second click
   el.classList.add('blink');
   el.addEventListener('animationend', () => el.classList.remove('blink'), {once: true});
+  // the browser focuses the anchor's target when it can (the log, a field, a
+  // checkbox), and its focus ring stayed after the blink: the blink says where
+  // to look, not the ring, as on every other link
+  const t = document.getElementById(decodeURIComponent(id));
+  const unfocus = () => { const a = document.activeElement; if (a && a !== document.body && (a === t || el.contains(a))) a.blur(); };
+  unfocus();
+  requestAnimationFrame(unfocus);
 }
 (function () {
   const nav = performance.getEntriesByType('navigation')[0];
