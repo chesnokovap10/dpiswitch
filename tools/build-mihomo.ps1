@@ -20,8 +20,10 @@
 # EasyTier stacks and Hysteria's fake-TCP; -s -w strips debug symbols.
 param(
     # pinned commit of the private copy: upstream Alpha 63bd52ec, the cut,
-    # vendor/, mipstack 3ec3a765 (the ICMP fix)
-    [string]$Commit = "7479be4191c42e7ed8694524d35261e24b4aa383",
+    # vendor/, mipstack 3ec3a765 (the ICMP fix), the WireGuard outbound
+    # reading the stack one packet at a time (the first DNS queries after a
+    # start went unanswered on half the starts; see DPISWITCH.md there)
+    [string]$Commit = "1509047656a1d8e2a85ef8d10e0100ce08e6ed37",
     [string]$Repo = "https://github.com/chesnokovap10/mihomo-dpiswitch.git"
 )
 
