@@ -1107,3 +1107,30 @@ func TestDeleteFirst(t *testing.T) {
 		t.Fatal("a delete button with no config")
 	}
 }
+
+// IPv6 switched off by the program is said beside the setting, and only
+// while the setting asks for it.
+func TestIPv6BlockedSaid(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	st := s.statusFn()
+	st.Installed, st.ServiceRun, st.IPv6Blocked = true, true, true
+	s.statusFn = func() status { return st }
+	const said = "Switched off by the program"
+	if b := do(t, h, "GET", "/settings", nil, nil).Body.String(); !strings.Contains(b, said) {
+		t.Error("not said with IPv6 on in the settings")
+	}
+	if _, err := ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error { set.IPv6 = false; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if b := do(t, h, "GET", "/settings", nil, nil).Body.String(); strings.Contains(b, said) {
+		t.Error("said with IPv6 off in the settings")
+	}
+	st.IPv6Blocked = false
+	if _, err := ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error { set.IPv6 = true; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if b := do(t, h, "GET", "/settings", nil, nil).Body.String(); strings.Contains(b, said) {
+		t.Error("said with IPv6 reaching the adapter")
+	}
+}

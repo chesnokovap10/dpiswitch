@@ -54,6 +54,20 @@ func (s *Supervisor) checkIPv6(ctx context.Context) {
 	// same core session already answered
 	old := ctl.LoadTunnelIPv6(paths.TunnelIPv6())
 	found := ctl.TunnelIPv6{}
+	// the programs' side first: Windows may keep IPv6 from the adapter
+	// whatever the tunnels carry (see tunv6.go)
+	if ok, known := tunIPv6(ctx); known {
+		found[ctl.TunKey] = ok
+		switch {
+		case ok && old.SystemBlocked():
+			log.Println("IPv6 reaches the DPI Switch adapter again")
+		case !ok && !old.SystemBlocked():
+			log.Println("IPv6 does not reach the DPI Switch adapter: something in Windows takes it first -- " +
+				"a third-party network filter (a VPN client, an antivirus). The core runs without IPv6 until its next start")
+		}
+	} else if v, seen := old[ctl.TunKey]; seen {
+		found[ctl.TunKey] = v
+	}
 	for _, name := range names {
 		if !s.waitTunnel(ctx, hc, name) {
 			// the tunnel never came up: no answer about its IPv6 either, so

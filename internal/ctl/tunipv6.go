@@ -38,6 +38,16 @@ func (t TunnelIPv6) Save(path string) error {
 	return paths.ReplaceFile(path, append(b, '\n'))
 }
 
+// TunKey: the entry of the check through the TUN adapter itself -- whether
+// Windows lets the programs' IPv6 reach it at all. A third-party network
+// filter (ViPNet's, with callouts on every IPv6 packet) took each one before
+// the adapter did: the tunnels carried IPv6, and every program's IPv6
+// connection hung. Found so, the core runs without IPv6 until its next start.
+const TunKey = "tun"
+
+// SystemBlocked: whether IPv6 was found not to reach the TUN adapter
+func (t TunnelIPv6) SystemBlocked() bool { return t.Dead(TunKey) }
+
 // Dead reports a tunnel the check has found IPv6 broken on. An unknown
 // tunnel is not dead: until it is checked it keeps IPv6, so a first run
 // behaves as before.

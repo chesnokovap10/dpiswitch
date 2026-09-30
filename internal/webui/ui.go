@@ -330,6 +330,7 @@ type status struct {
 	Awg2        bool           `json:"-"` // a second tunnel is attached
 	Awg2Err     string         `json:"-"` // why the .conf loaded for it is not
 	Awg2On      bool           `json:"-"` // switched on in the mode chosen, see ctl.Settings.Awg2Active
+	IPv6Blocked bool           `json:"-"` // IPv6 found not to reach the TUN adapter, see ctl.TunKey
 	Awg2Alive   bool           `json:"-"`
 	Awg2Note    string         `json:"-"`
 	Endpoint2   string         `json:"-"`
@@ -375,6 +376,7 @@ func collectStatus() status {
 	}
 	set := ctl.LoadSettings(paths.Settings())
 	st.Mode, st.Awg2On = set.Mode(), set.Awg2Active()
+	st.IPv6Blocked = st.ServiceRun && ctl.LoadTunnelIPv6(paths.TunnelIPv6()).SystemBlocked()
 	// a running service and a working tunnel are different things: TUN may
 	// be up with a dead peer, and then traffic goes nowhere. With no first
 	// tunnel's config the core runs without it: there is no awg to ask.

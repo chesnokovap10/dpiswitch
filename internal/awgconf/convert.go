@@ -260,6 +260,10 @@ func render(c *Conf) (string, error) {
 	}
 
 	set := ctl.LoadSettings(paths.Settings())
+	// IPv6 as the settings ask, unless the check found Windows keeping it
+	// from the TUN adapter (see ctl.TunKey): the core runs without it then
+	tunV6 := ctl.LoadTunnelIPv6(paths.TunnelIPv6())
+	ipv6 := set.IPv6 && !tunV6.SystemBlocked()
 	// tunnel resolvers: from settings, otherwise from the .conf
 	var tunDNS []string
 	if c != nil {
@@ -341,7 +345,7 @@ func render(c *Conf) (string, error) {
 	w("  # through the tunnel at ~160 Mbit/s; system gives 230-250 at half the")
 	w("  # CPU. The core is built without gVisor, so no other stack is available.")
 	w("  stack: system")
-	if set.IPv6 {
+	if ipv6 {
 		// IPv6 inside the tunnel: the system needs an IPv6 address and route,
 		// otherwise programs don't even try IPv6
 		w("  inet6-address:")
@@ -388,7 +392,7 @@ func render(c *Conf) (string, error) {
 	w("  ipv6: true")
 	w("  enhanced-mode: fake-ip")
 	w("  fake-ip-range: 198.18.0.1/16")
-	if set.IPv6 {
+	if ipv6 {
 		// AAAA queries get a fake address too: the connection arrives
 		// with the domain, and "direct / tunnel" rules work just as for IPv4.
 		//
@@ -588,17 +592,16 @@ func render(c *Conf) (string, error) {
 	w("")
 	// a tunnel the check found IPv6 dead on keeps its address but resolves
 	// IPv4 only -- otherwise every IPv6-only host hangs until its timeout
-	tunV6 := ctl.LoadTunnelIPv6(paths.TunnelIPv6())
 	if c != nil || c2 != nil {
 		w("proxies:")
 	}
 	if c != nil {
-		c.writeProxy(w, "awg", tunDNS, set.IPv6, tunV6.Dead("awg"))
+		c.writeProxy(w, "awg", tunDNS, ipv6, tunV6.Dead("awg"))
 	}
 	if c2 != nil {
 		// the second tunnel uses its own DNS from the .conf: names must be
 		// resolved by the server that traffic will go through
-		c2.writeProxy(w, "awg2", tun2DNS, set.IPv6, tunV6.Dead("awg2"))
+		c2.writeProxy(w, "awg2", tun2DNS, ipv6, tunV6.Dead("awg2"))
 	}
 	w("")
 	w("rules:")

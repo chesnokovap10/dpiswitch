@@ -225,3 +225,35 @@ func TestRenderSecondDNS(t *testing.T) {
 		}
 	}
 }
+
+// IPv6 found not reaching the TUN adapter: the core runs without it -- no
+// IPv6 on the adapter, no stand-in IPv6 addresses, the tunnels on IPv4 --
+// whatever the settings ask.
+func TestRenderIPv6Blocked(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Parse("[Interface]\nPrivateKey = k\nAddress = 10.8.1.3/32\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.7:51820\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, blocked := range []bool{false, true} {
+		st := ctl.TunnelIPv6{}
+		if blocked {
+			st[ctl.TunKey] = false
+		}
+		if err := st.Save(paths.TunnelIPv6()); err != nil {
+			t.Fatal(err)
+		}
+		out, err := c.Render()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range []string{"  inet6-address:", "  fake-ip-range6:", "    ip-version: ipv4-prefer"} {
+			if got := strings.Contains(out, line+"\n") || strings.Contains(out, line+" "); got == blocked {
+				t.Errorf("blocked %v: %q present %v", blocked, line, got)
+			}
+		}
+	}
+}

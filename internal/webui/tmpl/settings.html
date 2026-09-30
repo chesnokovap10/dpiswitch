@@ -51,7 +51,7 @@
 
   <div>IPv6</div>
   <div><select name="ipv6"><option value="1" {{if $s.IPv6}}selected{{end}}>{{.T "Through the tunnel"}}</option><option value="0" {{if not $s.IPv6}}selected{{end}}>{{.T "Off"}}</option></select></div>
-  <div class="h">{{.T "Gives IPv6 even where the ISP has none. Changing it restarts the core."}}{{template "rowmsg" ($d.MsgFor "ipv6")}}</div>
+  <div class="h">{{.T "Gives IPv6 even where the ISP has none. Changing it restarts the core."}}{{if and $s.IPv6 .St.IPv6Blocked}}<span class="warn-t">{{.T "Switched off by the program: Windows does not let IPv6 reach the DPI Switch adapter -- a third-party network filter (a VPN client, an antivirus) takes it first. Checked again at the service's next start."}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "ipv6")}}</div>
 </form>
 {{end}}
 
