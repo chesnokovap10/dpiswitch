@@ -261,7 +261,12 @@ func render(c *Conf) (string, error) {
 
 	set := ctl.LoadSettings(paths.Settings())
 	// IPv6 as the settings ask, unless the check found Windows keeping it
-	// from the TUN adapter (see ctl.TunKey): the core runs without it then
+	// from the TUN adapter (see ctl.TunKey): the programs get no IPv6 then --
+	// no stand-in addresses, no AAAA answers, the tunnels on IPv4. The
+	// adapter keeps its IPv6 address and route, for the check at the next
+	// start to find whether it gets through again: that answer is kept
+	// across starts, and a config built with it the same each time is not
+	// re-read -- a re-read rebuilt every outbound, and awg2 was down a minute.
 	tunV6 := ctl.LoadTunnelIPv6(paths.TunnelIPv6())
 	ipv6 := set.IPv6 && !tunV6.SystemBlocked()
 	// tunnel resolvers: from settings, otherwise from the .conf
@@ -345,9 +350,10 @@ func render(c *Conf) (string, error) {
 	w("  # through the tunnel at ~160 Mbit/s; system gives 230-250 at half the")
 	w("  # CPU. The core is built without gVisor, so no other stack is available.")
 	w("  stack: system")
-	if ipv6 {
+	if set.IPv6 {
 		// IPv6 inside the tunnel: the system needs an IPv6 address and route,
-		// otherwise programs don't even try IPv6
+		// otherwise programs don't even try IPv6. Kept with IPv6 found not
+		// getting through: the check at the next start probes by it
 		w("  inet6-address:")
 		w("    - 'fdfe:dcba:9876::1/126'")
 	}
@@ -389,7 +395,13 @@ func render(c *Conf) (string, error) {
 	w("dns:")
 	w("  enable: true")
 	w("  listen: 127.0.0.1:1053")
-	w("  ipv6: true")
+	if !ipv6 && set.IPv6 {
+		// IPv6 found not reaching the adapter: no AAAA answers, or programs
+		// would dial real IPv6 addresses into it and hang
+		w("  ipv6: false")
+	} else {
+		w("  ipv6: true")
+	}
 	w("  enhanced-mode: fake-ip")
 	w("  fake-ip-range: 198.18.0.1/16")
 	if ipv6 {

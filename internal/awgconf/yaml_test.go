@@ -226,9 +226,10 @@ func TestRenderSecondDNS(t *testing.T) {
 	}
 }
 
-// IPv6 found not reaching the TUN adapter: the core runs without it -- no
-// IPv6 on the adapter, no stand-in IPv6 addresses, the tunnels on IPv4 --
-// whatever the settings ask.
+// IPv6 found not reaching the TUN adapter: the programs get none -- no
+// stand-in IPv6 addresses, no AAAA answers, the tunnels on IPv4 -- whatever
+// the settings ask. The adapter keeps its IPv6 address, for the check at the
+// next start to probe by.
 func TestRenderIPv6Blocked(t *testing.T) {
 	t.Setenv("ProgramData", t.TempDir())
 	if err := paths.EnsureDataDir(); err != nil {
@@ -250,10 +251,16 @@ func TestRenderIPv6Blocked(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, line := range []string{"  inet6-address:", "  fake-ip-range6:", "    ip-version: ipv4-prefer"} {
+		for _, line := range []string{"  fake-ip-range6:", "    ip-version: ipv4-prefer", "  ipv6: true"} {
 			if got := strings.Contains(out, line+"\n") || strings.Contains(out, line+" "); got == blocked {
 				t.Errorf("blocked %v: %q present %v", blocked, line, got)
 			}
+		}
+		if got := strings.Contains(out, "  ipv6: false\n"); got != blocked {
+			t.Errorf("blocked %v: the DNS without AAAA answers %v", blocked, got)
+		}
+		if !strings.Contains(out, "  inet6-address:\n") {
+			t.Errorf("blocked %v: the adapter lost its IPv6 address", blocked)
 		}
 	}
 }

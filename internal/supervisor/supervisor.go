@@ -164,8 +164,9 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 	// away from the one that cannot carry it. Keeping the previous answer here
 	// would be a one-way door -- an outbound pinned to ip-version: ipv4 refuses
 	// IPv6 targets outright, so the check could never see IPv6 come back.
+	// The adapter's own answers are kept (see startIPv6State).
 	s.v6mu.Lock()
-	if err := (ctl.TunnelIPv6{}).Save(paths.TunnelIPv6()); err != nil {
+	if err := startIPv6State(ctl.LoadTunnelIPv6(paths.TunnelIPv6())).Save(paths.TunnelIPv6()); err != nil {
 		log.Printf("IPv6 state not reset: %v", err)
 	}
 	if changed, err := awgconf.Regenerate(); err != nil {

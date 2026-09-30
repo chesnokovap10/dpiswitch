@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"dpiswitch/internal/ctl"
 )
 
 // A DNS query as the wire carries it: the ID, one question, the name by
@@ -58,5 +60,19 @@ func TestTunProbes(t *testing.T) {
 	}
 	if _, known := tunIPv6(ctx); known {
 		t.Error("IPv6: a verdict with the service stopping")
+	}
+}
+
+// A core starts with the adapter's answers of the last check, not the
+// tunnels': IPv6 found blocked for good builds the same config each start,
+// and nothing is re-read.
+func TestStartIPv6State(t *testing.T) {
+	last := ctl.TunnelIPv6{ctl.TunKey: false, ctl.Tun4Key: true, "awg": false, "awg2": true}
+	got := startIPv6State(last)
+	if len(got) != 2 || !got.SystemBlocked() || got.TrafficBlocked() || got.Dead("awg") {
+		t.Fatalf("%v", got)
+	}
+	if len(startIPv6State(ctl.TunnelIPv6{"awg": false})) != 0 {
+		t.Fatal("a tunnel's answer kept")
 	}
 }

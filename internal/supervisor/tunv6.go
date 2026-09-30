@@ -6,6 +6,8 @@ import (
 	"encoding/binary"
 	"net"
 	"time"
+
+	"dpiswitch/internal/ctl"
 )
 
 // The programs' side of IPv6: the check in checkIPv6 goes from the core
@@ -22,6 +24,23 @@ import (
 // IPv4 first, until it is answered: that the adapter is up, and the core
 // answering. Then IPv6: silent where IPv4 was answered, it does not get
 // there.
+
+// startIPv6State: what a core starts with of the last checks -- the
+// adapter's answers, not the tunnels'. The adapter keeps its IPv6 address
+// with IPv6 found blocked, so the check still probes it and is no one-way
+// door; and a blocked answer reset at every start made every start rebuild
+// the config and re-read it, which rebuilt every outbound: awg2 down for a
+// minute, and YouTube direct meanwhile, wherever a filter (ViPNet) takes
+// IPv6 for good.
+func startIPv6State(last ctl.TunnelIPv6) ctl.TunnelIPv6 {
+	keep := ctl.TunnelIPv6{}
+	for _, k := range []string{ctl.TunKey, ctl.Tun4Key} {
+		if v, ok := last[k]; ok {
+			keep[k] = v
+		}
+	}
+	return keep
+}
 
 // the destinations: documentation ranges, routed into the adapter like
 // any other; the core answers for them on port 53
