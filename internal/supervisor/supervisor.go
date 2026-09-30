@@ -215,12 +215,7 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 	// the core disables IPv6 on TUN if the machine has no global IPv6.
 	// here IPv6 may exist only inside the tunnel -- the ISP may not
 	// provide any -- so that check is wrong for us
-	cmd.Env = append(os.Environ(), "SKIP_SYSTEM_IPV6_CHECK=true",
-		// certificates checked against the core's own Mozilla roots, in Go:
-		// Windows' chain engine (CertGetCertificateChain) handed back a chain
-		// the verifier dereferenced as nil, and the core died with an access
-		// violation a second after its start, in a DoT handshake to 77.88.8.1
-		"DISABLE_SYSTEM_CA=true")
+	cmd.Env = append(os.Environ(), "SKIP_SYSTEM_IPV6_CHECK=true")
 	// repeated warnings (a burst of retries while the network is down)
 	// are collapsed; see logfilter.go. Closed after the process exits,
 	// when exec has finished copying its output.
