@@ -321,8 +321,10 @@ function follows(atBottom) {
 // A help link points at a part of a page (/settings#attempts): it is shown
 // and its edge blinks, to say where to look. Not again on "back".
 function point(id) {
-  const el = id && document.getElementById(decodeURIComponent(id));
+  let el = id && document.getElementById(decodeURIComponent(id));
   if (!el) return;
+  // a checkbox is too small to be seen blinking: its label goes with it
+  if (el.matches('input[type=checkbox], input[type=radio]') && el.closest('label')) el = el.closest('label');
   el.scrollIntoView({block: 'center'});
   el.classList.remove('blink');
   void el.offsetWidth; // restarts the animation on a second click

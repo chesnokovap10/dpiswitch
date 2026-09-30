@@ -261,6 +261,8 @@ button.lx:hover{color:var(--bad)}
 /* what a help link points at: its edge blinks three times */
 @keyframes blink{50%{box-shadow:0 0 0 3px var(--accent)}}
 .blink{animation:blink .6s ease-in-out 3}
+/* a label blinking is a box around its text, not a line under it */
+label.blink{border-radius:6px}
 
 /* dialogs */
 dialog{border:1px solid var(--line);border-radius:10px;padding:16px;width:580px;background:var(--panel);color:var(--fg)}

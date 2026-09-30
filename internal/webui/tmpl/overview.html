@@ -55,7 +55,7 @@
       <div class="kv">
         <span>{{.T "State"}}</span><div>{{template "awg2pill" .}}</div>
         <span>Endpoint</span><div>{{$s.Endpoint2}}</div>
-        <span>{{.T "Carries"}}</span><div><a href="/awg2">{{.Tf "%d presets, %d in your own list" $s.Presets $s.Awg2Hosts}}</a></div>
+        <span>{{.T "Carries"}}</span><div><a href="/awg2#presets">{{.Tf "%d presets" $s.Presets}}</a>, <a href="/awg2#list-awg2">{{.Tf "%d in your own list" $s.Awg2Hosts}}</a></div>
         <span>{{.T "If it is down"}}</span><div>{{.T "its sites go through awg1; if both are down, direct -- in Tunnel only refused"}}</div>
       </div>
       <div class="actions">
