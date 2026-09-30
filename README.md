@@ -388,7 +388,7 @@ dpiswitch version    показать версию
 
 Результат — один файл `dist\dpiswitch.exe` со встроенным ядром mihomo (сжато gzip, всего ~24 МБ).
 При первой сборке ядро собирается скриптом `tools\build-mihomo.ps1` в `dist\mihomo.exe` и потом
-переиспользуется (удалите его, чтобы пересобрать). Ядро собирается из копии mihomo
+переиспользуется (удалите его, чтобы пересобрать). Ядро собирается из форка mihomo
 [chesnokovap10/mihomo-dpiswitch](https://github.com/chesnokovap10/mihomo-dpiswitch) на закреплённом
 коммите: проверенная версия mihomo, все зависимости в `vendor/` и одно исправление — ICMP-ошибка от
 одного адресата больше не обрывает UDP через туннель (без него uTP и DHT торрентов через туннель не
@@ -797,7 +797,7 @@ Requires Go 1.26+.
 
 The result is a single `dist\dpiswitch.exe` with the mihomo core embedded inside (gzip-compressed,
 ~24 MB in total). On the first build the core is built by `tools\build-mihomo.ps1` into
-`dist\mihomo.exe` and reused afterwards (delete it to rebuild). The core is built from the copy of
+`dist\mihomo.exe` and reused afterwards (delete it to rebuild). The core is built from the fork of
 mihomo at [chesnokovap10/mihomo-dpiswitch](https://github.com/chesnokovap10/mihomo-dpiswitch), at a
 pinned commit: the tested mihomo version, every dependency in `vendor/` and one fix -- a single
 destination's ICMP error no longer ends UDP through the tunnel (without it torrents' uTP and DHT did not
