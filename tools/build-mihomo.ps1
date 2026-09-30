@@ -1,6 +1,6 @@
 # Builds a minimal mihomo.exe for DPI Switch into .\dist
 #
-# The source is the private copy of mihomo (see DPISWITCH.md there): the
+# The source is the public copy of mihomo (see DPISWITCH.md there): the
 # upstream commit the program was tested with, the cut below already made,
 # every dependency in vendor/, and mipstack ahead of upstream's -- the one
 # where a peer's ICMP error no longer ends a UDP session through a WireGuard
@@ -19,7 +19,7 @@
 # then drops their code. Build tags drop the embedded Tailscale, ZeroTier and
 # EasyTier stacks and Hysteria's fake-TCP; -s -w strips debug symbols.
 param(
-    # pinned commit of the private copy: upstream Alpha 63bd52ec, the cut,
+    # pinned commit of the copy: upstream Alpha 63bd52ec, the cut,
     # vendor/, mipstack 3ec3a765 (the ICMP fix), the WireGuard outbound
     # reading the stack one packet at a time (the first DNS queries after a
     # start went unanswered on half the starts; see DPISWITCH.md there)
