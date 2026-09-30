@@ -1134,3 +1134,19 @@ func TestIPv6BlockedSaid(t *testing.T) {
 		t.Error("said with IPv6 reaching the adapter")
 	}
 }
+
+// No traffic reaching the adapter is said on the overview, and only then.
+func TestTunBlockedSaid(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	st := s.statusFn()
+	st.Installed, st.ServiceRun = true, true
+	s.statusFn = func() status { return st }
+	const said = "Windows does not let traffic into the DPI Switch adapter"
+	for _, blocked := range []bool{true, false} {
+		st.TunBlocked = blocked
+		if got := strings.Contains(do(t, h, "GET", "/overview", nil, nil).Body.String(), said); got != blocked {
+			t.Errorf("blocked %v: said %v", blocked, got)
+		}
+	}
+}

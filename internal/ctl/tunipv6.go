@@ -48,6 +48,14 @@ const TunKey = "tun"
 // SystemBlocked: whether IPv6 was found not to reach the TUN adapter
 func (t TunnelIPv6) SystemBlocked() bool { return t.Dead(TunKey) }
 
+// Tun4Key: the same for IPv4 -- a core answering its API and no IPv4 query
+// through the adapter answered: Windows keeps the programs' traffic from it
+// altogether. Nothing can go around that; it is said, not acted on.
+const Tun4Key = "tun4"
+
+// TrafficBlocked: whether IPv4 was found not to reach the TUN adapter
+func (t TunnelIPv6) TrafficBlocked() bool { return t.Dead(Tun4Key) }
+
 // Dead reports a tunnel the check has found IPv6 broken on. An unknown
 // tunnel is not dead: until it is checked it keeps IPv6, so a first run
 // behaves as before.

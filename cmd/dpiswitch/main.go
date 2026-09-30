@@ -305,6 +305,11 @@ func status() (tray.State, string) {
 		}
 		return tray.StateOff, T("DPI Switch — tunnel off")
 	}
+	// Windows keeping the programs' traffic from the adapter: nothing works
+	// through the service, whatever the tunnels do
+	if ctl.LoadTunnelIPv6(paths.TunnelIPv6()).TrafficBlocked() {
+		return tray.StateError, T("DPI Switch — Windows does not let traffic into the adapter: a third-party network filter takes it")
+	}
 	// no first tunnel's config: the core runs with no tunnel, and there is
 	// none to go dead -- what no list names goes direct
 	if _, err := os.Stat(paths.SourceConf()); err != nil {

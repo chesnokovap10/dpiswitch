@@ -16,20 +16,24 @@ func TestDNSQuery(t *testing.T) {
 	}
 }
 
-// IPv6 is found not reaching the adapter only when IPv4 is answered and
-// IPv6 is not; an adapter not answering at all is no verdict.
-func TestTunIPv6(t *testing.T) {
-	old := dnsAnswered
-	defer func() { dnsAnswered = old }()
+// The adapter's answers: IPv4 blocked only when the core answers its API
+// all along and no query through the adapter is; IPv6 blocked when IPv4 was
+// answered and IPv6 is not. A core not up, or the service stopping, is no
+// verdict.
+func TestTunProbes(t *testing.T) {
+	old, oldWait := dnsAnswered, tunProbeWait
+	defer func() { dnsAnswered, tunProbeWait = old, oldWait }()
+	tunProbeWait = 3 * time.Millisecond
 	for _, c := range []struct {
-		name      string
-		v4, v6    bool
-		ok, known bool
-		cancelled bool
+		name           string
+		v4, v6, coreUp bool
+		ok4, known4    bool
+		ok6, known6    bool
 	}{
-		{"both answered", true, true, true, true, false},
-		{"IPv6 taken on the way", true, false, false, true, false},
-		{"the adapter silent", false, false, false, false, true},
+		{"both answered", true, true, true, true, true, true, true},
+		{"IPv6 taken on the way", true, false, true, true, true, false, true},
+		{"IPv4 taken too", false, false, true, false, true, false, true},
+		{"the core not up", false, false, false, false, false, false, true},
 	} {
 		dnsAnswered = func(addr string, _ time.Duration) bool {
 			if addr == tunProbe6 {
@@ -37,15 +41,22 @@ func TestTunIPv6(t *testing.T) {
 			}
 			return c.v4
 		}
-		ctx, cancel := context.WithCancel(context.Background())
-		if c.cancelled {
-			// the service stopping while it waits: no verdict, at once
-			cancel()
+		ok, known := tunIPv4(context.Background(), func() bool { return c.coreUp })
+		if ok != c.ok4 || known != c.known4 {
+			t.Errorf("%s, IPv4: %v, %v; want %v, %v", c.name, ok, known, c.ok4, c.known4)
 		}
-		ok, known := tunIPv6(ctx)
-		cancel()
-		if ok != c.ok || known != c.known {
-			t.Errorf("%s: %v, %v; want %v, %v", c.name, ok, known, c.ok, c.known)
+		if ok, known = tunIPv6(context.Background()); ok != c.ok6 || known != c.known6 {
+			t.Errorf("%s, IPv6: %v, %v; want %v, %v", c.name, ok, known, c.ok6, c.known6)
 		}
+	}
+	// the service stopping while it waits: no verdict, at once
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	dnsAnswered = func(string, time.Duration) bool { return false }
+	if _, known := tunIPv4(ctx, func() bool { return true }); known {
+		t.Error("IPv4: a verdict with the service stopping")
+	}
+	if _, known := tunIPv6(ctx); known {
+		t.Error("IPv6: a verdict with the service stopping")
 	}
 }

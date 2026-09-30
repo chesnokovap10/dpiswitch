@@ -76,24 +76,32 @@ func dnsQuery(id uint16, name string) []byte {
 	return append(q, 0, 0, 1, 0, 1) // root, type A, class IN
 }
 
-// tunIPv6 finds whether the programs' IPv6 reaches the TUN adapter: known
-// false only when IPv4 is answered and IPv6 is not, so a network down or a
-// core not up yet is no verdict.
-func tunIPv6(ctx context.Context) (ok, known bool) {
-	up := false
-	for i := 0; i < 20 && !up; i++ {
-		if up = dnsAnswered(tunProbe4, 2*time.Second); !up && !sleepCtx(ctx, 3*time.Second) {
+// tunProbeWait: the pause between IPv4 queries; the tests shorten it
+var tunProbeWait = 3 * time.Second
+
+// tunIPv4 finds whether the programs' IPv4 reaches the TUN adapter: known
+// false only when the core answers its API all along and no query through
+// the adapter is answered -- a core not up is no verdict.
+func tunIPv4(ctx context.Context, coreUp func() bool) (ok, known bool) {
+	for i := 0; i < 20; i++ {
+		if dnsAnswered(tunProbe4, 2*time.Second) {
+			return true, true
+		}
+		if !sleepCtx(ctx, tunProbeWait) {
 			return false, false
 		}
 	}
-	if !up {
-		return false, false
-	}
+	return false, coreUp()
+}
+
+// tunIPv6 finds whether the programs' IPv6 reaches the TUN adapter, IPv4
+// having been answered: known false when IPv6 is not.
+func tunIPv6(ctx context.Context) (ok, known bool) {
 	for i := 0; i < 3; i++ {
 		if dnsAnswered(tunProbe6, 2*time.Second) {
 			return true, true
 		}
-		if !sleepCtx(ctx, time.Second) {
+		if !sleepCtx(ctx, tunProbeWait/3) {
 			return false, false
 		}
 	}

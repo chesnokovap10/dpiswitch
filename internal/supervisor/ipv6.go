@@ -40,23 +40,45 @@ const (
 // an outbound already pinned to ip-version: ipv4 rejects IPv6 targets, so a
 // check running against yesterday's answer would only ever confirm it.
 func (s *Supervisor) checkIPv6(ctx context.Context) {
+	secret := ctl.SecretFromConfig(paths.Config())
+	hc := newHealthChecker("127.0.0.1:9090", secret)
+	// reset at core start, so this is empty unless a previous check in this
+	// same core session already answered
+	old := ctl.LoadTunnelIPv6(paths.TunnelIPv6())
+	found := ctl.TunnelIPv6{}
+
+	// the programs' side first, IPv6 on or off: Windows may keep the
+	// programs' traffic from the adapter altogether (see tunv6.go)
+	v4, v4known := tunIPv4(ctx, func() bool { return apiReady(apiAddr, secret) })
+	if v4known {
+		found[ctl.Tun4Key] = v4
+		switch {
+		case v4 && old.TrafficBlocked():
+			log.Println("traffic reaches the DPI Switch adapter again")
+		case !v4:
+			log.Println("Windows does not let traffic into the DPI Switch adapter: something takes it first -- " +
+				"a third-party network filter (a VPN client, an antivirus). While it does, nothing works through " +
+				"DPI Switch: stop the service, or let the filter pass the adapter")
+		}
+	}
 	if !ctl.LoadSettings(paths.Settings()).IPv6 {
+		s.commitTun(ctx, old, found)
 		return // IPv6 is off altogether: both tunnels are already ipv4
 	}
-	hc := newHealthChecker("127.0.0.1:9090", ctl.SecretFromConfig(paths.Config()))
 
 	// the second tunnel as the config has it: a .conf loaded and left out
 	// of the config was waited for a minute, and the first tunnel's answer
 	// with it
 	names := awgconf.Tunnels()
 
-	// reset at core start, so this is empty unless a previous check in this
-	// same core session already answered
-	old := ctl.LoadTunnelIPv6(paths.TunnelIPv6())
-	found := ctl.TunnelIPv6{}
-	// the programs' side first: Windows may keep IPv6 from the adapter
-	// whatever the tunnels carry (see tunv6.go)
-	if ok, known := tunIPv6(ctx); known {
+	// then IPv6, the adapter being reached: Windows may keep IPv6 from it
+	// whatever the tunnels carry
+	if !v4 {
+		// nothing reaches it: IPv6 is no question of its own
+		if v, seen := old[ctl.TunKey]; seen {
+			found[ctl.TunKey] = v
+		}
+	} else if ok, known := tunIPv6(ctx); known {
 		found[ctl.TunKey] = ok
 		switch {
 		case ok && old.SystemBlocked():
@@ -111,6 +133,19 @@ func (s *Supervisor) checkIPv6(ctx context.Context) {
 			return
 		}
 		log.Println("config re-read after the IPv6 check")
+	})
+}
+
+// commitTun writes the adapter's answer alone -- IPv6 being off, nothing in
+// the config depends on it
+func (s *Supervisor) commitTun(ctx context.Context, old, found ctl.TunnelIPv6) {
+	if found.Same(old) {
+		return
+	}
+	s.commitV6(ctx, func() {
+		if err := found.Save(paths.TunnelIPv6()); err != nil {
+			log.Printf("IPv6 state not saved: %v", err)
+		}
 	})
 }
 
