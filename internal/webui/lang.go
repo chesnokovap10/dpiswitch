@@ -11,7 +11,7 @@ import (
 // The program's language is the one its pages were last shown in: the tray
 // -- menu, tooltip, messages -- follows it. A switch pressed on a page is
 // kept in LangFile, so the tray starts in it next time too; before either,
-// Windows' own display language.
+// Windows' own display language -- the pages' too (see withLang).
 
 // Tr: a string in the language given, from the same table as the pages'
 func Tr(lang, en string) string { return tr(lang, en) }

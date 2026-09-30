@@ -147,9 +147,8 @@ func lang(r *http.Request) string {
 	if c, err := r.Cookie("lang"); err == nil && (c.Value == "ru" || c.Value == "en") {
 		return c.Value
 	}
-	if strings.HasPrefix(strings.ToLower(r.Header.Get("Accept-Language")), "ru") {
-		return "ru"
-	}
+	// the browser's own language is not asked: before a switch the pages
+	// speak the tray's (see withLang)
 	return "en"
 }
 

@@ -126,7 +126,22 @@ func (s *Server) Handler() http.Handler {
 	} {
 		mux.HandleFunc(path, post(h))
 	}
-	return guard(s.auth(mux))
+	return guard(s.auth(s.withLang(mux)))
+}
+
+// withLang: a browser that has not switched the language yet (no cookie)
+// gets the tray's -- the one last switched to, else Windows' -- not its own
+// Accept-Language, so the first start speaks one language throughout. Not in
+// tests (no LangFile): their pages stay English whatever the machine's.
+func (s *Server) withLang(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LangFile != "" {
+			if c, err := r.Cookie("lang"); err != nil || (c.Value != "ru" && c.Value != "en") {
+				r.AddCookie(&http.Cookie{Name: "lang", Value: SavedLang(s.LangFile)})
+			}
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 // URL: the address to open the UI at, with the key a browser trades for
