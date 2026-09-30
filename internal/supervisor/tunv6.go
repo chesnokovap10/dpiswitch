@@ -42,6 +42,18 @@ func startIPv6State(last ctl.TunnelIPv6) ctl.TunnelIPv6 {
 	return keep
 }
 
+// tunnelsToCheck: the tunnels whose IPv6 the check asks after. IPv6 not
+// reaching the adapter, the tunnels run on IPv4 alone (see awgconf): an
+// outbound on ip-version ipv4 refuses an IPv6 target, so a check through it
+// fails whatever the tunnel carries, and wrote awg2 down. None is asked
+// then -- their answers are reset at every start, so there is none to keep.
+func tunnelsToCheck(found ctl.TunnelIPv6, names []string) []string {
+	if found.SystemBlocked() {
+		return nil
+	}
+	return names
+}
+
 // the destinations: documentation ranges, routed into the adapter like
 // any other; the core answers for them on port 53
 const (

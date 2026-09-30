@@ -90,7 +90,7 @@ func (s *Supervisor) checkIPv6(ctx context.Context) {
 	} else if v, seen := old[ctl.TunKey]; seen {
 		found[ctl.TunKey] = v
 	}
-	for _, name := range names {
+	for _, name := range tunnelsToCheck(found, names) {
 		if !s.waitTunnel(ctx, hc, name) {
 			// the tunnel never came up: no answer about its IPv6 either, so
 			// keep what we knew rather than inventing a verdict

@@ -76,3 +76,17 @@ func TestStartIPv6State(t *testing.T) {
 		t.Fatal("a tunnel's answer kept")
 	}
 }
+
+// IPv6 not reaching the adapter, the tunnels are not checked: on IPv4
+// alone, they would be found without IPv6 whatever they carry.
+func TestTunnelsToCheck(t *testing.T) {
+	names := []string{"awg", "awg2"}
+	if got := tunnelsToCheck(ctl.TunnelIPv6{ctl.TunKey: false}, names); len(got) != 0 {
+		t.Errorf("IPv6 blocked: %v checked", got)
+	}
+	for _, st := range []ctl.TunnelIPv6{{}, {ctl.TunKey: true}} {
+		if got := tunnelsToCheck(st, names); len(got) != 2 {
+			t.Errorf("%v: %v checked", st, got)
+		}
+	}
+}

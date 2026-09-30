@@ -17,7 +17,7 @@
   <div id="summary" data-poll="/frag/overview/summary" data-every="10" style="display:flex;flex-direction:column;gap:12px">{{template "summary" .}}</div>
   {{/* ten lines at the least: they shrank to one under the boxes above */}}
   <div class="box fill" style="min-height:230px">
-    <div class="row" style="margin-bottom:8px"><h3 style="margin:0;flex:1">{{.T "Recent events"}}</h3><a href="/logs">{{.T "Full log"}} →</a></div>
+    <div class="row" style="margin-bottom:8px"><h3 style="margin:0;flex:1">{{.T "Recent events"}}</h3><a href="/logs#log">{{.T "Full log"}} →</a></div>
     <pre class="fill" id="events" data-poll="/frag/overview/events" data-every="5" data-follow>{{template "events" .}}</pre>
   </div>
 </div>
