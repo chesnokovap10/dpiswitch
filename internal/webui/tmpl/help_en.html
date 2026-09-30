@@ -247,6 +247,8 @@ change as one: a file failing to write puts back the ones written before it.</p>
 <p>Everything is kept in <code>{{.St.DataDir}}</code>: the configs (locked to administrators and you, they
 hold private keys), the lists, the settings, the verdicts (<code>controller-state.json</code>), every probe
 (<code>reports.jsonl</code>) and the logs.</p>
+<p>The program itself is installed in <code>{{.St.InstallDir}}</code>: the service and the tray run from there.
+Only administrators can change that file — the service runs as SYSTEM.</p>
 
 <h4>Links</h4>
 <ul>
