@@ -42,6 +42,16 @@ func startIPv6State(last ctl.TunnelIPv6) ctl.TunnelIPv6 {
 	return keep
 }
 
+// keepAdapterIPv6 carries the last answer about the adapter's IPv6 into
+// found, when this check could not ask it
+func keepAdapterIPv6(old, found ctl.TunnelIPv6) {
+	if v, seen := old[ctl.TunKey]; seen {
+		if _, asked := found[ctl.TunKey]; !asked {
+			found[ctl.TunKey] = v
+		}
+	}
+}
+
 // tunnelsToCheck: the tunnels whose IPv6 the check asks after. IPv6 not
 // reaching the adapter, the tunnels run on IPv4 alone (see awgconf): an
 // outbound on ip-version ipv4 refuses an IPv6 target, so a check through it

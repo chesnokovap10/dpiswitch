@@ -29,6 +29,9 @@ type Supervisor struct {
 	cmd     *exec.Cmd
 	done    chan struct{} // closed when the core has exited
 	running atomic.Bool
+	// planned: the core was stopped by restartCore, to come back at once --
+	// not a crash, see corePause
+	planned atomic.Bool
 	recheck chan struct{} // request to check the tunnel right away
 	job     windows.Handle
 	// v6mu: the start of a core, which resets what the IPv6 check found, and
@@ -112,8 +115,7 @@ func (s *Supervisor) Run(ctx context.Context, apply bool) {
 // restart the core with a growing pause: at boot the network
 // may not be up yet, and the first attempts legitimately fail
 func (s *Supervisor) keepCore(ctx context.Context) {
-	backoff := 2 * time.Second
-	const maxBackoff = 60 * time.Second
+	backoff := minCorePause
 	for {
 		if ctx.Err() != nil {
 			return
@@ -130,23 +132,44 @@ func (s *Supervisor) keepCore(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		if err != nil {
+		planned := s.planned.Swap(false)
+		if err != nil && !planned {
 			log.Printf("core exited: %v", err)
 		}
-		// it lasted long -- consider that normal operation
-		// and reset the pause, otherwise it would grow forever
-		if time.Since(start) > 2*time.Minute {
-			backoff = 2 * time.Second
-		}
+		var wait time.Duration
+		wait, backoff = corePause(planned, time.Since(start), backoff)
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(backoff):
-		}
-		if backoff < maxBackoff {
-			backoff *= 2
+		case <-time.After(wait):
 		}
 	}
+}
+
+const (
+	minCorePause = 2 * time.Second
+	maxCorePause = 60 * time.Second
+)
+
+// corePause: how long keepCore waits before starting the core again, and
+// the pause for the time after. A core that fell waits longer each time --
+// at boot the network may not be up, and the first attempts legitimately
+// fail -- and one that lasted long resets it. One restartCore stopped
+// comes back at once: a setting changed, a tunnel found dead. It used to
+// count as a fall -- Kill ends it with an error -- and a few settings
+// changed in a row waited 2, 4, 8, 16 seconds.
+func corePause(planned bool, ran, backoff time.Duration) (wait, next time.Duration) {
+	if planned {
+		return 0, minCorePause
+	}
+	if ran > 2*time.Minute {
+		backoff = minCorePause
+	}
+	next = backoff
+	if next < maxCorePause {
+		next *= 2
+	}
+	return backoff, next
 }
 
 func (s *Supervisor) runCore(ctx context.Context) error {
@@ -536,6 +559,12 @@ func (s *Supervisor) restartCore() {
 	if cmd == nil || cmd.Process == nil {
 		return
 	}
+	select {
+	case <-done:
+		return // it ended by itself: keepCore takes that as the fall it is
+	default:
+	}
+	s.planned.Store(true)
 	s.stopCore(cmd, done)
 }
 

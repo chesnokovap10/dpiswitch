@@ -90,3 +90,42 @@ func TestTunnelsToCheck(t *testing.T) {
 		}
 	}
 }
+
+// With IPv6 off there is no IPv6 on the adapter to probe: its last answer
+// is kept, for the start with IPv6 back on. An answer this check found is
+// not overwritten.
+func TestKeepAdapterIPv6(t *testing.T) {
+	found := ctl.TunnelIPv6{ctl.Tun4Key: true}
+	keepAdapterIPv6(ctl.TunnelIPv6{ctl.TunKey: false}, found)
+	if !found.SystemBlocked() || found.TrafficBlocked() {
+		t.Fatalf("%v", found)
+	}
+	found = ctl.TunnelIPv6{ctl.TunKey: true}
+	keepAdapterIPv6(ctl.TunnelIPv6{ctl.TunKey: false}, found)
+	if found.SystemBlocked() {
+		t.Fatal("this check's answer overwritten")
+	}
+}
+
+// A core restartCore stopped comes back at once, and resets the pause; one
+// that fell waits, longer each time, up to a minute; one that lasted long
+// starts the pause over.
+func TestCorePause(t *testing.T) {
+	for _, c := range []struct {
+		planned      bool
+		ran, backoff time.Duration
+		wait, next   time.Duration
+	}{
+		{true, time.Second, 16 * time.Second, 0, 2 * time.Second},
+		{false, time.Second, 2 * time.Second, 2 * time.Second, 4 * time.Second},
+		{false, time.Second, 16 * time.Second, 16 * time.Second, 32 * time.Second},
+		{false, time.Second, 64 * time.Second, 64 * time.Second, 64 * time.Second},
+		{false, 3 * time.Minute, 32 * time.Second, 2 * time.Second, 4 * time.Second},
+	} {
+		wait, next := corePause(c.planned, c.ran, c.backoff)
+		if wait != c.wait || next != c.next {
+			t.Errorf("planned %v, ran %s, pause %s: wait %s then %s; want %s then %s",
+				c.planned, c.ran, c.backoff, wait, next, c.wait, c.next)
+		}
+	}
+}
