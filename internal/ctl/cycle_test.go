@@ -1,6 +1,7 @@
 package ctl
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"dpiswitch/internal/paths"
 	"dpiswitch/internal/probe"
 )
 
@@ -881,5 +883,59 @@ func TestForgetFromUI(t *testing.T) {
 	}
 	if b, err := os.ReadFile(other); err != nil || string(b) != "c.example.net\n" {
 		t.Fatalf("the file it named was touched: %q %v", b, err)
+	}
+}
+
+// A verdict dropped after the settings changed rewrites the list by the
+// settings as they are now: the goroutine taking the UI's requests worked
+// with a copy taken at the start, and the families of a switch turned off
+// came back direct until the next cycle.
+func TestRequestsFollowSettings(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir()) // the user's files the tick also syncs: none
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	old := requestPoll
+	requestPoll = 5 * time.Millisecond
+	defer func() { requestPoll = old }()
+
+	s := newScenario(t)
+	dir := t.TempDir()
+	s.cfg.ForgetPath = filepath.Join(dir, "forget-*.request")
+	s.st.setCurrent("n")
+	s.see(tunnelled("a.example.org", 443), tunnelled("b.example.org", 443),
+		tunnelled("c.example.org", 443), tunnelled("x.example.net", 443))
+	for i, d := range []string{"a.example.org", "b.example.org", "c.example.org", "x.example.net"} {
+		s.script(d+" tcp/443", clean("192.0.2."+strconv.Itoa(i+1)))
+	}
+	s.cycle()
+	if !slices.Contains(listRules(s.cfg.ListPath), "+.example.org") {
+		t.Fatalf("setup: no family in %v", listRules(s.cfg.ListPath))
+	}
+
+	var now atomic.Pointer[Config]
+	now.Store(&s.cfg)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go watchReset(ctx, func() Config { return *now.Load() }, s.api, s.st)
+	off := s.cfg
+	off.Families = false // switched off in the main loop
+	now.Store(&off)
+
+	req := filepath.Join(dir, "forget-1.request")
+	if err := os.WriteFile(req, []byte("x.example.net\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if _, err := os.Stat(req); os.IsNotExist(err) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the request was not taken")
+		}
+	}
+	got := listRules(s.cfg.ListPath)
+	if slices.Contains(got, "+.example.org") || slices.Contains(got, "x.example.net") || !slices.Contains(got, "a.example.org") {
+		t.Fatalf("the list after the drop, families off: %v", got)
 	}
 }

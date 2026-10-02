@@ -799,6 +799,9 @@ var forgetFailed string
 // forgetMax: the most of a request read; the UI writes one name
 const forgetMax = 64 << 10
 
+// requestPoll: how often watchReset looks; the tests shorten it
+var requestPoll = time.Second
+
 // forgetKeys: the names a request holds, as memory keys them. What is no
 // name -- too long, a space in it -- is left out: the file is the user's
 // to write.
@@ -815,17 +818,21 @@ func forgetKeys(b []byte) []string {
 }
 
 // watchReset looks for a reset request and changed user lists every
-// second: the UI waits for both to be taken.
-func watchReset(ctx context.Context, cfg Config, a *api, st *state) {
-	t := time.NewTicker(time.Second)
+// second: the UI waits for both to be taken. cfg is the main loop's as it
+// is now: it was a copy taken at the start, and a verdict dropped after the
+// settings changed rewrote the list by the old ones -- the families of a
+// switch turned off came back direct until the next cycle.
+func watchReset(ctx context.Context, cfg func() Config, a *api, st *state) {
+	t := time.NewTicker(requestPoll)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			takeReset(cfg, a, st)
-			takeForget(cfg, a, st)
+			c := cfg()
+			takeReset(c, a, st)
+			takeForget(c, a, st)
 			// the user's lists and presets reach the core within a second;
 			// a reload left pending -- by a reset, say, which removed its
 			// request all the same -- is not left for the next cycle

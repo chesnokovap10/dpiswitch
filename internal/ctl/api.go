@@ -117,7 +117,13 @@ func Run(ctx context.Context, cfg Config) {
 	}
 
 	w := newWatcher(ctx, cfg, a)
-	go watchReset(ctx, cfg, a, st)
+	// the config as the main loop has it now, for the goroutine that takes
+	// the requests from the UI: a copy of its own went stale with the first
+	// settings changed
+	var now atomic.Pointer[Config]
+	keep := func(c Config) { now.Store(&c) }
+	keep(cfg)
+	go watchReset(ctx, func() Config { return *now.Load() }, a, st)
 
 	wake := make(chan struct{}, 1)
 	go watchSettings(ctx, cfg, a, st, set, haveSet, wake)
@@ -132,6 +138,7 @@ func Run(ctx context.Context, cfg Config) {
 			cfg.OnCoreChange()
 		}
 		cfg = onSettingsChanged(cfg, ns, a, st, netID)
+		keep(cfg)
 		set, haveSet = ns, true
 	}
 
