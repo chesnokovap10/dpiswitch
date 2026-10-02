@@ -75,7 +75,11 @@ func (s *Server) Start() error {
 	s.addr = "http://" + ln.Addr().String()
 	s.mu.Unlock()
 
-	go http.Serve(ln, s.Handler())
+	h := s.Handler()
+	// the tunnels' state follows the traffic the loop sees; not in tests,
+	// which never Start: it asks the core the service runs
+	s.live.pulse = pulse
+	go http.Serve(ln, h)
 	// the live page's history is of the core's whole run: gathered from the
 	// start, not from the first time the page is opened
 	s.live.start()
@@ -97,6 +101,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/favicon.ico", s.handleIcon)
 	mux.HandleFunc("/lang", s.handleLang)
 	mux.HandleFunc("/api/status", s.handleStatus)
+	mux.HandleFunc("/api/tunnels", s.handleTunnels)
 	mux.HandleFunc("/live/stream", s.handleLive)
 	mux.HandleFunc("/live/presets", s.handleLivePresets)
 	mux.HandleFunc(helloPath, s.handleHello)

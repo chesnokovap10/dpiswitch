@@ -215,6 +215,17 @@ func (a *api) lastCheck(proxy string) (TunnelCheck, error) {
 	return c, nil
 }
 
+// CheckTunnel has the core check a proxy against HealthURL now, as its
+// groups do every 30 seconds. What it finds goes into the history
+// TunnelHealth reads -- a failed check too, as no answer -- so nothing is
+// returned: the next read says it.
+func CheckTunnel(apiAddr, secret, proxy string, timeout time.Duration) {
+	a := newAPI(apiAddr, secret)
+	a.c.Timeout = timeout + 3*time.Second
+	a.do("GET", fmt.Sprintf("/proxies/%s/delay?timeout=%d&url=%s",
+		url.PathEscape(proxy), timeout.Milliseconds(), url.QueryEscape(HealthURL)), nil)
+}
+
 // TunnelHealth: tunnelHealth for the tray and the UI. They used to test the
 // tunnel themselves, the tray every ten seconds: some 8,600 requests a day
 // through it for an icon, on top of the checks the core makes anyway.

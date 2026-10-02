@@ -181,6 +181,10 @@ type liveHub struct {
 	failNew []*liveRow          // for the next tick
 	failID  string              // the loop's own prefix: a page keeps rows over a restart
 	failSeq int
+
+	// told every tick what came through the tunnels (see tunnelpulse.go);
+	// nil in tests that do not look at it
+	pulse *tunnelPulse
 }
 
 func newLiveHub(source func() liveSource) *liveHub {
@@ -338,6 +342,7 @@ func (h *liveHub) update(live ctl.Live, err error, now time.Time) {
 		h.trim()
 		m.Fail = h.takeFailures()
 		h.send(m)
+		h.pulseSaw(now, nil, m.Fail)
 		return
 	}
 	// a new run of the core: seen gone and back, or started anew between
@@ -369,9 +374,15 @@ func (h *liveHub) update(live ctl.Live, err error, now time.Time) {
 	dt := now.Sub(h.at).Seconds()
 	first := h.at.IsZero()
 	seen := make(map[string]bool, len(live.Conns))
+	// the routes bytes came in on this tick -- not on the first, which
+	// knows nothing of when they came
+	recv := map[string]bool{}
 	for _, c := range live.Conns {
 		seen[c.ID] = true
 		r, ok := h.open[c.ID]
+		if !first && (ok && c.Download > r.Down || !ok && c.Download > 0) {
+			recv[liveRoute(c.Chains)] = true
+		}
 		if !ok {
 			r = newLiveRow(c, now)
 			// its bytes so far, over the part of the interval it lived; on
@@ -416,12 +427,25 @@ func (h *liveHub) update(live ctl.Live, err error, now time.Time) {
 	h.tot, m.Tot = tot, tot
 	h.at = now
 	m.Fail = h.takeFailures()
+	h.pulseSaw(now, recv, m.Fail)
 	if anew {
 		// the failures queued are in the state sent
 		h.send(h.full(now, "", 0))
 		return
 	}
 	h.send(m)
+}
+
+// pulseSaw tells the tunnels' pulse what came through them this tick
+func (h *liveHub) pulseSaw(now time.Time, recv map[string]bool, failed []*liveRow) {
+	if h.pulse == nil {
+		return
+	}
+	fail := map[string]bool{}
+	for _, r := range failed {
+		fail[r.Route] = true
+	}
+	h.pulse.saw(now, recv, fail)
 }
 
 // newRun: the core runs anew. Its last run's connections, the ones closed

@@ -392,11 +392,19 @@ func collectStatus() status {
 	// tunnel's config the core runs without it: there is no awg to ask.
 	if st.ServiceRun {
 		secret := ctl.SecretFromConfig(paths.Config())
+		// as the traffic keeps it (see tunnelpulse.go), the core asked only
+		// when that is not running
+		health := func(t string) (bool, string) {
+			if s, ok := pulse.get(t); ok {
+				return s.Alive, s.Note
+			}
+			return ctl.TunnelHealth(apiAddr, secret, t)
+		}
 		if st.HasConfig {
-			st.TunnelAlive, st.TunnelNote = ctl.TunnelHealth(apiAddr, secret, "awg")
+			st.TunnelAlive, st.TunnelNote = health("awg")
 		}
 		if st.Awg2 && st.Awg2On {
-			st.Awg2Alive, st.Awg2Note = ctl.TunnelHealth(apiAddr, secret, "awg2")
+			st.Awg2Alive, st.Awg2Note = health("awg2")
 		}
 	}
 	st.NetworkUp = supervisor.NetworkUp()

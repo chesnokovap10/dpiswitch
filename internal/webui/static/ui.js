@@ -344,3 +344,23 @@ function point(id) {
   if (!nav || nav.type !== 'back_forward') addEventListener('load', () => point(location.hash.slice(1)));
   addEventListener('hashchange', () => point(location.hash.slice(1)));
 })();
+
+// The header's tunnel chips follow the tunnels every second: the header
+// itself is drawn every five, and a tunnel gone dead or back showed late
+// (see tunnelpulse.go). Not while the page is hidden.
+setInterval(async () => {
+  if (document.hidden || !document.querySelector('[data-tunnel]')) return;
+  const r = await fetch('/api/tunnels').catch(() => null);
+  if (!r || !r.ok) return;
+  const st = await r.json().catch(() => ({}));
+  for (const c of document.querySelectorAll('[data-tunnel]')) {
+    const s = st[c.dataset.tunnel];
+    if (!s) continue;
+    const dot = c.querySelector('.dot');
+    if (dot) dot.className = 'dot ' + (s.alive ? 'ok' : 'bad');
+    const text = c.dataset.tunnel + ' ' + s.text;
+    if (c.lastChild && c.lastChild.nodeType === Node.TEXT_NODE) {
+      if (c.lastChild.textContent !== text) c.lastChild.textContent = text;
+    }
+  }
+}, 1000);

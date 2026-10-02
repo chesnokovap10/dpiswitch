@@ -278,12 +278,14 @@ func watchStatus(t *tray.Tray) {
 	for {
 		state, tip := status()
 		t.SetState(state, tip)
-		// the tunnel check calls the core API, so it runs less often
-		// than a plain label would refresh; a language switched on a page
-		// is shown at once
+		// a language switched on a page, and a tunnel's state changed, are
+		// shown at once; the rest every ten seconds
 		select {
 		case <-time.After(10 * time.Second):
 		case <-langChanged:
+		case <-webui.TunnelChanged():
+			// a tunnel's state changed: the icon follows at once (see
+			// webui/tunnelpulse.go)
 		}
 	}
 }
@@ -322,8 +324,12 @@ func status() (tray.State, string) {
 	}
 	// a running service and a tunnel that passes traffic are different things:
 	// with a dead peer TUN is up but there is no internet
-	alive, note := ctl.TunnelHealth("127.0.0.1:9090",
-		ctl.SecretFromConfig(paths.Config()), "awg")
+	// as the UI keeps it, in step with the traffic; the core asked only when
+	// the UI has not read it lately
+	alive, note, ok := webui.Tunnel("awg")
+	if !ok {
+		alive, note = ctl.TunnelHealth("127.0.0.1:9090", ctl.SecretFromConfig(paths.Config()), "awg")
+	}
 	note = webui.TunnelNote(uiLang(), note)
 	if !alive {
 		if !supervisor.NetworkUp() {
