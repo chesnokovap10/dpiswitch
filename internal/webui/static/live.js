@@ -356,6 +356,7 @@
     s.title = paused ? W.pausedHint : dropped ? '' : W.liveHint;
     s.className = paused ? 'muted' : dropped ? 'warn-t' : 'ok-t';
     $('lpause').textContent = paused ? W.resume : W.pause;
+    root.classList.toggle('paused', paused);
   }
 
   // --- controls ---
