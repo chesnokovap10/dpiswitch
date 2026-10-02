@@ -94,8 +94,10 @@ if ($moved) {
     Start-Process $src -ArgumentList "reinstall", "--owner", $sid -Verb RunAs -Wait
 } else {
     $shell = (Get-Process -Id $PID).Path
+    # Start-Process joins the list with spaces and quotes nothing: a path with
+    # a space in it reached the elevated half as two arguments
     Start-Process $shell -Verb RunAs -Wait -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass",
-        "-File", $PSCommandPath, "-Path", $src, "-ServicePart"
+        "-File", "`"$PSCommandPath`"", "-Path", "`"$src`"", "-ServicePart"
 }
 if (-not (Wait-Until { (Get-Service dpiswitch).Status -eq 'Running' } 30)) {
     throw "the service did not start again: see %ProgramData%\dpiswitch\logs\service.log"
