@@ -242,7 +242,7 @@ CDN, спидтестам, обновлениям.
 
 ### Сети
 
-Вердикты хранятся по провайдеру (его номеру AS), а не по Wi-Fi-сети: другая сеть того же провайдера
+Вердикты хранятся по провайдеру (его номеру AS): другая сеть того же провайдера
 пользуется ими же, другой провайдер начинает свои. Без сети проверки встают на паузу, память
 сохраняется.
 
@@ -645,7 +645,7 @@ again whenever On is chosen, and so for Tunnel only. Switched off, its presets a
 
 ### Networks
 
-Verdicts are kept per ISP (its AS number), not per Wi-Fi network: another network of the same ISP
+Verdicts are kept per ISP (its AS number): another network of the same ISP
 shares them, another ISP starts its own. Without a network the checks pause and the memory is kept.
 
 ### DNS
