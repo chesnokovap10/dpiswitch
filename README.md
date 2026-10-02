@@ -421,13 +421,6 @@ dpiswitch version    показать версию
 Обычный `go test` эти проверки пропускает; запускайте их всякий раз, когда меняете правила, группы,
 файлы списков или режимы.
 
-Релиз собирается только локально, тем же `build.ps1`; GitHub Actions не используется. Версия ставится в
-`internal/version/version.go`, заметки к релизу кладутся в `.github/release-notes/<версия>.md`. Затем
-удалите `dist\mihomo.exe`, чтобы ядро собралось заново с закреплённого коммита, запустите `.\build.ps1`,
-упакуйте `dist\dpiswitch.exe` в `dpiswitch-<версия>-windows-amd64.zip`, рядом положите `SHA256SUMS.txt`
-(`<sha256>  <имя zip>`, как пишет `sha256sum`), поставьте на коммит тег `v<версия>` и опубликуйте релиз
-на GitHub с этим тегом, архивом, суммами и текстом заметок.
-
 <p align="right"><a href="#readme">↑ наверх</a></p>
 
 <br>
@@ -831,12 +824,5 @@ Routing has checks of its own, by the tables of the help -- every mode, every se
 every list, with the tunnels going down one after the other: `go test -tags routing ./internal/awgconf`.
 A plain `go test` leaves them out; run them whenever the rules, the groups, the lists' files or the modes
 change.
-
-Releases are built locally only, with the same `build.ps1`; GitHub Actions is not used. Set the version
-in `internal/version/version.go` and put the release notes in `.github/release-notes/<version>.md`. Then
-delete `dist\mihomo.exe` so the core is built again from the pinned commit, run `.\build.ps1`, pack
-`dist\dpiswitch.exe` into `dpiswitch-<version>-windows-amd64.zip` with a `SHA256SUMS.txt` beside it
-(`<sha256>  <zip name>`, as `sha256sum` writes it), tag the commit `v<version>` and publish the release
-on GitHub with that tag, the zip, the sums and the notes.
 
 <p align="right"><a href="#readme">↑ back to top</a> · <a href="#русский">Русский</a></p>
