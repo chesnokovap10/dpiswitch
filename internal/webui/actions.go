@@ -766,8 +766,10 @@ func (s *Server) actDNSTest(w http.ResponseWriter, r *http.Request) {
 }
 
 // restartService: a stopped service will be started by the user, and the
-// config is built on start
-func restartService() error {
+// config is built on start. A var for tests: the machine's own service is
+// the one it restarts -- every run of the tests that delete a config
+// restarted it, the tunnel down a few seconds each time.
+var restartService = func() error {
 	if !winsvc.Installed() {
 		return nil
 	}

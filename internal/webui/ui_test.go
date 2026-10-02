@@ -44,10 +44,12 @@ func testServer(t *testing.T) (*Server, string) {
 	apiAddr = l.Addr().String()
 	l.Close()
 	t.Cleanup(func() { apiAddr = old })
-	// and no service: the machine's real one must not be waited on
-	was := serviceRunning
+	// and no service: the machine's real one must not be waited on, nor
+	// restarted -- a config deleted here restarted it, tunnel and all
+	was, wasRestart := serviceRunning, restartService
 	serviceRunning = func() bool { return false }
-	t.Cleanup(func() { serviceRunning = was })
+	restartService = func() error { return nil }
+	t.Cleanup(func() { serviceRunning, restartService = was, wasRestart })
 	s := &Server{statusFn: func() status {
 		return status{Installed: true, PathOK: true, ServiceRun: true, TunnelAlive: true, TunnelNote: "60 ms",
 			Awg2: true, Version: "test", DataDir: paths.DataDir(), NetworkID: "AS1", Mode: ctl.ModeOn}
