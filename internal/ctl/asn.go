@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"dpiswitch/internal/paths"
+	"dpiswitch/internal/probe"
 )
 
 // Verdict memory is keyed by the ISP (autonomous system number), not by
@@ -48,9 +51,13 @@ func directClient(directAddr string) *http.Client {
 	return &http.Client{
 		Timeout: 8 * time.Second,
 		Transport: &http.Transport{Proxy: http.ProxyURL(&url.URL{
-			Scheme: "socks5", Host: directAddr})},
+			Scheme: "socks5", Host: directAddr, User: url.UserPassword(probe.SocksUser, socksPass())})},
 	}
 }
+
+// socksPass: the prober's listeners' password -- the API's secret, see
+// awgconf
+var socksPass = func() string { return secretFromConfig(paths.Config()) }
 
 // publicIP: the public address of the direct path.
 func publicIP(cl *http.Client) (string, error) {

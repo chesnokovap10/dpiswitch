@@ -2,11 +2,13 @@ package awgconf
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/paths"
+	"dpiswitch/internal/probe"
 )
 
 // A quote in a value stays inside its scalar, and a line break never
@@ -223,7 +225,23 @@ func TestRenderSecondDNS(t *testing.T) {
 		if !strings.Contains(out, "  - name: probe-tunnel2\n    type: socks\n    listen: 127.0.0.1\n    port: 7893\n    proxy: awg2\n") {
 			t.Error("no listener through awg2")
 		}
+		// the prober's listeners take its user alone, the API's secret the
+		// password: any program of any account took them
+		secret := ctl.SecretFromConfig(writeTemp(t, out))
+		users := "    users:\n      - username: " + probe.SocksUser + "\n        password: '" + secret + "'\n"
+		if secret == "" || strings.Count(out, users) != 3 {
+			t.Errorf("listeners without the prober's user: %d of 3", strings.Count(out, users))
+		}
 	}
+}
+
+// writeTemp: text in a file of its own, for what reads a file
+func writeTemp(t *testing.T, text string) string {
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
 }
 
 // IPv6 found not reaching the TUN adapter: the programs get none -- no

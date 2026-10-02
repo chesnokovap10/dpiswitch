@@ -102,14 +102,17 @@ Write-Host ("done: {0} ({1:N1} MB, tags: {2})" -f $out, ((Get-Item $out).Length 
 # until checked, are the core's behaviour, not a promise of it -- an update
 # can change them (see internal\awgconf\core_routing_test.go)
 # Then the help's routing tables, cell by cell, on the new core with the
-# tunnels alive or dead for real (TestCoreTables).
-Write-Host "checking the core: tunnel only never goes direct, the tables of the help (~2 min)"
+# tunnels alive or dead for real (TestCoreTables). And what the fork locks
+# down: the prober's listener takes its user alone and UDP only through an
+# association, the API no config from outside and no upgrade
+# (TestCoreLockedDown).
+Write-Host "checking the core: tunnel only never goes direct, the tables of the help, the lock-down (~2 min)"
 $prev = $env:DPISWITCH_CORE
 Push-Location $root
 try {
     $env:DPISWITCH_CORE = $out
-    go test -tags routing -run 'TestCoreFailClosed|TestCoreTables' -count=1 ./internal/awgconf
-    if ($LASTEXITCODE) { throw "the new core does not route as the help's tables say: do not ship it" }
+    go test -tags routing -run 'TestCoreFailClosed|TestCoreTables|TestCoreLockedDown' -count=1 ./internal/awgconf
+    if ($LASTEXITCODE) { throw "the new core does not route as the help's tables say, or is not locked down: do not ship it" }
 } finally {
     $env:DPISWITCH_CORE = $prev
     Pop-Location

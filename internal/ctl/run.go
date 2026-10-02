@@ -171,9 +171,11 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 		}
 	}
 
+	// the listeners' password is the API's secret (see awgconf)
+	pass := *a.secret.Load()
 	direct := probe.Dialer{Addr: cfg.DirectAddr, Timeout: cfg.Timeout, DNS: cfg.DirectDNS,
-		Established: a.established, NoV6: st.directNoV6(netID)}
-	tunnel := probe.Dialer{Addr: cfg.TunnelAddr, Timeout: cfg.Timeout, Established: a.established}
+		Established: a.established, NoV6: st.directNoV6(netID), Pass: pass}
+	tunnel := probe.Dialer{Addr: cfg.TunnelAddr, Timeout: cfg.Timeout, Established: a.established, Pass: pass}
 
 	// the verdicts are filed under netID: a probe made after the machine
 	// moved to another network measured that one

@@ -25,6 +25,51 @@ type Dialer struct {
 	// NoV6: this network's direct path is known to have no IPv6, so an IPv6
 	// node is not probed on it -- see checkProto
 	NoV6 bool
+	// Pass: the password of SocksUser on the listener, "" for a listener
+	// that asks none (the tests' stubs)
+	Pass string
+}
+
+// SocksUser: the user the prober's listeners take (see awgconf), with the
+// core API's secret for a password. They took anyone: any program of any
+// account could go past the tunnel through the direct one.
+const SocksUser = "dpiswitch"
+
+// greet: the SOCKS5 greeting, and the user and password when the dialer
+// has one (RFC 1929)
+func (d Dialer) greet(c net.Conn) error {
+	method := byte(0)
+	if d.Pass != "" {
+		method = 2
+	}
+	if _, err := c.Write([]byte{5, 1, method}); err != nil {
+		return fmt.Errorf("socks greeting: %w", err)
+	}
+	resp := make([]byte, 2)
+	if _, err := io.ReadFull(c, resp); err != nil {
+		return fmt.Errorf("socks greeting reply: %w", err)
+	}
+	if resp[0] != 5 || resp[1] != method {
+		return fmt.Errorf("socks method rejected: %v", resp)
+	}
+	if method == 0 {
+		return nil
+	}
+	if len(d.Pass) > 255 {
+		return errors.New("socks password too long")
+	}
+	req := append([]byte{1, byte(len(SocksUser))}, SocksUser...)
+	req = append(append(req, byte(len(d.Pass))), d.Pass...)
+	if _, err := c.Write(req); err != nil {
+		return fmt.Errorf("socks auth: %w", err)
+	}
+	if _, err := io.ReadFull(c, resp); err != nil {
+		return fmt.Errorf("socks auth reply: %w", err)
+	}
+	if resp[1] != 0 {
+		return errors.New("socks auth refused")
+	}
+	return nil
 }
 
 // Alive: whether the core's listener itself accepts connections (not the site behind it)
@@ -43,20 +88,9 @@ func (d Dialer) dial(host string, port int) (net.Conn, error) {
 		return nil, fmt.Errorf("socks connect: %w", err)
 	}
 	_ = c.SetDeadline(time.Now().Add(d.Timeout))
-
-	// greeting: version 5, one method -- no authentication
-	if _, err := c.Write([]byte{5, 1, 0}); err != nil {
+	if err := d.greet(c); err != nil {
 		c.Close()
-		return nil, fmt.Errorf("socks greeting: %w", err)
-	}
-	resp := make([]byte, 2)
-	if _, err := io.ReadFull(c, resp); err != nil {
-		c.Close()
-		return nil, fmt.Errorf("socks greeting reply: %w", err)
-	}
-	if resp[0] != 5 || resp[1] != 0 {
-		c.Close()
-		return nil, fmt.Errorf("socks method rejected: %v", resp)
+		return nil, err
 	}
 
 	// CONNECT by host name: resolution is left to mihomo so the path

@@ -303,7 +303,8 @@ func render(c *Conf) (string, error) {
 	w("# with an empty exclusion list this costs nothing")
 	w("find-process-mode: strict")
 	w("external-controller: 127.0.0.1:9090")
-	w("secret: %s", yq(keepSecret(paths.Config())))
+	secret := keepSecret(paths.Config())
+	w("secret: %s", yq(secret))
 	w("# the choice of a select group comes from the settings, not from the")
 	w("# core's cache: the one kept there could be stale by a start")
 	w("profile:")
@@ -314,11 +315,20 @@ func render(c *Conf) (string, error) {
 	w("# captures all other traffic. SOCKS only: the prober speaks nothing else,")
 	w("# and the core is built without the other inbounds.")
 	w("listeners:")
+	// the prober alone: any program of any account took them, the direct
+	// one past the tunnel. The core takes UDP only from what an association
+	// of this user names (the core's listener/socks/assoc.go).
+	users := func() {
+		w("    users:")
+		w("      - username: %s", probe.SocksUser)
+		w("        password: %s", yq(secret))
+	}
 	w("  - name: probe-direct")
 	w("    type: socks")
 	w("    listen: 127.0.0.1")
 	w("    port: 7892")
 	w("    proxy: DIRECT")
+	users()
 	if c != nil {
 		// with no first tunnel the detector has nothing to measure against:
 		// it probes nothing, and has no listener
@@ -330,6 +340,7 @@ func render(c *Conf) (string, error) {
 		w("    listen: 127.0.0.1")
 		w("    port: 7891")
 		w("    proxy: awg")
+		users()
 	}
 	if c2 != nil {
 		// the settings' DNS test through the second tunnel; the detector
@@ -339,6 +350,7 @@ func render(c *Conf) (string, error) {
 		w("    listen: 127.0.0.1")
 		w("    port: 7893")
 		w("    proxy: awg2")
+		users()
 	}
 	w("")
 	w("tun:")

@@ -26,37 +26,43 @@ func (d Dialer) DialUDP() (*udpConn, error) {
 		return nil, fmt.Errorf("socks connect: %w", err)
 	}
 	_ = c.SetDeadline(time.Now().Add(d.Timeout))
-
-	if _, err := c.Write([]byte{5, 1, 0}); err != nil {
+	if err := d.greet(c); err != nil {
 		c.Close()
-		return nil, fmt.Errorf("socks greeting: %w", err)
-	}
-	resp := make([]byte, 2)
-	if _, err := io.ReadFull(c, resp); err != nil {
-		c.Close()
-		return nil, fmt.Errorf("socks greeting reply: %w", err)
-	}
-	if resp[0] != 5 || resp[1] != 0 {
-		c.Close()
-		return nil, fmt.Errorf("socks method rejected: %v", resp)
+		return nil, err
 	}
 
-	// CMD=3 (UDP ASSOCIATE). The source address is unknown, send zeros --
-	// the relay answers with the address to send datagrams to
-	req := []byte{5, 3, 0, 1, 0, 0, 0, 0, 0, 0}
+	// the socket datagrams go from, made first, on the address the control
+	// connection comes from: a listener with users takes UDP only from the
+	// port an association names (DPI Switch's core, listener/socks/assoc.go)
+	var local net.IP
+	if a, ok := c.LocalAddr().(*net.TCPAddr); ok {
+		local = a.IP
+	}
+	uc, err := net.ListenUDP("udp", &net.UDPAddr{IP: local})
+	if err != nil {
+		c.Close()
+		return nil, err
+	}
+	fail := func(err error) (*udpConn, error) {
+		uc.Close()
+		c.Close()
+		return nil, err
+	}
+
+	// CMD=3 (UDP ASSOCIATE), naming the port; the relay answers with the
+	// address to send datagrams to
+	from := uc.LocalAddr().(*net.UDPAddr).Port
+	req := []byte{5, 3, 0, 1, 0, 0, 0, 0, byte(from >> 8), byte(from)}
 	if _, err := c.Write(req); err != nil {
-		c.Close()
-		return nil, fmt.Errorf("socks udp associate: %w", err)
+		return fail(fmt.Errorf("socks udp associate: %w", err))
 	}
 
 	head := make([]byte, 4)
 	if _, err := io.ReadFull(c, head); err != nil {
-		c.Close()
-		return nil, fmt.Errorf("socks associate reply: %w", err)
+		return fail(fmt.Errorf("socks associate reply: %w", err))
 	}
 	if head[1] != 0 {
-		c.Close()
-		return nil, fmt.Errorf("socks udp refused: %s", socksErr(head[1]))
+		return fail(fmt.Errorf("socks udp refused: %s", socksErr(head[1])))
 	}
 
 	var host string
@@ -64,37 +70,31 @@ func (d Dialer) DialUDP() (*udpConn, error) {
 	case 1:
 		b := make([]byte, 4)
 		if _, err := io.ReadFull(c, b); err != nil {
-			c.Close()
-			return nil, err
+			return fail(err)
 		}
 		host = net.IP(b).String()
 	case 4:
 		b := make([]byte, 16)
 		if _, err := io.ReadFull(c, b); err != nil {
-			c.Close()
-			return nil, err
+			return fail(err)
 		}
 		host = net.IP(b).String()
 	case 3:
 		l := make([]byte, 1)
 		if _, err := io.ReadFull(c, l); err != nil {
-			c.Close()
-			return nil, err
+			return fail(err)
 		}
 		b := make([]byte, l[0])
 		if _, err := io.ReadFull(c, b); err != nil {
-			c.Close()
-			return nil, err
+			return fail(err)
 		}
 		host = string(b)
 	default:
-		c.Close()
-		return nil, fmt.Errorf("socks bad atyp %d", head[3])
+		return fail(fmt.Errorf("socks bad atyp %d", head[3]))
 	}
 	pb := make([]byte, 2)
 	if _, err := io.ReadFull(c, pb); err != nil {
-		c.Close()
-		return nil, err
+		return fail(err)
 	}
 	port := int(pb[0])<<8 | int(pb[1])
 
@@ -106,13 +106,7 @@ func (d Dialer) DialUDP() (*udpConn, error) {
 	}
 	raddr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(host, fmt.Sprint(port)))
 	if err != nil {
-		c.Close()
-		return nil, err
-	}
-	uc, err := net.ListenUDP("udp", nil)
-	if err != nil {
-		c.Close()
-		return nil, err
+		return fail(err)
 	}
 	_ = c.SetDeadline(time.Time{})
 	return &udpConn{ctrl: c, relay: uc, to: raddr}, nil

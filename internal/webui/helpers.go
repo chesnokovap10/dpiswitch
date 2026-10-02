@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"dpiswitch/internal/ctl"
+	"dpiswitch/internal/paths"
 	"dpiswitch/internal/probe"
 )
 
@@ -88,7 +89,8 @@ type dnsTest struct {
 // server that asked it -- who actually resolves, not the domain's owner.
 func testDNS(path string, servers []string) []dnsResult {
 	cfg := ctl.Defaults()
-	d := probe.Dialer{Addr: cfg.DirectAddr, Timeout: 6 * time.Second}
+	// the prober's listeners take its user only, the API's secret the password
+	d := probe.Dialer{Addr: cfg.DirectAddr, Timeout: 6 * time.Second, Pass: ctl.SecretFromConfig(paths.Config())}
 	switch path {
 	case "tunnel":
 		d.Addr = cfg.TunnelAddr
