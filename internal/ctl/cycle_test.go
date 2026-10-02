@@ -860,4 +860,26 @@ func TestForgetFromUI(t *testing.T) {
 	if e := s.entry("c.example.net"); e == nil {
 		t.Fatal("another domain's verdict went too")
 	}
+
+	// a request that is another file's second name is not read -- the
+	// service would read, as SYSTEM, what the user may not -- and goes;
+	// the file it names stays as it was
+	other := filepath.Join(dir, "other.txt")
+	if err := os.WriteFile(other, []byte("c.example.net\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "forget-link.request")
+	if err := os.Link(other, link); err != nil {
+		t.Fatal(err)
+	}
+	takeForget(s.cfg, s.api, s.st)
+	if e := s.entry("c.example.net"); e == nil {
+		t.Fatal("a request through a second name was read")
+	}
+	if _, err := os.Lstat(link); !os.IsNotExist(err) {
+		t.Fatal("the refused request was left behind")
+	}
+	if b, err := os.ReadFile(other); err != nil || string(b) != "c.example.net\n" {
+		t.Fatalf("the file it named was touched: %q %v", b, err)
+	}
 }

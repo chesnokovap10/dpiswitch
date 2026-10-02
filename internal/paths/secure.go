@@ -324,6 +324,8 @@ func setSD(h windows.Handle, path, sddl string) error {
 // ReadUserFile reads a file the user may have written, the way a process
 // running as SYSTEM must: not through a link (it would read, as SYSTEM, a
 // file the user may not), not through a second hard link, and not past max.
+// A file refused for what it is -- not for being missing or held open --
+// says ErrRefused.
 func ReadUserFile(path string, max int64) ([]byte, error) {
 	h, info, err := openNoFollow(path, windows.GENERIC_READ)
 	if err != nil {
@@ -333,16 +335,20 @@ func ReadUserFile(path string, max int64) ([]byte, error) {
 	defer f.Close()
 	switch {
 	case info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0:
-		return nil, fmt.Errorf("%s is a link: not read", path)
+		return nil, fmt.Errorf("%s is a link: %w", path, ErrRefused)
 	case info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0:
-		return nil, fmt.Errorf("%s is a directory", path)
+		return nil, fmt.Errorf("%s is a directory: %w", path, ErrRefused)
 	case info.NumberOfLinks > 1:
-		return nil, fmt.Errorf("%s has other names (hard links): not read", path)
+		return nil, fmt.Errorf("%s has other names (hard links): %w", path, ErrRefused)
 	case int64(info.FileSizeHigh)<<32|int64(info.FileSizeLow) > max:
-		return nil, fmt.Errorf("%s is larger than %d bytes: not read", path, max)
+		return nil, fmt.Errorf("%s is larger than %d bytes: %w", path, max, ErrRefused)
 	}
 	return io.ReadAll(io.LimitReader(f, max))
 }
+
+// ErrRefused: ReadUserFile would not read the file -- a link, a directory, a
+// file with other names or too large; trying again changes nothing
+var ErrRefused = errors.New("not read")
 
 // enablePrivileges: SYSTEM holds the rights to take ownership and to set
 // any permissions, but they are off in its token until asked for. Without

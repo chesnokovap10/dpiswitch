@@ -313,8 +313,11 @@ func (s *Server) actForget(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, liveAnswer{false, tr(l, err.Error())})
 		return
 	}
+	// whole or not at all: the service looks every second, and a file it
+	// met between being made and being written was taken empty -- the page
+	// said the verdict was reset, and nothing was
 	req := paths.ForgetRequest()
-	if err := os.WriteFile(req, []byte(key+"\n"), 0o644); err != nil {
+	if err := paths.ReplaceFile(req, []byte(key+"\n")); err != nil {
 		writeJSON(w, liveAnswer{false, err.Error()})
 		return
 	}

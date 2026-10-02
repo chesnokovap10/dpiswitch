@@ -6,6 +6,7 @@ package ctl
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -749,9 +750,20 @@ func takeForget(cfg Config, a *api, st *state) {
 	reqs, _ := filepath.Glob(cfg.ForgetPath)
 	var keys, taken []string
 	for _, r := range reqs {
-		b, err := os.ReadFile(r)
-		if err != nil {
-			continue // still being written: the next second
+		// the user's file, read as SYSTEM: not through a link (see
+		// paths.ReadUserFile). It was read as any file, and what a link
+		// pointed at went into the service's log, name by name
+		b, err := paths.ReadUserFile(r, forgetMax)
+		switch {
+		case errors.Is(err, paths.ErrRefused):
+			// no request the UI writes, and never one: it goes, unread
+			log.Printf("request %s not taken: %v", r, err)
+			if err := os.Remove(r); err != nil {
+				log.Printf("request %s not removed: %v", r, err)
+			}
+			continue
+		case err != nil:
+			continue // gone, or held open a moment: the next second
 		}
 		keys = append(keys, forgetKeys(b)...)
 		taken = append(taken, r)
@@ -783,6 +795,9 @@ func takeForget(cfg Config, a *api, st *state) {
 
 // forgetFailed: why the last drop could not be saved, said once
 var forgetFailed string
+
+// forgetMax: the most of a request read; the UI writes one name
+const forgetMax = 64 << 10
 
 // forgetKeys: the names a request holds, as memory keys them. What is no
 // name -- too long, a space in it -- is left out: the file is the user's
