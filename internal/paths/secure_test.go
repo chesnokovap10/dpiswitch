@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/sys/windows"
 )
 
 // asUser: the locks are taken for the test's own account -- setting SYSTEM
@@ -86,9 +88,8 @@ func TestSecureDataDir(t *testing.T) {
 		t.Fatalf("the service's copy of the list is gone: %q", b)
 	}
 	for _, p := range []string{root, Data("controller-state.json"), LogDir()} {
-		if s := sddl(t, p); !strings.HasPrefix(s, "D:P") || strings.Contains(s, "0x1301bf;;;BU") ||
-			strings.Contains(s, ";FA;;;BU") || !strings.Contains(s, "BU)") {
-			t.Fatalf("%s: %s -- want protected, Users read only", p, s)
+		if s := sddl(t, p); !strings.HasPrefix(s, "D:P") || strings.Contains(s, "BU)") {
+			t.Fatalf("%s: %s -- want protected, no access for the Users", p, s)
 		}
 	}
 	if s := sddl(t, User("source.conf")); strings.Contains(s, "BU)") {
@@ -101,6 +102,27 @@ func TestSecureDataDir(t *testing.T) {
 	// a second run changes nothing and fails on nothing
 	if err := SecureDataDir(me); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The service's files are read by the owner, whose UI shows them -- not by
+// every signed-in user: the core's log and the probes' reports name every
+// host the machine connects to. With no owner known the Users still read
+// them, or the UI would show nothing.
+func TestReaders(t *testing.T) {
+	const owner = "S-1-5-21-1-2-3-1001"
+	for _, s := range []string{dirSDDL(owner), fileSDDL(owner)} {
+		if strings.Contains(s, "BU") || !strings.Contains(s, "FRFX;;;"+owner+")") {
+			t.Errorf("owner known: %s", s)
+		}
+		if _, err := windows.SecurityDescriptorFromString(s); err != nil {
+			t.Errorf("%s: %v", s, err)
+		}
+	}
+	for _, s := range []string{dirSDDL(""), fileSDDL("")} {
+		if !strings.Contains(s, "FRFX;;;BU)") {
+			t.Errorf("no owner: %s", s)
+		}
 	}
 }
 

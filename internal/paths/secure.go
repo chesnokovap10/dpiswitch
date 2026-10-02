@@ -14,10 +14,11 @@ package paths
 //     pointed at.
 //
 // Now the directory and everything in it is owned by SYSTEM, writable by
-// SYSTEM and the Administrators, readable by Users. What the user changes
-// goes to UserDir, writable by the one user who installed the service (the
-// owner, kept in the service's registry key). The service reads it through
-// ReadUserFile, which follows no link, and never writes there.
+// SYSTEM and the Administrators, readable by the owner (see readers). What
+// the user changes goes to UserDir, writable by the one user who installed
+// the service (the owner, kept in the service's registry key). The service
+// reads it through ReadUserFile, which follows no link, and never writes
+// there.
 //
 // Every change of permissions here is made through a handle opened on the
 // entry itself (FILE_FLAG_OPEN_REPARSE_POINT) and set on that object alone
@@ -45,12 +46,25 @@ import (
 // service's; tests, which cannot set SYSTEM as an owner, put their own.
 var svcSID = "SY"
 
-func dirSDDL() string {
-	return "O:" + svcSID + "D:P(A;OICI;FA;;;" + svcSID + ")(A;OICI;FA;;;BA)(A;OICI;FRFX;;;BU)"
+// readers: who may read the service's files besides SYSTEM and the
+// administrators -- the owner, whose UI shows the verdicts, the logs and
+// Live. Every signed-in user used to: the core's log names every host the
+// machine connects to, whoever's program it is, and so do the probes'
+// reports and the verdicts. With no owner recorded -- an installation from
+// before owners -- the Users still, or the UI would show nothing at all.
+func readers(owner string) string {
+	if owner == "" {
+		return "BU"
+	}
+	return owner
 }
 
-func fileSDDL() string {
-	return "O:" + svcSID + "D:P(A;;FA;;;" + svcSID + ")(A;;FA;;;BA)(A;;FRFX;;;BU)"
+func dirSDDL(owner string) string {
+	return "O:" + svcSID + "D:P(A;OICI;FA;;;" + svcSID + ")(A;OICI;FA;;;BA)(A;OICI;FRFX;;;" + readers(owner) + ")"
+}
+
+func fileSDDL(owner string) string {
+	return "O:" + svcSID + "D:P(A;;FA;;;" + svcSID + ")(A;;FA;;;BA)(A;;FRFX;;;" + readers(owner) + ")"
 }
 
 // keySDDL: a file holding private keys -- the owner may read it (the UI
@@ -102,7 +116,7 @@ var keyNames = map[string]bool{"config.yaml": true, "source.conf": true, "source
 func SecureDataDir(owner string) error {
 	enablePrivileges()
 	root := DataDir()
-	if err := ensureDir(root, dirSDDL()); err != nil {
+	if err := ensureDir(root, dirSDDL(owner)); err != nil {
 		return err
 	}
 	var errs []error
@@ -112,7 +126,7 @@ func SecureDataDir(owner string) error {
 	} else {
 		migrate(owner)
 	}
-	if err := ensureDir(LogDir(), dirSDDL()); err != nil {
+	if err := ensureDir(LogDir(), dirSDDL(owner)); err != nil {
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
@@ -195,10 +209,10 @@ func lockChildren(dir, owner string, errs *[]error) {
 			continue
 		}
 		isDir := info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0
-		sddl := fileSDDL()
+		sddl := fileSDDL(owner)
 		switch {
 		case isDir:
-			sddl = dirSDDL()
+			sddl = dirSDDL(owner)
 		case dir == DataDir() && keyNames[strings.ToLower(e.Name())]:
 			sddl = keySDDL(owner)
 		}

@@ -365,7 +365,8 @@ Claude, Gemini, Grok, Copilot, DeepL и др.), Instagram, Facebook, X и ваш
 - `%ProgramData%\dpiswitch` — данные службы: конфиг ядра, вердикты (`controller-state.json`), каждая
   проба (`reports.jsonl`), логи (`logs\service.log`, `logs\mihomo.log`), метка запуска ядра, по
   которой Live узнаёт новый запуск (`core-run.txt`). Писать туда могут только SYSTEM и администраторы,
-  пользователи — читать.
+  читать — ещё вы: лог ядра и пробы называют каждый сайт, куда ходит компьютер, и другим учётным
+  записям их видеть незачем.
 - `%ProgramData%\dpiswitch\user` — то, что вы меняете в интерфейсе: `.conf`, списки, настройки.
   Писать туда можете только вы; служба это читает и никогда туда не пишет. Файлы с приватными
   ключами читаете только вы и служба.
@@ -770,7 +771,8 @@ state.
 - `%ProgramData%\dpiswitch` — the service's own data: the core's config, the verdicts
   (`controller-state.json`), every probe (`reports.jsonl`), the logs (`logs\service.log`,
   `logs\mihomo.log`), the name of the core's run Live tells a new run by (`core-run.txt`). Writable by
-  SYSTEM and Administrators only, readable by users.
+  SYSTEM and Administrators only, readable by you as well: the core's log and the probes name every
+  site the computer goes to, and other accounts have no business seeing them.
 - `%ProgramData%\dpiswitch\user` — what you change in the UI: the `.conf` files, lists, settings.
   Writable by you alone; the service reads it and never writes there. Files holding private keys are
   readable by you and the service only.
