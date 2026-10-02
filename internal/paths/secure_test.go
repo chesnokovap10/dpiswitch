@@ -56,9 +56,19 @@ func TestSecureDataDir(t *testing.T) {
 	os.WriteFile(Data("settings.json"), []byte(`{"slow_pct":30}`), 0o644)
 	os.WriteFile(Data(DirectList), []byte("example.com\n"), 0o644)
 	os.WriteFile(Data("controller-state.json"), []byte("{}"), 0o644)
+	planted := filepath.Join(victim, "precious")
+	if err := os.Link(planted, Data("planted.txt")); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := SecureDataDir(me); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := os.Lstat(Data("planted.txt")); !os.IsNotExist(err) {
+		t.Fatalf("the second name of a file elsewhere is still there: %v", err)
+	}
+	if s := sddl(t, planted); strings.HasPrefix(s, "D:P") {
+		t.Fatalf("the hard-linked file got the data directory's permissions: %s", s)
 	}
 
 	if _, err := os.Stat(filepath.Join(victim, "precious")); err != nil {

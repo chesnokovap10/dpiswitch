@@ -209,6 +209,18 @@ func lockChildren(dir, owner string, errs *[]error) {
 			continue
 		}
 		isDir := info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0
+		if !isDir && info.NumberOfLinks > 1 {
+			// another name of a file elsewhere, planted while every user
+			// could write here: permissions are the file's, not the name's,
+			// and setting them here set them on that file. The name goes;
+			// the file keeps its other names and its permissions.
+			windows.CloseHandle(h)
+			log.Printf("data directory: removing %s, another name of a file elsewhere", p)
+			if err := os.Remove(p); err != nil {
+				*errs = append(*errs, fmt.Errorf("hard link %s not removed: %w", p, err))
+			}
+			continue
+		}
 		sddl := fileSDDL(owner)
 		switch {
 		case isDir:
