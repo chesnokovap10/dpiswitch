@@ -147,11 +147,11 @@
 {{end}}
 
 {{/* "service stopped" was said of one not installed, and of one starting */}}
-{{define "tunstate"}}{{$v := .V}}{{with .S}}{{if not .Installed}}<span class="pill">{{$v.T "service not installed"}}</span>{{else if .Pending}}<span class="pill warn">{{$v.T .ServiceText}}…</span>{{else if not .ServiceRun}}<span class="pill">{{$v.T "service stopped"}}</span>{{else if $.Alive}}<span class="pill ok">{{$v.T "responding"}} · {{$v.Note $.Note}}</span>{{else}}<span class="pill bad">{{$v.T "not responding"}}</span> <span class="muted">{{$v.Note $.Note}}</span>{{end}}{{end}}{{end}}
+{{define "tunstate"}}{{$v := .V}}{{with .S}}{{if not .Installed}}<span class="pill">{{$v.T "service not installed"}}</span>{{else if .Pending}}<span class="pill warn">{{$v.T .ServiceText}}…</span>{{else if not .ServiceRun}}<span class="pill">{{$v.T "service stopped"}}</span>{{else}}<span data-tstate="{{$.Name}}">{{if $.Alive}}<span class="pill ok">{{$v.T "responding"}} · {{$v.Note $.Note}}</span>{{else}}<span class="pill bad">{{$v.T "not responding"}}</span> <span class="muted">{{$v.Note $.Note}}</span>{{end}}</span>{{end}}{{end}}{{end}}
 
 {{/* the second tunnel's state: switched off in this mode, or its health */}}
 {{define "awg2pill"}}{{$s := .St}}{{if not $s.Awg2On}}<span class="pill">{{.T "switched off"}}</span>
-{{- else}}{{template "tunstate" (tun . $s.Awg2Alive $s.Awg2Note)}}{{end}}{{end}}
+{{- else}}{{template "tunstate" (tun . "awg2" $s.Awg2Alive $s.Awg2Note)}}{{end}}{{end}}
 
 {{define "durs"}}{{$v := .V}}{{range .Opts}}<option value="{{.Min}}" {{if eq .Min $.Cur}}selected{{end}}>{{if .Label}}{{$v.T .Label}}{{else}}{{$v.Tf "%d min" .Min}}{{end}}</option>{{end}}{{end}}
 

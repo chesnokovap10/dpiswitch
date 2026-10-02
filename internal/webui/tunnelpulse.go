@@ -144,7 +144,8 @@ func Tunnel(name string) (alive bool, note string, ok bool) {
 // redraw its icon at once
 func TunnelChanged() <-chan struct{} { return pulse.changed }
 
-// handleTunnels: the header's tunnel chips, every second (see ui.js)
+// handleTunnels: the tunnels' state for the header's chips and the
+// overview's, every second (see ui.js)
 func (s *Server) handleTunnels(w http.ResponseWriter, r *http.Request) {
 	l := lang(r)
 	out := map[string]any{}
@@ -153,11 +154,14 @@ func (s *Server) handleTunnels(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			continue
 		}
-		text := tr(l, "not responding")
+		// the header's chip says the note alone when alive; the overview's
+		// pill says so, the note after it -- as the templates draw them
+		note := TunnelNote(l, st.Note)
+		text, pill := tr(l, "not responding"), tr(l, "not responding")
 		if st.Alive {
-			text = TunnelNote(l, st.Note)
+			text, pill = note, tr(l, "responding")+" · "+note
 		}
-		out[t] = map[string]any{"alive": st.Alive, "text": text}
+		out[t] = map[string]any{"alive": st.Alive, "text": text, "pill": pill, "note": note}
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(out)

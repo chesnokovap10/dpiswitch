@@ -46,7 +46,9 @@ func init() {
 		"lines": func(l []string) string { return strings.Join(l, "\n") },
 		"join":  strings.Join,
 		// tun: a tunnel's state for the "tunstate" template
-		"tun": func(v *view, alive bool, note string) tunArg { return tunArg{v, v.St, alive, note} },
+		"tun": func(v *view, name string, alive bool, note string) tunArg {
+			return tunArg{v, v.St, name, alive, note}
+		},
 		"dur": func(v *view, opts []durOpt, cur int) durArg { return durArg{v, opts, cur} },
 		// row: a verdict row with the page, for the templates that need both
 		"row": func(v *view, r vrow) rowArg { return rowArg{v, r} },
@@ -71,6 +73,7 @@ func init() {
 type tunArg struct {
 	V     *view
 	S     status
+	Name  string // awg, awg2: what ui.js updates it by every second
 	Alive bool
 	Note  string
 }

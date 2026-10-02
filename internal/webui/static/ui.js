@@ -345,9 +345,10 @@ function point(id) {
   addEventListener('hashchange', () => point(location.hash.slice(1)));
 })();
 
-// The header's tunnel chips follow the tunnels every second: the header
-// itself is drawn every five, and a tunnel gone dead or back showed late
-// (see tunnelpulse.go). Not while the page is hidden.
+// The tunnels' state -- the header's chips, the overview's and the second
+// tunnel's -- follows the tunnels every second: the parts they are in are
+// drawn every five or ten, and the chips said green while a part below
+// still said the tunnel was down (see tunnelpulse.go). Not while hidden.
 setInterval(async () => {
   if (document.hidden || !document.querySelector('[data-tunnel]')) return;
   const r = await fetch('/api/tunnels').catch(() => null);
@@ -361,6 +362,24 @@ setInterval(async () => {
     const text = c.dataset.tunnel + ' ' + s.text;
     if (c.lastChild && c.lastChild.nodeType === Node.TEXT_NODE) {
       if (c.lastChild.textContent !== text) c.lastChild.textContent = text;
+    }
+  }
+  // the overview's and the second tunnel's state, drawn as the template does
+  for (const c of document.querySelectorAll('[data-tstate]')) {
+    const s = st[c.dataset.tstate];
+    if (!s) continue;
+    const key = s.alive + '|' + s.pill + '|' + s.note;
+    if (c.dataset.key === key) continue;
+    c.dataset.key = key;
+    const p = document.createElement('span');
+    p.className = 'pill ' + (s.alive ? 'ok' : 'bad');
+    p.textContent = s.pill;
+    c.replaceChildren(p);
+    if (!s.alive && s.note) {
+      const m = document.createElement('span');
+      m.className = 'muted';
+      m.textContent = s.note;
+      c.append(' ', m);
     }
   }
 }, 1000);
