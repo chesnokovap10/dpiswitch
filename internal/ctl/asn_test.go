@@ -124,3 +124,36 @@ func TestIPStill(t *testing.T) {
 		t.Fatal("a gateway with no ISP known held the results back")
 	}
 }
+
+// The ISP not found, the lookup is left alone for a while: with RIPE out of
+// reach every tick spent most of its minute in three tries. The answer is
+// what the failure gave -- the gateway's own memory for a gateway with no
+// ISP known -- and the lookup is tried again once the pause is over.
+func TestResolveNetworkLookupBackoff(t *testing.T) {
+	netIDMu.Lock()
+	netIDVal, netIDWhen = "gw1", time.Now().Add(time.Hour)
+	netIDMu.Unlock()
+	lookups := 0
+	oldLookup, oldIP, oldRetry, oldBackoff := lookupASNFn, publicIPFn, lookupRetry, lookupBackoff
+	lookupASNFn = func(string) (string, string, error) { lookups++; return "", "", errors.New("RIPE down") }
+	publicIPFn = func(string) (string, error) { return "", errors.New("RIPE down") }
+	lookupRetry = 0
+	t.Cleanup(func() {
+		lookupASNFn, publicIPFn, lookupRetry, lookupBackoff = oldLookup, oldIP, oldRetry, oldBackoff
+		netIDMu.Lock()
+		netIDVal, netIDWhen = "", time.Time{}
+		netIDMu.Unlock()
+	})
+	st := loadState(filepath.Join(t.TempDir(), "state.json"))
+	if got := resolveNetwork(Config{}, st); got != "gw1" || lookups != 3 {
+		t.Fatalf("first: %s after %d lookups", got, lookups)
+	}
+	if got := resolveNetwork(Config{}, st); got != "gw1" || lookups != 3 {
+		t.Fatalf("within the pause: %s, %d lookups", got, lookups)
+	}
+	lookupBackoff = 0
+	lookupASNFn = func(string) (string, string, error) { lookups++; return "AS1", "203.0.113.1", nil }
+	if got := resolveNetwork(Config{}, st); got != "AS1" || lookups != 4 {
+		t.Fatalf("after the pause: %s, %d lookups", got, lookups)
+	}
+}

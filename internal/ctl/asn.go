@@ -99,6 +99,35 @@ var (
 // lookupRetry: the wait between lookups that failed; the tests shorten it
 var lookupRetry = 5 * time.Second
 
+// lookupBackoff: how long after the ISP could not be looked up behind a
+// gateway the lookup is left alone. A lookup is three tries five seconds
+// apart, two requests of up to eight seconds each: with RIPE out of reach
+// the main loop spent most of every minute in it -- settings applied late,
+// cycles held up -- and the next tick started it all over again.
+var lookupBackoff = 10 * time.Minute
+
+// lookupHeld: whether the lookup behind att failed within lookupBackoff
+func (s *state) lookupHeld(att string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	at, ok := s.lookupFailed[att]
+	return ok && time.Since(at) < lookupBackoff
+}
+
+// lookupDone notes how the lookup behind att went
+func (s *state) lookupDone(att string, failed bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !failed {
+		delete(s.lookupFailed, att)
+		return
+	}
+	if s.lookupFailed == nil {
+		s.lookupFailed = map[string]time.Time{}
+	}
+	s.lookupFailed[att] = time.Now()
+}
+
 func getJSON(cl *http.Client, u string, v any) error {
 	resp, err := cl.Get(u)
 	if err != nil {
@@ -146,6 +175,14 @@ func resolveNetwork(cfg Config, st *state) string {
 		}
 	}
 
+	if st.lookupHeld(att) {
+		// failed a moment ago: what the failure below answers, without
+		// the minute it takes
+		if ok && !moved {
+			return cached.Net
+		}
+		return att
+	}
 	var asn, ip string
 	var err error
 	for i := 0; i < 3; i++ {
@@ -154,6 +191,7 @@ func resolveNetwork(cfg Config, st *state) string {
 		}
 		time.Sleep(lookupRetry)
 	}
+	st.lookupDone(att, err != nil)
 	if err != nil {
 		if ok && !moved {
 			// the ISP behind this gateway is already known, it just failed

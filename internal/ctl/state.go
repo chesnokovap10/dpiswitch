@@ -63,6 +63,9 @@ type state struct {
 	V6 map[string]*v6Memo `json:"v6,omitempty"`
 	// resets: how many times the verdicts were reset, see resetEpoch
 	resets int
+	// lookupFailed: when the ISP behind a gateway last could not be looked
+	// up, see lookupBackoff; not kept across starts
+	lookupFailed map[string]time.Time
 }
 
 type v6Memo struct {
