@@ -80,6 +80,9 @@ type Tray struct {
 	OnOpen  func() // left click
 	items   map[uint32]func()
 	classNm *uint16
+	// taskbarCreated: the message Explorer sends every window when it
+	// starts again -- its icons are gone then, ours with them
+	taskbarCreated uint32
 }
 
 var (
@@ -104,6 +107,7 @@ var (
 	pSetForegroundWindow      = user32.NewProc("SetForegroundWindow")
 	pCreateIconFromResourceEx = user32.NewProc("CreateIconFromResourceEx")
 	pGetSystemMetrics         = user32.NewProc("GetSystemMetrics")
+	pRegisterWindowMessage    = user32.NewProc("RegisterWindowMessageW")
 	pShellNotifyIcon          = shell32.NewProc("Shell_NotifyIconW")
 	pGetModuleHandle          = kernel32.NewProc("GetModuleHandleW")
 	pGetProcessWindowStation  = user32.NewProc("GetProcessWindowStation")
@@ -159,6 +163,11 @@ func New(tip string) (*Tray, error) {
 		t.icons[i] = h
 	}
 
+	// registered before the window is: its procedure reads it
+	if r, _, _ := pRegisterWindowMessage.Call(uintptr(unsafe.Pointer(windows.StringToUTF16Ptr("TaskbarCreated")))); r != 0 {
+		t.taskbarCreated = uint32(r)
+	}
+
 	inst, _, _ := pGetModuleHandle.Call(0)
 	t.classNm = windows.StringToUTF16Ptr("dpiswitchTrayClass")
 	wc := wndClassEx{
@@ -185,17 +194,8 @@ func New(tip string) (*Tray, error) {
 	// stops showing the icon entirely. Seen in practice -- the tray icon
 	// vanished after every exe replacement. Ghost icons from crashed
 	// processes are a lesser evil than a missing icon.
-	if err := t.notify(nimAdd); err != nil {
-		log.Printf("tray: first attempt to add the icon failed: %v", err)
-		// a stale entry may be left by a killed copy
-		_ = t.notify(nimDelete)
-		if err2 := t.notify(nimAdd); err2 != nil {
-			log.Printf("tray: the retry failed too: %v", err2)
-			return nil, err2
-		}
-		log.Println("tray: icon added on the second attempt")
-	} else {
-		log.Println("tray: icon added")
+	if err := t.addIcon(); err != nil {
+		return nil, err
 	}
 	// the desktop the process is attached to: if it is not
 	// WinSta0\Default, the icon will never be visible
@@ -291,6 +291,23 @@ func clipTip(s string) string {
 	return s
 }
 
+// addIcon puts the icon in the notification area
+func (t *Tray) addIcon() error {
+	if err := t.notify(nimAdd); err != nil {
+		log.Printf("tray: first attempt to add the icon failed: %v", err)
+		// a stale entry may be left by a killed copy
+		_ = t.notify(nimDelete)
+		if err2 := t.notify(nimAdd); err2 != nil {
+			log.Printf("tray: the retry failed too: %v", err2)
+			return err2
+		}
+		log.Println("tray: icon added on the second attempt")
+		return nil
+	}
+	log.Println("tray: icon added")
+	return nil
+}
+
 func (t *Tray) notify(action uint32) error {
 	r, _, err := pShellNotifyIcon.Call(uintptr(action), uintptr(unsafe.Pointer(t.data())))
 	if r == 0 {
@@ -311,6 +328,13 @@ func (t *Tray) SetState(s State, tip string) {
 }
 
 func (t *Tray) wndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uintptr {
+	if t.taskbarCreated != 0 && message == t.taskbarCreated {
+		// Explorer started again, with none of the icons it had: the tray
+		// ran on without one, and only its own restart brought it back
+		log.Println("tray: the taskbar came back, adding the icon again")
+		_ = t.addIcon()
+		return 0
+	}
 	switch message {
 	case wmTrayIcon:
 		switch uint32(lParam) {
