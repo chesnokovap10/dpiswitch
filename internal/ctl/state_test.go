@@ -1,6 +1,8 @@
 package ctl
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -56,6 +58,53 @@ func TestForgetDropsUnusedOnly(t *testing.T) {
 		if _, ok := st.Networks["net"][keep]; !ok {
 			t.Errorf("%s must be kept", keep)
 		}
+	}
+}
+
+// Another network nothing has gone through for the term goes whole, its
+// IPv6 memo with it; one used within it stays whole, and so does the one the
+// machine is on, however old its names.
+func TestDropStaleNetworks(t *testing.T) {
+	now := time.Now()
+	old := now.Add(-40 * 24 * time.Hour)
+	st := &state{
+		Networks: map[string]map[string]*entry{
+			"home":  {"a.example": {Verdict: probe.Clean, DecidedAt: old, LastSeen: old}},
+			"hotel": {"b.example": {Verdict: probe.Clean, DecidedAt: old, LastSeen: old}, "c.example": {DecidedAt: old}},
+			"phone": {"d.example": {DecidedAt: old, LastSeen: old}, "e.example": {DecidedAt: old, LastSeen: now.Add(-time.Hour)}},
+			"empty": {},
+		},
+		V6: map[string]*v6Memo{"hotel": {Misses: 1}},
+	}
+	nets, names := st.dropStale("home", staleNetwork)
+	if nets != 2 || names != 2 {
+		t.Fatalf("dropped %d networks, %d names; want 2, 2", nets, names)
+	}
+	for _, id := range []string{"hotel", "empty"} {
+		if _, ok := st.Networks[id]; ok {
+			t.Errorf("%s kept", id)
+		}
+	}
+	if _, ok := st.V6["hotel"]; ok {
+		t.Error("the dropped network's IPv6 memo kept")
+	}
+	if len(st.Networks["home"]) != 1 || len(st.Networks["phone"]) != 2 {
+		t.Fatalf("left: %v", st.Networks)
+	}
+}
+
+// What a start offline filed under no network is not loaded, nor is that
+// taken for the network the machine is on.
+func TestLoadStateDropsNoNetwork(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "state.json")
+	b := `{"networks":{"unknown":{"x.example":{"verdict":"CLEAN"}},"AS1":{"y.example":{"verdict":"CLEAN"}}},` +
+		`"current":"unknown","v6":{"unknown":{"misses":2}}}`
+	if err := os.WriteFile(p, []byte(b), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st := loadState(p)
+	if _, ok := st.Networks[noNetwork]; ok || len(st.Networks["AS1"]) != 1 || st.Current != "" || st.V6[noNetwork] != nil {
+		t.Fatalf("%+v", st)
 	}
 }
 

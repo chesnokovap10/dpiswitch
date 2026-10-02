@@ -75,8 +75,17 @@ func Run(ctx context.Context, cfg Config) {
 	cfg.stop = ctx.Done()
 	st := loadState(cfg.StatePath)
 	netID := resolveNetwork(cfg, st)
-	st.setCurrent(netID)
-	_ = st.save()
+	// No network yet -- a start before Wi-Fi is up. Nothing is filed or
+	// applied under it: the first cycle and the list used to go by an empty
+	// memory called "unknown", and what it filed there was applied at a
+	// later start on whatever network that was. The list of the last run
+	// stays, as it does through a Wi-Fi blip, and the main loop takes the
+	// network up at the first tick that finds one.
+	offline := netID == noNetwork
+	if !offline {
+		st.setCurrent(netID)
+		_ = st.save()
+	}
 
 	// the user's settings file overrides the service values; if it is missing,
 	// whatever was passed at start stays
@@ -109,7 +118,9 @@ func Run(ctx context.Context, cfg Config) {
 	// otherwise the list and the state diverge after a migration, a manual edit
 	// or a panic reset -- and accumulated verdicts are simply not applied
 	if cfg.Apply {
-		applyList(cfg, a, st, netID)
+		if !offline {
+			applyList(cfg, a, st, netID)
+		}
 	} else if haveSet {
 		// disabled by the user: the list from the previous run must not
 		// keep sending sites direct
@@ -143,7 +154,6 @@ func Run(ctx context.Context, cfg Config) {
 	}
 
 	t := time.NewTicker(cfg.Interval)
-	offline := false // no gateway right now (see the tick below)
 	defer t.Stop()
 	g := &gate{interval: cfg.Interval}
 	health := func() (bool, string, error) {
@@ -153,7 +163,7 @@ func Run(ctx context.Context, cfg Config) {
 		}
 		return a.tunnelHealth(cfg.ProxyName)
 	}
-	if g.allow(time.Now().Round(0), health) {
+	if !offline && g.allow(time.Now().Round(0), health) {
 		cycle(cfg, a, st, netID, w)
 	}
 	for {
@@ -165,7 +175,7 @@ func Run(ctx context.Context, cfg Config) {
 			settingsChanged()
 			// the network may have changed -- another network's verdicts do not apply
 			id := resolveNetwork(cfg, st)
-			if id == "unknown" {
+			if id == noNetwork {
 				// no gateway: Wi-Fi reconnecting, sleep, cable out. This is not
 				// a new network -- switching to an empty memory used to send every
 				// site into the tunnel for the duration of a one-minute Wi-Fi blip.
@@ -383,7 +393,11 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 		if cfg.Apply {
 			enableAuto(cfg)
 		}
-		applyList(cfg, a, st, netID)
+		// started offline, there is no memory to write the list from yet:
+		// the main loop writes it once it finds the network
+		if netID != noNetwork {
+			applyList(cfg, a, st, netID)
+		}
 	}
 	return cfg
 }

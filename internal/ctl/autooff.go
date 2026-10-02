@@ -91,7 +91,7 @@ func enableAuto(cfg Config) {
 func turnOn(cfg Config, a *api, st *state) {
 	enableAuto(cfg)
 	id := st.current()
-	if id == "" || id == "unknown" {
+	if id == "" || id == noNetwork {
 		return // the main loop writes them once it knows the network
 	}
 	syncList(cfg, a, st, id, true)

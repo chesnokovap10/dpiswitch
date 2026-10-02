@@ -99,6 +99,12 @@ func loadState(path string) *state {
 	if s.Networks == nil {
 		s.Networks = map[string]map[string]*entry{}
 	}
+	// what a start offline filed under no network at all (see noNetwork)
+	delete(s.Networks, noNetwork)
+	delete(s.V6, noNetwork)
+	if s.Current == noNetwork {
+		s.Current = ""
+	}
 	return s
 }
 
@@ -399,6 +405,40 @@ func (s *state) forget(id string, idle time.Duration) int {
 		}
 	}
 	return n
+}
+
+// staleNetwork: how long another network may go unused before its memory is
+// dropped whole. forget goes by the network the machine is on, name by
+// name; the others' names are never used there, and an ISP met once -- a
+// hotel's, a phone's -- kept its verdicts for good. A month: a fortnight
+// away does not cost the home network its memory.
+const staleNetwork = 30 * 24 * time.Hour
+
+// dropStale drops the networks other than current whose names were all last
+// used before term, and says how many networks and names went.
+func (s *state) dropStale(current string, term time.Duration) (nets, names int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cut := time.Now().Add(-term)
+	for id, m := range s.Networks {
+		if id == current {
+			continue
+		}
+		used := false
+		for _, e := range m {
+			if e.lastSeen().After(cut) {
+				used = true
+				break
+			}
+		}
+		if used {
+			continue
+		}
+		nets, names = nets+1, names+len(m)
+		delete(s.Networks, id)
+		delete(s.V6, id)
+	}
+	return nets, names
 }
 
 // quicOnly: CLEAN names still in use whose TCP was never probed on a port

@@ -112,6 +112,9 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	if n := st.forget(netID, 10*cfg.Idle); n > 0 {
 		log.Printf("forgot %d names nothing has gone to in %s", n, 10*cfg.Idle)
 	}
+	if nets, n := st.dropStale(netID, staleNetwork); nets > 0 {
+		log.Printf("dropped the memory of %d networks not used in %s (%d names)", nets, staleNetwork, n)
+	}
 	// Names a verdict must not exist for: skipped ones, and ones the user's
 	// own lists route (force-tunnel, presets). Filtering new candidates was
 	// not enough -- a verdict made before stayed, was re-checked while the
@@ -769,7 +772,7 @@ func takeForget(cfg Config, a *api, st *state) {
 		taken = append(taken, r)
 	}
 	netID := st.current()
-	if len(taken) == 0 || netID == "" {
+	if len(taken) == 0 || netID == "" || netID == noNetwork {
 		return // no network known yet: an empty list would be written
 	}
 	listMu.Lock()

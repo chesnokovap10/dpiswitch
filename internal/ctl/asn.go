@@ -119,7 +119,7 @@ func getJSON(cl *http.Client, u string, v any) error {
 // foreign network a false "clean" breaks sites.
 func resolveNetwork(cfg Config, st *state) string {
 	att := networkID()
-	if att == "unknown" {
+	if att == noNetwork {
 		return att
 	}
 	cached, ok := st.attached(att)

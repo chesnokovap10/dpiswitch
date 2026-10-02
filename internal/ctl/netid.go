@@ -15,6 +15,12 @@ import (
 	"strings"
 )
 
+// noNetwork: the network id while there is none -- no gateway, no address.
+// Nothing is filed under it: it is no network, and a start offline used to
+// file verdicts there and apply them at a later start on whatever network
+// that was.
+const noNetwork = "unknown"
+
 // fake-ip range from the mihomo config: 198.18.0.1/16
 var _, fakeIPRange, _ = net.ParseCIDR("198.18.0.0/15")
 
@@ -59,7 +65,7 @@ func computeNetworkID() string {
 	// APIPA means DHCP did not answer and the address is random
 	nets := localNets()
 	if len(nets) == 0 {
-		return "unknown"
+		return noNetwork
 	}
 	sort.Strings(nets)
 	sum := sha256.Sum256([]byte(strings.Join(nets, "|")))
