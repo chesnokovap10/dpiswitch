@@ -77,15 +77,13 @@ func ParseFile(path string) (*Conf, error) {
 	return Parse(string(b))
 }
 
-var secretRe = regexp.MustCompile(`(?m)^secret:\s*'([^']+)'`)
-
 // the secret is reused: the tray and the controller rely on it,
-// and a new one on every generation would silently break their API access
+// and a new one on every generation would silently break their API access.
+// Read the way they read it (ctl.SecretFromConfig): a pattern of its own
+// here could take a config they read a secret from for one without.
 func keepSecret(existing string) string {
-	if b, err := os.ReadFile(existing); err == nil {
-		if m := secretRe.FindSubmatch(b); m != nil {
-			return string(m[1])
-		}
+	if s := ctl.SecretFromConfig(existing); s != "" {
+		return s
 	}
 	buf := make([]byte, 8)
 	_, _ = rand.Read(buf)

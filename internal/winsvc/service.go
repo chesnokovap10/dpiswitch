@@ -478,5 +478,3 @@ func IsWindowsService() bool {
 	ok, err := svc.IsWindowsService()
 	return err == nil && ok
 }
-
-var _ = windows.ERROR_SUCCESS

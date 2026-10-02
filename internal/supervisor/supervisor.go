@@ -5,7 +5,6 @@ package supervisor
 import (
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -381,8 +380,6 @@ func apiReady(addr, secret string) bool {
 	resp.Body.Close()
 	return resp.StatusCode == http.StatusOK
 }
-
-var _ = io.Discard
 
 // waitNetwork waits for a physical network. Returns false
 // only if we are shutting down.

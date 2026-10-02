@@ -13,7 +13,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
@@ -422,9 +421,3 @@ func msgBox(title, text string, icon uint32) {
 	b, _ := syscall.UTF16PtrFromString(text)
 	windows.MessageBox(0, b, t, icon)
 }
-
-func sleep(sec int) {
-	windows.SleepEx(uint32(sec*1000), false)
-}
-
-var _ = unsafe.Pointer(nil)

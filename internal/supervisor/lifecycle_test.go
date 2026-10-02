@@ -88,8 +88,11 @@ func TestAPIReady(t *testing.T) {
 	defer srv.Close()
 	addr := strings.TrimPrefix(srv.URL, "http://")
 
-	if apiReady(addr, "s") || apiReady(addr, "s") {
-		t.Fatal("ready while the core answers 503")
+	// two asks, one per 503 the core answers while it starts
+	for i := 0; i < 2; i++ {
+		if apiReady(addr, "s") {
+			t.Fatal("ready while the core answers 503")
+		}
 	}
 	if !apiReady(addr, "s") {
 		t.Fatal("not ready once it answers")

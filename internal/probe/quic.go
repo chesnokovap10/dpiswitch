@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
-	"fmt"
 	"net"
 	"time"
 
@@ -86,5 +85,3 @@ func h3Get(ctx context.Context, r *PathResult, conn *quic.Conn, host string) {
 	}
 	readResponse(r, resp, host, t2)
 }
-
-var _ = fmt.Sprintf

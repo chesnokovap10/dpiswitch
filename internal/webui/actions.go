@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -401,12 +400,6 @@ func closeMoved(providers []string, match func(ctl.Conn) bool, taken func() bool
 		log.Printf("ui: closed %d connections a list change moved", n)
 	}
 	return n, err
-}
-
-// providerOf: the rule-provider a list file is, as the core config names
-// it -- the file's name without .txt
-func providerOf(name string) string {
-	return strings.TrimSuffix(filepath.Base(name), ".txt")
 }
 
 // syncWait: how long a save waits for the service to take it -- it looks

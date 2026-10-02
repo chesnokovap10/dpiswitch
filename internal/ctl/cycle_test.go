@@ -916,8 +916,21 @@ func TestRequestsFollowSettings(t *testing.T) {
 	var now atomic.Pointer[Config]
 	now.Store(&s.cfg)
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go watchReset(ctx, func() Config { return *now.Load() }, s.api, s.st)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		watchReset(ctx, func() Config { return *now.Load() }, s.api, s.st)
+	}()
+	// gone before the test is: a tick still running after it went on with
+	// the machine's own ProgramData back in place, and left the reloads it
+	// owed to the next test's core
+	defer func() {
+		cancel()
+		<-done
+		listMu.Lock()
+		clear(reloadPending)
+		listMu.Unlock()
+	}()
 	off := s.cfg
 	off.Families = false // switched off in the main loop
 	now.Store(&off)

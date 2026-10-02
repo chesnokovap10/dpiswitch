@@ -3,8 +3,6 @@ package ctl
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -223,37 +221,11 @@ func saveSettings(path string, s Settings) error {
 	if err != nil {
 		return err
 	}
-	// a temporary file of its own: two writers sharing one name could
-	// interleave into a broken file
-	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	_, err = f.Write(b)
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		os.Remove(f.Name())
-		return err
-	}
-	return renameRetry(f.Name(), path)
-}
-
-// renameRetry: Windows refuses to replace a file someone has open, and the
-// settings file is read every second -- by the controller's watcher, the UI,
-// the tray. A save that met a read failed with "Access is denied"; a read
-// takes well under a millisecond, so trying again a few times gets through.
-func renameRetry(from, to string) error {
-	var err error
-	for i := 0; i < 20; i++ {
-		if err = os.Rename(from, to); err == nil {
-			return nil
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	os.Remove(from)
-	return err
+	// a temporary file of its own, moved over the old one: two writers
+	// sharing one name could interleave into a broken file, and the
+	// settings are read every second -- by the controller's watcher, the
+	// UI, the tray -- which a plain rename meets as "Access is denied"
+	return paths.ReplaceFile(path, b)
 }
 
 // the bounds of the numeric settings, in minutes and percent: the UI's
