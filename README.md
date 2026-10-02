@@ -393,11 +393,11 @@ dpiswitch version    показать версию
 
 Результат — один файл `dist\dpiswitch.exe` со встроенным ядром mihomo (сжато gzip, всего ~24 МБ).
 При первой сборке ядро собирается скриптом `tools\build-mihomo.ps1` в `dist\mihomo.exe` и потом
-переиспользуется (удалите его, чтобы пересобрать). Ядро собирается из форка mihomo
-[chesnokovap10/mihomo-dpiswitch](https://github.com/chesnokovap10/mihomo-dpiswitch) на закреплённом
-коммите: проверенная версия mihomo, все зависимости в `vendor/` и одно исправление — ICMP-ошибка от
-одного адресата больше не обрывает UDP через туннель (без него uTP и DHT торрентов через туннель не
-работали). Оставлено только нужное DPI Switch: исходящий WireGuard (AmneziaWG), входящие TUN и SOCKS;
+переиспользуется, пока отметка `dist\mihomo.commit` совпадает с закреплённым коммитом. Ядро собирается
+из форка mihomo [chesnokovap10/mihomo-dpiswitch](https://github.com/chesnokovap10/mihomo-dpiswitch) на
+закреплённом коммите: проверенная альфа mihomo, все зависимости в `vendor/` и правки для DPI Switch —
+первые пакеты через WireGuard не теряются после старта, API ядра оставляет только то, что вызывает
+служба, а слушатели пробника пускают только его самого, UDP тоже. Оставлено только нужное DPI Switch: исходящий WireGuard (AmneziaWG), входящие TUN и SOCKS;
 остальные протоколы, gVisor, встроенные Tailscale, ZeroTier и EasyTier и отладочные символы выброшены:
 ~30 МБ вместо ~80 МБ. TUN работает на сетевом стеке Windows (`stack: system`).
 
@@ -800,11 +800,12 @@ Requires Go 1.26+.
 
 The result is a single `dist\dpiswitch.exe` with the mihomo core embedded inside (gzip-compressed,
 ~24 MB in total). On the first build the core is built by `tools\build-mihomo.ps1` into
-`dist\mihomo.exe` and reused afterwards (delete it to rebuild). The core is built from the fork of
-mihomo at [chesnokovap10/mihomo-dpiswitch](https://github.com/chesnokovap10/mihomo-dpiswitch), at a
-pinned commit: the tested mihomo version, every dependency in `vendor/` and one fix -- a single
-destination's ICMP error no longer ends UDP through the tunnel (without it torrents' uTP and DHT did not
-work through the tunnel). Only what DPI Switch uses is kept: the WireGuard outbound (AmneziaWG) and the
+`dist\mihomo.exe` and reused afterwards, while its stamp `dist\mihomo.commit` names the pinned commit.
+The core is built from the fork of mihomo at
+[chesnokovap10/mihomo-dpiswitch](https://github.com/chesnokovap10/mihomo-dpiswitch), at a pinned
+commit: the tested mihomo Alpha, every dependency in `vendor/` and changes for DPI Switch -- the first
+packets through WireGuard are not lost after a start, the core's API keeps only what the service calls,
+and the prober's listeners take the prober alone, UDP included. Only what DPI Switch uses is kept: the WireGuard outbound (AmneziaWG) and the
 TUN and SOCKS inbounds; every other protocol, gVisor, the embedded Tailscale, ZeroTier and EasyTier and
 the debug symbols are left out: ~30 MB instead of ~80 MB. The TUN runs on the Windows network stack
 (`stack: system`).
