@@ -2,11 +2,7 @@ package supervisor
 
 import (
 	"context"
-	"fmt"
 	"log"
-	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	"dpiswitch/internal/awgconf"
@@ -23,8 +19,13 @@ import (
 // Nothing in the log says why. This is the check that says it.
 //
 // A tunnel found without IPv6 is written with ip-version: ipv4 -- that one
-// tunnel, not both -- and the core re-reads the config in place. A full core
-// restart would drop every connection for the sake of one line.
+// tunnel, not both -- and the core is restarted to take it. It used to
+// re-read the config in place: the core then kept the old WireGuard
+// outbound beside the new one, two sessions with one key that the server
+// kept taking from each other, and the tunnel dropped for minutes; the
+// core's API no longer takes a config from outside its own file either.
+// The answer is held across starts (see tunnelV6Hold), so the restart comes
+// once, not after every start.
 const (
 	// A literal address: no DNS in the way, so this measures IPv6 transport
 	// and nothing else.
@@ -36,16 +37,19 @@ const (
 
 // checkIPv6 waits for the tunnels to come up, tests IPv6 through each and
 // rewrites the config for the ones that cannot carry it. Runs after every core
-// start, against a config that was just rebuilt with IPv6 on for everyone --
-// an outbound already pinned to ip-version: ipv4 rejects IPv6 targets, so a
-// check running against yesterday's answer would only ever confirm it.
+// start, against a config that was just rebuilt with IPv6 on for every tunnel
+// but one found without it within the hold -- an outbound pinned to
+// ip-version: ipv4 rejects IPv6 targets, so a check through that one would
+// only ever confirm the answer; it is asked again once the hold is over.
 func (s *Supervisor) checkIPv6(ctx context.Context) {
 	secret := ctl.SecretFromConfig(paths.Config())
 	hc := newHealthChecker("127.0.0.1:9090", secret)
-	// reset at core start, so this is empty unless a previous check in this
-	// same core session already answered
+	// what the core started with (see startIPv6State): the adapter's
+	// answers, and the tunnels found without IPv6 within the hold
 	old := ctl.LoadTunnelIPv6(paths.TunnelIPv6())
+	held := loadV6Held(paths.TunnelIPv6Held())
 	found := ctl.TunnelIPv6{}
+	keepTunnelIPv6(old, found)
 
 	// the programs' side first, IPv6 on or off: Windows may keep the
 	// programs' traffic from the adapter altogether (see tunv6.go)
@@ -108,6 +112,11 @@ func (s *Supervisor) checkIPv6(ctx context.Context) {
 			ok, detail = hc.check(name, v6Named, 8000)
 		}
 		found[name] = ok
+		if ok {
+			delete(held, name)
+		} else {
+			held[name] = time.Now()
+		}
 		switch {
 		case ok && old.Dead(name):
 			log.Printf("%s: IPv6 works again (%s)", name, detail)
@@ -124,6 +133,12 @@ func (s *Supervisor) checkIPv6(ctx context.Context) {
 			log.Printf("IPv6 state not saved: %v", err)
 			return
 		}
+		// not held, the answer would be dropped at the restart and found
+		// again, and the core restarted after every start
+		if err := held.only(names).save(paths.TunnelIPv6Held()); err != nil {
+			log.Printf("IPv6 state not saved, the core keeps its config until its next start: %v", err)
+			return
+		}
 		changed, err := awgconf.Regenerate()
 		if err != nil {
 			log.Printf("config not rebuilt after the IPv6 check: %v", err)
@@ -132,12 +147,22 @@ func (s *Supervisor) checkIPv6(ctx context.Context) {
 		if !changed {
 			return
 		}
-		if err := reloadCoreConfig(hc); err != nil {
-			log.Printf("core did not re-read the config after the IPv6 check: %v", err)
-			return
-		}
-		log.Println("config re-read after the IPv6 check")
+		// under v6mu: the core restarted is the one this check measured
+		// (ctx is alive), and the next start builds its config after this
+		log.Println("restarting the core: the IPv6 check changed its config")
+		s.restartCore()
 	})
+}
+
+// only: the entries of the tunnels the config has, the rest dropped
+func (h v6Held) only(names []string) v6Held {
+	out := v6Held{}
+	for _, n := range names {
+		if at, ok := h[n]; ok {
+			out[n] = at
+		}
+	}
+	return out
 }
 
 // commitTun writes the adapter's answer alone -- IPv6 being off, nothing in
@@ -154,7 +179,7 @@ func (s *Supervisor) commitTun(ctx context.Context, old, found ctl.TunnelIPv6) {
 }
 
 // commitV6 writes what a check found -- the state file, the config, the
-// core's reload -- only while the core it measured still runs: ctx ends
+// core's restart -- only while the core it measured still runs: ctx ends
 // with it. Under v6mu, which the next core's start holds while it resets
 // IPv6 for everyone, the check either finishes before that start or sees
 // its core gone and writes nothing.
@@ -181,28 +206,4 @@ func (s *Supervisor) waitTunnel(ctx context.Context, hc *healthChecker, name str
 		}
 	}
 	return false
-}
-
-// reloadCoreConfig asks the core to re-read config.yaml in place, the way the
-// UI does when a setting changes. The process keeps running and connections
-// survive; only the outbound options are rebuilt.
-func reloadCoreConfig(hc *healthChecker) error {
-	body := strings.NewReader(`{"path":` + strconv.Quote(paths.Config()) + `}`)
-	req, err := http.NewRequest("PUT", "http://"+hc.apiAddr+"/configs?force=true", body)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if hc.secret != "" {
-		req.Header.Set("Authorization", "Bearer "+hc.secret)
-	}
-	resp, err := hc.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("PUT /configs: %s", resp.Status)
-	}
-	return nil
 }

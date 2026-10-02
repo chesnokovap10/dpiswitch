@@ -2,6 +2,8 @@ package supervisor
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -63,22 +65,67 @@ func TestTunProbes(t *testing.T) {
 	}
 }
 
-// A core starts with the adapter's answers of the last check, not the
-// tunnels': IPv6 found blocked for good builds the same config each start,
-// and nothing is re-read.
+// A core starts with the adapter's answers of the last check, and a
+// tunnel's "no IPv6" within the hold: IPv6 found blocked builds the same
+// config each start, and the core is not restarted for it again. A tunnel's
+// IPv6 working is not kept -- unknown is the same to the config -- nor is
+// "no IPv6" past the hold, or with no time, or a time ahead of the clock.
 func TestStartIPv6State(t *testing.T) {
+	now := time.Now()
 	last := ctl.TunnelIPv6{ctl.TunKey: false, ctl.Tun4Key: true, "awg": false, "awg2": true}
-	got := startIPv6State(last)
+	got := startIPv6State(last, v6Held{}, now)
 	if len(got) != 2 || !got.SystemBlocked() || got.TrafficBlocked() || got.Dead("awg") {
 		t.Fatalf("%v", got)
 	}
-	if len(startIPv6State(ctl.TunnelIPv6{"awg": false})) != 0 {
-		t.Fatal("a tunnel's answer kept")
+	if len(startIPv6State(ctl.TunnelIPv6{"awg": false}, nil, now)) != 0 {
+		t.Fatal("a tunnel's answer kept with no time to it")
+	}
+	for _, c := range []struct {
+		name string
+		at   time.Time
+		kept bool
+	}{
+		{"found an hour ago", now.Add(-time.Hour), true},
+		{"found past the hold", now.Add(-tunnelV6Hold - time.Minute), false},
+		{"found ahead of the clock", now.Add(time.Hour), false},
+	} {
+		got := startIPv6State(ctl.TunnelIPv6{"awg": false, "awg2": true}, v6Held{"awg": c.at, "awg2": c.at}, now)
+		want := 0 // awg2 works: not kept either way
+		if c.kept {
+			want = 1
+		}
+		if got.Dead("awg") != c.kept || len(got) != want {
+			t.Errorf("%s: %v", c.name, got)
+		}
+	}
+}
+
+// The hold survives the file it is kept in; a missing or broken one holds
+// nothing.
+func TestV6HeldFile(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "held.json")
+	if h := loadV6Held(p); len(h) != 0 {
+		t.Fatalf("no file: %v", h)
+	}
+	at := time.Now().Add(-time.Hour).Round(time.Second)
+	if err := (v6Held{"awg2": at}).save(p); err != nil {
+		t.Fatal(err)
+	}
+	if h := loadV6Held(p); !h["awg2"].Equal(at) || !h.holds("awg2", time.Now()) || h.holds("awg", time.Now()) {
+		t.Fatalf("read back: %v", h)
+	}
+	os.WriteFile(p, []byte("{broken"), 0o644)
+	if h := loadV6Held(p); h == nil || len(h) != 0 {
+		t.Fatalf("broken file: %v", h)
+	}
+	if h := (v6Held{"awg": at, "awg2": at}).only([]string{"awg2", "awg3"}); len(h) != 1 || !h["awg2"].Equal(at) {
+		t.Fatalf("only: %v", h)
 	}
 }
 
 // IPv6 not reaching the adapter, the tunnels are not checked: on IPv4
-// alone, they would be found without IPv6 whatever they carry.
+// alone, they would be found without IPv6 whatever they carry. Nor is a
+// tunnel whose "no IPv6" the start kept, for the same reason.
 func TestTunnelsToCheck(t *testing.T) {
 	names := []string{"awg", "awg2"}
 	if got := tunnelsToCheck(ctl.TunnelIPv6{ctl.TunKey: false}, names); len(got) != 0 {
@@ -88,6 +135,14 @@ func TestTunnelsToCheck(t *testing.T) {
 		if got := tunnelsToCheck(st, names); len(got) != 2 {
 			t.Errorf("%v: %v checked", st, got)
 		}
+	}
+	found := ctl.TunnelIPv6{ctl.TunKey: true}
+	keepTunnelIPv6(ctl.TunnelIPv6{ctl.TunKey: false, ctl.Tun4Key: false, "awg2": false, "awg": true}, found)
+	if len(found) != 2 || !found.Dead("awg2") || found.SystemBlocked() {
+		t.Fatalf("kept: %v", found)
+	}
+	if got := tunnelsToCheck(found, names); len(got) != 1 || got[0] != "awg" {
+		t.Errorf("awg2 kept without IPv6: %v checked", got)
 	}
 }
 

@@ -265,7 +265,8 @@ CDN, спидтестам, обновлениям.
 
 С включённым IPv6 у компьютера есть IPv6, даже если у провайдера его нет: он идёт через туннель.
 Прямые сайты ходят по IPv4. Если у сервера туннеля IPv6 не работает, программа это замечает и
-резолвит для него только IPv4. Переключение перезапускает ядро.
+резолвит для него только IPv4: ядро один раз перезапускается, и этот вывод держится сутки, потом
+проверяется снова. Переключение перезапускает ядро.
 
 ### Второй туннель
 
@@ -670,7 +671,8 @@ shares them, another ISP starts its own. Without a network the checks pause and 
 
 With IPv6 on, the computer gets IPv6 even where the ISP has none: it goes through the tunnel. Sites
 going direct use IPv4. If the tunnel's server has no working IPv6, the program finds out and
-resolves IPv4 only for it. Changing it restarts the core.
+resolves IPv4 only for it: the core restarts once, and that finding holds for a day before it is
+checked again. Changing it restarts the core.
 
 ### The second tunnel
 

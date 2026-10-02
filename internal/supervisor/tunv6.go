@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/json"
 	"net"
+	"os"
 	"time"
 
 	"dpiswitch/internal/ctl"
+	"dpiswitch/internal/paths"
 )
 
 // The programs' side of IPv6: the check in checkIPv6 goes from the core
@@ -26,20 +29,78 @@ import (
 // there.
 
 // startIPv6State: what a core starts with of the last checks -- the
-// adapter's answers, not the tunnels'. The adapter keeps its IPv6 address
-// with IPv6 found blocked, so the check still probes it and is no one-way
-// door; and a blocked answer reset at every start made every start rebuild
-// the config and re-read it, which rebuilt every outbound: awg2 down for a
-// minute, and YouTube direct meanwhile, wherever a filter (ViPNet) takes
-// IPv6 for good.
-func startIPv6State(last ctl.TunnelIPv6) ctl.TunnelIPv6 {
+// adapter's answers, and a tunnel found without IPv6 within tunnelV6Hold.
+// The adapter keeps its IPv6 address with IPv6 found blocked, so the check
+// still probes it and is no one-way door; and a blocked answer reset at
+// every start made every start rebuild the config under the running core:
+// awg2 down for a minute, and YouTube direct meanwhile, wherever a filter
+// (ViPNet) takes IPv6 for good. A tunnel's answer is kept the same way, for
+// a while: see tunnelV6Hold.
+func startIPv6State(last ctl.TunnelIPv6, held v6Held, now time.Time) ctl.TunnelIPv6 {
 	keep := ctl.TunnelIPv6{}
-	for _, k := range []string{ctl.TunKey, ctl.Tun4Key} {
-		if v, ok := last[k]; ok {
+	for k, v := range last {
+		switch {
+		case k == ctl.TunKey || k == ctl.Tun4Key:
 			keep[k] = v
+		case !v && held.holds(k, now):
+			keep[k] = false
 		}
 	}
 	return keep
+}
+
+// tunnelV6Hold: how long a tunnel found without IPv6 keeps that answer
+// across core starts. The answer puts ip-version: ipv4 on its outbound, and
+// an outbound on ipv4 refuses an IPv6 target: no check through it can see
+// IPv6 come back, so the answer must be dropped for one to be made. Dropped
+// at every start, as it used to be, the tunnel was found without IPv6 again
+// at every start, and the config changed under the running core each time --
+// re-read in place, the core kept the old WireGuard outbound beside the new
+// one, two sessions with one key, and the tunnel kept dropping for minutes.
+// The config is now applied by a core restart, and held for a day the answer
+// costs one at most a day: a start past the hold builds the config with IPv6
+// again, and the check finding it still dead restarts the core once.
+var tunnelV6Hold = 24 * time.Hour
+
+// v6Held: when each tunnel was last found without IPv6, by its proxy name.
+// The service writes it beside the answers (paths.TunnelIPv6Held).
+type v6Held map[string]time.Time
+
+func loadV6Held(path string) v6Held {
+	h := v6Held{}
+	if b, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(b, &h)
+	}
+	if h == nil {
+		h = v6Held{}
+	}
+	return h
+}
+
+func (h v6Held) save(path string) error {
+	b, err := json.MarshalIndent(h, "", "  ")
+	if err != nil {
+		return err
+	}
+	return paths.ReplaceFile(path, append(b, '\n'))
+}
+
+// holds: whether name's answer is within the hold. A time ahead of the clock
+// -- the clock set back -- holds nothing.
+func (h v6Held) holds(name string, now time.Time) bool {
+	at, ok := h[name]
+	return ok && !at.After(now) && now.Sub(at) < tunnelV6Hold
+}
+
+// keepTunnelIPv6 carries the tunnels' answers the start kept (see
+// startIPv6State) into found: their outbounds run on IPv4 alone, and a check
+// through one would find it without IPv6 whatever it carries
+func keepTunnelIPv6(old, found ctl.TunnelIPv6) {
+	for k, v := range old {
+		if k != ctl.TunKey && k != ctl.Tun4Key && !v {
+			found[k] = false
+		}
+	}
 }
 
 // keepAdapterIPv6 carries the last answer about the adapter's IPv6 into
@@ -56,12 +117,19 @@ func keepAdapterIPv6(old, found ctl.TunnelIPv6) {
 // reaching the adapter, the tunnels run on IPv4 alone (see awgconf): an
 // outbound on ip-version ipv4 refuses an IPv6 target, so a check through it
 // fails whatever the tunnel carries, and wrote awg2 down. None is asked
-// then -- their answers are reset at every start, so there is none to keep.
+// then; nor is a tunnel whose answer the start kept, on IPv4 alone for the
+// same reason (see tunnelV6Hold).
 func tunnelsToCheck(found ctl.TunnelIPv6, names []string) []string {
 	if found.SystemBlocked() {
 		return nil
 	}
-	return names
+	var out []string
+	for _, n := range names {
+		if _, kept := found[n]; !kept {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // the destinations: documentation ranges, routed into the adapter like

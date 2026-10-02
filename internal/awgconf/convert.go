@@ -265,8 +265,8 @@ func render(c *Conf) (string, error) {
 	// no stand-in addresses, no AAAA answers, the tunnels on IPv4. The
 	// adapter keeps its IPv6 address and route, for the check at the next
 	// start to find whether it gets through again: that answer is kept
-	// across starts, and a config built with it the same each time is not
-	// re-read -- a re-read rebuilt every outbound, and awg2 was down a minute.
+	// across starts, and a config built with it the same each time needs no
+	// core restart to take it (see supervisor.checkIPv6).
 	tunV6 := ctl.LoadTunnelIPv6(paths.TunnelIPv6())
 	ipv6 := set.IPv6 && !tunV6.SystemBlocked()
 	// tunnel resolvers: from settings, otherwise from the .conf

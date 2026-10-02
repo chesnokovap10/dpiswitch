@@ -141,6 +141,10 @@ func TunnelIPv6() string  { return Data("tunnel-ipv6.json") }
 func ServiceLog() string  { return filepath.Join(LogDir(), "service.log") }
 func MihomoLog() string   { return filepath.Join(LogDir(), "mihomo.log") }
 
+// TunnelIPv6Held: when each tunnel was found without IPv6, see
+// supervisor.tunnelV6Hold
+func TunnelIPv6Held() string { return Data("tunnel-ipv6-held.json") }
+
 // TrayLog: the tray runs as the user and logs in the user's own profile --
 // the service's log directory is not the user's to write in
 func TrayLog() string {

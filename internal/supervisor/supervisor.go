@@ -184,12 +184,14 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 	// the controller requests a restart). The source may be missing -- then
 	// use what exists; a broken source is no reason not to start
 	// Start optimistic: every tunnel gets IPv6, and the check below takes it
-	// away from the one that cannot carry it. Keeping the previous answer here
-	// would be a one-way door -- an outbound pinned to ip-version: ipv4 refuses
-	// IPv6 targets outright, so the check could never see IPv6 come back.
-	// The adapter's own answers are kept (see startIPv6State).
+	// away from the one that cannot carry it. Keeping the previous answer for
+	// good would be a one-way door -- an outbound pinned to ip-version: ipv4
+	// refuses IPv6 targets outright, so the check could never see IPv6 come
+	// back. The adapter's own answers are kept, and a tunnel's for a while
+	// (see startIPv6State).
 	s.v6mu.Lock()
-	if err := startIPv6State(ctl.LoadTunnelIPv6(paths.TunnelIPv6())).Save(paths.TunnelIPv6()); err != nil {
+	start := startIPv6State(ctl.LoadTunnelIPv6(paths.TunnelIPv6()), loadV6Held(paths.TunnelIPv6Held()), time.Now())
+	if err := start.Save(paths.TunnelIPv6()); err != nil {
 		log.Printf("IPv6 state not reset: %v", err)
 	}
 	if changed, err := awgconf.Regenerate(); err != nil {
