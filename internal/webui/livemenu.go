@@ -17,6 +17,7 @@ import (
 	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/paths"
 	"dpiswitch/internal/presets"
+	"dpiswitch/internal/winexec"
 )
 
 // The live page's menu: a row's site, address or program sent to one of the
@@ -481,7 +482,7 @@ func (s *Server) handleLivePresets(w http.ResponseWriter, r *http.Request) {
 // liveReveal opens the folder a file is in, the file picked out; a var for
 // tests, which must not start Explorer
 var liveReveal = func(path string) error {
-	cmd := exec.Command("explorer.exe")
+	cmd := exec.Command(winexec.WindowsDir("explorer.exe"))
 	// "/select," and the path in quotes, as Explorer reads it: Go would put
 	// the whole argument in quotes
 	cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: `explorer.exe /select,"` + path + `"`}

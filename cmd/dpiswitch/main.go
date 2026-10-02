@@ -405,7 +405,7 @@ func browse(target string) {
 	file, _ := syscall.UTF16PtrFromString(target)
 	if err := windows.ShellExecute(0, verb, file, nil, nil, windows.SW_SHOWNORMAL); err != nil {
 		// fallback: ShellExecute is picky about some schemes
-		_ = winexec.Command("rundll32", "url.dll,FileProtocolHandler", target).Start()
+		_ = winexec.Command(winexec.System32("rundll32.exe"), "url.dll,FileProtocolHandler", target).Start()
 	}
 }
 

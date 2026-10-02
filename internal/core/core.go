@@ -192,8 +192,8 @@ func secureDir(dir string) error {
 		// SYSTEM may lack the rights a stranger's objects grant: it takes
 		// ownership first, and ownership brings the right to set them. /L:
 		// a link inside is acted on as the link, not followed
-		_, _ = winexec.CombinedOutput("icacls.exe", dir, "/setowner", "*S-1-5-18", "/T", "/C", "/Q", "/L")
-		_, _ = winexec.CombinedOutput("icacls.exe", dir, "/grant", "*S-1-5-18:(OI)(CI)F", "/T", "/C", "/Q", "/L")
+		_, _ = winexec.CombinedOutput(winexec.System32("icacls.exe"), dir, "/setowner", "*S-1-5-18", "/T", "/C", "/Q", "/L")
+		_, _ = winexec.CombinedOutput(winexec.System32("icacls.exe"), dir, "/grant", "*S-1-5-18:(OI)(CI)F", "/T", "/C", "/Q", "/L")
 		if err := os.RemoveAll(dir); err != nil {
 			return fmt.Errorf("%s is not the service's and cannot be removed: %w", dir, err)
 		}
@@ -231,7 +231,7 @@ func trusted(path string) bool {
 // Users read and execute. Permissions are set by SID so it works on
 // localized Windows.
 func lockDown(dir string) error {
-	out, err := winexec.CombinedOutput("icacls.exe", dir, "/inheritance:r",
+	out, err := winexec.CombinedOutput(winexec.System32("icacls.exe"), dir, "/inheritance:r",
 		"/grant:r", "*S-1-5-18:(OI)(CI)F",
 		"/grant:r", "*S-1-5-32-544:(OI)(CI)F",
 		"/grant:r", "*S-1-5-32-545:(OI)(CI)RX")

@@ -84,7 +84,7 @@ var zeroRoute = regexp.MustCompile(`^\s*0\.0\.0\.0\s+0\.0\.0\.0\s+(\S+)\s+\S+\s+
 // for a new network -- with an empty verdict memory. So TUN is dropped and
 // the lowest metric among the rest wins.
 func defaultGateway() string {
-	out, err := winexec.Output("route", "print", "-4", "0.0.0.0")
+	out, err := winexec.Output(winexec.System32("route.exe"), "print", "-4", "0.0.0.0")
 	if err != nil {
 		return ""
 	}
@@ -113,7 +113,7 @@ func pickGateway(out string) string {
 var macRe = regexp.MustCompile(`([0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}`)
 
 func arpMAC(ip string) string {
-	out, err := winexec.Output("arp", "-a", ip)
+	out, err := winexec.Output(winexec.System32("arp.exe"), "-a", ip)
 	if err != nil {
 		return ""
 	}

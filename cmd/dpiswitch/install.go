@@ -127,7 +127,7 @@ func desktopShortcut() error {
 	}
 	exe := winsvc.InstalledExe()
 	// paths go through the environment: nothing in them is parsed as script
-	cmd := winexec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+	cmd := winexec.Command(winexec.System32(`WindowsPowerShell\v1.0\powershell.exe`), "-NoProfile", "-NonInteractive", "-Command",
 		`$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:DPI_LNK); `+
 			`$s.TargetPath = $env:DPI_EXE; $s.Arguments = 'tray'; `+
 			`$s.WorkingDirectory = (Split-Path $env:DPI_EXE); $s.IconLocation = $env:DPI_EXE + ',0'; `+
