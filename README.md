@@ -114,7 +114,7 @@
 Внизу боковой панели — установка и удаление службы, автозапуск трея и выбор языка (English / Русский).
 Трей говорит на том же языке, что и интерфейс.
 
-**Меню трея:** «Настройки…» (открыть интерфейс), «Установить службу…» / «Остановить туннель» /
+**Меню трея:** «Настройки…» (открыть интерфейс: уже открытое окно поднимается, новое открывается отдельным окном Chrome/Edge без вкладок), «Установить службу…» / «Остановить туннель» /
 «Запустить туннель», «Всё через туннель (сбросить вердикты)» — текущей сети, «Запускать с Windows», «Папка данных»,
 «Выход». Цвет значка показывает состояние: выключен, туннель работает, ошибка. Подсказка значка —
 сколько сайтов идёт напрямую и сколько заблокировано.
@@ -524,7 +524,7 @@ The header shows the service and tunnels' state, the auto-switch toggle and Star
 of the sidebar holds installing and removing the service, the tray's autostart and the language
 (English / Русский). The tray speaks the same language as the UI.
 
-**Tray menu:** "Settings…" (opens the UI), "Install service…" / "Stop tunnel" / "Start tunnel",
+**Tray menu:** "Settings…" (opens the UI: a window already open comes forward, a new one is a Chrome/Edge window of its own, with no tabs), "Install service…" / "Stop tunnel" / "Start tunnel",
 "Everything via tunnel (reset verdicts)" of the current network, "Start with Windows", "Data folder", "Exit". The icon's
 colour shows the state: off, tunnel up, error. Its tooltip tells how many sites go direct and how
 many are blocked.

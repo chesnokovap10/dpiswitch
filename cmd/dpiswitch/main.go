@@ -206,7 +206,7 @@ func runTray() {
 			log.Println("tray: the running copy's UI did not answer")
 			addr = fmt.Sprintf("http://127.0.0.1:%d/", session.Port())
 		}
-		browse(addr)
+		showUI(addr)
 		return
 	}
 
@@ -235,7 +235,7 @@ func runTray() {
 	if hasArg("--moved") {
 		settle(hasArg("--first"))
 	}
-	openUI := func() { browse(srv.URL()) }
+	openUI := func() { showUI(srv.URL()) }
 	t.OnOpen = openUI
 
 	t.Menu = func() []tray.Item {
