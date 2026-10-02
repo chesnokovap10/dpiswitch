@@ -75,8 +75,14 @@ func runService() {
 	// the data directory is made the service's before anything is written
 	// in it: an older version let every user write there, and a log opened
 	// through a link planted in the meantime is SYSTEM writing wherever it
-	// points (see paths.SecureDataDir)
-	owner := paths.ResolveOwner()
+	// points (see paths.SecureDataDir).
+	//
+	// The owner is the one installing recorded, and no other: an
+	// installation from before owners has none, and gets one by being
+	// installed again. It used to be guessed from the permissions of the
+	// files an older version left -- in a directory every user could write
+	// in then.
+	owner := paths.Owner()
 	secErr := paths.SecureDataDir(owner)
 	// again, a few times: an entry held open a moment ago may be free now
 	for i := 0; secErr != nil && i < 4; i++ {
