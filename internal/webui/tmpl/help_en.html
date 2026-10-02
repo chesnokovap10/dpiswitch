@@ -173,7 +173,9 @@ switched on at once. A change applies at once, like a switch. Once a built-in pr
 <h4>When a site does not open</h4>
 <ol>
 <li>Look it up on the <a href="/verdicts#vfilter">Verdicts</a> page with the filter. If it goes direct and should not,
-add it to <a href="/lists#list-tunnel">Always via tunnel</a> (<code>+.example.com</code> for the whole domain).</li>
+add it to <a href="/lists#list-tunnel">Always via tunnel</a> (<code>+.example.com</code> for the whole domain).
+A right-click on its row sends it to a list straight away, as on Live; the ✕ in the row resets that one verdict: the
+site goes through the tunnel until the detector checks it again.</li>
 <li>If many sites broke at once (a new block by the ISP), <a href="/verdicts#vreset">reset all verdicts</a>: everything
 goes through the tunnel and the detector starts over.</li>
 <li>If a site must see your real address (a bank, government services), add it to <a href="/lists#list-direct">Always direct</a>.</li>

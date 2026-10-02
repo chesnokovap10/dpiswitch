@@ -487,6 +487,33 @@ func (s *state) resetVerdicts() int {
 	return n
 }
 
+// forgetVerdicts drops the verdicts of the names given, in one network:
+// "name" alone, "+.name" the name and every name under it (a family),
+// "@address" an address's own. It moves the epoch as a reset does: a cycle
+// running would file a dropped name's verdict back.
+func (s *state) forgetVerdicts(id string, keys []string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, k := range keys {
+		if base, ok := strings.CutPrefix(k, "+."); ok {
+			for dom := range s.Networks[id] {
+				if dom == base || strings.HasSuffix(dom, "."+base) {
+					delete(s.Networks[id], dom)
+					n++
+				}
+			}
+			continue
+		}
+		if _, ok := s.Networks[id][k]; ok {
+			delete(s.Networks[id], k)
+			n++
+		}
+	}
+	s.resets++
+	return n
+}
+
 // resetEpoch: changes with every reset. A cycle notes it before its probes,
 // and files nothing if it changed meanwhile: probes started before a reset
 // used to put their verdicts back into the memory it had just emptied.

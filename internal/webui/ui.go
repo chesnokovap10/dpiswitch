@@ -58,8 +58,11 @@ func init() {
 	for _, p := range pageNames {
 		t := template.New("").Funcs(funcs)
 		pats := []string{"tmpl/layout.html", "tmpl/" + p + ".html"}
-		if p == "help" {
+		switch p {
+		case "help":
 			pats = append(pats, "tmpl/help_en.html", "tmpl/help_ru.html")
+		case "live", "verdicts":
+			pats = append(pats, "tmpl/rowmenu.html")
 		}
 		pageTmpl[p] = template.Must(t.ParseFS(uiFS, pats...))
 	}
@@ -208,7 +211,9 @@ func (s *Server) pageData(r *http.Request, page string, v *view) any {
 	case "overview":
 		return overviewData(v)
 	case "verdicts":
-		return verdictsData(r)
+		d := verdictsData(r)
+		d.Words = verdictWords(v)
+		return d
 	case "lists":
 		return listsData()
 	case "awg2":

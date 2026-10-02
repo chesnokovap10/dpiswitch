@@ -51,6 +51,7 @@ func Defaults() Config {
 		SkipSuffix:  []string{"in-addr.arpa", "local", "lan", "cloudflare-ech.com"},
 		PinnedLists: pinnedLists(),
 		ResetPath:   paths.ResetRequest(),
+		ForgetPath:  paths.ForgetRequests(),
 	}
 }
 

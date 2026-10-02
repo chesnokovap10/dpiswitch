@@ -7,7 +7,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 )
 
 const AppName = "dpiswitch"
@@ -155,3 +157,12 @@ func UILang() string { return filepath.Join(filepath.Dir(TrayLog()), "lang") }
 
 // ResetRequest: left by the tray to have the service drop every verdict
 func ResetRequest() string { return User("reset-verdicts.request") }
+
+// ForgetRequests: what the UI leaves to have the service drop single
+// verdicts, a file a request -- the pattern the service looks for
+func ForgetRequests() string { return User("forget-*.request") }
+
+// ForgetRequest: a new request's file, a name no other takes
+func ForgetRequest() string {
+	return User("forget-" + strconv.FormatInt(time.Now().UnixNano(), 10) + ".request")
+}

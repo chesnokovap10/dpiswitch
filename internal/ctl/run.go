@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -60,6 +61,8 @@ type Config struct {
 	PinnedLists []string
 	// where the tray leaves a request to drop every verdict, see takeReset
 	ResetPath string
+	// the pattern of the UI's requests to drop single verdicts, see takeForget
+	ForgetPath string
 	// auto-switch turned off since the lists were last written, see autooff.go
 	autoOff *atomic.Bool
 	// the auto-switch mode chosen, see modeNow
@@ -733,6 +736,69 @@ var (
 	resetDropped int
 )
 
+// takeForget carries out the requests to drop single verdicts, left by the
+// verdicts page: a file each, a name a line (see forgetVerdicts). The names
+// go back to the tunnel, and the detector checks them anew when they are
+// used. A request goes once its drop is saved and the lists are in line
+// with memory: the UI waits for it to go before it closes the connections
+// the names had open.
+func takeForget(cfg Config, a *api, st *state) {
+	if cfg.ForgetPath == "" {
+		return
+	}
+	reqs, _ := filepath.Glob(cfg.ForgetPath)
+	var keys, taken []string
+	for _, r := range reqs {
+		b, err := os.ReadFile(r)
+		if err != nil {
+			continue // still being written: the next second
+		}
+		keys = append(keys, forgetKeys(b)...)
+		taken = append(taken, r)
+	}
+	netID := st.current()
+	if len(taken) == 0 || netID == "" {
+		return // no network known yet: an empty list would be written
+	}
+	listMu.Lock()
+	n := st.forgetVerdicts(netID, keys)
+	err := st.save()
+	listMu.Unlock()
+	if err != nil {
+		if forgetFailed != err.Error() {
+			forgetFailed = err.Error()
+			log.Printf("verdicts dropped, but the state not saved: %v -- trying again", err)
+		}
+		return
+	}
+	forgetFailed = ""
+	syncList(cfg, a, st, netID, false)
+	for _, r := range taken {
+		if err := os.Remove(r); err != nil {
+			log.Printf("request %s not removed: %v", r, err)
+		}
+	}
+	log.Printf("verdicts dropped from the UI: %s (%d)", strings.Join(keys, ", "), n)
+}
+
+// forgetFailed: why the last drop could not be saved, said once
+var forgetFailed string
+
+// forgetKeys: the names a request holds, as memory keys them. What is no
+// name -- too long, a space in it -- is left out: the file is the user's
+// to write.
+func forgetKeys(b []byte) []string {
+	var out []string
+	for _, l := range strings.Split(string(b), "\n") {
+		l = strings.ToLower(strings.TrimSpace(l))
+		if l == "" || len(l) > 260 || strings.ContainsAny(l, " \t#") {
+			continue
+		}
+		out = append(out, l)
+	}
+	return out
+}
+
 // watchReset looks for a reset request and changed user lists every
 // second: the UI waits for both to be taken.
 func watchReset(ctx context.Context, cfg Config, a *api, st *state) {
@@ -744,6 +810,7 @@ func watchReset(ctx context.Context, cfg Config, a *api, st *state) {
 			return
 		case <-t.C:
 			takeReset(cfg, a, st)
+			takeForget(cfg, a, st)
 			// the user's lists and presets reach the core within a second;
 			// a reload left pending -- by a reset, say, which removed its
 			// request all the same -- is not left for the next cycle

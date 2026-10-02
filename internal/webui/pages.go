@@ -49,6 +49,8 @@ func overviewData(v *view) overview {
 // --- verdicts ---
 
 type vrow struct {
+	Key     string // as the service's memory has it: "@" an address, "+." a whole domain
+	Dom     string // the domain a name is under, for the row's menu
 	Domain  string
 	Uni     string // a name in Russian or other letters, as it is written; Domain is its punycode
 	Addr    bool   // a bare address with a verdict of its own
@@ -66,6 +68,7 @@ type verdicts struct {
 	Q      string
 	Rows   []vrow
 	Counts map[string]int
+	Words  map[string]string // for the rows' menu and reset, see verdicts.js
 }
 
 // Query: the tab and the filter for the parts that refresh themselves. It
@@ -119,10 +122,12 @@ func verdictsData(r *http.Request) verdicts {
 		return q == "" || strings.Contains(r.Domain, q) || strings.Contains(r.Uni, q)
 	}
 	row := func(e ctl.DirectEntry) vrow {
-		r := vrow{Domain: e.Domain, Verdict: e.Verdict, Reason: e.Reason,
+		r := vrow{Key: e.Domain, Domain: e.Domain, Verdict: e.Verdict, Reason: e.Reason,
 			Decided: e.DecidedAt, Expires: e.ExpiresAt, Idle: e.Idle, Node: e.TestedIP}
 		if strings.HasPrefix(r.Domain, "@") {
 			r.Domain, r.Addr = r.Domain[1:], true
+		} else {
+			r.Dom = liveDomain(r.Domain)
 		}
 		r.Uni = unicodeName(r.Domain)
 		return r
@@ -134,7 +139,7 @@ func verdictsData(r *http.Request) verdicts {
 	}
 	if d.Cat == "direct" {
 		for _, f := range snap.Families {
-			r := vrow{Domain: "+." + f.Domain, Fam: f.Clean}
+			r := vrow{Key: "+." + f.Domain, Domain: "+." + f.Domain, Fam: f.Clean}
 			if u := unicodeName(f.Domain); u != "" {
 				r.Uni = "+." + u
 			}
@@ -151,6 +156,22 @@ func verdictsData(r *http.Request) verdicts {
 		}
 	}
 	return d
+}
+
+// verdictWords: what verdicts.js and the rows' menu say
+func verdictWords(v *view) map[string]string {
+	return map[string]string{
+		"whatDomain": v.T("the whole domain: the site and everything under it"),
+		"whatName":   v.T("this name only"),
+		"whatAddr":   v.T("the address: for connections made to it by address"),
+		"noPath":     v.T("The core did not say where the program's file is"),
+		"noPresets":  v.T("No presets"),
+		"presetOff":  v.T("switched off: routes nothing until switched on"),
+		"sending":    v.T("Saving…"),
+		"notSent":    v.T("Not saved:"),
+		"forgetting": v.T("Resetting…"),
+		"notForgot":  v.T("Not reset:"),
+	}
 }
 
 // VName: a verdict in words.

@@ -1,0 +1,18 @@
+{{/* a row's menu, on Live and on Verdicts: what of it to send, and where
+   (see static/rowmenu.js). The program's file is Live's alone. */}}
+{{define "rowmenu"}}
+  <div class="cmenu" id="lmenu" hidden>
+    <div class="cm-what" id="lwhat" title="{{.T "What to send"}}"></div>
+    <button type="button" data-to="direct" title="{{.T "Adds it to “Always direct”"}}">{{.T "Direct"}}</button>
+    <button type="button" data-to="tunnel" title="{{.T "Adds it to “Always via tunnel”"}}">{{.T "Via the tunnel"}}</button>
+    <button type="button" data-to="awg2" title="{{.T "Adds it to the second tunnel's own list"}}">{{.T "Via the second tunnel"}}</button>
+    <div class="cm-sub">
+      <button type="button" id="lpresetbtn" class="cm-more">{{.T "To a preset"}}</button>
+      <div class="cmenu" id="lpresets"></div>
+    </div>
+    <button type="button" data-to="block" title="{{.T "Adds it to “Forbidden”"}}">{{.T "Forbid"}}</button>
+    {{if eq .Page "live"}}<hr>
+    <button type="button" id="lreveal">{{.T "File location"}}</button>{{end}}
+  </div>
+  <div class="toast" id="ltoast" hidden></div>
+{{end}}

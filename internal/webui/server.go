@@ -110,6 +110,7 @@ func (s *Server) Handler() http.Handler {
 		"/act/delete1":       s.actDelete1,
 		"/act/awg2":          s.actAwg2,
 		"/act/reset":         s.actReset,
+		"/act/forget":        s.actForget,
 		"/act/list":          s.actList,
 		"/act/preset":        s.actPreset,
 		"/act/presetsave":    s.actPresetSave,

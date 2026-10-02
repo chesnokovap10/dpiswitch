@@ -808,3 +808,56 @@ func TestCycleObserveAll(t *testing.T) {
 		t.Fatalf("name no list pins not filed: %v", e)
 	}
 }
+
+// A verdict dropped from the verdicts page: the name leaves the list and
+// memory, the others stay, the request goes -- and the next cycle does not
+// write the name back. "+." drops a whole domain.
+func TestForgetFromUI(t *testing.T) {
+	s := newScenario(t)
+	dir := t.TempDir()
+	s.cfg.ForgetPath = filepath.Join(dir, "forget-*.request")
+	s.st.setCurrent("n")
+	s.see(tunnelled("a.example.org", 443), tunnelled("b.example.org", 443), tunnelled("c.example.net", 443))
+	s.script("a.example.org tcp/443", clean("192.0.2.1"))
+	s.script("b.example.org tcp/443", clean("192.0.2.2"))
+	s.script("c.example.net tcp/443", clean("192.0.2.3"))
+	s.cycle()
+	if !slices.Contains(listRules(s.cfg.ListPath), "a.example.org") {
+		t.Fatalf("setup: list %v", listRules(s.cfg.ListPath))
+	}
+	ask := func(lines string) string {
+		t.Helper()
+		p := filepath.Join(dir, "forget-"+strconv.Itoa(len(lines))+".request")
+		if err := os.WriteFile(p, []byte(lines), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		takeForget(s.cfg, s.api, s.st)
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatal("the request was left behind: the UI would wait in vain")
+		}
+		return p
+	}
+	ask("A.example.org\n# a comment\nnot a name\n")
+	if e := s.entry("a.example.org"); e != nil {
+		t.Fatalf("memory kept %s", e.Verdict)
+	}
+	if got := listRules(s.cfg.ListPath); slices.Contains(got, "a.example.org") || !slices.Contains(got, "b.example.org") {
+		t.Fatalf("list after the drop: %v", got)
+	}
+	s.cycle()
+	if slices.Contains(listRules(s.cfg.ListPath), "a.example.org") {
+		t.Fatal("a cycle wrote the name dropped back without checking it")
+	}
+	ask("+.example.org\n")
+	for _, d := range []string{"a.example.org", "b.example.org"} {
+		if e := s.entry(d); e != nil {
+			t.Fatalf("%s stayed after its whole domain was dropped: %s", d, e.Verdict)
+		}
+	}
+	if got := listRules(s.cfg.ListPath); !slices.Equal(got, []string{"c.example.net"}) {
+		t.Fatalf("list after the whole domain went: %v", got)
+	}
+	if e := s.entry("c.example.net"); e == nil {
+		t.Fatal("another domain's verdict went too")
+	}
+}

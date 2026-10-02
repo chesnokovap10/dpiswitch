@@ -295,6 +295,74 @@ func (s *Server) actReset(w http.ResponseWriter, r *http.Request) {
 	s.redirect(w, r, nil, "Reset requested: the service takes it as soon as its controller runs")
 }
 
+// actForget resets one verdict, from its row on the verdicts page: the
+// name goes back to the tunnel, and the detector checks it anew when it is
+// used. The service does it, as it does a reset (see ctl.takeForget): the
+// request is a file of its own, and the page is answered once it is taken
+// -- then the connections the name has open are closed, or they would go
+// on as they went.
+func (s *Server) actForget(w http.ResponseWriter, r *http.Request) {
+	l := lang(r)
+	key := strings.ToLower(strings.TrimSpace(r.FormValue("key")))
+	entry, ok := forgetEntry(key)
+	if !ok {
+		http.Error(w, "not a verdict", http.StatusBadRequest)
+		return
+	}
+	if err := paths.UserReady(); err != nil {
+		writeJSON(w, liveAnswer{false, tr(l, err.Error())})
+		return
+	}
+	req := paths.ForgetRequest()
+	if err := os.WriteFile(req, []byte(key+"\n"), 0o644); err != nil {
+		writeJSON(w, liveAnswer{false, err.Error()})
+		return
+	}
+	if !serviceRunning() {
+		writeJSON(w, liveAnswer{true, tr(l, "Reset requested: the service takes it when it starts, before it applies a verdict")})
+		return
+	}
+	for deadline := time.Now().Add(forgetWait); ; {
+		if _, err := os.Stat(req); os.IsNotExist(err) {
+			break
+		}
+		if time.Now().After(deadline) {
+			writeJSON(w, liveAnswer{true, tr(l, "Reset requested: the service takes it as soon as its controller runs")})
+			return
+		}
+		time.Sleep(forgetWait / 40)
+	}
+	msg := fmt.Sprintf(tr(l, "Verdict reset: %s goes through the tunnel until the detector checks it again"), entry)
+	n, err := ctl.CloseConns(apiAddr, ctl.SecretFromConfig(paths.Config()), entryMatch([]string{entry}))
+	if n > 0 {
+		msg += fmt.Sprintf(tr(l, "; open connections moved: %d"), n)
+	}
+	if err != nil {
+		log.Printf("ui: open connections of a verdict reset not closed: %v", err)
+		msg += "; " + tr(l, "open connections not closed:") + " " + err.Error()
+	}
+	writeJSON(w, liveAnswer{true, msg})
+}
+
+// forgetEntry: a verdict's key as a list's entry, for the connections it
+// routed -- "@address" the address, "+.name" and a name as they are. A key
+// no verdict can have is refused: the request is the service's to read.
+func forgetEntry(key string) (string, bool) {
+	addr := strings.HasPrefix(key, "@")
+	kind, v, err := ctl.ParseEntry(strings.TrimPrefix(key, "@"))
+	switch {
+	case err != nil, kind == ctl.EntryApp, addr != (kind == ctl.EntryIP), len(key) > 260:
+		return "", false
+	case strings.HasPrefix(key, "+.") && !strings.HasPrefix(v, "+."):
+		return "", false
+	}
+	return v, true
+}
+
+// forgetWait: how long a reset of one verdict waits for the service to
+// take it -- it looks every second; a var for tests
+var forgetWait = 5 * time.Second
+
 // --- routing lists ---
 
 // closeMoved closes the open connections a list change moves to another

@@ -30,9 +30,11 @@
   let es = null, paused = false, dropped = false;
   // the server's history this page holds, and the last of it seen
   let sess = '', lastSeq = 0;
-  // the row picked, where it was picked, and what its menu sends (see below)
-  let sel = null, selAt = 0, menuRow = null, what = '';
+  // the row picked, and where it was picked (see below)
+  let sel = null, selAt = 0;
   const seen = q => { if (q > lastSeq) lastSeq = q; };
+  // the row's menu, shared with the verdicts page (see rowmenu.js)
+  const menu = rowMenu(W), closeMenu = () => menu.close();
 
   // what the page is looking at: kept per browser, a viewing preference
   const pref = {tab: 'open', route: '', noprobe: false, sort: 'start', desc: true};
@@ -430,8 +432,6 @@
   // move every second, and the one looked at, or acted on from the menu,
   // must not move from under the cursor. A click anywhere else lets it go;
   // so does a change of what the table shows.
-  const menu = $('lmenu'), sub = $('lpresets');
-
   function pick(r) {
     if (sel === r) return;
     unpick();
@@ -454,24 +454,17 @@
     const tr = e.target.closest('tr');
     if (!tr || !tr._r) return;
     e.preventDefault();
-    pick(tr._r);
-    openMenu(tr._r, e.clientX, e.clientY);
+    const r = tr._r;
+    pick(r);
+    menu.open(whats(r), e.clientX, e.clientY, {path: r.path, run: () => reveal(r)});
   });
   document.addEventListener('mousedown', e => {
-    if (e.target.closest('#lmenu')) return;
-    closeMenu();
-    if (sel && !e.target.closest('#lrows tr')) unpick();
+    if (sel && !e.target.closest('#lmenu, #lrows tr')) unpick();
   });
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
-    if (!menu.hidden) closeMenu(); else unpick();
+    if (menu.shown()) closeMenu(); else unpick();
   });
-  // the menu is where the cursor was: a scroll or a resize takes it away --
-  // not a scroll of its own list of presets
-  document.addEventListener('scroll', e => { if (!menu.contains(e.target)) closeMenu(); }, true);
-  menu.addEventListener('contextmenu', e => e.preventDefault());
-  addEventListener('resize', () => closeMenu());
-  addEventListener('blur', () => closeMenu());
 
   // What goes to a list: the whole domain, the name alone, the address or
   // the program -- as the lists write them. The whole domain comes first:
@@ -489,141 +482,15 @@
     return out;
   }
 
-  function openMenu(r, x, y) {
-    menuRow = r;
-    const w = $('lwhat');
-    w.textContent = '';
-    const ws = whats(r);
-    what = ws.length ? ws[0][0] : '';
-    for (const [v, t] of ws) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = v;
-      b.title = t;
-      b.dataset.v = v;
-      b.classList.toggle('on', v === what);
-      w.append(b);
-    }
-    w.hidden = !ws.length;
-    for (const b of menu.querySelectorAll('[data-to], #lpresetbtn')) b.disabled = !what;
-    $('lreveal').disabled = !r.path;
-    $('lreveal').title = r.path || W.noPath;
-    presets();
-    menu.hidden = false;
-    menu.classList.remove('left');
-    const mw = menu.offsetWidth, mh = menu.offsetHeight;
-    const left = Math.max(4, Math.min(x, innerWidth - mw - 4));
-    menu.style.left = left + 'px';
-    menu.style.top = Math.max(4, Math.min(y, innerHeight - mh - 4)) + 'px';
-    // the presets open to the side there is room on
-    menu.classList.toggle('left', left + mw + 220 > innerWidth);
-  }
-  function closeMenu() {
-    menu.hidden = true;
-    sub.classList.remove('shown');
-    sub.style.top = '';
-    menuRow = null;
-  }
-
-  // The presets open beside their item, level with it: near the bottom of
-  // the window they ran off it. Moved up as far as they must to fit -- they
-  // are never taller than the window (60vh), and scroll past that.
-  function fitSub() {
-    sub.style.top = '';
-    const r = sub.getBoundingClientRect();
-    if (!r.height) return; // not shown
-    const over = r.bottom - (innerHeight - 4);
-    if (over > 0) sub.style.top = (-5 - Math.min(over, r.top - 4)) + 'px';
-  }
-  // on hover the list shows at once; the frame after, it has its size
-  sub.parentElement.addEventListener('mouseenter', () => requestAnimationFrame(fitSub));
-
-  // the presets as they are now: another tab may have added one
-  async function presets() {
-    sub.textContent = '';
-    try {
-      const r = await fetch('/live/presets');
-      if (!r.ok) throw new Error(r.status);
-      const ps = await r.json();
-      sub.textContent = '';
-      requestAnimationFrame(fitSub); // filled while shown: its height changed
-      for (const p of ps) {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.textContent = p.title;
-        b.dataset.preset = p.id;
-        if (!p.on) { b.classList.add('off'); b.title = W.presetOff; }
-        sub.append(b);
-      }
-      if (!ps.length) {
-        const n = document.createElement('div');
-        n.className = 'muted';
-        n.textContent = W.noPresets;
-        sub.append(n);
-      }
-    } catch (e) {
-      sub.textContent = '';
-    }
-  }
-
-  $('lwhat').addEventListener('click', e => {
-    const b = e.target.closest('button');
-    if (!b) return;
-    what = b.dataset.v;
-    for (const c of $('lwhat').children) c.classList.toggle('on', c === b);
-  });
-  // the presets open on hover, and on a click for those without a mouse
-  $('lpresetbtn').addEventListener('click', () => {
-    sub.classList.toggle('shown');
-    requestAnimationFrame(fitSub);
-  });
-  menu.addEventListener('click', e => {
-    const b = e.target.closest('button');
-    if (!b || b.disabled) return;
-    if (b.dataset.to) send(b.dataset.to, '');
-    else if (b.dataset.preset) send('preset', b.dataset.preset);
-  });
-
-  async function send(to, preset) {
-    const r = menuRow, v = what;
-    closeMenu();
-    if (!r || !v) return;
-    const body = new URLSearchParams({to, entry: v});
-    if (preset) body.set('preset', preset);
-    toast(W.sending, true);
-    try {
-      const res = await fetch('/act/liveadd', {method: 'POST', body});
-      if (!res.ok) throw new Error((await res.text()).trim() || res.status + ' ' + res.statusText);
-      const j = await res.json();
-      toast(j.msg, j.ok);
-    } catch (e) {
-      toast(W.notSent + ' ' + e.message, false);
-    }
-  }
-
-  $('lreveal').addEventListener('click', async () => {
-    const r = menuRow;
-    closeMenu();
-    if (!r) return;
+  async function reveal(r) {
     try {
       const res = await fetch('/act/livereveal', {method: 'POST', body: new URLSearchParams({id: r.id})});
       if (!res.ok) throw new Error((await res.text()).trim() || res.status + ' ' + res.statusText);
       const j = await res.json();
-      if (!j.ok) toast(j.msg, false);
+      if (!j.ok) menu.toast(j.msg, false);
     } catch (e) {
-      toast(W.notOpened + ' ' + e.message, false);
+      menu.toast(W.notOpened + ' ' + e.message, false);
     }
-  });
-
-  // what a menu's action came to, for a few seconds
-  let toastTimer;
-  function toast(text, ok) {
-    const t = $('ltoast');
-    t.textContent = text;
-    t.className = 'toast ' + (ok ? 'ok' : 'bad');
-    t.hidden = false;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { t.hidden = true; }, ok ? 6000 : 12000);
   }
 
   draw();

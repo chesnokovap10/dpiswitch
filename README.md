@@ -102,7 +102,7 @@
 | Страница | Что там |
 |---|---|
 | **Обзор** | Сколько сайтов идёт напрямую, заблокировано, медленнее, не проверено; состояние обоих туннелей, замена `.conf`; последние события |
-| **Вердикты** | Все вердикты по вкладкам «Напрямую», «Заблокированы», «Медленнее», «Не проверено», фильтр по имени (русские имена ищутся и показываются как есть), «Сбросить все вердикты…» |
+| **Вердикты** | Все вердикты по вкладкам «Напрямую», «Заблокированы», «Медленнее», «Не проверено», фильтр по имени (русские имена ищутся и показываются как есть); строка выделяется кликом, правый клик отправляет её в список, ✕ сбрасывает её вердикт; «Сбросить все вердикты…» |
 | **Списки маршрутов** | «Всегда напрямую», «Всегда через туннель», «Запрещено»: сайты, адреса и программы в каждом |
 | **Второй туннель** | Подключение awg2, пресеты (YouTube, Telegram, ИИ-сервисы, Instagram/Facebook/X; их можно изменить, удалить и добавить свои) и свои сайты |
 | **Настройки** | Детектор, сроки, IPv6, DNS; каждое изменение применяется сразу |
@@ -340,7 +340,9 @@ Claude, Gemini, Grok, Copilot, DeepL и др.), Instagram, Facebook, X и ваш
 ### Если сайт не открывается
 
 1. Найдите его фильтром на странице **Вердикты**. Если он идёт напрямую, а не должен, добавьте его во
-   **Всегда через туннель** (`+.example.com` — весь домен).
+   **Всегда через туннель** (`+.example.com` — весь домен). Правый клик по строке отправляет его в список
+   сразу, как на Live; ✕ в строке сбрасывает один вердикт: сайт идёт через туннель, пока детектор не
+   проверит его заново.
 2. Если сломалось сразу много сайтов (провайдер ввёл новую блокировку), **сбросьте все вердикты** —
    на странице «Вердикты» или пунктом трея «Всё через туннель»: всё пойдёт через туннель, и детектор
    начнёт заново.
@@ -505,7 +507,7 @@ their own port and access key).
 | Page | What is there |
 |---|---|
 | **Overview** | How many sites go direct, are blocked, slower, unverified; both tunnels' state, replacing a `.conf`; recent events |
-| **Verdicts** | Every verdict in the "Direct", "Blocked", "Slower", "Unverified" tabs, a name filter (names in Russian letters are found and shown as written), "Reset all verdicts…" |
+| **Verdicts** | Every verdict in the "Direct", "Blocked", "Slower", "Unverified" tabs, a name filter (names in Russian letters are found and shown as written); a click pins a row, a right-click sends it to a list, ✕ resets its verdict; "Reset all verdicts…" |
 | **Routing lists** | "Always direct", "Always via tunnel", "Forbidden": sites, addresses and programs in each |
 | **Second tunnel** | Attaching awg2, presets (YouTube, Telegram, AI services, Instagram/Facebook/X; edit them, delete them, add your own) and your own list |
 | **Settings** | Detector, terms, IPv6, DNS; every change applies at once |
@@ -741,7 +743,9 @@ and the presets change as one: a file failing to write puts back the ones writte
 ### When a site does not open
 
 1. Look it up on the **Verdicts** page with the filter. If it goes direct and should not, add it to
-   **Always via tunnel** (`+.example.com` for the whole domain).
+   **Always via tunnel** (`+.example.com` for the whole domain). A right-click on its row sends it to a
+   list straight away, as on Live; the ✕ in the row resets that one verdict: the site goes through the
+   tunnel until the detector checks it again.
 2. If many sites broke at once (a new block by the ISP), **reset all verdicts** — on the Verdicts
    page or with the tray's "Everything via tunnel": everything goes through the tunnel and the
    detector starts over.

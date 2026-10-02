@@ -1150,3 +1150,103 @@ func TestTunBlockedSaid(t *testing.T) {
 		}
 	}
 }
+
+// A verdict's key as the connections it routed are matched: an address
+// only with its "@", a whole domain with its "+.", no program at all --
+// the request is the service's to read.
+func TestForgetEntry(t *testing.T) {
+	for key, want := range map[string]string{
+		"a.example.org":  "a.example.org",
+		"+.example.org":  "+.example.org",
+		"@192.0.2.1":     "192.0.2.1",
+		"@2001:db8::1":   "2001:db8::1",
+		"":               "",
+		"x.exe":          "",
+		"@a.example.org": "",
+		"192.0.2.1":      "",
+	} {
+		got, ok := forgetEntry(key)
+		if ok != (want != "") || got != want {
+			t.Errorf("%q: %q %v, want %q", key, got, ok, want)
+		}
+	}
+}
+
+// A verdict reset from its row: the request is left for the service, the
+// answer waits for it to be taken, and says when it was not. The page's
+// rows carry the key the reset and the menu need.
+func TestForget(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	ask := func(key string) string {
+		t.Helper()
+		w := do(t, h, "POST", "/act/forget", url.Values{"key": {key}}, map[string]string{"Referer": "http://127.0.0.1:8080/verdicts"})
+		if w.Code != 200 {
+			t.Fatalf("%s: %d %s", key, w.Code, w.Body.String())
+		}
+		return w.Body.String()
+	}
+	if w := do(t, h, "POST", "/act/forget", url.Values{"key": {"x.exe"}}, nil); w.Code != http.StatusBadRequest {
+		t.Fatalf("a program taken for a verdict: %d", w.Code)
+	}
+	// the service stopped: the request waits for it
+	if b := ask("a.example.org"); !strings.Contains(b, "when it starts") {
+		t.Fatalf("stopped: %s", b)
+	}
+	reqs, _ := filepath.Glob(paths.ForgetRequests())
+	if len(reqs) != 1 {
+		t.Fatalf("requests: %v", reqs)
+	}
+	if b, _ := os.ReadFile(reqs[0]); string(b) != "a.example.org\n" {
+		t.Fatalf("request: %q", b)
+	}
+	os.Remove(reqs[0])
+
+	// running, and the request taken
+	serviceRunning = func() bool { return true }
+	forgetWait = 300 * time.Millisecond
+	t.Cleanup(func() { forgetWait = 5 * time.Second })
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 100; i++ {
+			// on Windows a file still being written cannot go: the service
+			// tries again the next second
+			if reqs, _ := filepath.Glob(paths.ForgetRequests()); len(reqs) > 0 && os.Remove(reqs[0]) == nil {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}()
+	if b := ask("+.example.org"); !strings.Contains(b, "Verdict reset: +.example.org") {
+		t.Fatalf("taken: %s", b)
+	}
+	<-done
+	// running, and not taken
+	if b := ask("@192.0.2.1"); !strings.Contains(b, "as soon as its controller runs") {
+		t.Fatalf("not taken: %s", b)
+	}
+
+	now := time.Now()
+	st := map[string]any{"current": "AS1", "networks": map[string]any{"AS1": map[string]any{
+		"www.example.org": map[string]any{"verdict": "CLEAN", "decided_at": now, "expires_at": now.Add(time.Hour), "last_seen": now},
+		"@192.0.2.9":      map[string]any{"verdict": "BLOCKED_TCP", "decided_at": now, "expires_at": now.Add(time.Hour), "last_seen": now},
+	}}}
+	b, _ := json.Marshal(st)
+	if err := os.WriteFile(paths.State(), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body := do(t, h, "GET", "/verdicts", nil, nil).Body.String()
+	for _, want := range []string{`data-key="www.example.org" data-dom="example.org"`, `id="lmenu"`, `id="vwords"`, `class="lx"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the direct tab lacks %s", want)
+		}
+	}
+	if strings.Contains(body, `id="lreveal"`) {
+		t.Error("a program's file on the verdicts page")
+	}
+	body = do(t, h, "GET", "/verdicts?cat=blocked", nil, nil).Body.String()
+	if !strings.Contains(body, `data-key="@192.0.2.9" data-addr="192.0.2.9"`) {
+		t.Errorf("the blocked tab's address row:\n%s", body)
+	}
+}
