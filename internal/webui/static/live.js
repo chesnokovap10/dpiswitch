@@ -446,7 +446,10 @@
     sel = null;
   }
 
-  tbody.addEventListener('click', e => {
+  // picked as the button goes down, not up: a click waits for the button
+  // to come back, and the frame showed some 225 ms after the press
+  tbody.addEventListener('pointerdown', e => {
+    if (e.button !== 0 && e.button !== 2) return;
     const tr = e.target.closest('tr');
     if (tr && tr._r) pick(tr._r);
   });

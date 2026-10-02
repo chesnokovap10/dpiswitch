@@ -47,11 +47,16 @@
     return out;
   }
 
+  // picked as the button goes down, as on Live; ✕ acts on the click
+  box.addEventListener('pointerdown', e => {
+    if (e.button !== 0 && e.button !== 2) return;
+    const tr = e.target.closest('tr[data-key]');
+    if (tr) pick(tr);
+  });
   box.addEventListener('click', e => {
     const tr = e.target.closest('tr[data-key]');
-    if (!tr) return;
     const x = e.target.closest('button.lx');
-    if (x) forget(tr, x); else pick(tr);
+    if (tr && x) forget(tr, x);
   });
   box.addEventListener('contextmenu', e => {
     const tr = e.target.closest('tr[data-key]');
