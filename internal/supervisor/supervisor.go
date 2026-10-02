@@ -69,6 +69,9 @@ func (s *Supervisor) Run(ctx context.Context, apply bool) {
 	// cores from a previous run (hard power-off, service crash)
 	// hold TUN and routes -- kill them before bringing up our own
 	killOrphans()
+	// with none left running from it, the core an older version extracted
+	// into the data directory goes
+	core.RemoveLegacy()
 
 	if job, err := newKillJob(); err == nil {
 		s.job = job

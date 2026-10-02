@@ -10,10 +10,11 @@ package main
 //  2. (elevated) the service stops -- the core with it, and TUN and the
 //     routes go -- and is deleted, its registry key (the owner) too;
 //  3. (elevated) the data directory goes: configs, keys, lists, verdicts,
-//     logs, the core;
+//     logs;
 //  4. (elevated) a hidden cmd is left behind to delete Program Files\DPI
-//     Switch and the tray's folder in the user's profile: both are held
-//     open until the tray and this process exit, so it retries for a minute;
+//     Switch, the core with it, and the tray's folder in the user's
+//     profile: both are held open until the tray and this process exit, so
+//     it retries for a minute;
 //  5. (tray) declined or failed: nothing more, the tray stays. Done:
 //     autostart and the desktop shortcut go -- they are the user's, and
 //     the elevated copy may run as another account -- and the tray exits.

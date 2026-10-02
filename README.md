@@ -359,6 +359,9 @@ Claude, Gemini, Grok, Copilot, DeepL и др.), Instagram, Facebook, X и ваш
 только её состояние.
 
 - `%ProgramFiles%\DPI Switch` — программа; служба и трей запускаются отсюда.
+- `%ProgramFiles%\DPI Switch\core\mihomo.exe` — ядро, которое служба распаковывает из себя; перед
+  каждым запуском сверяется SHA-256, при несовпадении распаковывается заново. Оно лежит рядом с
+  программой, а не в папке данных: там ядро само создаёт файлы, которые называет его конфиг.
 - `%ProgramData%\dpiswitch` — данные службы: конфиг ядра, вердикты (`controller-state.json`), каждая
   проба (`reports.jsonl`), логи (`logs\service.log`, `logs\mihomo.log`), метка запуска ядра, по
   которой Live узнаёт новый запуск (`core-run.txt`). Писать туда могут только SYSTEM и администраторы,
@@ -366,8 +369,6 @@ Claude, Gemini, Grok, Copilot, DeepL и др.), Instagram, Facebook, X и ваш
 - `%ProgramData%\dpiswitch\user` — то, что вы меняете в интерфейсе: `.conf`, списки, настройки.
   Писать туда можете только вы; служба это читает и никогда туда не пишет. Файлы с приватными
   ключами читаете только вы и служба.
-- `%ProgramData%\dpiswitch\core\mihomo.exe` — ядро, которое служба распаковывает из себя; перед каждым
-  запуском сверяется SHA-256, при несовпадении распаковывается заново.
 - `%LOCALAPPDATA%\dpiswitch` — трей: его лог (`tray.log`), ключ интерфейса (`ui.key`) и выбранный язык.
 
 ### Команды
@@ -763,6 +764,9 @@ stop it and change its settings, lists and configs. Other accounts on the machin
 state.
 
 - `%ProgramFiles%\DPI Switch` — the program; the service and the tray run from here.
+- `%ProgramFiles%\DPI Switch\core\mihomo.exe` — the core, which the service extracts from itself;
+  its SHA-256 is verified before every start, and it is re-extracted if it does not match. It sits
+  beside the program, not in the data directory: there the core makes the files its config names.
 - `%ProgramData%\dpiswitch` — the service's own data: the core's config, the verdicts
   (`controller-state.json`), every probe (`reports.jsonl`), the logs (`logs\service.log`,
   `logs\mihomo.log`), the name of the core's run Live tells a new run by (`core-run.txt`). Writable by
@@ -770,8 +774,6 @@ state.
 - `%ProgramData%\dpiswitch\user` — what you change in the UI: the `.conf` files, lists, settings.
   Writable by you alone; the service reads it and never writes there. Files holding private keys are
   readable by you and the service only.
-- `%ProgramData%\dpiswitch\core\mihomo.exe` — the core, which the service extracts from itself; its
-  SHA-256 is verified before every start, and it is re-extracted if it does not match.
 - `%LOCALAPPDATA%\dpiswitch` — the tray's: its log (`tray.log`), the UI key (`ui.key`) and the
   language chosen.
 

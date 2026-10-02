@@ -2,15 +2,18 @@
 //
 // The user sees a single executable. The core is embedded gzip-compressed
 // together with the SHA-256 of the uncompressed binary; before every start
-// the service makes sure %ProgramData%\dpiswitch\core\mihomo.exe exists and
-// matches that hash, extracting it again otherwise.
+// the service makes sure core\mihomo.exe beside it -- %ProgramFiles%\DPI
+// Switch\core\mihomo.exe -- exists and matches that hash, extracting it
+// again otherwise.
 //
 // The service runs as SYSTEM and executes that file, so the core directory
 // is locked down: SYSTEM and Administrators may write, Users may only read
-// and execute -- as the whole data directory is now (see
-// paths.SecureDataDir); it once let every user modify files, and the core
-// directory had to be kept apart from it. The hash check before every start
-// covers the rest.
+// and execute. It sits beside the service's own binary, where only
+// administrators write, and not in the data directory: that is the core's
+// home (-d), where the files its config names are kept and written -- the
+// binary SYSTEM runs, and the directory it loads from, had no business
+// there. It was extracted to %ProgramData%\dpiswitch\core up to 1.7.1 (see
+// RemoveLegacy). The hash check before every start covers the rest.
 //
 // A build without the embedcore tag embeds nothing and falls back to a
 // mihomo.exe next to dpiswitch.exe (development builds).
@@ -23,6 +26,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,8 +48,13 @@ var (
 // Embedded reports whether this build carries the core inside.
 func Embedded() bool { return len(embedded) > 0 }
 
-// Dir is where the embedded core is extracted.
-func Dir() string { return filepath.Join(paths.DataDir(), "core") }
+// Dir is where the embedded core is extracted: beside the binary that runs
+// it, outside the core's home.
+func Dir() string { return filepath.Join(paths.ExeDir(), "core") }
+
+// legacyDir: where the core was extracted up to 1.7.1 -- inside the data
+// directory, its own home
+func legacyDir() string { return filepath.Join(paths.DataDir(), "core") }
 
 // Path is the core the service should run.
 func Path() string {
@@ -58,11 +67,27 @@ func Path() string {
 // Paths lists every location a core of ours may run from, current and
 // legacy -- used to find orphaned cores after an upgrade.
 func Paths() []string {
-	out := []string{paths.Mihomo()}
+	out := []string{paths.Mihomo(), filepath.Join(legacyDir(), "mihomo.exe")}
 	if Embedded() {
 		out = append(out, Path())
 	}
 	return out
+}
+
+// RemoveLegacy removes the core an older version extracted into the data
+// directory. The service calls it once no core of its runs from there (see
+// supervisor.killOrphans). The data directory is the service's (see
+// paths.SecureDataDir), and RemoveAll takes a link in it as the link.
+func RemoveLegacy() {
+	dir := legacyDir()
+	if _, err := os.Lstat(dir); err != nil {
+		return
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		log.Printf("the core of an older version not removed from %s: %v", dir, err)
+		return
+	}
+	log.Printf("the core of an older version removed from %s", dir)
 }
 
 var ensureMu sync.Mutex
@@ -146,12 +171,12 @@ func fileHash(path string) (string, error) {
 const coreSDDL = "O:SYD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;GRGX;;;BU)"
 
 // secureDir makes sure the core directory is ours. One made by someone
-// else -- the data directory lets every user create files, and one could
-// make "core" before the service did -- is not locked down in place: its
-// owner may take the permissions back, or hold a handle opened while it
-// could write. It is taken over, removed, and made anew, locked down from
-// its first moment: made and then locked, there was a window in which it
-// inherited the data directory's Users-modify.
+// else -- the data directory, where it used to be, let every user create
+// files, and one could make "core" before the service did -- is not locked
+// down in place: its owner may take the permissions back, or hold a handle
+// opened while it could write. It is taken over, removed, and made anew,
+// locked down from its first moment: made and then locked, there was a
+// window in which it inherited its parent's permissions.
 func secureDir(dir string) error {
 	fi, err := os.Lstat(dir)
 	switch {
