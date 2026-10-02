@@ -3,6 +3,7 @@ package webui
 import (
 	"net/url"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -165,5 +166,48 @@ func TestPresetRestore(t *testing.T) {
 	ctl.SyncUserFiles()
 	if !ctl.PresetWritten(yt, true) {
 		t.Fatal("the service did not write youtube as shipped")
+	}
+}
+
+// The settings not written, a preset's two files do not part: a new one
+// goes again, a deleted one comes back where it was -- each said not saved.
+// An edit writes no setting, and is saved whatever the settings file.
+func TestPresetSettingsRefused(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	post := func(path string, form url.Values) string {
+		t.Helper()
+		w := do(t, h, "POST", path, form, nil)
+		if w.Code != 200 {
+			t.Fatalf("%s: %d %s", path, w.Code, w.Body.String())
+		}
+		return w.Body.String()
+	}
+	if b := post("/act/presetsave", url.Values{"id": {""}, "title": {"Mine"}, "lines": {"a.example"}}); !strings.Contains(b, "msg ok") {
+		t.Fatalf("setup: %s", b)
+	}
+	before := presets.Load()
+	mine := before[len(before)-1]
+	// the settings file cannot be written: a folder with something in it
+	// stands in its place
+	if err := os.Remove(paths.Settings()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(paths.Settings(), "x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if b := post("/act/presetsave", url.Values{"id": {""}, "title": {"Other"}, "lines": {"b.example"}}); !strings.Contains(b, "msg bad") {
+		t.Fatalf("a new one said saved: %s", b)
+	}
+	if got := presets.Load(); len(got) != len(before) {
+		t.Fatalf("the new one stayed: %d presets, %d before", len(got), len(before))
+	}
+	if b := post("/act/presetsave", url.Values{"id": {mine.ID}, "title": {"Mine 2"}, "lines": {"c.example"}}); !strings.Contains(b, "msg ok") {
+		t.Fatalf("an edit refused: %s", b)
+	}
+	// the settings unreadable, nothing is switched on: deleting it touches
+	// no setting, and goes
+	if b := post("/act/presetdel", url.Values{"id": {mine.ID}}); !strings.Contains(b, "msg ok") {
+		t.Fatalf("delete: %s", b)
 	}
 }

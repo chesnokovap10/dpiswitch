@@ -31,7 +31,7 @@ type Resolver struct {
 	Scheme string // https, tls, tcp, udp
 	Host   string
 	Port   int
-	Path   string
+	Path   string // and the query, if any
 }
 
 // ResolverError: an address ParseResolver refuses. Why is one of a few
@@ -89,8 +89,12 @@ func ParseResolver(s string) (Resolver, error) {
 		return r, &ResolverError{r.Raw, "a #… suffix is not allowed here"}
 	}
 	// a DoH path as given, none included: the core asks "/" then, and the
-	// test must ask what the core will
+	// test must ask what the core will -- its query too: one dropped had
+	// the test ask another URL than the core
 	r.Path = u.EscapedPath()
+	if u.RawQuery != "" {
+		r.Path += "?" + u.RawQuery
+	}
 	return r, nil
 }
 

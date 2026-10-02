@@ -1250,3 +1250,23 @@ func TestForget(t *testing.T) {
 		t.Errorf("the blocked tab's address row:\n%s", body)
 	}
 }
+
+// The old programs' list that cannot go would go on routing its programs:
+// the direct list's save is undone, and said not saved.
+func TestListOldAppsStuck(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	os.WriteFile(paths.User(paths.DirectList), []byte("a.example\n"), 0o644)
+	// a folder with something in it: no Remove takes it
+	stuck := paths.User(paths.AppsList)
+	if err := os.MkdirAll(filepath.Join(stuck, "x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	w := do(t, h, "POST", "/act/list", url.Values{"kind": {"direct"}, "entries": {"b.example"}}, nil)
+	if !strings.Contains(w.Body.String(), "msg bad") {
+		t.Fatalf("said saved: %s", w.Body.String())
+	}
+	if b, _ := os.ReadFile(paths.User(paths.DirectList)); strings.TrimSpace(string(b)) != "a.example" {
+		t.Fatalf("the list after a save undone: %q", b)
+	}
+}

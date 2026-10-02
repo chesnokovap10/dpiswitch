@@ -60,14 +60,14 @@ func TestDoHPathAlternative(t *testing.T) {
 	}
 }
 
-// A DoH address is asked on the path it gives, none being "/" -- as the
-// core asks it, so the test answers for the core.
+// A DoH address is asked on the path it gives, none being "/", and with
+// its query -- as the core asks it, so the test answers for the core.
 func TestDoHAsksPathGiven(t *testing.T) {
 	var mu sync.Mutex
 	var asked []string
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		asked = append(asked, r.URL.Path)
+		asked = append(asked, r.URL.RequestURI())
 		mu.Unlock()
 		q, _ := io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/dns-message")
@@ -83,7 +83,8 @@ func TestDoHAsksPathGiven(t *testing.T) {
 	socks := newSocksStub(t, srv.Listener.Addr().String())
 	d := Dialer{Addr: socks.ln.Addr().String(), Timeout: 5 * time.Second}
 	base := "https://127.0.0.1:" + strconv.Itoa(srv.Listener.Addr().(*net.TCPAddr).Port)
-	for addr, want := range map[string]string{base: "/", base + "/dns-query": "/dns-query"} {
+	for addr, want := range map[string]string{base: "/", base + "/dns-query": "/dns-query",
+		base + "/dns-query?ecs=0": "/dns-query?ecs=0"} {
 		mu.Lock()
 		asked = nil
 		mu.Unlock()

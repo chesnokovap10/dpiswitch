@@ -7,7 +7,9 @@ param(
     [switch]$NoEmbed,
     # debug build with the race detector into dist\dpiswitch-race.exe; needs
     # cgo and gcc (winget install BrechtSanders.WinLibs.POSIX.UCRT)
-    [switch]$Race
+    [switch]$Race,
+    # no vet and tests: for a build right after they passed on this tree
+    [switch]$NoTests
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,10 +22,12 @@ $fileVer = "$Version.0"
 
 # a program failing does not stop a PowerShell script: its exit code is
 # looked at, or failing tests went on to build a release
-go vet ./...
-if ($LASTEXITCODE) { throw "go vet failed" }
-go test ./...
-if ($LASTEXITCODE) { throw "go test failed" }
+if (-not $NoTests) {
+    go vet ./...
+    if ($LASTEXITCODE) { throw "go vet failed" }
+    go test ./...
+    if ($LASTEXITCODE) { throw "go test failed" }
+}
 
 if ($Race) {
     $env:CGO_ENABLED = "1"

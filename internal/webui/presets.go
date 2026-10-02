@@ -134,15 +134,26 @@ func (s *Server) actPresetSave(w http.ResponseWriter, r *http.Request) {
 			return nil, errPresetGone
 		})
 	}
+	// A new preset is switched on: two files, written one after the other.
+	// Settings not written, the preset goes again -- it stayed, switched
+	// off, with the page saying it was not saved. An edit changes no
+	// setting, and writes none: one refused failed an edit already saved.
 	on := false
-	if err == nil {
+	switch {
+	case err != nil:
+	case id == "":
 		_, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
-			if id == "" {
-				set.Awg2Presets = append(set.Awg2Presets, p.ID)
-			}
-			on = slices.Contains(set.Awg2Presets, p.ID)
+			set.Awg2Presets = append(set.Awg2Presets, p.ID)
 			return nil
 		})
+		if err != nil {
+			presets.Update(func(all []presets.Preset) ([]presets.Preset, error) {
+				return slices.DeleteFunc(all, func(x presets.Preset) bool { return x.ID == p.ID }), nil
+			})
+		}
+		on = err == nil
+	default:
+		on = slices.Contains(ctl.LoadSettings(paths.Settings()).Awg2Presets, p.ID)
 	}
 	// a preset switched off routes nothing: nothing moves
 	n := 0
@@ -189,12 +200,13 @@ func (s *Server) actPresetDel(w http.ResponseWriter, r *http.Request) {
 	// not there
 	on := slices.Contains(ctl.LoadSettings(paths.Settings()).Awg2Presets, id)
 	var old presets.Preset
+	at := -1
 	err := paths.UserReady()
 	if err == nil {
 		err = presets.Update(func(all []presets.Preset) ([]presets.Preset, error) {
 			for i := range all {
 				if all[i].ID == id {
-					old = all[i]
+					old, at = all[i], i
 					return slices.Delete(all, i, i+1), nil
 				}
 			}
@@ -206,6 +218,13 @@ func (s *Server) actPresetDel(w http.ResponseWriter, r *http.Request) {
 			set.Awg2Presets = slices.DeleteFunc(set.Awg2Presets, func(x string) bool { return x == id })
 			return nil
 		})
+		// the settings still naming it, the preset comes back where it was:
+		// said not deleted, it was gone
+		if err != nil {
+			presets.Update(func(all []presets.Preset) ([]presets.Preset, error) {
+				return slices.Insert(all, min(at, len(all)), old), nil
+			})
+		}
 	}
 	n := 0
 	var cerr error

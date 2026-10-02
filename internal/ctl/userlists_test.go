@@ -19,6 +19,7 @@ func TestParseEntry(t *testing.T) {
 		"Example.COM":                       {EntryName, "example.com"},
 		"+.example.org":                     {EntryName, "+.example.org"},
 		"https://www.example.com:8443/path": {EntryName, "www.example.com"},
+		"example.com:443":                   {EntryName, "example.com"},
 		"1.2.3.4":                           {EntryIP, "1.2.3.4"},
 		"1.2.3.4/32":                        {EntryIP, "1.2.3.4"},
 		"192.168.12.0/16":                   {EntryIP, "192.168.0.0/16"},
@@ -41,7 +42,8 @@ func TestParseEntry(t *testing.T) {
 			t.Errorf("%q: %d %q %v, want %d %q", in, kind, v, err, want.kind, want.v)
 		}
 	}
-	for _, bad := range []string{"bad host", "MATCH,DIRECT", "a,b.exe", "300.1.1.1/8", ""} {
+	for _, bad := range []string{"bad host", "MATCH,DIRECT", "a,b.exe", "300.1.1.1/8", "",
+		"example.com:abc", "example.com:", "example.com:0", "example.com:70000"} {
 		if _, _, err := ParseEntry(bad); err == nil {
 			t.Errorf("%q taken", bad)
 		}

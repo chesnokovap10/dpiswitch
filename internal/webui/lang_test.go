@@ -43,3 +43,24 @@ func TestPagesSpeakTheTraysLanguage(t *testing.T) {
 		t.Errorf("no lang file: the page is in %s, Windows says %s", got, want)
 	}
 }
+
+// A tunnel's state as the core said it, in Russian: a time or an error in
+// it kept as it is, anything not known left in English.
+func TestTunnelNote(t *testing.T) {
+	for in, want := range map[string]string{
+		"96 ms":                        "96 ms",
+		"not checked yet":              "ещё не проверялся",
+		"no check since 12:03:04":      "нет проверки с 12:03:04",
+		"no answer at 12:03:04":        "нет ответа в 12:03:04",
+		"core API not responding: EOF": "API ядра не отвечает: EOF",
+		"something else":               "something else",
+		"x ms":                         "x ms",
+	} {
+		if got := TunnelNote("ru", in); got != want {
+			t.Errorf("%q: %q, want %q", in, got, want)
+		}
+		if got := TunnelNote("en", in); got != in {
+			t.Errorf("en %q: %q", in, got)
+		}
+	}
+}

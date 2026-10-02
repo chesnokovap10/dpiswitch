@@ -78,8 +78,9 @@ func runService() {
 	// points (see paths.SecureDataDir)
 	owner := paths.ResolveOwner()
 	secErr := paths.SecureDataDir(owner)
-	if secErr != nil {
-		// once more: an entry held open a moment ago may be free now
+	// again, a few times: an entry held open a moment ago may be free now
+	for i := 0; secErr != nil && i < 4; i++ {
+		time.Sleep(time.Second)
 		secErr = paths.SecureDataDir(owner)
 	}
 	if fi, err := os.Lstat(paths.LogDir()); err != nil || !fi.IsDir() || fi.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
@@ -102,7 +103,11 @@ func runService() {
 	}
 	log.SetFlags(log.LstdFlags)
 	if secErr != nil {
-		log.Printf("data directory not fully locked down: %v", secErr)
+		// A directory not wholly locked is one a user may have planted a
+		// link or a file in: the service ran on in it as SYSTEM, and read
+		// and wrote through what it could not remove. It does not start.
+		log.Printf("service not started: the data directory is not locked down: %v", secErr)
+		return
 	}
 	if owner == "" {
 		log.Println("no owner recorded: only administrators can change the settings -- install the service again from the tray")
@@ -319,6 +324,7 @@ func status() (tray.State, string) {
 	// with a dead peer TUN is up but there is no internet
 	alive, note := ctl.TunnelHealth("127.0.0.1:9090",
 		ctl.SecretFromConfig(paths.Config()), "awg")
+	note = webui.TunnelNote(uiLang(), note)
 	if !alive {
 		if !supervisor.NetworkUp() {
 			return tray.StateError, T("DPI Switch — no network, waiting")

@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -67,7 +68,12 @@ func ParseEntry(s string) (kind int, v string, err error) {
 			}
 		}
 	}
+	// a port after the name is cut: a port, nothing else -- "example.com:abc"
+	// was cut to example.com, a typo taken for another entry
 	if i := strings.LastIndexByte(h, ':'); i > 0 {
+		if p, err := strconv.Atoi(h[i+1:]); err != nil || p < 1 || p > 65535 {
+			return 0, "", fmt.Errorf("%q: neither a site, an address nor a program", s)
+		}
 		h = h[:i]
 	}
 	if ip, ok := parseIP(h); ok {

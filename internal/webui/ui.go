@@ -112,6 +112,9 @@ func (v *view) Dlg(name string) dlg {
 
 func (v *view) T(en string) string { return tr(v.Lang, en) }
 
+// Note: a tunnel's state as the core said it, in the page's language
+func (v *view) Note(note string) string { return TunnelNote(v.Lang, note) }
+
 // TH: a translated string that carries markup of its own (<code>, <b>).
 // The strings are the program's, never the user's.
 func (v *view) TH(en string) template.HTML { return template.HTML(tr(v.Lang, en)) }

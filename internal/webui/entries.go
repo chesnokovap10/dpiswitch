@@ -159,11 +159,25 @@ func (s *Server) saveEntries(name string, entries []string) (n int, err, closeEr
 	}
 	s.listMu.Lock()
 	old := readEntries(name)
+	was, rerr := os.ReadFile(paths.User(name))
+	had := rerr == nil
+	if rerr != nil && !errors.Is(rerr, fs.ErrNotExist) {
+		s.listMu.Unlock()
+		return 0, rerr, nil
+	}
 	err = writeEntries(name, entries)
 	if err == nil && name == paths.DirectList {
-		// the programs' list of its own is in the direct list now
+		// the programs' list of its own is in the direct list now. One that
+		// cannot go would go on routing its programs: the save is undone,
+		// and "not saved" is so -- it used to stay, said not saved, with
+		// the connections it moved left open.
 		if rerr := os.Remove(paths.User(paths.AppsList)); rerr != nil && !errors.Is(rerr, fs.ErrNotExist) {
 			err = rerr
+			if had {
+				paths.ReplaceFile(paths.User(name), was)
+			} else {
+				os.Remove(paths.User(name))
+			}
 		}
 	}
 	s.listMu.Unlock()

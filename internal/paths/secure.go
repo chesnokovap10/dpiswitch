@@ -95,6 +95,10 @@ var keyNames = map[string]bool{"config.yaml": true, "source.conf": true, "source
 // Run by the service at every start, before it opens a log, and by the
 // installer. owner may be "" -- then nobody but the administrators can write
 // in UserDir until the service is installed again.
+//
+// An error is a directory not wholly locked: the service must not run in it
+// (see runService). A file of the user's not moved is not one -- it is
+// logged, and moving it is tried again at the next start.
 func SecureDataDir(owner string) error {
 	enablePrivileges()
 	root := DataDir()
@@ -106,7 +110,7 @@ func SecureDataDir(owner string) error {
 	if err := ensureDir(UserDir(), userDirSDDL(owner)); err != nil {
 		errs = append(errs, err)
 	} else {
-		migrate(owner, &errs)
+		migrate(owner)
 	}
 	if err := ensureDir(LogDir(), dirSDDL()); err != nil {
 		errs = append(errs, err)
@@ -212,7 +216,7 @@ func lockChildren(dir, owner string, errs *[]error) {
 // installation to UserDir: the .conf files, the settings, a reset asked for.
 // The lists are copied: the data directory keeps the service's copy the
 // core reads.
-func migrate(owner string, errs *[]error) {
+func migrate(owner string) {
 	for _, m := range []struct {
 		name string
 		sddl string // "" -- UserDir's own, inherited
@@ -233,19 +237,19 @@ func migrate(owner string, errs *[]error) {
 			continue
 		}
 		if err != nil {
-			*errs = append(*errs, err)
+			log.Printf("data directory: %s not moved: %v", m.name, err)
 			continue
 		}
 		if _, err := os.Lstat(dst); errors.Is(err, fs.ErrNotExist) {
 			if err := createNew(dst, b, m.sddl); err != nil {
-				*errs = append(*errs, err)
+				log.Printf("data directory: %s not moved: %v", m.name, err)
 				continue
 			}
 			log.Printf("data directory: %s moved to %s", m.name, UserDir())
 		}
 		if !m.keep {
 			if err := os.Remove(src); err != nil {
-				*errs = append(*errs, err)
+				log.Printf("data directory: %s moved, the old one not removed: %v", m.name, err)
 			}
 		}
 	}
