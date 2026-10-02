@@ -70,6 +70,9 @@ func Run(ctx context.Context, cfg Config) {
 		log.Printf("warning: secret not found in %s, calling the API without auth", cfg.CfgPath)
 	}
 	a := newAPI(cfg.APIAddr, secret)
+	// the controller asks for as long as the service runs: a config
+	// written anew meanwhile has a secret of its own
+	a.cfgPath = cfg.CfgPath
 	cfg.autoOff = new(atomic.Bool)
 	cfg.mode = new(atomic.Value)
 	cfg.stop = ctx.Done()

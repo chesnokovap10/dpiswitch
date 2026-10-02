@@ -1,9 +1,11 @@
 package ctl
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -11,45 +13,97 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"dpiswitch/internal/probe"
 )
 
 type api struct {
-	base   string
-	secret string
-	c      *http.Client
+	base string
+	// secret: what the core is asked with, renewed from cfgPath when the
+	// core refuses it (see renew); several goroutines ask through one api
+	secret atomic.Pointer[string]
+	// cfgPath: the config the secret is read again from; "" for never -- a
+	// client made for a moment, by a caller that has just read it
+	cfgPath string
+	c       *http.Client
 }
 
 func newAPI(base, secret string) *api {
-	return &api{base: "http://" + base, secret: secret, c: &http.Client{Timeout: 10 * time.Second}}
+	a := &api{base: "http://" + base, c: &http.Client{Timeout: 10 * time.Second}}
+	a.secret.Store(&secret)
+	return a
+}
+
+// authorize puts the secret held on req
+func (a *api) authorize(req *http.Request) {
+	if s := *a.secret.Load(); s != "" {
+		req.Header.Set("Authorization", "Bearer "+s)
+	}
+}
+
+// renew reads the secret again once the core has refused the one held, and
+// says whether there is another to try. The config keeps its secret when it
+// is rebuilt, but one written anew -- missing at the start, unreadable when
+// it was rebuilt -- has another, and a client holding the old one was
+// refused for the rest of its life: the controller saw no connections and
+// wrote no list until the service restarted.
+func (a *api) renew() bool {
+	if a.cfgPath == "" {
+		return false
+	}
+	s := secretFromConfig(a.cfgPath)
+	if s == "" || s == *a.secret.Load() {
+		return false
+	}
+	a.secret.Store(&s)
+	log.Printf("the core refused the API secret held: read again from %s", a.cfgPath)
+	return true
 }
 
 func (a *api) do(method, path string, body io.Reader) ([]byte, error) {
+	var payload []byte
+	if body != nil {
+		var err error
+		if payload, err = io.ReadAll(body); err != nil {
+			return nil, err
+		}
+	}
+	b, status, err := a.send(method, path, payload)
+	if status == http.StatusUnauthorized && a.renew() {
+		b, _, err = a.send(method, path, payload)
+	}
+	return b, err
+}
+
+// send: one request, and the status it was answered with (0 for none)
+func (a *api) send(method, path string, payload []byte) ([]byte, int, error) {
+	var body io.Reader
+	if payload != nil {
+		body = bytes.NewReader(payload)
+	}
 	req, err := http.NewRequest(method, a.base+path, body)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	if a.secret != "" {
-		req.Header.Set("Authorization", "Bearer "+a.secret)
-	}
+	a.authorize(req)
 	resp, err := a.c.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 	b, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if resp.StatusCode >= 300 {
-		return b, fmt.Errorf("%s %s: %s", method, path, resp.Status)
+		return b, resp.StatusCode, fmt.Errorf("%s %s: %s", method, path, resp.Status)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("%s %s: %w", method, path, err)
+		return nil, resp.StatusCode, fmt.Errorf("%s %s: %w", method, path, err)
 	}
 	if int64(len(b)) > maxBody {
-		return nil, fmt.Errorf("%s %s: the answer is larger than %d MB", method, path, maxBody>>20)
+		return nil, resp.StatusCode, fmt.Errorf("%s %s: the answer is larger than %d MB", method, path, maxBody>>20)
 	}
-	return b, nil
+	return b, resp.StatusCode, nil
 }
 
 // maxBody: the most of an answer read. /connections is the big one, 730 KB

@@ -420,7 +420,10 @@ func (s *Supervisor) askRecheck() {
 // goes nowhere, and from the outside it looks like no internet at all.
 // It won't resolve itself until someone re-establishes the connection.
 func (s *Supervisor) keepHealthy(ctx context.Context) {
-	secret := ctl.SecretFromConfig(paths.Config())
+	// read again at every look: read once, before the first core's config
+	// was written, it was none -- and every look a refusal, the core
+	// restarted every minute until the service was
+	var secret string
 
 	const (
 		// the core checks every 30 seconds; reading twice as often keeps
@@ -465,6 +468,9 @@ func (s *Supervisor) keepHealthy(ctx context.Context) {
 				return
 			}
 			continue
+		}
+		if sec := ctl.SecretFromConfig(paths.Config()); sec != "" {
+			secret = sec // a config being replaced reads as none for a moment
 		}
 		c, err := ctl.LastTunnelCheck(apiAddr, secret, name)
 		news, ok, detail := readCheck(c, err, seen)

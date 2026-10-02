@@ -204,9 +204,7 @@ func (l *LiveClient) DialErrors(ctx context.Context, opened func(), each func(Di
 	if err != nil {
 		return err
 	}
-	if l.a.secret != "" {
-		req.Header.Set("Authorization", "Bearer "+l.a.secret)
-	}
+	l.a.authorize(req)
 	resp, err := l.stream.Do(req)
 	var op *net.OpError
 	if errors.As(err, &op) && op.Op == "dial" {
