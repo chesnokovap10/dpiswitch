@@ -53,8 +53,22 @@ if ($LASTEXITCODE) { throw "go-winres failed" }
 
 $tags = ""
 if (-not $NoEmbed) {
-    # the slim core: built once by tools\build-mihomo.ps1, reused afterwards
-    if (-not (Test-Path dist\mihomo.exe)) { & .\tools\build-mihomo.ps1 }
+    # the slim core: built by tools\build-mihomo.ps1 and reused afterwards --
+    # while its stamp says it is the commit pinned there, and this very file.
+    # A core left in dist from another pin, or put there by hand, was
+    # embedded without a word.
+    $m = Select-String -Path tools\build-mihomo.ps1 -Pattern '\[string\]\$Commit = "([0-9a-f]{40})"'
+    if (-not $m) { throw "no pinned commit found in tools\build-mihomo.ps1" }
+    $pin = $m.Matches[0].Groups[1].Value
+    $stamped = $false
+    if ((Test-Path dist\mihomo.exe) -and (Test-Path dist\mihomo.commit)) {
+        $c, $h = (Get-Content dist\mihomo.commit -Raw).Trim() -split ' '
+        $stamped = $c -eq $pin -and $h -eq (Get-FileHash dist\mihomo.exe -Algorithm SHA256).Hash.ToLower()
+    }
+    if (-not $stamped) {
+        Write-Host "dist\mihomo.exe is not stamped as $pin`: building the core"
+        & .\tools\build-mihomo.ps1
+    }
     $core = (Resolve-Path dist\mihomo.exe).Path
     (Get-FileHash $core -Algorithm SHA256).Hash.ToLower() |
         Set-Content -NoNewline -Encoding ascii internal\core\mihomo.exe.sha256

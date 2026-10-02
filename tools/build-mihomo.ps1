@@ -30,9 +30,19 @@ param(
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot | Split-Path
 $src = Join-Path $env:TEMP "mihomo-src-$($Commit.Substring(0, 12))"
+# what dist\mihomo.exe was built from: the commit and the file's SHA-256,
+# written once the core has passed the routing tests below. build.ps1 builds
+# the core again when it says another commit, or another file, or nothing.
+$stamp = Join-Path $root "dist\mihomo.commit"
 
 if (-not (Test-Path $src)) {
     git clone --filter=blob:none $Repo $src
+} else {
+    # the copy is reset below: a change made in it and not yet committed
+    # would go with the reset, without a word
+    $dirty = git -C $src status --porcelain
+    if ($LASTEXITCODE) { throw "$src is not a copy git can read: remove it to build afresh" }
+    if ($dirty) { throw "$src holds changes not committed: commit them in the fork first, or remove the folder to build afresh" }
 }
 git -C $src fetch --quiet $Repo $Commit
 # a previous run left the switches cut: start from the pristine tree
@@ -71,6 +81,8 @@ Limit-Switch "listener\parse.go" @("socks", "tun")
 $tags = "no_tailscale,no_zerotier,no_easytier,no_fake_tcp"
 New-Item -ItemType Directory -Force (Join-Path $root dist) | Out-Null
 $out = Join-Path $root "dist\mihomo.exe"
+# the old stamp goes first: a build that stops halfway leaves none
+Remove-Item $stamp -ErrorAction SilentlyContinue
 Push-Location $src
 # the caller's setting comes back after: build.ps1 -Race needs cgo for its
 # own build, and a first run builds the core in between
@@ -102,3 +114,6 @@ try {
     $env:DPISWITCH_CORE = $prev
     Pop-Location
 }
+$hash = (Get-FileHash $out -Algorithm SHA256).Hash.ToLower()
+Set-Content -NoNewline -Encoding ascii $stamp "$Commit $hash"
+Write-Host "stamped: $stamp"
