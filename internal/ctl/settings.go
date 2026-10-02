@@ -55,11 +55,11 @@ type Settings struct {
 	TunnelDNS2 []string `json:"tunnel_dns2"`
 }
 
-// Yandex: verified reachable directly, does not tamper with answers
-// for blocked domains, picks CDN nodes for
-// Russian ISPs. DoH and DoT on different addresses: if one protocol
-// or address gets blocked, the other remains.
-var defaultDirectDNS = []string{"https://77.88.8.8/dns-query", "tls://77.88.8.1"}
+// Google's DoT, on both its addresses: reachable directly (39-51 ms on
+// 02.10, as Yandex's 30-49), and an answer for a blocked domain is not
+// rewritten. It was Yandex's DoH and DoT; Google's was asked for. By address:
+// the certificate names both, and nothing is resolved to find the resolver.
+var defaultDirectDNS = []string{"tls://8.8.8.8", "tls://8.8.4.4"}
 
 // SameCore: whether anything that goes into the core config changed (resolvers,
 // IPv6). Such settings need a core restart; the rest

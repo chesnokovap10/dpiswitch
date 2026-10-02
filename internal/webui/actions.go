@@ -270,13 +270,23 @@ func (s *Server) actDetach2(w http.ResponseWriter, r *http.Request) {
 // A stopped service keeps its verdicts and applies them when it starts: the
 // request waits for it, as the tray's does. The page used to refuse it with
 // "there is nothing to reset".
+//
+// The reset is of the network the page shows (net), the current one for
+// none -- as the tray's is.
 func (s *Server) actReset(w http.ResponseWriter, r *http.Request) {
 	req := paths.ResetRequest()
 	if err := paths.UserReady(); err != nil {
 		s.redirect(w, r, err, "")
 		return
 	}
-	if err := os.WriteFile(req, []byte(time.Now().Format(time.RFC3339)+"\n"), 0o644); err != nil {
+	net := otherNet(r)
+	body := time.Now().Format(time.RFC3339) + "\n"
+	if net != "" {
+		body += ctl.NetworkLine(net)
+	}
+	// whole or not at all: a request the service met half written would be
+	// taken as the current network's
+	if err := paths.ReplaceFile(req, []byte(body)); err != nil {
 		s.redirect(w, r, err, "")
 		return
 	}
@@ -286,12 +296,26 @@ func (s *Server) actReset(w http.ResponseWriter, r *http.Request) {
 	}
 	for i := 0; i < 40; i++ {
 		if _, err := os.Stat(req); os.IsNotExist(err) {
+			if net != "" {
+				s.redirect(w, r, nil, "Verdicts of network %s reset: its sites are checked anew when you are on it again", net)
+				return
+			}
 			s.redirect(w, r, nil, "Verdicts reset: everything goes through the tunnel, the detector starts over")
 			return
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
 	s.redirect(w, r, nil, "Reset requested: the service takes it as soon as its controller runs")
+}
+
+// otherNet: the network a verdicts page's action names (net), "" for the
+// current one or none that could be a network
+func otherNet(r *http.Request) string {
+	net := r.FormValue("net")
+	if !ctl.ValidNetID(net) || net == ctl.LoadCached(paths.State()).Current {
+		return ""
+	}
+	return net
 }
 
 // actForget resets one verdict, from its row on the verdicts page: the
@@ -315,8 +339,14 @@ func (s *Server) actForget(w http.ResponseWriter, r *http.Request) {
 	// whole or not at all: the service looks every second, and a file it
 	// met between being made and being written was taken empty -- the page
 	// said the verdict was reset, and nothing was
+	// of the network the page shows: another's verdict goes from that one
+	net := otherNet(r)
+	body := key + "\n"
+	if net != "" {
+		body = ctl.NetworkLine(net) + body
+	}
 	req := paths.ForgetRequest()
-	if err := paths.ReplaceFile(req, []byte(key+"\n")); err != nil {
+	if err := paths.ReplaceFile(req, []byte(body)); err != nil {
 		writeJSON(w, liveAnswer{false, err.Error()})
 		return
 	}
@@ -333,6 +363,11 @@ func (s *Server) actForget(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		time.Sleep(forgetWait / 40)
+	}
+	if net != "" {
+		// nothing goes by another network's verdicts: no connection to move
+		writeJSON(w, liveAnswer{true, fmt.Sprintf(tr(l, "Verdict reset in network %s: %s is checked anew when you are on it again"), net, entry)})
+		return
 	}
 	msg := fmt.Sprintf(tr(l, "Verdict reset: %s goes through the tunnel until the detector checks it again"), entry)
 	n, err := ctl.CloseConns(apiAddr, ctl.SecretFromConfig(paths.Config()), entryMatch([]string{entry}))

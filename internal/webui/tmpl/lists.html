@@ -2,9 +2,9 @@
 <div class="page">
   <p class="hint" style="margin:0">{{.T "One per line: a site (example.com; +.example.com for the domain and all under it), an address or a network (1.2.3.4, 192.168.0.0/16: for connections made to it by address), a program (telegram.exe; a full path for that copy only)."}}<br>{{.T "Written in several lists, a line goes by the highest: Forbidden → Always via tunnel → Always direct → the second tunnel (its presets and list, while loaded and switched on) → the detector. The table for each mode is in the help."}}</p>
   <div class="cols3 fill lists">
-    <div class="box" id="list-direct">{{template "list-direct" .}}</div>
-    <div class="box" id="list-tunnel">{{template "list-tunnel" .}}</div>
-    <div class="box" id="list-block">{{template "list-block" .}}</div>
+    <div class="box" id="list-direct" data-fresh="/frag/lists/list-direct">{{template "list-direct" .}}</div>
+    <div class="box" id="list-tunnel" data-fresh="/frag/lists/list-tunnel">{{template "list-tunnel" .}}</div>
+    <div class="box" id="list-block" data-fresh="/frag/lists/list-block">{{template "list-block" .}}</div>
   </div>
 </div>
 {{end}}

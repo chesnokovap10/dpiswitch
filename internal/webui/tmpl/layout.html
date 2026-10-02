@@ -6,7 +6,7 @@
 <link rel="icon" href="/favicon.ico">
 <link rel="stylesheet" href="/static/ui.css">
 </head>
-<body>
+<body data-page="{{.Page}}">
 <div class="app">
 <header id="header" data-poll="/frag/{{.Page}}/header" data-every="5">{{template "header" .}}</header>
 <nav>
@@ -14,12 +14,21 @@
   <div id="svcbox" data-poll="/frag/{{.Page}}/svcbox" data-every="5">{{template "svcbox" .}}</div>
   {{template "langs" .}}
 </nav>
-<main>
-{{if .Flash}}<div class="flash {{if .Flash.OK}}ok{{else}}bad{{end}}" style="margin-bottom:12px">{{.Flash.Text}}</div>{{end}}
+{{/* every page lives in the one document, drawn once and kept: the menu
+   shows another at once, as a program's tabs do (see static/ui.js). The
+   page asked for comes with the document, the rest follow it. */}}
+<main id="pages" data-pages="{{pagelist}}">
+<section class="pg" data-page="{{.Page}}">
+{{if .Flash}}<div class="flash pgflash {{if .Flash.OK}}ok{{else}}bad{{end}}" style="margin-bottom:12px">{{.Flash.Text}}</div>{{end}}
 {{template "content" .}}
+</section>
 </main>
 </div>
+{{template "rowmenu" .}}
 <script src="/static/ui.js"></script>
+<script src="/static/rowmenu.js"></script>
+<script src="/static/live.js"></script>
+<script src="/static/verdicts.js"></script>
 </body>
 </html>{{end}}
 
@@ -42,7 +51,9 @@
     <span class="chip"><span class="dot"></span>{{.T "Service stopped"}}</span>
     {{if not $s.NetworkUp}}<span class="chip"><span class="dot warn"></span>{{.T "no network"}}</span>{{end}}
   {{end}}
-  {{if $s.NetworkID}}<span class="chip muted netchip" title="{{.T "Verdicts are kept per ISP"}}">{{.T "network"}} {{$s.NetworkID}}</span>{{end}}
+  {{/* on the verdicts page it picks the network whose verdicts are shown
+     (see static/verdicts.js) */}}
+  {{if $s.NetworkID}}<span class="chip muted netchip" id="netchip" data-cur="{{$s.NetworkID}}" data-nets="{{json $s.Nets}}" title="{{.T "Verdicts are kept per ISP"}}">{{.T "network"}} <span class="netid">{{$s.NetworkID}}</span><span class="tri">▾</span></span>{{end}}
   {{if .Msg}}<span class="msg {{if .Msg.OK}}ok{{else}}bad{{end}}">{{.Msg.Text}}</span>{{end}}
   <span class="spacer"></span>
   <span class="muted autolabel">{{.T "Auto-switch"}}</span>

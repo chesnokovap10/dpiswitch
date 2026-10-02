@@ -7,17 +7,23 @@
 // many times the same one failed.
 //
 // The server keeps the connections closed and the failures of the core's
-// whole run. The stream is open only while the page is seen: a tab in the
-// background, a window minimized, a pause close it; opened again, it brings
-// only what came meanwhile.
+// whole run. The stream is open while the window is seen, on whatever page
+// of it -- the table is drawn only while Live is shown, and is current the
+// moment it is; a tab in the background, a window minimized, a pause close
+// the stream; opened again, it brings only what came meanwhile.
 //
 // A row clicked is picked, and holds its place; right-clicked, it opens a
 // menu that sends its site, address or program to one of the lists.
 'use strict';
-(function () {
-  const root = document.getElementById('live');
+pageInit.live = function (sec) {
+  const root = sec.querySelector('#live');
   if (!root) return;
   const $ = id => document.getElementById(id);
+  // the page shown: the table is drawn; away, it is drawn when shown
+  const shown = () => !sec.classList.contains('away');
+  let stale = false;
+  sec.addEventListener('pg:show', () => { if (stale) draw(); });
+  sec.addEventListener('pg:hide', () => unpick());
   const W = JSON.parse($('lwords').textContent);
   const tbody = $('lrows');
   const locale = document.documentElement.lang || 'en';
@@ -56,7 +62,8 @@
     const s = Math.max(0, Math.floor(ms / 1000));
     if (s < 60) return fmt(W.sec, s);
     if (s < 3600) return fmt(W.min, Math.floor(s / 60));
-    return fmt(W.hour, Math.floor(s / 3600), Math.floor(s % 3600 / 60));
+    if (s < 2 * 86400) return fmt(W.hour, Math.floor(s / 3600), Math.floor(s % 3600 / 60));
+    return fmt(W.day, Math.floor(s / 86400), Math.floor(s % 86400 / 3600));
   }
   const label = r => W[r.route] || r.route;
   const clock = ms => new Date(ms).toLocaleTimeString(locale);
@@ -295,6 +302,8 @@
     (r._hay = [r.host, r.proc, r.ip, r.port, r.proto, label(r), r.why ? why(r) : ''].join(' ').toLowerCase());
 
   function draw() {
+    if (!shown()) { stale = true; return; }
+    stale = false;
     const q = $('lfilter').value.trim().toLowerCase();
     const all = [open, closed, failed, blocked];
     const maps = pref.tab === 'all' ? all : [{open, closed, failed, blocked}[pref.tab] || open];
@@ -344,7 +353,11 @@
       $('t-ds').textContent = size(tot.ds) + W.perSec;
       $('t-us').textContent = size(tot.us) + W.perSec;
       $('t-tot').textContent = '↓ ' + size(tot.down) + ' · ↑ ' + size(tot.up);
-      $('t-mem').textContent = W.sinceStart + (tot.mem ? ' · ' + fmt(W.memory, size(tot.mem)) : '');
+      // how long ago the core started: the totals count from then
+      const m = $('t-mem');
+      m.textContent = W.sinceStart + (tot.since ? ' ' + fmt(W.ago, dur(now - tot.since)) : '') +
+        (tot.mem ? ' · ' + fmt(W.memory, size(tot.mem)) : '');
+      m.title = tot.since ? fmt(W.coreStarted, new Date(tot.since).toLocaleString(locale)) : '';
     }
     const bn = $('lbanner');
     bn.textContent = down === 'stopped' ? W.stopped : down ? W.error + ' ' + err : '';
@@ -362,16 +375,20 @@
   }
 
   // --- controls ---
+  // a tab takes the press, not the click, as the menu's do (see ui.js);
+  // the click after it finds it taken, and a key's click still takes it
   function on(group, attr, key) {
     const g = $(group);
     const mark = () => { for (const b of g.children) b.classList.toggle('on', b.dataset[attr] === pref[key]); };
     mark();
-    g.addEventListener('click', e => {
+    const pick = e => {
       const b = e.target.closest('button');
-      if (!b) return;
+      if (!b || pref[key] === b.dataset[attr]) return;
       pref[key] = b.dataset[attr];
       unpick(); mark(); save(); draw();
-    });
+    };
+    g.addEventListener('pointerdown', e => { if (e.button === 0 && e.pointerType === 'mouse') pick(e); });
+    g.addEventListener('click', pick);
   }
   on('ltabs', 'tab', 'tab');
   on('lroutes', 'route', 'route');
@@ -465,7 +482,7 @@
     if (sel && !e.target.closest('#lmenu, #lrows tr')) unpick();
   });
   document.addEventListener('keydown', e => {
-    if (e.key !== 'Escape') return;
+    if (e.key !== 'Escape' || !shown()) return;
     if (menu.shown()) closeMenu(); else unpick();
   });
 
@@ -498,4 +515,4 @@
 
   draw();
   start();
-})();
+};

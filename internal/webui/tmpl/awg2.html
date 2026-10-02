@@ -2,8 +2,8 @@
 <div class="page">
   <div class="box" id="awg2state" data-poll="/frag/awg2/awg2state" data-every="10">{{template "awg2state" .}}</div>
   <div class="cols2 fill">
-    <div class="box" id="presets">{{template "presets" .}}</div>
-    <div class="box" id="list-awg2">{{template "list-awg2" .}}</div>
+    <div class="box" id="presets" data-fresh="/frag/awg2/presets">{{template "presets" .}}</div>
+    <div class="box" id="list-awg2" data-fresh="/frag/awg2/list-awg2">{{template "list-awg2" .}}</div>
   </div>
 </div>
 {{template "confdialog" .Dlg "config2"}}

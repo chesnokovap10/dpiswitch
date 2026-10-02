@@ -2,6 +2,7 @@ package webui
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -56,15 +57,19 @@ func init() {
 		"el": func(v *view, kind, title, hint string, entries []string, online []netprocs.Proc) entryList {
 			return entryList{v, kind, title, hint, entries, online}
 		},
+		"json": func(v any) (string, error) {
+			b, err := json.Marshal(v)
+			return string(b), err
+		},
+		// the pages the document holds, see layout.html
+		"pagelist": func() string { return strings.Join(pageNames, " ") },
 	}
 	for _, p := range pageNames {
 		t := template.New("").Funcs(funcs)
-		pats := []string{"tmpl/layout.html", "tmpl/" + p + ".html"}
-		switch p {
-		case "help":
+		// the rows' menu is the layout's: Live and Verdicts share it
+		pats := []string{"tmpl/layout.html", "tmpl/rowmenu.html", "tmpl/" + p + ".html"}
+		if p == "help" {
 			pats = append(pats, "tmpl/help_en.html", "tmpl/help_ru.html")
-		case "live", "verdicts":
-			pats = append(pats, "tmpl/rowmenu.html")
 		}
 		pageTmpl[p] = template.Must(t.ParseFS(uiFS, pats...))
 	}
@@ -325,6 +330,7 @@ type status struct {
 	DataDir     string         `json:"data_dir"`
 	InstallDir  string         `json:"install_dir"`
 	NetworkID   string         `json:"network_id"`
+	Nets        []ctl.NetCount `json:"-"` // every network memory keeps, see ctl.Snapshot
 	Counts      map[string]int `json:"counts"`
 	DirectCount int            `json:"direct_count"`
 	Blocked     int            `json:"blocked_count"`
@@ -415,7 +421,7 @@ func collectStatus() status {
 	st.Awg2Hosts = len(readEntries(paths.Awg2List))
 
 	snap := ctl.LoadCached(paths.State())
-	st.NetworkID = snap.NetworkID
+	st.NetworkID, st.Nets = snap.NetworkID, snap.Nets
 	st.Counts = snap.Counts
 	st.DirectCount = len(snap.Direct)
 	st.Blocked = snap.Blocked()

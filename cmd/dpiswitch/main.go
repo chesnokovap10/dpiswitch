@@ -352,6 +352,8 @@ func status() (tray.State, string) {
 // The service does it: it holds the verdicts in memory, and emptying the
 // files from here was undone by its next sync within a minute (see
 // ctl.takeReset). The tray leaves a request and waits for it to be taken.
+// It is the current network's, as the verdicts page's button is of the
+// network it shows: the verdicts kept for another network stay.
 func panicTunnel() {
 	req := paths.ResetRequest()
 	if err := os.WriteFile(req, []byte(time.Now().Format(time.RFC3339)+"\n"), 0o644); err != nil {
@@ -360,6 +362,10 @@ func panicTunnel() {
 	}
 	for i := 0; i < 40; i++ {
 		if _, err := os.Stat(req); os.IsNotExist(err) {
+			if net := ctl.LoadCached(paths.State()).Current; net != "" {
+				msgBox("DPI Switch", fmt.Sprintf(T("Verdicts of network %s reset, all traffic goes through the tunnel.\nThe detector will start picking domains again."), net), 0x40)
+				return
+			}
 			msgBox("DPI Switch", T("Verdicts reset, all traffic goes through the tunnel.\nThe detector will start picking domains again."), 0x40)
 			return
 		}

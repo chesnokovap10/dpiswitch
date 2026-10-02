@@ -102,7 +102,7 @@
 | Страница | Что там |
 |---|---|
 | **Обзор** | Сколько сайтов идёт напрямую, заблокировано, медленнее, не проверено; состояние обоих туннелей, замена `.conf`; последние события |
-| **Вердикты** | Все вердикты по вкладкам «Напрямую», «Заблокированы», «Медленнее», «Не проверено», фильтр по имени (русские имена ищутся и показываются как есть); строка выделяется кликом, правый клик отправляет её в список, ✕ сбрасывает её вердикт; «Сбросить все вердикты…» |
+| **Вердикты** | Все вердикты по вкладкам «Напрямую», «Заблокированы», «Медленнее», «Не проверено», фильтр по имени (русские имена ищутся и показываются как есть); строка выделяется кликом, правый клик отправляет её в список, ✕ сбрасывает её вердикт; «Сбросить вердикты…» — выбранной сети; сеть в шапке раскрывает список сетей |
 | **Списки маршрутов** | «Всегда напрямую», «Всегда через туннель», «Запрещено»: сайты, адреса и программы в каждом |
 | **Второй туннель** | Подключение awg2, пресеты (YouTube, Telegram, ИИ-сервисы, Instagram/Facebook/X; их можно изменить, удалить и добавить свои) и свои сайты |
 | **Настройки** | Детектор, сроки, IPv6, DNS; каждое изменение применяется сразу |
@@ -115,7 +115,7 @@
 Трей говорит на том же языке, что и интерфейс.
 
 **Меню трея:** «Настройки…» (открыть интерфейс), «Установить службу…» / «Остановить туннель» /
-«Запустить туннель», «Всё через туннель (сбросить вердикты)», «Запускать с Windows», «Папка данных»,
+«Запустить туннель», «Всё через туннель (сбросить вердикты)» — текущей сети, «Запускать с Windows», «Папка данных»,
 «Выход». Цвет значка показывает состояние: выключен, туннель работает, ошибка. Подсказка значка —
 сколько сайтов идёт напрямую и сколько заблокировано.
 
@@ -131,7 +131,7 @@
 | Перепроверять заблокированные через | 1 час | Затем всё реже, до потолка паузы |
 | Потолок паузы | 1 день | Самая долгая пауза между проверками сайта |
 | IPv6 | Через туннель | Даёт IPv6 даже там, где у провайдера его нет |
-| DNS для прямых сайтов | `https://77.88.8.8/dns-query`, `tls://77.88.8.1` | Яндекс DoH/DoT, мимо туннеля |
+| DNS для прямых сайтов | `tls://8.8.8.8`, `tls://8.8.4.4` | DoT Google, мимо туннеля |
 | DNS внутри туннеля | из `.conf` | Для сайтов, идущих через туннель |
 
 ### Куда идёт соединение
@@ -244,7 +244,9 @@ CDN, спидтестам, обновлениям.
 
 Вердикты хранятся по провайдеру (его номеру AS): другая сеть того же провайдера
 пользуется ими же, другой провайдер начинает свои. Без сети проверки встают на паузу, память
-сохраняется.
+сохраняется. На странице «Вердикты» сеть в шапке раскрывает список сохранённых сетей: у выбранной
+показаны её вердикты, и сброс и ✕ на странице действуют только на неё. Уход со страницы возвращает
+текущую сеть. Сброс из трея — сброс текущей сети.
 
 ### DNS
 
@@ -510,7 +512,7 @@ their own port and access key).
 | Page | What is there |
 |---|---|
 | **Overview** | How many sites go direct, are blocked, slower, unverified; both tunnels' state, replacing a `.conf`; recent events |
-| **Verdicts** | Every verdict in the "Direct", "Blocked", "Slower", "Unverified" tabs, a name filter (names in Russian letters are found and shown as written); a click pins a row, a right-click sends it to a list, ✕ resets its verdict; "Reset all verdicts…" |
+| **Verdicts** | Every verdict in the "Direct", "Blocked", "Slower", "Unverified" tabs, a name filter (names in Russian letters are found and shown as written); a click pins a row, a right-click sends it to a list, ✕ resets its verdict; "Reset verdicts…" of the network shown; the network in the header opens the list of networks |
 | **Routing lists** | "Always direct", "Always via tunnel", "Forbidden": sites, addresses and programs in each |
 | **Second tunnel** | Attaching awg2, presets (YouTube, Telegram, AI services, Instagram/Facebook/X; edit them, delete them, add your own) and your own list |
 | **Settings** | Detector, terms, IPv6, DNS; every change applies at once |
@@ -523,7 +525,7 @@ of the sidebar holds installing and removing the service, the tray's autostart a
 (English / Русский). The tray speaks the same language as the UI.
 
 **Tray menu:** "Settings…" (opens the UI), "Install service…" / "Stop tunnel" / "Start tunnel",
-"Everything via tunnel (reset verdicts)", "Start with Windows", "Data folder", "Exit". The icon's
+"Everything via tunnel (reset verdicts)" of the current network, "Start with Windows", "Data folder", "Exit". The icon's
 colour shows the state: off, tunnel up, error. Its tooltip tells how many sites go direct and how
 many are blocked.
 
@@ -539,7 +541,7 @@ many are blocked.
 | Re-check blocked after | 1 hour | Then less and less often, up to the pause cap |
 | Pause cap | 1 day | The longest wait between checks of a site |
 | IPv6 | Through the tunnel | Gives IPv6 even where the ISP has none |
-| DNS for direct sites | `https://77.88.8.8/dns-query`, `tls://77.88.8.1` | Yandex DoH/DoT, outside the tunnel |
+| DNS for direct sites | `tls://8.8.8.8`, `tls://8.8.4.4` | Google DoT, outside the tunnel |
 | DNS inside the tunnel | from the `.conf` | For the sites that go through the tunnel |
 
 ### Where a connection goes
@@ -652,6 +654,9 @@ again whenever On is chosen, and so for Tunnel only. Switched off, its presets a
 
 Verdicts are kept per ISP (its AS number): another network of the same ISP
 shares them, another ISP starts its own. Without a network the checks pause and the memory is kept.
+On the Verdicts page the network in the header opens the list of the networks kept: the one picked
+has its verdicts shown, and the page's reset and ✕ act on it alone. Leaving the page goes back to the
+current network. The tray's reset is of the current network.
 
 ### DNS
 

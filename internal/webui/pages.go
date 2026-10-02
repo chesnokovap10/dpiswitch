@@ -64,17 +64,40 @@ type vrow struct {
 }
 
 type verdicts struct {
-	Cat    string
-	Q      string
-	Rows   []vrow
-	Counts map[string]int
-	Words  map[string]string // for the rows' menu and reset, see verdicts.js
+	Cat string
+	Q   string
+	// Net: the network shown, "" for the current one, Cur; the header's
+	// network picks it (see verdicts.js)
+	Net, Cur string
+	Rows     []vrow
+	Counts   map[string]int
+	Words    map[string]string // for the rows' menu and reset, see verdicts.js
 }
 
-// Query: the tab and the filter for the parts that refresh themselves. It
-// was written into their address unescaped: "c++" came back as "c  ", and
-// "50%" as no filter at all.
-func (d verdicts) Query() string { return url.Values{"cat": {d.Cat}, "q": {d.Q}}.Encode() }
+// Cats: the tabs, in their order
+func (d verdicts) Cats() []string { return []string{"direct", "blocked", "slow", "unknown"} }
+
+// Query: the tab, the filter and the network for the parts that refresh
+// themselves. It was written into their address unescaped: "c++" came back
+// as "c  ", and "50%" as no filter at all.
+func (d verdicts) Query() string { return d.QueryFor(d.Cat) }
+
+// QueryFor: Query of another tab
+func (d verdicts) QueryFor(cat string) string {
+	q := url.Values{"cat": {cat}, "q": {d.Q}}
+	if d.Net != "" {
+		q.Set("net", d.Net)
+	}
+	return q.Encode()
+}
+
+// ResetAsk: what the reset button asks, of the network shown
+func (d verdicts) ResetAsk(v *view) string {
+	if d.Net != "" {
+		return v.Tf("Reset every verdict of network %s? You are not on it now: nothing changes in how traffic goes. When you are on it again, its sites go through the tunnel until the detector checks them anew.", d.Net)
+	}
+	return v.Tf("Reset every verdict of network %s, the current one? All traffic goes through the tunnel until the detector checks the sites again. For when a site broke after going direct.", d.Cur)
+}
 
 // unicodeName: a punycode name as it is written, "" for any other
 func unicodeName(dom string) string {
@@ -106,7 +129,14 @@ func verdictsData(r *http.Request) verdicts {
 	if _, ok := verdictCats[d.Cat]; !ok {
 		d.Cat = "direct"
 	}
-	snap := ctl.LoadCached(paths.State())
+	if n := r.URL.Query().Get("net"); ctl.ValidNetID(n) {
+		d.Net = n
+	}
+	snap := ctl.LoadCachedNet(paths.State(), d.Net)
+	d.Cur = snap.Current
+	if d.Net == d.Cur {
+		d.Net = ""
+	}
 	d.Counts = map[string]int{"direct": len(snap.Details)}
 	for _, o := range snap.Others {
 		for k, in := range verdictCats {
@@ -171,6 +201,11 @@ func verdictWords(v *view) map[string]string {
 		"notSent":    v.T("Not saved:"),
 		"forgetting": v.T("Resetting…"),
 		"notForgot":  v.T("Not reset:"),
+		"netCur":     v.T("current"),
+		"netNames":   v.T("verdicts: %d"),
+		"netNote":    v.T("The verdicts of network %s are shown: you are on %s now. They apply when you are on it again."),
+		"resetCur":   v.T("Reset every verdict of network %s, the current one? All traffic goes through the tunnel until the detector checks the sites again. For when a site broke after going direct."),
+		"resetNet":   v.T("Reset every verdict of network %s? You are not on it now: nothing changes in how traffic goes. When you are on it again, its sites go through the tunnel until the detector checks them anew."),
 	}
 }
 
@@ -341,6 +376,9 @@ type logs struct {
 	Name string
 	Text string
 }
+
+// Names: the log tabs, in their order
+func (logs) Names() []string { return []string{"service", "core", "tray"} }
 
 // logFiles: the log tabs. The controller runs inside the service and logs
 // there; tray.log, in the user's profile, is the tray's own (see

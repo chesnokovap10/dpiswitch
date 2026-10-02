@@ -1,16 +1,22 @@
-{{define "content"}}{{$d := .Data}}
+{{define "content"}}{{$d := .Data}}{{$v := .}}
 <div class="page">
   <div class="logtools">
-    <div class="tabs">
-      <a href="/logs?name=service" class="{{if eq $d.Name "service"}}on{{end}}" title="service.log">{{.T "Controller and service"}}</a>
-      <a href="/logs?name=core" class="{{if eq $d.Name "core"}}on{{end}}" title="mihomo.log">{{.T "Core"}}</a>
-      <a href="/logs?name=tray" class="{{if eq $d.Name "tray"}}on{{end}}" title="tray.log">{{.T "Tray and UI"}}</a>
+    {{/* each log is kept, drawn once: a tab shows it at once (see
+       static/ui.js, data-tabs); only the one shown refreshes */}}
+    <div class="tabs" data-tabs="name">
+      <a href="/logs?name=service" data-tab="service" class="{{if eq $d.Name "service"}}on{{end}}" title="service.log">{{.T "Controller and service"}}</a>
+      <a href="/logs?name=core" data-tab="core" class="{{if eq $d.Name "core"}}on{{end}}" title="mihomo.log">{{.T "Core"}}</a>
+      <a href="/logs?name=tray" data-tab="tray" class="{{if eq $d.Name "tray"}}on{{end}}" title="tray.log">{{.T "Tray and UI"}}</a>
     </div>
     <label class="cb"><input type="checkbox" id="follow" checked> {{.T "Follow the end"}}</label>
     <span class="spacer"></span>
     <span class="muted">{{.T "Last 400 lines, refreshed every 3 seconds"}}</span>
   </div>
-  <pre class="fill" id="log" data-poll="/frag/logs/log?name={{$d.Name}}" data-every="3" data-follow>{{template "log" .}}</pre>
+  <div class="stack" id="log" data-panels="name">
+    {{- range $n := $d.Names}}
+    <pre class="fill{{if ne $n $d.Name}} away{{end}}" data-tab="{{$n}}" data-poll="/frag/logs/log?name={{$n}}" data-every="3" data-follow>{{if eq $n $d.Name}}{{template "log" $v}}{{end}}</pre>
+    {{- end}}
+  </div>
 </div>
 {{end}}
 

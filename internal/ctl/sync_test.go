@@ -143,7 +143,7 @@ func TestSyncListRetriesReload(t *testing.T) {
 	cfg := Config{Apply: true, Provider: "p", ListPath: filepath.Join(dir, "d.txt"),
 		ResetPath: filepath.Join(dir, "reset"), StatePath: filepath.Join(dir, "state.json")}
 	e := &entry{Verdict: probe.Clean, ExpiresAt: time.Now().Add(time.Hour), TestedIP: "192.0.2.1"}
-	st := &state{Networks: map[string]map[string]*entry{"n": {"a.example": e}}, path: cfg.StatePath}
+	st := &state{Networks: map[string]map[string]*entry{"n": {"a.example": e}}, path: cfg.StatePath, Current: "n"}
 
 	failing.Store(1)
 	syncList(cfg, a, st, "n", false)

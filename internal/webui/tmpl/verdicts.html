@@ -1,27 +1,32 @@
 {{define "content"}}{{$d := .Data}}
-<div class="page">
+<div class="page" id="verdicts" data-net="{{$d.Net}}" data-cur="{{$d.Cur}}">
   <div class="bar">
-    <div class="tabs" id="vtabs" data-poll="/frag/verdicts/tabs?{{$d.Query}}" data-every="10">{{template "tabs" .}}</div>
+    {{/* the tabs switch in the page: each one's table is kept, drawn once
+       (see static/ui.js, data-tabs) */}}
+    <div class="tabs" id="vtabs" data-tabs="cat" data-poll="/frag/verdicts/tabs?{{$d.Query}}" data-every="10">{{template "tabs" .}}</div>
     <input type="search" id="vfilter" placeholder="{{.T "Filter by name"}}" value="{{$d.Q}}" data-filter="vtable vtabs" style="width:240px">
     <span class="spacer"></span>
-    <form method="post" action="/act/reset" data-confirm="{{.T "Reset every verdict? All traffic goes through the tunnel until the detector checks the sites again. For when a site broke after going direct."}}">
-      <button class="danger" id="vreset" data-busy="{{.T "Resetting…"}}">{{.T "Reset all verdicts…"}}</button>
+    <form method="post" action="/act/reset" id="vresetform" data-confirm="{{$d.ResetAsk .}}">
+      <input type="hidden" name="net" value="{{$d.Net}}">
+      <button class="danger" id="vreset" data-busy="{{.T "Resetting…"}}">{{.T "Reset verdicts…"}}</button>
     </form>
   </div>
   <div id="vnote" data-sync="/frag/verdicts/vnote" style="display:contents">{{template "vnote" .}}</div>
-  <div class="tablebox" id="vtable" data-poll="/frag/verdicts/table?{{$d.Query}}" data-every="10">{{template "table" .}}</div>
-  {{template "rowmenu" .}}
+  <p class="hint warn-t" id="vnetnote" style="margin:0"{{if not $d.Net}} hidden{{end}}>{{if $d.Net}}{{.Tf "The verdicts of network %s are shown: you are on %s now. They apply when you are on it again." $d.Net $d.Cur}}{{end}}</p>
+  <div class="stack" id="vtable" data-panels="cat">
+    {{- range $c := $d.Cats}}
+    <div class="tablebox{{if ne $c $d.Cat}} away{{end}}" data-tab="{{$c}}" data-poll="/frag/verdicts/table?{{$d.QueryFor $c}}" data-every="10">{{if eq $c $d.Cat}}{{template "table" $}}{{end}}</div>
+    {{- end}}
+  </div>
   <script type="application/json" id="vwords">{{$d.Words}}</script>
 </div>
-<script src="/static/rowmenu.js" defer></script>
-<script src="/static/verdicts.js" defer></script>
 {{end}}
 
 {{define "tabs"}}{{$d := .Data}}
-  <a href="/verdicts?cat=direct&q={{$d.Q}}" class="{{if eq $d.Cat "direct"}}on{{end}}">{{.T "Direct"}} {{index $d.Counts "direct"}}</a>
-  <a href="/verdicts?cat=blocked&q={{$d.Q}}" class="{{if eq $d.Cat "blocked"}}on{{end}}">{{.T "Blocked"}} {{index $d.Counts "blocked"}}</a>
-  <a href="/verdicts?cat=slow&q={{$d.Q}}" class="{{if eq $d.Cat "slow"}}on{{end}}">{{.T "Slower"}} {{index $d.Counts "slow"}}</a>
-  <a href="/verdicts?cat=unknown&q={{$d.Q}}" class="{{if eq $d.Cat "unknown"}}on{{end}}">{{.T "Unverified"}} {{index $d.Counts "unknown"}}</a>
+  <a href="/verdicts?{{$d.QueryFor "direct"}}" data-tab="direct" class="{{if eq $d.Cat "direct"}}on{{end}}">{{.T "Direct"}} {{index $d.Counts "direct"}}</a>
+  <a href="/verdicts?{{$d.QueryFor "blocked"}}" data-tab="blocked" class="{{if eq $d.Cat "blocked"}}on{{end}}">{{.T "Blocked"}} {{index $d.Counts "blocked"}}</a>
+  <a href="/verdicts?{{$d.QueryFor "slow"}}" data-tab="slow" class="{{if eq $d.Cat "slow"}}on{{end}}">{{.T "Slower"}} {{index $d.Counts "slow"}}</a>
+  <a href="/verdicts?{{$d.QueryFor "unknown"}}" data-tab="unknown" class="{{if eq $d.Cat "unknown"}}on{{end}}">{{.T "Unverified"}} {{index $d.Counts "unknown"}}</a>
 {{end}}
 
 {{define "table"}}{{$d := .Data}}{{$v := .}}

@@ -457,6 +457,18 @@ func TestResetStopped(t *testing.T) {
 	if b := do(t, h, "GET", "/verdicts", nil, nil).Body.String(); !strings.Contains(b, "the service takes it when it starts") {
 		t.Fatalf("the page does not say the reset waits:\n%s", b)
 	}
+	// the current network's: the request names none, as the tray's
+	if b, _ := os.ReadFile(paths.ResetRequest()); strings.Contains(string(b), "network") {
+		t.Fatalf("the current network's reset names one: %q", b)
+	}
+	// another network's, from its page: the request names it
+	if err := os.WriteFile(paths.State(), []byte(`{"current":"AS1","networks":{"AS1":{},"AS2":{}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	do(t, h, "POST", "/act/reset", url.Values{"net": {"AS2"}}, map[string]string{"Referer": "http://127.0.0.1:8080/verdicts?net=AS2"})
+	if b, _ := os.ReadFile(paths.ResetRequest()); !strings.HasSuffix(string(b), ctl.NetworkLine("AS2")) {
+		t.Fatalf("another network's reset: %q", b)
+	}
 }
 
 // The overview: a config counts as loaded when the user's .conf is there,
@@ -1244,12 +1256,49 @@ func TestForget(t *testing.T) {
 			t.Errorf("the direct tab lacks %s", want)
 		}
 	}
-	if strings.Contains(body, `id="lreveal"`) {
-		t.Error("a program's file on the verdicts page")
+	// one menu for Live's rows and these: the pages share the document
+	if n := strings.Count(body, `id="lmenu"`); n != 1 {
+		t.Errorf("%d row menus", n)
 	}
 	body = do(t, h, "GET", "/verdicts?cat=blocked", nil, nil).Body.String()
 	if !strings.Contains(body, `data-key="@192.0.2.9" data-addr="192.0.2.9"`) {
 		t.Errorf("the blocked tab's address row:\n%s", body)
+	}
+
+	// another network's verdicts, picked in the header: shown, its tables
+	// refreshed as its, and its ✕ asks for its verdict to go
+	st["networks"].(map[string]any)["AS2"] = map[string]any{
+		"other.example.net": map[string]any{"verdict": "CLEAN", "decided_at": now, "expires_at": now.Add(time.Hour), "last_seen": now}}
+	b, _ = json.Marshal(st)
+	if err := os.WriteFile(paths.State(), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body = do(t, h, "GET", "/verdicts?net=AS2", nil, nil).Body.String()
+	for _, want := range []string{`data-key="other.example.net"`, `data-net="AS2"`, `net=AS2`, `name="net" value="AS2"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("another network's page lacks %s", want)
+		}
+	}
+	if strings.Contains(body, `data-key="www.example.org"`) {
+		t.Error("the current network's verdicts on another's page")
+	}
+	// the current one asked for by name is the page as it always was
+	if body = do(t, h, "GET", "/verdicts?net=AS1", nil, nil).Body.String(); !strings.Contains(body, `data-net=""`) {
+		t.Error("the current network was taken for another")
+	}
+	for _, r := range func() []string { r, _ := filepath.Glob(paths.ForgetRequests()); return r }() {
+		os.Remove(r)
+	}
+	w := do(t, h, "POST", "/act/forget", url.Values{"key": {"other.example.net"}, "net": {"AS2"}}, nil)
+	if !strings.Contains(w.Body.String(), "as soon as its controller runs") {
+		t.Fatalf("another network's verdict: %s", w.Body.String())
+	}
+	reqs, _ = filepath.Glob(paths.ForgetRequests())
+	if len(reqs) != 1 {
+		t.Fatalf("requests: %v", reqs)
+	}
+	if b, _ := os.ReadFile(reqs[0]); string(b) != ctl.NetworkLine("AS2")+"other.example.net\n" {
+		t.Fatalf("request: %q", b)
 	}
 }
 

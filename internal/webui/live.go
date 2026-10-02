@@ -123,6 +123,23 @@ type liveTotals struct {
 	US   int64  `json:"us"`
 	DS   int64  `json:"ds"`
 	Mem  uint64 `json:"mem"`
+	// Since: when the core's run started, Unix ms, as the service named the
+	// run; 0 unknown, or the core not running
+	Since int64 `json:"since,omitempty"`
+}
+
+// runStart: when a run named as the service names them ("pid unixnano",
+// see supervisor) started, Unix ms; 0 for a name that says no time
+func runStart(run string) int64 {
+	f := strings.Fields(run)
+	if len(f) != 2 {
+		return 0
+	}
+	ns, err := strconv.ParseInt(f[1], 10, 64)
+	if err != nil || ns <= 0 {
+		return 0
+	}
+	return ns / int64(time.Millisecond)
 }
 
 // liveMsg: what a page gets. "full" first -- everything as it stands, or
@@ -336,7 +353,7 @@ func (h *liveHub) update(live ctl.Live, err error, now time.Time) {
 			for id, r := range h.open {
 				m.Gone = append(m.Gone, h.close(id, r, now))
 			}
-			h.tot.US, h.tot.DS = 0, 0
+			h.tot.US, h.tot.DS, h.tot.Since = 0, 0, 0
 		}
 		m.Down, m.Err, m.Tot = h.down, h.err, h.tot
 		h.trim()
@@ -420,7 +437,7 @@ func (h *liveHub) update(live ctl.Live, err error, now time.Time) {
 		}
 	}
 	h.trim()
-	tot := liveTotals{Up: live.UploadTotal, Down: live.DownloadTotal, Mem: live.Memory}
+	tot := liveTotals{Up: live.UploadTotal, Down: live.DownloadTotal, Mem: live.Memory, Since: runStart(h.lastRun)}
 	if !first {
 		tot.US, tot.DS = rate(tot.Up-h.tot.Up, dt), rate(tot.Down-h.tot.Down, dt)
 	}
@@ -894,6 +911,9 @@ func liveWords(v *view) liveData {
 		"resume":        v.T("Resume"),
 		"memory":        v.T("core memory %s"),
 		"sinceStart":    v.T("since the core started"),
+		"ago":           v.T("%s ago"),
+		"day":           v.T("%d d %d h"),
+		"coreStarted":   v.T("The core started %s"),
 		"failed":        v.T("failed: the core could not make the connection"),
 		"noFailed":      v.T("No failures yet: they show here as the core fails to make a connection while the page is open."),
 		"blocked":       v.T("forbidden: refused by the Forbidden list"),

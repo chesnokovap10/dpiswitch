@@ -219,13 +219,17 @@ func Run(ctx context.Context, cfg Config) {
 	}
 }
 
-// Snapshot: a summary for the UI.
+// Snapshot: a summary for the UI, of one network's verdicts.
 type Snapshot struct {
-	NetworkID string         `json:"network_id"`
-	Counts    map[string]int `json:"counts"`
-	Direct    []string       `json:"direct"`
-	Details   []DirectEntry  `json:"details"`
-	Families  []family       `json:"families"`
+	NetworkID string `json:"network_id"` // the network this is of
+	// Current: the network the controller works in; Nets: every network
+	// memory keeps, the verdicts page shows any of them
+	Current  string         `json:"current"`
+	Nets     []NetCount     `json:"nets"`
+	Counts   map[string]int `json:"counts"`
+	Direct   []string       `json:"direct"`
+	Details  []DirectEntry  `json:"details"`
+	Families []family       `json:"families"`
 	// everything that does NOT go direct: blocked, slower, unverified
 	Others []DirectEntry `json:"others"`
 }
@@ -267,18 +271,45 @@ func directEntry(dom string, e *entry, now time.Time) DirectEntry {
 		now.After(e.ExpiresAt) && !e.lastSeen().After(now.Add(-idleTerm))}
 }
 
-func Load(statePath string) Snapshot {
+// NetCount: a network memory keeps, and how many verdicts it holds there
+type NetCount struct {
+	ID    string `json:"id"`
+	Names int    `json:"names"`
+}
+
+// Load: the current network's verdicts.
+func Load(statePath string) Snapshot { return LoadNet(statePath, "") }
+
+// LoadNet: the verdicts of the network id, "" for the current one.
+func LoadNet(statePath, id string) Snapshot {
 	st := loadState(statePath)
-	id := st.Current
-	if id == "" {
-		id = networkID()
+	cur := st.Current
+	if cur == "" {
+		cur = networkID()
 	}
-	s := Snapshot{NetworkID: id, Counts: map[string]int{}}
+	if id == "" {
+		id = cur
+	}
+	s := Snapshot{NetworkID: id, Current: cur, Counts: map[string]int{}}
 	st.mu.Lock()
+	for n, m := range st.Networks {
+		s.Nets = append(s.Nets, NetCount{n, len(m)})
+	}
 	for _, e := range st.Networks[id] {
 		s.Counts[string(e.Verdict)]++
 	}
 	st.mu.Unlock()
+	// the current one first, then by how much is known of them
+	sort.Slice(s.Nets, func(i, j int) bool {
+		a, b := s.Nets[i], s.Nets[j]
+		if (a.ID == cur) != (b.ID == cur) {
+			return a.ID == cur
+		}
+		if a.Names != b.Names {
+			return a.Names > b.Names
+		}
+		return a.ID < b.ID
+	})
 	// names, and bare addresses with a CLEAN of their own: both go direct,
 	// and the counts already held the addresses the list left out
 	s.Direct = append(st.verified(id), st.cleanAddrs(id)...)
@@ -308,6 +339,11 @@ var snapCache struct {
 	path string
 	mod  time.Time
 	size int64
+	// by the network asked for, "" the current one
+	snaps map[string]cachedSnap
+}
+
+type cachedSnap struct {
 	at   time.Time
 	snap Snapshot
 }
@@ -317,21 +353,28 @@ var snapCache struct {
 // KB and took 2.2 ms to parse each time. It is parsed again when the file
 // changes, or after a minute: the direct count follows the clock too, as
 // verdicts expire. The snapshot is shared: callers must not change it.
-func LoadCached(path string) Snapshot {
+func LoadCached(path string) Snapshot { return LoadCachedNet(path, "") }
+
+// LoadCachedNet: LoadNet as LoadCached is Load. The verdicts page may show
+// another network while the header counts the current one: each is kept.
+func LoadCachedNet(path, id string) Snapshot {
 	fi, err := os.Stat(path)
 	c := &snapCache
 	c.Lock()
 	defer c.Unlock()
-	if err == nil && c.path == path && fi.ModTime().Equal(c.mod) && fi.Size() == c.size &&
-		time.Since(c.at) < time.Minute {
-		return c.snap
+	// the names asked for come from a page's address: a few are kept
+	if err != nil || c.path != path || !fi.ModTime().Equal(c.mod) || fi.Size() != c.size || len(c.snaps) >= 8 {
+		c.snaps, c.path, c.mod, c.size = map[string]cachedSnap{}, path, time.Time{}, 0
+		if err == nil {
+			c.mod, c.size = fi.ModTime(), fi.Size()
+		}
 	}
-	c.snap, c.at, c.path = Load(path), time.Now(), path
-	c.mod, c.size = time.Time{}, 0
-	if err == nil {
-		c.mod, c.size = fi.ModTime(), fi.Size()
+	if s, ok := c.snaps[id]; ok && time.Since(s.at) < time.Minute {
+		return s.snap
 	}
-	return c.snap
+	s := LoadNet(path, id)
+	c.snaps[id] = cachedSnap{time.Now(), s}
+	return s
 }
 
 // coreChanged: whether new settings need a core restart. The core runs on

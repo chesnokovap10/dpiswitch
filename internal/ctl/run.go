@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -671,11 +672,17 @@ func retryReloads(a *api) {
 }
 
 // takeReset carries out a reset asked for from the tray ("Everything via
-// tunnel"). The tray used to do it itself: it emptied the name list and
-// deleted the state file -- and the controller, holding its memory in RAM,
-// wrote every DIRECT rule back within a minute; the address list it never
-// touched. The tray now leaves a request; the controller drops its own
-// memory, empties both lists, and removes the request once done.
+// tunnel") or the verdicts page. The tray used to do it itself: it emptied
+// the name list and deleted the state file -- and the controller, holding
+// its memory in RAM, wrote every DIRECT rule back within a minute; the
+// address list it never touched. The tray now leaves a request; the
+// controller drops its own memory, empties both lists, and removes the
+// request once done.
+//
+// A reset is of one network: the one the request names (see
+// requestNetwork) -- the verdicts page shows any network kept -- or the
+// current one, the tray's. It dropped the verdicts of every network. The
+// lists are the current network's: another's reset leaves them be.
 //
 // Done is the emptied memory saved and both lists written. The request
 // used to go whatever failed: a state file not written came back at the
@@ -687,19 +694,36 @@ func takeReset(cfg Config, a *api, st *state) bool {
 	if cfg.ResetPath == "" {
 		return false
 	}
-	if _, err := os.Stat(cfg.ResetPath); err != nil {
+	// the user's file, read as SYSTEM: not through a link, see takeForget
+	b, err := paths.ReadUserFile(cfg.ResetPath, forgetMax)
+	switch {
+	case errors.Is(err, paths.ErrRefused):
+		log.Printf("request %s not taken: %v", cfg.ResetPath, err)
+		if err := os.Remove(cfg.ResetPath); err != nil {
+			log.Printf("request %s not removed: %v", cfg.ResetPath, err)
+		}
 		return false
+	case err != nil:
+		return false // none, or held open a moment: the next second
+	}
+	cur := st.current()
+	id := requestNetwork(b)
+	if id == "" {
+		id = cur
+	}
+	if id == "" || id == noNetwork {
+		return false // no network known yet: the request waits for one
 	}
 	listMu.Lock()
-	resetDropped += st.resetVerdicts()
-	err := st.save()
+	resetDropped += st.resetVerdicts(id)
+	err = st.save()
 	if err != nil {
 		err = fmt.Errorf("state not saved: %w", err)
 	}
-	body := []byte("# verdicts reset from the tray -- everything goes through the tunnel\n")
+	body := []byte("# verdicts reset -- everything goes through the tunnel\n")
 	for _, l := range [][2]string{{cfg.ListPath, cfg.Provider}, {cfg.AddrListPath, cfg.AddrProvider}} {
 		path, provider := l[0], l[1]
-		if path == "" {
+		if path == "" || id != cur {
 			continue
 		}
 		if werr := paths.ReplaceFile(path, body); werr != nil {
@@ -731,7 +755,11 @@ func takeReset(cfg Config, a *api, st *state) bool {
 	if err := os.Remove(cfg.ResetPath); err != nil {
 		log.Printf("reset request not removed: %v", err)
 	}
-	log.Printf("verdicts reset from the tray: %d dropped, everything goes through the tunnel", n)
+	if id == cur {
+		log.Printf("verdicts of %s reset: %d dropped, everything goes through the tunnel", id, n)
+	} else {
+		log.Printf("verdicts of %s reset: %d dropped; the network is not the current one, the lists stay", id, n)
+	}
 	return true
 }
 
@@ -753,7 +781,10 @@ func takeForget(cfg Config, a *api, st *state) {
 		return
 	}
 	reqs, _ := filepath.Glob(cfg.ForgetPath)
-	var keys, taken []string
+	// the names by the network they are dropped in: the one a request
+	// names, the current one for none
+	byNet := map[string][]string{}
+	var taken []string
 	for _, r := range reqs {
 		// the user's file, read as SYSTEM: not through a link (see
 		// paths.ReadUserFile). It was read as any file, and what a link
@@ -770,15 +801,23 @@ func takeForget(cfg Config, a *api, st *state) {
 		case err != nil:
 			continue // gone, or held open a moment: the next second
 		}
-		keys = append(keys, forgetKeys(b)...)
+		id := requestNetwork(b)
+		byNet[id] = append(byNet[id], forgetKeys(b)...)
 		taken = append(taken, r)
 	}
 	netID := st.current()
 	if len(taken) == 0 || netID == "" || netID == noNetwork {
 		return // no network known yet: an empty list would be written
 	}
+	if keys, ok := byNet[""]; ok {
+		delete(byNet, "")
+		byNet[netID] = append(byNet[netID], keys...)
+	}
 	listMu.Lock()
-	n := st.forgetVerdicts(netID, keys)
+	n := 0
+	for id, keys := range byNet {
+		n += st.forgetVerdicts(id, keys)
+	}
 	err := st.save()
 	listMu.Unlock()
 	if err != nil {
@@ -789,13 +828,19 @@ func takeForget(cfg Config, a *api, st *state) {
 		return
 	}
 	forgetFailed = ""
-	syncList(cfg, a, st, netID, false)
+	// the lists are the current network's: another's drop leaves them be
+	if _, ok := byNet[netID]; ok {
+		syncList(cfg, a, st, netID, false)
+	}
 	for _, r := range taken {
 		if err := os.Remove(r); err != nil {
 			log.Printf("request %s not removed: %v", r, err)
 		}
 	}
-	log.Printf("verdicts dropped from the UI: %s (%d)", strings.Join(keys, ", "), n)
+	for id, keys := range byNet {
+		log.Printf("verdicts of %s dropped from the UI: %s", id, strings.Join(keys, ", "))
+	}
+	log.Printf("verdicts dropped from the UI: %d", n)
 }
 
 // forgetFailed: why the last drop could not be saved, said once
@@ -806,6 +851,28 @@ const forgetMax = 64 << 10
 
 // requestPoll: how often watchReset looks; the tests shorten it
 var requestPoll = time.Second
+
+// NetworkLine: the line naming the network a request to reset or drop
+// verdicts is of (see requestNetwork); the UI writes it.
+func NetworkLine(id string) string { return "network " + id + "\n" }
+
+// netIDRe: what a network's name is -- an ISP's (AS12389), a gateway's
+// hash (see networkID)
+var netIDRe = regexp.MustCompile(`^[A-Za-z0-9]{1,64}$`)
+
+// ValidNetID: whether id may name a network, as a page sends it
+func ValidNetID(id string) bool { return netIDRe.MatchString(id) }
+
+// requestNetwork: the network a request is of -- its "network <id>" line,
+// "" for none: the current one
+func requestNetwork(b []byte) string {
+	for _, l := range strings.Split(string(b), "\n") {
+		if id, ok := strings.CutPrefix(strings.TrimSpace(l), "network "); ok && ValidNetID(id) {
+			return id
+		}
+	}
+	return ""
+}
 
 // forgetKeys: the names a request holds, as memory keys them. What is no
 // name -- too long, a space in it -- is left out: the file is the user's

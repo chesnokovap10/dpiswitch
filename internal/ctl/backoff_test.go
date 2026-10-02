@@ -266,9 +266,14 @@ func TestLoadCached(t *testing.T) {
 	if got := len(LoadCached(p).Direct); got != 1 {
 		t.Fatalf("first load: %d direct", got)
 	}
-	snapCache.Lock()
-	snapCache.snap.NetworkID = "cached"
-	snapCache.Unlock()
+	mark := func(age time.Duration) {
+		snapCache.Lock()
+		c := snapCache.snaps[""]
+		c.snap.NetworkID, c.at = "cached", time.Now().Add(-age)
+		snapCache.snaps[""] = c
+		snapCache.Unlock()
+	}
+	mark(0)
 	if LoadCached(p).NetworkID != "cached" {
 		t.Fatal("an unchanged file was parsed again")
 	}
@@ -277,9 +282,7 @@ func TestLoadCached(t *testing.T) {
 	if got := LoadCached(p); got.NetworkID == "cached" || len(got.Direct) != 2 {
 		t.Fatalf("a changed file was not read again: %s, %d direct", got.NetworkID, len(got.Direct))
 	}
-	snapCache.Lock()
-	snapCache.snap.NetworkID, snapCache.at = "cached", time.Now().Add(-2*time.Minute)
-	snapCache.Unlock()
+	mark(2 * time.Minute)
 	if LoadCached(p).NetworkID == "cached" {
 		t.Fatal("a snapshot older than a minute was kept")
 	}

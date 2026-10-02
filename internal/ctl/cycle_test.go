@@ -398,6 +398,9 @@ func TestCycleAbortedLeavesMemory(t *testing.T) {
 func TestCycleResetFromTray(t *testing.T) {
 	s := newScenario(t)
 	s.cfg.ResetPath = filepath.Join(t.TempDir(), "reset.request")
+	s.st.setCurrent("n")
+	// another network's verdicts: the tray resets the current one only
+	s.st.put("m", "kept.example.org", &entry{Verdict: probe.Clean, DecidedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour)})
 	s.see(tunnelled("a.example.org", 443), tunnelled("speed.example.org", 20000))
 	s.script("a.example.org tcp/443", clean("192.0.2.1"))
 	s.script("speed.example.org tcp/20000", cleanTCP("192.0.2.4"))
@@ -430,8 +433,39 @@ func TestCycleResetFromTray(t *testing.T) {
 		}
 	}
 	check("after the reset")
+	if _, ok := s.st.get("m", "kept.example.org"); !ok {
+		t.Fatal("another network's verdict went with the current one's")
+	}
 	s.cycle()
 	check("a cycle later")
+}
+
+// The verdicts page resets the network it shows: another network's reset
+// drops its verdicts alone, and leaves the lists -- the current network's
+// -- as they are.
+func TestResetOtherNetwork(t *testing.T) {
+	s := newScenario(t)
+	s.cfg.ResetPath = filepath.Join(t.TempDir(), "reset.request")
+	s.st.setCurrent("n")
+	s.st.put("m", "other.example.org", &entry{Verdict: probe.Clean, DecidedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour)})
+	s.see(tunnelled("a.example.org", 443))
+	s.script("a.example.org tcp/443", clean("192.0.2.1"))
+	s.cycle()
+	if err := os.WriteFile(s.cfg.ResetPath, []byte("now\n"+NetworkLine("m")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !takeReset(s.cfg, s.api, s.st) {
+		t.Fatal("the request was not taken")
+	}
+	if _, ok := s.st.get("m", "other.example.org"); ok {
+		t.Fatal("the network named kept its verdict")
+	}
+	if e := s.entry("a.example.org"); e == nil {
+		t.Fatal("the current network's verdict went")
+	}
+	if got := listRules(s.cfg.ListPath); !slices.Contains(got, "a.example.org") {
+		t.Fatalf("the current network's list was emptied: %v", got)
+	}
 }
 
 // A reset whose emptied memory could not be saved is not done: the old
@@ -440,6 +474,7 @@ func TestCycleResetFromTray(t *testing.T) {
 func TestResetNotSaved(t *testing.T) {
 	s := newScenario(t)
 	s.cfg.ResetPath = filepath.Join(t.TempDir(), "reset.request")
+	s.st.setCurrent("n")
 	s.see(tunnelled("a.example.org", 443))
 	s.script("a.example.org tcp/443", clean("192.0.2.1"))
 	s.cycle()
@@ -704,7 +739,7 @@ func TestCycleResetMidway(t *testing.T) {
 	s.see(tunnelled("reset.example.org", 443))
 	s.script("reset.example.org tcp/443", clean("192.0.2.62"))
 	checkProto = func(direct, tunnel probe.Dialer, dom string, port, att int, udp bool, was probe.Verdict) probe.Report {
-		s.st.resetVerdicts() // the reset lands while the probe runs
+		s.st.resetVerdicts("n") // the reset lands while the probe runs
 		return s.check(direct, tunnel, dom, port, att, udp, was)
 	}
 	s.cycle()
@@ -883,6 +918,20 @@ func TestForgetFromUI(t *testing.T) {
 	}
 	if b, err := os.ReadFile(other); err != nil || string(b) != "c.example.net\n" {
 		t.Fatalf("the file it named was touched: %q %v", b, err)
+	}
+
+	// a verdict of another network, from the page showing it: that
+	// network's alone goes, and the list stays
+	s.st.put("m", "c.example.net", &entry{Verdict: probe.Clean, DecidedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour)})
+	ask(NetworkLine("m") + "c.example.net\n")
+	if _, ok := s.st.get("m", "c.example.net"); ok {
+		t.Fatal("the network named kept the verdict")
+	}
+	if e := s.entry("c.example.net"); e == nil {
+		t.Fatal("the current network's verdict of the name went")
+	}
+	if got := listRules(s.cfg.ListPath); !slices.Equal(got, []string{"c.example.net"}) {
+		t.Fatalf("list after another network's drop: %v", got)
 	}
 }
 

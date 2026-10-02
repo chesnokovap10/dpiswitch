@@ -29,7 +29,16 @@ header form{margin:0;display:inline-flex}
 /* three modes and the second tunnel's chip overflow a narrow window: the
    label goes first (the buttons carry their own titles), then the network */
 @media (max-width:1279px){.autolabel{display:none}}
-@media (max-width:1099px){.netchip{display:none}}
+@media (max-width:1099px){body:not([data-page=verdicts]) .netchip{display:none}}
+/* on the verdicts page the network picks whose verdicts are shown */
+.netchip .tri{display:none;font-size:10px;margin-left:-2px}
+body[data-page=verdicts] .netchip{cursor:pointer}
+body[data-page=verdicts] .netchip:hover{color:var(--accent)}
+body[data-page=verdicts] .netchip .tri{display:inline}
+.netchip.other{background:var(--warn-bg);color:var(--warn)}
+.netmenu button{display:flex;gap:14px;align-items:baseline}
+.netmenu button .muted{margin-left:auto;padding:0}
+.netmenu button.on{font-weight:600}
 
 /* controls */
 button,.btn{font:inherit;padding:5px 12px;border-radius:7px;border:1px solid var(--line);background:var(--panel);
@@ -67,8 +76,17 @@ nav .items hr{border:0;border-top:1px solid var(--line);margin:8px 4px}
 .langs a,.langs b{font-weight:600}
 .langs b{color:var(--fg)}
 
-/* main */
-main{overflow:auto;padding:16px 18px calc(1.45em + 16px);display:flex;flex-direction:column;min-height:0}
+/* main: every page a layer of its own, in one cell, one shown (see ui.js);
+   each scrolls by itself and keeps where it was */
+main{display:grid;grid-template:minmax(0,1fr)/minmax(0,1fr);min-height:0;overflow:hidden}
+.pg{grid-area:1/1;overflow:auto;padding:16px 18px calc(1.45em + 16px);display:flex;flex-direction:column;min-height:0;min-width:0}
+/* a page or a tab not shown: not drawn, and its layout kept for when it is
+   -- showing it costs a frame. "warm": laid out unseen, the first time. */
+.away{content-visibility:hidden;visibility:hidden}
+.away.warm{content-visibility:visible}
+/* a page's tabs, each with its part kept, in one cell (data-panels) */
+.stack{display:grid;grid-template:minmax(0,1fr)/minmax(0,1fr);flex:1;min-height:0}
+.stack > *{grid-area:1/1;min-height:0;min-width:0}
 .page{display:flex;flex-direction:column;flex:1;min-height:0;gap:12px}
 /* a page taller than the window scrolls as a whole instead of squeezing its boxes */
 .page.scroll{flex:none}
@@ -117,6 +135,11 @@ pre.fill{background:var(--bg);border:1px solid var(--line);border-radius:7px;pad
 
 /* verdicts */
 .bar{display:flex;gap:10px;align-items:center}
+/* a narrow window narrows the verdicts' filter, not the tabs or the reset;
+   narrower still, the reset goes under them */
+.bar > .tabs,.bar > form{flex:none;white-space:nowrap}
+#verdicts .bar{flex-wrap:wrap;row-gap:8px}
+#verdicts .bar > input[type=search]{flex:1 1 90px;max-width:240px;min-width:0}
 .tabs{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:var(--panel)}
 .tabs a{padding:5px 12px;color:var(--fg);border-right:1px solid var(--line)}
 .tabs a:last-child{border-right:0}

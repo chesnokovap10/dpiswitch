@@ -1,5 +1,6 @@
 {{/* a row's menu, on Live and on Verdicts: what of it to send, and where
-   (see static/rowmenu.js). The program's file is Live's alone. */}}
+   (see static/rowmenu.js). One for both: the pages share the document. The
+   program's file is Live's alone: hidden for a verdict's row. */}}
 {{define "rowmenu"}}
   <div class="cmenu" id="lmenu" hidden>
     <div class="cm-what" id="lwhat" title="{{.T "What to send"}}"></div>
@@ -11,8 +12,8 @@
       <div class="cmenu" id="lpresets"></div>
     </div>
     <button type="button" data-to="block" title="{{.T "Adds it to “Forbidden”"}}">{{.T "Forbid"}}</button>
-    {{if eq .Page "live"}}<hr>
-    <button type="button" id="lreveal">{{.T "File location"}}</button>{{end}}
+    <hr id="lrevealhr">
+    <button type="button" id="lreveal">{{.T "File location"}}</button>
   </div>
   <div class="toast" id="ltoast" hidden></div>
 {{end}}

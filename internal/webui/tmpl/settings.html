@@ -1,7 +1,7 @@
 {{define "content"}}
 <div class="page scroll">
   <div id="sform" data-sync="/frag/settings/form">{{template "form" .}}</div>
-  <div class="box" id="dns">{{template "dns" .}}</div>
+  <div class="box" id="dns" data-fresh="/frag/settings/dns">{{template "dns" .}}</div>
   <div class="actions" style="padding-top:0">
     <form method="post" action="/act/defaults" data-confirm="{{.T "Put every setting on this page back to its default? DNS included. Presets and lists are not touched."}}">
       <button>{{.T "Reset to defaults…"}}</button>

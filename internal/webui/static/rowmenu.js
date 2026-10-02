@@ -2,11 +2,16 @@
 // -- the whole domain, the name alone, the address, the program -- and to
 // which list or preset, with what that came to shown for a few seconds.
 // The page says what a row can send (see open); the menu's markup is the
-// "rowmenu" template.
+// "rowmenu" template, one for both pages: they share the document, and so
+// the menu -- each asks for it, and gets the same one.
 'use strict';
 function rowMenu(W) {
+  if (!rowMenu.one) rowMenu.one = makeRowMenu(W);
+  return rowMenu.one;
+}
+function makeRowMenu(W) {
   const $ = id => document.getElementById(id);
-  const menu = $('lmenu'), sub = $('lpresets'), reveal = $('lreveal');
+  const menu = $('lmenu'), sub = $('lpresets'), reveal = $('lreveal'), revealHr = $('lrevealhr');
   // what the item picked sends, and what the file location opens
   let what = '', onReveal = null;
 
@@ -28,10 +33,10 @@ function rowMenu(W) {
     w.hidden = !ws.length;
     for (const b of menu.querySelectorAll('[data-to], #lpresetbtn')) b.disabled = !what;
     onReveal = rev && rev.path ? rev.run : null;
-    if (reveal) {
-      reveal.disabled = !onReveal;
-      reveal.title = rev && rev.path || W.noPath;
-    }
+    // the program's file is Live's: a verdict's row has none
+    reveal.hidden = revealHr.hidden = !rev;
+    reveal.disabled = !onReveal;
+    reveal.title = rev && rev.path || W.noPath;
     presets();
     menu.hidden = false;
     menu.classList.remove('left');
@@ -116,13 +121,11 @@ function rowMenu(W) {
     if (b.dataset.to) send(b.dataset.to, '');
     else if (b.dataset.preset) send('preset', b.dataset.preset);
   });
-  if (reveal) {
-    reveal.addEventListener('click', () => {
-      const run = onReveal;
-      close();
-      if (run) run();
-    });
-  }
+  reveal.addEventListener('click', () => {
+    const run = onReveal;
+    close();
+    if (run) run();
+  });
 
   async function send(to, preset) {
     const v = what;
