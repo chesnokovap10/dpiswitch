@@ -43,7 +43,7 @@ pageInit.live = function (sec) {
   const menu = rowMenu(W), closeMenu = () => menu.close();
 
   // what the page is looking at: kept per browser, a viewing preference
-  const pref = {tab: 'open', route: '', noprobe: false, sort: 'start', desc: true};
+  const pref = {tab: 'open', route: '', sort: 'start', desc: true};
   try { Object.assign(pref, JSON.parse(localStorage.getItem('live') || '{}')); } catch (e) {}
   const save = () => { try { localStorage.setItem('live', JSON.stringify(pref)); } catch (e) {} };
 
@@ -56,6 +56,12 @@ pageInit.live = function (sec) {
     let i = -1;
     do { b /= 1024; i++; } while (b >= 1024 && i < u.length - 1);
     return dec(b, b < 10 ? 1 : 0) + ' ' + u[i];
+  }
+  function started(t) {
+    const d = new Date(t), today = d.toDateString() === new Date(now).toDateString();
+    const hm = d.toLocaleTimeString(locale, {hour: '2-digit', minute: '2-digit'});
+    return today ? fmt(W.sinceAt, hm) :
+      fmt(W.sinceOn, d.toLocaleDateString(locale, {day: 'numeric', month: 'short'}) + ', ' + hm);
   }
   const speed = b => b > 0 ? size(b) + W.perSec : '';
   function dur(ms) {
@@ -310,7 +316,6 @@ pageInit.live = function (sec) {
     const list = [], count = new Map(all.map(m => [m, 0]));
     for (const m of all) {
       for (const r of m.values()) {
-        if (pref.noprobe && r.probe) continue;
         count.set(m, count.get(m) + 1);
         if (!maps.includes(m) || pref.route && r.route !== pref.route || q && !hay(r).includes(q)) continue;
         list.push(r);
@@ -353,9 +358,11 @@ pageInit.live = function (sec) {
       $('t-ds').textContent = size(tot.ds) + W.perSec;
       $('t-us').textContent = size(tot.us) + W.perSec;
       $('t-tot').textContent = '↓ ' + size(tot.down) + ' · ↑ ' + size(tot.up);
-      // how long ago the core started: the totals count from then
+      // when the core started: the totals count from then. A clock time, not
+      // a span: a span would count the laptop's sleep too, the core lives
+      // through it
       const m = $('t-mem');
-      m.textContent = W.sinceStart + (tot.since ? ' ' + fmt(W.ago, dur(now - tot.since)) : '') +
+      m.textContent = (tot.since ? started(tot.since) : W.sinceStart) +
         (tot.mem ? ' · ' + fmt(W.memory, size(tot.mem)) : '');
       m.title = tot.since ? fmt(W.coreStarted, new Date(tot.since).toLocaleString(locale)) : '';
     }
@@ -393,9 +400,6 @@ pageInit.live = function (sec) {
   on('ltabs', 'tab', 'tab');
   on('lroutes', 'route', 'route');
 
-  const np = $('lnoprobe');
-  np.checked = pref.noprobe;
-  np.addEventListener('change', () => { pref.noprobe = np.checked; unpick(); save(); draw(); });
   $('lfilter').addEventListener('input', () => { unpick(); draw(); });
 
   const heads = root.querySelectorAll('th[data-sort]');
