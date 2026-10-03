@@ -48,9 +48,9 @@ func TestLiveRoute(t *testing.T) {
 	for chains, want := range map[string]string{
 		"DIRECT":        "direct",
 		"DIRECT,tunnel": "direct", // the group fell back: the connection went direct
-		"awg,tunnel":    "awg",
+		"awg1,tunnel":   "awg1",
 		"awg2,tunnel2":  "awg2",
-		"awg,tunnel2":   "awg",
+		"awg1,tunnel2":  "awg1",
 		"REJECT":        "reject",
 		"":              "other",
 	} {
@@ -106,7 +106,7 @@ func TestLiveUpdate(t *testing.T) {
 	t0 := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
 	conn := func(id string, up, down int64, start time.Time) ctl.LiveConn {
 		return ctl.LiveConn{ID: id, Host: id + ".example", Port: 443, Network: "tcp",
-			Chains: []string{"awg", "tunnel"}, Rule: "Match", Start: start, Upload: up, Download: down}
+			Chains: []string{"awg1", "tunnel"}, Rule: "Match", Start: start, Upload: up, Download: down}
 	}
 
 	h.update(ctl.Live{UploadTotal: 100, DownloadTotal: 1000, Conns: []ctl.LiveConn{
@@ -115,7 +115,7 @@ func TestLiveUpdate(t *testing.T) {
 	if !m.Ready || len(m.Add) != 2 || m.Add[0].US != 0 || m.Add[0].DS != 0 || m.Tot.DS != 0 {
 		t.Fatalf("first answer: %+v", m)
 	}
-	if r := m.Add[0]; r.Proto != "TLS" || r.Route != "awg" || r.Chain != "tunnel → awg1" || r.Rule != "Match" ||
+	if r := m.Add[0]; r.Proto != "TLS" || r.Route != "awg1" || r.Chain != "tunnel → awg1" || r.Rule != "Match" ||
 		r.Start != t0.Add(-5*time.Second).UnixMilli() || r.Act != t0.UnixMilli() {
 		t.Errorf("a row: %+v", r)
 	}
@@ -375,14 +375,14 @@ func newFakeCore(t *testing.T) *fakeCore {
 {"id":"0d5f2a7e-1111-4c3b-9a7e-2b1c3d4e5f60","metadata":{"network":"tcp","type":"Tun","sourceIP":"198.18.0.1",
 "destinationIP":"","sourcePort":"50000","destinationPort":"443","host":"example.com","sniffHost":"",
 "process":"chrome.exe","processPath":"C:\\chrome.exe","remoteDestination":"93.184.216.34","inboundName":""},
-"upload":%d,"download":%d,"start":"2026-09-27T12:00:00.123+03:00","chains":["awg","tunnel"],"rule":"Match","rulePayload":""},
+"upload":%d,"download":%d,"start":"2026-09-27T12:00:00.123+03:00","chains":["awg1","tunnel"],"rule":"Match","rulePayload":""},
 {"id":"0d5f2a7e-2222-4c3b-9a7e-2b1c3d4e5f60","metadata":{"network":"udp","type":"Tun","sourceIP":"198.18.0.1",
 "destinationIP":"142.250.74.46","sourcePort":"50001","destinationPort":"443","host":"","sniffHost":"www.youtube.com",
 "process":"chrome.exe","processPath":"C:\\chrome.exe","remoteDestination":"203.0.113.9","inboundName":""},
 "upload":1,"download":1,"start":"2026-09-27T12:00:01+03:00","chains":["DIRECT"],"rule":"RuleSet","rulePayload":"direct-verified"}]}`,
 				n*1000, n*100, n*100, n*1000)
 		case r.Method == "GET" && r.URL.Path == "/proxies":
-			fmt.Fprint(w, `{"proxies":{"tunnel":{"type":"Fallback","now":"awg"},"awg":{"type":"WireGuard"},"DIRECT":{"type":"Direct"}}}`)
+			fmt.Fprint(w, `{"proxies":{"tunnel":{"type":"Fallback","now":"awg1"},"awg1":{"type":"WireGuard"},"DIRECT":{"type":"Direct"}}}`)
 		case r.Method == "GET" && r.URL.Path == "/logs":
 			c.logs.Add(1)
 			defer c.logs.Add(-1)
@@ -482,7 +482,7 @@ func TestLiveStream(t *testing.T) {
 	// the address a name went to is the one its TCP outbound dialled; a UDP
 	// one names the tunnel's server there, and its own stays
 	if r := byID["1111"]; r.Host != "example.com" || r.IP != "93.184.216.34" || r.Proto != "TLS" || r.Sure ||
-		r.Route != "awg" || r.Chain != "tunnel → awg1" || r.Proc != "chrome.exe" || r.Port != 443 {
+		r.Route != "awg1" || r.Chain != "tunnel → awg1" || r.Proc != "chrome.exe" || r.Port != 443 {
 		t.Errorf("tcp row: %+v", r)
 	}
 	if r := byID["2222"]; r.Host != "www.youtube.com" || r.IP != "142.250.74.46" || r.Proto != "QUIC" || !r.Sure ||
@@ -503,7 +503,7 @@ func TestLiveStream(t *testing.T) {
 			t.Errorf("the same failure on two rows: %s, %s", g.ID, f.ID)
 		}
 	}
-	if f.N != 2 || f.Why != "timeout" || f.Host != "blocked.example" || f.IP != "203.0.113.7" || f.Route != "awg" ||
+	if f.N != 2 || f.Why != "timeout" || f.Host != "blocked.example" || f.IP != "203.0.113.7" || f.Route != "awg1" ||
 		f.Chain != "tunnel → awg1" || f.Proc != "chrome.exe" || f.Proto != "TLS" || f.Rule != "Match" || f.Probe {
 		t.Errorf("the failure: %+v", f)
 	}
@@ -689,9 +689,9 @@ func TestLiveFailure(t *testing.T) {
 	byB := e
 	byB.RulePayload = "force-direct"
 	h.failure(ctx, "", byB, direct, at)
-	h.failure(ctx, "", e, []string{"awg", "tunnel"}, at)
+	h.failure(ctx, "", e, []string{"awg1", "tunnel"}, at)
 	if len(h.failed) != 4 || h.failed[1].Why != "dns" || h.failed[2].Rule != "RuleSet force-direct" ||
-		h.failed[3].Route != "awg" || h.failed[3].Chain != "tunnel → awg1" {
+		h.failed[3].Route != "awg1" || h.failed[3].Chain != "tunnel → awg1" {
 		t.Errorf("rows: %+v %+v %+v", h.failed[1], h.failed[2], h.failed[3])
 	}
 
@@ -782,7 +782,7 @@ func TestLiveClear(t *testing.T) {
 }
 
 func TestGroupChain(t *testing.T) {
-	groups := map[string]string{"tunnel": "awg", "tunnel2": "tunnel", "fell": "DIRECT", "a": "b", "b": "a"}
+	groups := map[string]string{"tunnel": "awg1", "tunnel2": "tunnel", "fell": "DIRECT", "a": "b", "b": "a"}
 	for name, want := range map[string]string{
 		"tunnel":  "tunnel → awg1",
 		"tunnel2": "tunnel2 → tunnel → awg1",
@@ -799,7 +799,7 @@ func TestGroupChain(t *testing.T) {
 	if r := liveRoute(groupChain("fell", groups)); r != "direct" {
 		t.Errorf("fell back: %s", r)
 	}
-	if r := liveRoute(groupChain("tunnel", nil)); r != "awg" {
+	if r := liveRoute(groupChain("tunnel", nil)); r != "awg1" {
 		t.Errorf("no choices known: %s", r)
 	}
 }

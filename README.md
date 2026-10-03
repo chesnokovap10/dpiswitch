@@ -11,7 +11,7 @@
 
 <p align="center">
   <img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square">
-  <img alt="AmneziaWG" src="https://img.shields.io/badge/AmneziaWG-awg%20%2B%20awg2-2563eb?style=flat-square">
+  <img alt="AmneziaWG" src="https://img.shields.io/badge/AmneziaWG-awg1%20%2B%20awg2-2563eb?style=flat-square">
   <img alt="mihomo" src="https://img.shields.io/badge/core-mihomo-6b7280?style=flat-square">
   <img alt="Go 1.26+" src="https://img.shields.io/badge/Go-1.26%2B-00ADD8?style=flat-square">
   <img alt="1.7.0" src="https://img.shields.io/badge/version-1.7.0-127a3d?style=flat-square">

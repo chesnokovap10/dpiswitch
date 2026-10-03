@@ -132,7 +132,7 @@ func TestCoreFailClosed(t *testing.T) {
 	// and what the core says it is on: a tunnel or REJECT (a group left
 	// with no member), never DIRECT or COMPATIBLE
 	for _, g := range []string{ctl.TunnelOneGroup, ctl.TunnelAnyGroup, ctl.Tunnel2StrictGroup} {
-		if now := ctrl.now(g); now != "awg" && now != "awg2" && now != "REJECT" {
+		if now := ctrl.now(g); now != "awg1" && now != "awg2" && now != "REJECT" {
 			t.Errorf("both tunnels down: %s is on %q", g, now)
 		}
 	}

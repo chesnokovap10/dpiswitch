@@ -65,7 +65,7 @@ func TestDrainOrder(t *testing.T) {
 	w := &watcher{seen: map[string]map[endpoint]bool{}, bare: map[string]bool{},
 		live: map[string]bool{}, pinned: map[string]bool{},
 		addrPorts: map[string]map[endpoint]bool{}, addrCycles: map[string]int{}}
-	cfg := Config{ProxyName: "awg"}
+	cfg := Config{ProxyName: "awg1"}
 	for _, h := range []string{"c.example", "a.example", "b.example", "a.example"} {
 		w.observe(cfg, []connection{tunnelled(h, 443)})
 	}

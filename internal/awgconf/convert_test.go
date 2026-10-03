@@ -27,7 +27,7 @@ func TestWriteProxyIPVersion(t *testing.T) {
 		var sb strings.Builder
 		c.writeProxy(func(f string, a ...any) {
 			sb.WriteString(strings.TrimRight(fmt.Sprintf(f, a...), "\n") + "\n")
-		}, "awg", nil, tc.ipv6, tc.v6Dead)
+		}, "awg1", nil, tc.ipv6, tc.v6Dead)
 		got := sb.String()
 		for _, line := range strings.Split(got, "\n") {
 			line = strings.TrimSpace(line)

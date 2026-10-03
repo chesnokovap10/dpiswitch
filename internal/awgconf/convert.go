@@ -218,7 +218,7 @@ func Tunnels() []string {
 	var out []string
 	first, err := ParseFile(paths.SourceConf())
 	if err == nil {
-		out = append(out, "awg")
+		out = append(out, "awg1")
 	}
 	if c2, _ := Second(first); c2 != nil {
 		out = append(out, "awg2")
@@ -342,14 +342,14 @@ func render(c *Conf) (string, error) {
 	if c != nil {
 		// with no first tunnel the detector has nothing to measure against:
 		// it probes nothing, and has no listener
-		w("  # the tunnel probe listener is bound to awg itself, NOT to the group:")
+		w("  # the tunnel probe listener is bound to awg1 itself, NOT to the group:")
 		w("  # if the group fell back to DIRECT both probes would go direct and")
 		w("  # the detector would call everything clean -- the costliest mistake")
 		w("  - name: probe-tunnel")
 		w("    type: socks")
 		w("    listen: 127.0.0.1")
 		w("    port: 7891")
-		w("    proxy: awg")
+		w("    proxy: awg1")
 		users()
 	}
 	if c2 != nil {
@@ -452,7 +452,7 @@ func render(c *Conf) (string, error) {
 	}
 	// Two resolvers for two paths.
 	// The tunnel resolves by itself, with its DNS inside the tunnel (remote-dns-resolve
-	// on awg): the node is chosen for the VPS that traffic will exit from.
+	// on awg1): the node is chosen for the VPS that traffic will exit from.
 	// The direct path uses direct-nameserver, reached directly: CDNs
 	// hand out nodes for the user's ISP. The prober asks the same server,
 	// so exactly the node traffic will use gets tested.
@@ -488,7 +488,7 @@ func render(c *Conf) (string, error) {
 	// the tunnels there are, by their proxy names
 	var first, second []string
 	if c != nil {
-		first = []string{"awg"}
+		first = []string{"awg1"}
 	}
 	if c2 != nil {
 		second = []string{"awg2"}
@@ -628,7 +628,7 @@ func render(c *Conf) (string, error) {
 		w("proxies:")
 	}
 	if c != nil {
-		c.writeProxy(w, "awg", tunDNS, ipv6, tunV6.Dead("awg"))
+		c.writeProxy(w, "awg1", tunDNS, ipv6, tunV6.Dead("awg1"))
 	}
 	if c2 != nil {
 		// the second tunnel uses its own DNS from the .conf: names must be

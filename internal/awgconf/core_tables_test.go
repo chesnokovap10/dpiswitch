@@ -71,7 +71,7 @@ func TestCoreTables(t *testing.T) {
 func tunnelsOf(loaded string) []string {
 	var out []string
 	if loaded == "awg1" || strings.HasPrefix(loaded, "both") {
-		out = append(out, "awg")
+		out = append(out, "awg1")
 	}
 	if strings.HasPrefix(loaded, "awg2") || strings.HasPrefix(loaded, "both") {
 		out = append(out, "awg2")
@@ -81,7 +81,7 @@ func tunnelsOf(loaded string) []string {
 
 func aliveName(alive map[string]bool) string {
 	var up []string
-	for _, tn := range []string{"awg", "awg2"} {
+	for _, tn := range []string{"awg1", "awg2"} {
 		if alive[tn] {
 			up = append(up, tn)
 		}
@@ -117,7 +117,7 @@ func coreCells(t *testing.T, core, peer, mode string, r row, alive map[string]bo
 	}
 	var out string
 	var err error
-	if slices.Contains(tunnels, "awg") {
+	if slices.Contains(tunnels, "awg1") {
 		c, err := ParseFile(paths.SourceConf())
 		if err != nil {
 			t.Fatal(err)
@@ -193,7 +193,7 @@ func coreCells(t *testing.T, core, peer, mode string, r row, alive map[string]bo
 		rule, target := routedBy(t, log, c.host)
 		got, path := ctrl.resolve(target)
 		// a tunnel down refuses: the core has nothing to send it by
-		if (got == "awg" || got == "awg2") && !alive[got] {
+		if (got == "awg1" || got == "awg2") && !alive[got] {
 			got = "REJECT"
 		}
 		if want := c.want.want(alive); got != want {
@@ -246,7 +246,7 @@ func (a *coreAPI) resolve(target string) (proxy, path string) {
 	name, hops := target, []string{target}
 	for range 8 {
 		switch name {
-		case "awg", "awg2", "DIRECT", "REJECT", "COMPATIBLE":
+		case "awg1", "awg2", "DIRECT", "REJECT", "COMPATIBLE":
 			return name, strings.Join(hops, " > ")
 		}
 		name = a.now(name)

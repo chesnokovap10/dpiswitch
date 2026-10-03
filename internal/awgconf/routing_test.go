@@ -55,8 +55,8 @@ func (r route) want(alive map[string]bool) string {
 		case "DIRECT", "REJECT":
 			return hop
 		case "awg1":
-			if alive["awg"] {
-				return "awg"
+			if alive["awg1"] {
+				return "awg1"
 			}
 		case "awg2":
 			if alive["awg2"] {
@@ -164,7 +164,7 @@ func setupRouting(t *testing.T, mode, loaded string) (*simCore, []string) {
 	var tunnels []string
 	if first {
 		write(paths.SourceConf(), routingConf1)
-		tunnels = append(tunnels, "awg")
+		tunnels = append(tunnels, "awg1")
 	}
 	if second {
 		write(paths.SourceConf2(), conf2)
@@ -497,11 +497,11 @@ func TestRenderGroups(t *testing.T) {
 			"tunnel": "DIRECT", "tunnel-soft-any": "DIRECT", "tunnel-one": "REJECT", "tunnel-any": "awg2",
 			"tunnel2-soft": "awg2 DIRECT", "tunnel2-strict": "awg2"}},
 		{"the first alone", true, false, map[string]string{
-			"tunnel": "awg DIRECT", "tunnel-soft-any": "awg DIRECT", "tunnel-one": "awg", "tunnel-any": "awg",
-			"tunnel2-soft": "awg DIRECT", "tunnel2-strict": "awg"}},
+			"tunnel": "awg1 DIRECT", "tunnel-soft-any": "awg1 DIRECT", "tunnel-one": "awg1", "tunnel-any": "awg1",
+			"tunnel2-soft": "awg1 DIRECT", "tunnel2-strict": "awg1"}},
 		{"both", true, true, map[string]string{
-			"tunnel": "awg DIRECT", "tunnel-soft-any": "awg awg2 DIRECT", "tunnel-one": "awg", "tunnel-any": "awg awg2",
-			"tunnel2-soft": "awg2 awg DIRECT", "tunnel2-strict": "awg2 awg"}},
+			"tunnel": "awg1 DIRECT", "tunnel-soft-any": "awg1 awg2 DIRECT", "tunnel-one": "awg1", "tunnel-any": "awg1 awg2",
+			"tunnel2-soft": "awg2 awg1 DIRECT", "tunnel2-strict": "awg2 awg1"}},
 	} {
 		os.Remove(paths.SourceConf2())
 		if c.awg2 {

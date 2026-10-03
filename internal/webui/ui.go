@@ -78,7 +78,7 @@ func init() {
 type tunArg struct {
 	V     *view
 	S     status
-	Name  string // awg, awg2: what ui.js updates it by every second
+	Name  string // awg1, awg2: what ui.js updates it by every second
 	Alive bool
 	Note  string
 }
@@ -398,7 +398,7 @@ func collectStatus() status {
 	st.TunBlocked = st.ServiceRun && tunV6.TrafficBlocked()
 	// a running service and a working tunnel are different things: TUN may
 	// be up with a dead peer, and then traffic goes nowhere. With no first
-	// tunnel's config the core runs without it: there is no awg to ask.
+	// tunnel's config the core runs without it: there is no awg1 to ask.
 	if st.ServiceRun {
 		secret := ctl.SecretFromConfig(paths.Config())
 		// as the traffic keeps it (see tunnelpulse.go), the core asked only
@@ -410,7 +410,7 @@ func collectStatus() status {
 			return ctl.TunnelHealth(apiAddr, secret, t)
 		}
 		if st.HasConfig {
-			st.TunnelAlive, st.TunnelNote = health("awg")
+			st.TunnelAlive, st.TunnelNote = health("awg1")
 		}
 		if st.Awg2 && st.Awg2On {
 			st.Awg2Alive, st.Awg2Note = health("awg2")

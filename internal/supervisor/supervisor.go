@@ -502,7 +502,7 @@ func (s *Supervisor) keepHealthy(ctx context.Context) {
 			fails = 0
 		} else {
 			fails++
-			log.Printf("tunnel %s not responding (%s), in a row: %d", ctl.TunnelLabel(name), detail, fails)
+			log.Printf("tunnel %s not responding (%s), in a row: %d", name, detail, fails)
 			if fails >= failsMax {
 				// another client with the same key is stealing the session on the server.
 				// restarting the core is pointless: it would just seesaw

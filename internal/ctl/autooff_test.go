@@ -41,12 +41,12 @@ func TestAutoSwitchOffAtOnce(t *testing.T) {
 				{"id":"det","rule":"RuleSet","rulePayload":"p","chains":["DIRECT"]},
 				{"id":"addr","rule":"RuleSet","rulePayload":"pi","chains":["DIRECT"]},
 				{"id":"user","rule":"RuleSet","rulePayload":"force-direct","chains":["DIRECT"]},
-				{"id":"tun","rule":"Match","rulePayload":"","chains":["awg","tunnel"]},
-				{"id":"tun-a","rule":"Match","chains":["awg","tunnel"],"metadata":
+				{"id":"tun","rule":"Match","rulePayload":"","chains":["awg1","tunnel"]},
+				{"id":"tun-a","rule":"Match","chains":["awg1","tunnel"],"metadata":
 					{"host":"a.example","destinationPort":"443","network":"tcp","sourceIP":"198.18.0.1"}},
-				{"id":"probe-a","rule":"Match","chains":["awg"],"metadata":
+				{"id":"probe-a","rule":"Match","chains":["awg1"],"metadata":
 					{"host":"a.example","destinationPort":"443","network":"tcp","sourceIP":"127.0.0.1","inboundName":"probe-tunnel"}},
-				{"id":"pinned-a","rule":"RuleSet","rulePayload":"force-tunnel","chains":["awg"],"metadata":
+				{"id":"pinned-a","rule":"RuleSet","rulePayload":"force-tunnel","chains":["awg1"],"metadata":
 					{"host":"a.example","destinationPort":"443","network":"tcp","sourceIP":"198.18.0.1"}}]}`))
 		case r.Method == http.MethodDelete:
 			mu.Lock()
@@ -58,7 +58,7 @@ func TestAutoSwitchOffAtOnce(t *testing.T) {
 	a := newAPI(strings.TrimPrefix(srv.URL, "http://"), "")
 
 	dir := t.TempDir()
-	cfg := Config{Apply: true, ProxyName: "awg", Provider: "p", ListPath: filepath.Join(dir, "d.txt"),
+	cfg := Config{Apply: true, ProxyName: "awg1", Provider: "p", ListPath: filepath.Join(dir, "d.txt"),
 		AddrProvider: "pi", AddrListPath: filepath.Join(dir, "ip.txt"),
 		SettingsPath: paths.Settings(), autoOff: new(atomic.Bool)}
 	e := &entry{Verdict: probe.Clean, ExpiresAt: time.Now().Add(time.Hour), TestedIP: "192.0.2.1"}
@@ -152,12 +152,12 @@ func TestModeCloses(t *testing.T) {
 				{"id":"app","rule":"RuleSet","rulePayload":"force-direct-apps","chains":["DIRECT"],"metadata":{"process":"x.exe"}},
 				{"id":"obs","rule":"RuleSet","rulePayload":"observe-all","chains":["DIRECT"]},
 				{"id":"lan","rule":"IPCIDR","rulePayload":"192.168.0.0/16","chains":["DIRECT"]},
-				{"id":"tun","rule":"Match","chains":["awg","tunnel"],"metadata":{"host":"t.example"}},
+				{"id":"tun","rule":"Match","chains":["awg1","tunnel"],"metadata":{"host":"t.example"}},
 				{"id":"preset","rule":"RuleSet","rulePayload":"presets","chains":["awg2","tunnel2"]},
-				{"id":"ft","rule":"RuleSet","rulePayload":"force-tunnel","chains":["awg"],"metadata":{"host":"f.example"}},
-				{"id":"d-tun","rule":"Match","chains":["awg","tunnel"],"metadata":{"host":"d.example"}},
+				{"id":"ft","rule":"RuleSet","rulePayload":"force-tunnel","chains":["awg1"],"metadata":{"host":"f.example"}},
+				{"id":"d-tun","rule":"Match","chains":["awg1","tunnel"],"metadata":{"host":"d.example"}},
 				{"id":"app-tun","rule":"RuleSet","rulePayload":"presets","chains":["awg2","tunnel2"],"metadata":{"process":"X.EXE"}},
-				{"id":"probe","rule":"Match","chains":["awg"],"metadata":{"inboundName":"probe-tunnel","sourceIP":"127.0.0.1"}}]}`))
+				{"id":"probe","rule":"Match","chains":["awg1"],"metadata":{"inboundName":"probe-tunnel","sourceIP":"127.0.0.1"}}]}`))
 		case r.Method == http.MethodDelete:
 			mu.Lock()
 			closed = append(closed, strings.TrimPrefix(r.URL.Path, "/connections/"))

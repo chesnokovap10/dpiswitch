@@ -331,9 +331,9 @@ func status() (tray.State, string) {
 	// with a dead peer TUN is up but there is no internet
 	// as the UI keeps it, in step with the traffic; the core asked only when
 	// the UI has not read it lately
-	alive, note, ok := webui.Tunnel("awg")
+	alive, note, ok := webui.Tunnel("awg1")
 	if !ok {
-		alive, note = ctl.TunnelHealth("127.0.0.1:9090", ctl.SecretFromConfig(paths.Config()), "awg")
+		alive, note = ctl.TunnelHealth("127.0.0.1:9090", ctl.SecretFromConfig(paths.Config()), "awg1")
 	}
 	note = webui.TunnelNote(uiLang(), note)
 	if !alive {

@@ -66,7 +66,7 @@ func newScenario(t *testing.T) *scenario {
 		t.Fatal(err)
 	}
 	s.cfg = Config{
-		ProxyName: "awg", Provider: "direct-verified", AddrProvider: "direct-verified-addr",
+		ProxyName: "awg1", Provider: "direct-verified", AddrProvider: "direct-verified-addr",
 		ListPath: filepath.Join(dir, "direct-verified.txt"), AddrListPath: filepath.Join(dir, "addr.txt"),
 		StatePath: filepath.Join(dir, "state.json"),
 		TTL:       7 * 24 * time.Hour, FailTTL: time.Hour, MaxBackoff: 24 * time.Hour, Idle: 24 * time.Hour,
@@ -152,10 +152,10 @@ func via(host string, port int, network, chain, rule, payload string) connection
 }
 
 func tunnelled(host string, port int) connection {
-	return via(host, port, "tcp", "awg", "Match", "")
+	return via(host, port, "tcp", "awg1", "Match", "")
 }
 
-func quic(host string) connection { return via(host, 443, "udp", "awg", "Match", "") }
+func quic(host string) connection { return via(host, 443, "udp", "awg1", "Match", "") }
 
 var (
 	pathOK   = probe.PathResult{TCPOk: true, TLSTried: true, TLSOk: true, CertValid: true}

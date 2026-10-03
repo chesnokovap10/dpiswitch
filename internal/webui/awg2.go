@@ -6,7 +6,7 @@ import (
 )
 
 // Second tunnel (awg2): presets and the custom list only.
-// Other traffic is unaffected -- it still goes through awg + the detector.
+// Other traffic is unaffected -- it still goes through awg1 + the detector.
 
 // saveConf2 checks and stores the second tunnel's .conf. Loading and
 // removing it changes config.yaml, so the service restarts afterwards. A

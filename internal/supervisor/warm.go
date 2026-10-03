@@ -42,7 +42,7 @@ func warmTunnels(ctx context.Context, hc *healthChecker, names []string) {
 		for _, name := range left {
 			if ok, detail := warmCheck(hc, name); ok {
 				log.Printf("tunnel %s up %.0f s after the core started (%s)",
-					ctl.TunnelLabel(name), time.Since(start).Seconds(), detail)
+					name, time.Since(start).Seconds(), detail)
 				continue
 			}
 			still = append(still, name)
@@ -53,6 +53,6 @@ func warmTunnels(ctx context.Context, hc *healthChecker, names []string) {
 		}
 	}
 	for _, name := range left {
-		log.Printf("tunnel %s not up within %v of the core's start: its groups' own checks take over", ctl.TunnelLabel(name), warmFor)
+		log.Printf("tunnel %s not up within %v of the core's start: its groups' own checks take over", name, warmFor)
 	}
 }

@@ -76,7 +76,7 @@ type liveRow struct {
 	Net   string `json:"net"`
 	Proto string `json:"proto"`
 	Sure  bool   `json:"sure,omitempty"` // the protocol was read from the traffic, not taken from the port
-	Route string `json:"route"`          // direct, awg, awg2, reject, other
+	Route string `json:"route"`          // direct, awg1, awg2, reject, other
 	Chain string `json:"chain"`          // the groups and the outbound, in the order they were passed
 	Rule  string `json:"rule,omitempty"`
 	Probe bool   `json:"probe,omitempty"`
@@ -791,8 +791,8 @@ func liveRoute(chains []string) string {
 	switch chains[0] {
 	case "DIRECT":
 		return "direct"
-	case "awg", "tunnel", "tunnel-rest", "tunnel-soft-any", "tunnel-lists", "tunnel-one", "tunnel-any":
-		return "awg"
+	case "awg1", "tunnel", "tunnel-rest", "tunnel-soft-any", "tunnel-lists", "tunnel-one", "tunnel-any":
+		return "awg1"
 	case "awg2", "tunnel2", "tunnel2-soft", "tunnel2-strict":
 		return "awg2"
 	case "REJECT", "REJECT-DROP":
@@ -801,12 +801,11 @@ func liveRoute(chains []string) string {
 	return "other"
 }
 
-// liveChain: the chain in the order it was passed -- group, then outbound;
-// the first tunnel by the name the pages give it (see ctl.TunnelLabel)
+// liveChain: the chain in the order it was passed -- group, then outbound
 func liveChain(chains []string) string {
 	out := make([]string, 0, len(chains))
 	for i := len(chains) - 1; i >= 0; i-- {
-		out = append(out, ctl.TunnelLabel(chains[i]))
+		out = append(out, chains[i])
 	}
 	return strings.Join(out, " → ")
 }
@@ -874,7 +873,7 @@ type liveData struct {
 func liveWords(v *view) liveData {
 	return liveData{Words: map[string]string{
 		"direct":        v.T("Direct"),
-		"awg":           v.T("Tunnel"),
+		"awg1":          v.T("Tunnel"),
 		"awg2":          v.T("Tunnel 2"),
 		"reject":        v.T("Forbidden"),
 		"other":         v.T("Other"),

@@ -85,7 +85,7 @@ type dnsTest struct {
 
 // testDNS checks resolvers over the same path the core will use: direct
 // ones through the prober's listener that bypasses the tunnel, tunnel ones
-// through awg. whoami.akamai.net answers with the address of the recursive
+// through awg1. whoami.akamai.net answers with the address of the recursive
 // server that asked it -- who actually resolves, not the domain's owner.
 func testDNS(path string, servers []string) []dnsResult {
 	cfg := ctl.Defaults()

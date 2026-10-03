@@ -38,7 +38,7 @@
       <h3>{{.T "Main tunnel"}} · awg1</h3>
       {{if $s.HasConfig}}
       <div class="kv">
-        <span>{{.T "State"}}</span><div>{{template "tunstate" (tun . "awg" $s.TunnelAlive $s.TunnelNote)}}</div>
+        <span>{{.T "State"}}</span><div>{{template "tunstate" (tun . "awg1" $s.TunnelAlive $s.TunnelNote)}}</div>
         <span>Endpoint</span><div>{{$s.Endpoint}}</div>
         <span>DNS</span><div>{{with .Data.DNS}}{{.}}{{if $.Data.DNSSet}} <a class="muted" href="/settings#dns">({{$.T "from the settings"}})</a>{{end}}{{else}}<span class="muted">—</span>{{end}}</div>
         <span>{{.T "Carries"}}</span><div>{{.T "everything not sent direct or to awg2"}}</div>

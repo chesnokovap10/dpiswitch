@@ -25,7 +25,19 @@ func LoadTunnelIPv6(path string) TunnelIPv6 {
 	if json.Unmarshal(b, &t) != nil || t == nil {
 		return TunnelIPv6{}
 	}
+	RenameFirst(t)
 	return t
+}
+
+// RenameFirst: an entry kept under the first tunnel's old name (1.8.0 and before),
+// "awg", read as awg1's -- the core's proxy is called that now
+func RenameFirst[V any](m map[string]V) {
+	if v, ok := m["awg"]; ok {
+		if _, has := m["awg1"]; !has {
+			m["awg1"] = v
+		}
+		delete(m, "awg")
+	}
 }
 
 // Save replaces the file whole: written in place, a write cut short left

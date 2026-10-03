@@ -74,6 +74,7 @@ func loadV6Held(path string) v6Held {
 	if h == nil {
 		h = v6Held{}
 	}
+	ctl.RenameFirst(h)
 	return h
 }
 

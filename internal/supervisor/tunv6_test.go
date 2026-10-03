@@ -72,12 +72,12 @@ func TestTunProbes(t *testing.T) {
 // "no IPv6" past the hold, or with no time, or a time ahead of the clock.
 func TestStartIPv6State(t *testing.T) {
 	now := time.Now()
-	last := ctl.TunnelIPv6{ctl.TunKey: false, ctl.Tun4Key: true, "awg": false, "awg2": true}
+	last := ctl.TunnelIPv6{ctl.TunKey: false, ctl.Tun4Key: true, "awg1": false, "awg2": true}
 	got := startIPv6State(last, v6Held{}, now)
-	if len(got) != 2 || !got.SystemBlocked() || got.TrafficBlocked() || got.Dead("awg") {
+	if len(got) != 2 || !got.SystemBlocked() || got.TrafficBlocked() || got.Dead("awg1") {
 		t.Fatalf("%v", got)
 	}
-	if len(startIPv6State(ctl.TunnelIPv6{"awg": false}, nil, now)) != 0 {
+	if len(startIPv6State(ctl.TunnelIPv6{"awg1": false}, nil, now)) != 0 {
 		t.Fatal("a tunnel's answer kept with no time to it")
 	}
 	for _, c := range []struct {
@@ -89,12 +89,12 @@ func TestStartIPv6State(t *testing.T) {
 		{"found past the hold", now.Add(-tunnelV6Hold - time.Minute), false},
 		{"found ahead of the clock", now.Add(time.Hour), false},
 	} {
-		got := startIPv6State(ctl.TunnelIPv6{"awg": false, "awg2": true}, v6Held{"awg": c.at, "awg2": c.at}, now)
+		got := startIPv6State(ctl.TunnelIPv6{"awg1": false, "awg2": true}, v6Held{"awg1": c.at, "awg2": c.at}, now)
 		want := 0 // awg2 works: not kept either way
 		if c.kept {
 			want = 1
 		}
-		if got.Dead("awg") != c.kept || len(got) != want {
+		if got.Dead("awg1") != c.kept || len(got) != want {
 			t.Errorf("%s: %v", c.name, got)
 		}
 	}
@@ -111,14 +111,14 @@ func TestV6HeldFile(t *testing.T) {
 	if err := (v6Held{"awg2": at}).save(p); err != nil {
 		t.Fatal(err)
 	}
-	if h := loadV6Held(p); !h["awg2"].Equal(at) || !h.holds("awg2", time.Now()) || h.holds("awg", time.Now()) {
+	if h := loadV6Held(p); !h["awg2"].Equal(at) || !h.holds("awg2", time.Now()) || h.holds("awg1", time.Now()) {
 		t.Fatalf("read back: %v", h)
 	}
 	os.WriteFile(p, []byte("{broken"), 0o644)
 	if h := loadV6Held(p); h == nil || len(h) != 0 {
 		t.Fatalf("broken file: %v", h)
 	}
-	if h := (v6Held{"awg": at, "awg2": at}).only([]string{"awg2", "awg3"}); len(h) != 1 || !h["awg2"].Equal(at) {
+	if h := (v6Held{"awg1": at, "awg2": at}).only([]string{"awg2", "awg3"}); len(h) != 1 || !h["awg2"].Equal(at) {
 		t.Fatalf("only: %v", h)
 	}
 }
@@ -127,7 +127,7 @@ func TestV6HeldFile(t *testing.T) {
 // alone, they would be found without IPv6 whatever they carry. Nor is a
 // tunnel whose "no IPv6" the start kept, for the same reason.
 func TestTunnelsToCheck(t *testing.T) {
-	names := []string{"awg", "awg2"}
+	names := []string{"awg1", "awg2"}
 	if got := tunnelsToCheck(ctl.TunnelIPv6{ctl.TunKey: false}, names); len(got) != 0 {
 		t.Errorf("IPv6 blocked: %v checked", got)
 	}
@@ -137,11 +137,11 @@ func TestTunnelsToCheck(t *testing.T) {
 		}
 	}
 	found := ctl.TunnelIPv6{ctl.TunKey: true}
-	keepTunnelIPv6(ctl.TunnelIPv6{ctl.TunKey: false, ctl.Tun4Key: false, "awg2": false, "awg": true}, found)
+	keepTunnelIPv6(ctl.TunnelIPv6{ctl.TunKey: false, ctl.Tun4Key: false, "awg2": false, "awg1": true}, found)
 	if len(found) != 2 || !found.Dead("awg2") || found.SystemBlocked() {
 		t.Fatalf("kept: %v", found)
 	}
-	if got := tunnelsToCheck(found, names); len(got) != 1 || got[0] != "awg" {
+	if got := tunnelsToCheck(found, names); len(got) != 1 || got[0] != "awg1" {
 		t.Errorf("awg2 kept without IPv6: %v checked", got)
 	}
 }

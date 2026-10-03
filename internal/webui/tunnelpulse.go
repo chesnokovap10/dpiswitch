@@ -42,7 +42,7 @@ type tunnelPulse struct {
 	check  func(proxy string)                // the core checks now
 }
 
-var pulseTunnels = []string{"awg", "awg2"}
+var pulseTunnels = []string{"awg1", "awg2"}
 
 // how fresh traffic must be to speak for the tunnel, how often one tunnel
 // may be checked out of turn, and how long such a check waits

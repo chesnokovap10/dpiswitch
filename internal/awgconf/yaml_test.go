@@ -278,8 +278,8 @@ func TestRenderSecondDNS(t *testing.T) {
 		if got := dnsOf(out, "awg2"); got != want2 {
 			t.Errorf("settings %v: awg2 resolves by %s, want %s", c2dns, got, want2)
 		}
-		if got := dnsOf(out, "awg"); got != "['10.8.8.8']" {
-			t.Errorf("awg resolves by %s", got)
+		if got := dnsOf(out, "awg1"); got != "['10.8.8.8']" {
+			t.Errorf("awg1 resolves by %s", got)
 		}
 		if !strings.Contains(out, "  - name: probe-tunnel2\n    type: socks\n    listen: 127.0.0.1\n    port: 7893\n    proxy: awg2\n") {
 			t.Error("no listener through awg2")

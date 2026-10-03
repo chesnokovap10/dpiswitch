@@ -42,7 +42,7 @@ func TestCoreSpeed(t *testing.T) {
 		t.Fatal(err)
 	}
 	socks, api := freePort(t), freePort(t)
-	ls := fmt.Sprintf("listeners:\n  - name: in-awg\n    type: socks\n    listen: 127.0.0.1\n    port: %d\n    proxy: awg\n", socks)
+	ls := fmt.Sprintf("listeners:\n  - name: in-awg1\n    type: socks\n    listen: 127.0.0.1\n    port: %d\n    proxy: awg1\n", socks)
 	startCore(t, core, coreSafe(t, out, ls, api, freePort(t)), api)
 
 	const size = 200 << 20

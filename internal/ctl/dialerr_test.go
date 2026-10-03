@@ -31,8 +31,8 @@ func TestParseDialErr(t *testing.T) {
 			DialErr{Network: "tcp", Proxy: "DIRECT", Probe: true, IP: "2a09:5302:ffff::6ab:8443", Port: 443,
 				Err: "dial tcp [2a09:5302:ffff::6ab:8443]:443: i/o timeout"}},
 		// inside the tunnel the error names the tunnel's own address first
-		{"[TCP] dial awg 127.0.0.1:58728 --> example.org:443 error: dial tcp [fd7a:a1c3:8b42::3]:51834->[2a09:5302:ffff::6ab]:443: context deadline exceeded",
-			DialErr{Network: "tcp", Proxy: "awg", Probe: true, Host: "example.org", IP: "2a09:5302:ffff::6ab", Port: 443,
+		{"[TCP] dial awg1 127.0.0.1:58728 --> example.org:443 error: dial tcp [fd7a:a1c3:8b42::3]:51834->[2a09:5302:ffff::6ab]:443: context deadline exceeded",
+			DialErr{Network: "tcp", Proxy: "awg1", Probe: true, Host: "example.org", IP: "2a09:5302:ffff::6ab", Port: 443,
 				Err: "dial tcp [fd7a:a1c3:8b42::3]:51834->[2a09:5302:ffff::6ab]:443: context deadline exceeded"}},
 		// both families dialled, one line each: the first address
 		{"[TCP] dial DIRECT (match RuleSet/direct-verified) 198.18.0.1:50003(chrome.exe) --> dual.example:443 error: dial tcp [2001:db8::1]:443: i/o timeout\ndial tcp 192.0.2.1:443: i/o timeout",
@@ -52,7 +52,7 @@ func TestParseDialErr(t *testing.T) {
 	}
 	for _, other := range []string{
 		"[UDP] DoSniff error: short packet",
-		"[TCP] 198.18.0.1:50427(chrome.exe) --> example.com:443 match Match using tunnel[awg]",
+		"[TCP] 198.18.0.1:50427(chrome.exe) --> example.com:443 match Match using tunnel[awg1]",
 		"[Metadata] not valid: ...",
 	} {
 		if e, ok := ParseDialErr(other); ok {
@@ -90,11 +90,11 @@ func TestFailKind(t *testing.T) {
 		"dial tcp 1.2.3.4:443: i/o timeout":                              "timeout",
 		"dial tcp [fd7a::3]:1->[2a09::1]:443: context deadline exceeded": "timeout",
 		"dial tcp [2a09::1]:443: connectex: No connection could be made because the target machine actively refused it.": "refused",
-		"read: connection reset by peer":                "reset",
-		"connect: network is unreachable":               "unreach",
-		"awg connect error: handshake did not complete": "other",
-		"no ip address":                                 "dns",
-		"ipv6 disabled":                                 "dns",
+		"read: connection reset by peer":                 "reset",
+		"connect: network is unreachable":                "unreach",
+		"awg1 connect error: handshake did not complete": "other",
+		"no ip address": "dns",
+		"ipv6 disabled": "dns",
 		"wsarecv: An existing connection was forcibly closed by the remote host.":                                 "reset",
 		"A connection attempt failed because the connected party did not properly respond after a period of time": "timeout",
 		"context canceled":        "canceled",
@@ -117,7 +117,7 @@ func TestDialErrors(t *testing.T) {
 			return
 		}
 		for _, p := range []string{"[Metadata] not valid",
-			"[TCP] 198.18.0.1:5(chrome.exe) --> a.example:443 match RuleSet(force-tunnel) using tunnel[awg]",
+			"[TCP] 198.18.0.1:5(chrome.exe) --> a.example:443 match RuleSet(force-tunnel) using tunnel[awg1]",
 			"[TCP] dial DIRECT 127.0.0.1:1 --> 1.2.3.4:443 error: i/o timeout",
 			"[UDP] 198.18.0.1:6(chrome.exe) --> ads.example:443 match RuleSet(force-block) using REJECT"} {
 			fmt.Fprintf(w, "{\"type\":\"info\",\"payload\":%q}\n", p)
@@ -154,7 +154,7 @@ func TestDialErrors(t *testing.T) {
 // A failed dial names a group; what it went through is the group's choice.
 func TestGroups(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"proxies":{"tunnel":{"type":"Fallback","now":"DIRECT","all":["awg","DIRECT"]},"awg":{"type":"WireGuard"},"DIRECT":{"type":"Direct"}}}`)
+		fmt.Fprint(w, `{"proxies":{"tunnel":{"type":"Fallback","now":"DIRECT","all":["awg1","DIRECT"]},"awg1":{"type":"WireGuard"},"DIRECT":{"type":"Direct"}}}`)
 	}))
 	defer srv.Close()
 	l := NewLiveClient(strings.TrimPrefix(srv.URL, "http://"), "")

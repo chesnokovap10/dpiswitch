@@ -16,7 +16,7 @@ func TestWarmTunnels(t *testing.T) {
 
 	var mu sync.Mutex
 	asked := map[string]int{}
-	upAfter := map[string]int{"awg": 3, "awg2": 1, "dead": 1 << 30}
+	upAfter := map[string]int{"awg1": 3, "awg2": 1, "dead": 1 << 30}
 	warmCheck = func(_ *healthChecker, name string) (bool, string) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -25,9 +25,9 @@ func TestWarmTunnels(t *testing.T) {
 	}
 
 	warmFor = 200 * time.Millisecond
-	warmTunnels(context.Background(), nil, []string{"awg", "awg2", "dead"})
-	if asked["awg"] != 3 || asked["awg2"] != 1 {
-		t.Errorf("asked %v: awg 3 times and awg2 once, each until it answered", asked)
+	warmTunnels(context.Background(), nil, []string{"awg1", "awg2", "dead"})
+	if asked["awg1"] != 3 || asked["awg2"] != 1 {
+		t.Errorf("asked %v: awg1 3 times and awg2 once, each until it answered", asked)
 	}
 	if asked["dead"] < 3 {
 		t.Errorf("a tunnel that never answers asked %d times: kept at it until warmFor", asked["dead"])

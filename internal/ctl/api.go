@@ -27,11 +27,11 @@ func SavedNetwork(statePath string) string { return loadState(statePath).Current
 func Defaults() Config {
 	return Config{
 		DirectAddr:    DirectListener,
-		TunnelAddr:    "127.0.0.1:7891", // listener bound directly to awg
+		TunnelAddr:    "127.0.0.1:7891", // listener bound directly to awg1
 		Tunnel2Addr:   "127.0.0.1:7893", // bound to awg2: the DNS test of the settings
 		APIAddr:       "127.0.0.1:9090",
 		CfgPath:       paths.Config(),
-		ProxyName:     "awg",
+		ProxyName:     "awg1",
 		Provider:      "direct-verified",
 		ListPath:      paths.Verified(),
 		AddrProvider:  "direct-verified-addr",

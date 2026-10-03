@@ -194,7 +194,7 @@ func TestGate(t *testing.T) {
 func TestTunnelHealth(t *testing.T) {
 	var body string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/proxies/awg" {
+		if r.URL.Path != "/proxies/awg1" {
 			http.NotFound(w, r)
 			return
 		}
@@ -220,7 +220,7 @@ func TestTunnelHealth(t *testing.T) {
 			`"extra":{"` + HealthURL + `":` + hist(10*time.Second, 64) + `}}`, true},
 	} {
 		body = tc.body
-		ok, note, err := a.tunnelHealth("awg")
+		ok, note, err := a.tunnelHealth("awg1")
 		if err != nil || ok != tc.want {
 			t.Errorf("%s: %v %q %v, want %v", tc.name, ok, note, err, tc.want)
 		}
@@ -248,7 +248,7 @@ func TestLastCheck(t *testing.T) {
 		w.Write([]byte(`{"history":[{"time":"` + at.Format(time.RFC3339Nano) + `","delay":64}]}`))
 	}))
 	defer srv.Close()
-	c, err := LastTunnelCheck(strings.TrimPrefix(srv.URL, "http://"), "", "awg")
+	c, err := LastTunnelCheck(strings.TrimPrefix(srv.URL, "http://"), "", "awg1")
 	if err != nil || !c.At.Equal(at) || !c.Stale || c.OK {
 		t.Fatalf("%+v %v", c, err)
 	}

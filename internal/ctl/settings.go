@@ -89,7 +89,7 @@ func (s Settings) Equal(o Settings) bool { return reflect.DeepEqual(s, o) }
 const (
 	ModeOn      = "on"      // verdicts applied: unblocked sites direct, the rest by the lists
 	ModeObserve = "observe" // everything direct but the forbidden and the user's tunnel lists
-	ModeTunnel  = "tunnel"  // everything through awg and awg2, the user's direct lists included
+	ModeTunnel  = "tunnel"  // everything through awg1 and awg2, the user's direct lists included
 )
 
 // Mode: auto-switch on outranks tunnel only, so a hand edit setting
@@ -397,15 +397,4 @@ func (s Settings) apply(cfg Config) Config {
 	}
 	probe.SetSlowFactor(1 + float64(s.SlowPct)/100)
 	return cfg
-}
-
-// TunnelLabel: a tunnel as the pages and the logs name it. The core calls
-// the first one "awg" -- its proxy, rules and state files do -- and the
-// pages called it "awg" in places and "awg1" in others; it is awg1 to the
-// user everywhere now.
-func TunnelLabel(name string) string {
-	if name == "awg" {
-		return "awg1"
-	}
-	return name
 }
