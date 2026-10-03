@@ -52,9 +52,13 @@ func disableAuto(cfg Config, a *api, st *state, closeDirect bool) {
 		return
 	}
 	b := "# auto-switch disabled -- everything goes through the tunnel\n"
-	err := replaceList(a, cfg.ListPath, cfg.Provider, b)
-	if err == nil && cfg.AddrListPath != "" {
-		err = replaceList(a, cfg.AddrListPath, cfg.AddrProvider, b)
+	var err error
+	// observe only with the cut on keeps them: see directLists
+	if !directLists(cfg) {
+		err = replaceList(a, cfg.ListPath, cfg.Provider, b)
+		if err == nil && cfg.AddrListPath != "" {
+			err = replaceList(a, cfg.AddrListPath, cfg.AddrProvider, b)
+		}
 	}
 	if err == nil && cfg.SplitListPath != "" {
 		err = writeSplit(cfg, a, st.current(), splitNames(cfg, st, st.current()), true)
@@ -289,7 +293,7 @@ func closeRerouted(cfg Config, a *api, from, to string, awg2 func(connection) bo
 		case ModeTunnel:
 			moved = c.viaDirect() && !c.byList(paths.DirectList)
 		default:
-			moved = c.byProvider(ObserveProvider)
+			moved = c.byProvider(ObserveProvider) || c.byProvider(ObserveSplitProvider)
 		}
 		moved = moved || awg2 != nil && awg2(c)
 		if !moved {

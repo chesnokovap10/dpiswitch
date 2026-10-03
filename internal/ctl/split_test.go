@@ -191,9 +191,20 @@ func TestSplitObserveAndTunnel(t *testing.T) {
 	if got := listRules(s.cfg.SplitListPath); !slices.Equal(got, []string{"ig.example.org"}) {
 		t.Fatalf("observe only: cut list %v", got)
 	}
-	if got := listRules(s.cfg.ListPath); len(got) != 0 {
+	// everything goes the cut's way there: what the cut does not need goes
+	// plain by the direct list, above the cut's catch-all
+	if got := listRules(s.cfg.ListPath); !slices.Equal(got, []string{"c.example.org"}) {
 		t.Fatalf("observe only: plain direct list %v", got)
 	}
+	// with the cut off, observe only sends all plain: no list at all
+	s.cfg.Split = false
+	disableAuto(s.cfg, s.api, s.st, false)
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := listRules(s.cfg.ListPath); len(got) != 0 {
+		t.Fatalf("observe only, cut off: plain direct list %v", got)
+	}
+	s.cfg.Split = true
+	s.cfg.autoOff.Store(false)
 
 	s.setMode(ModeTunnel)
 	disableAuto(s.cfg, s.api, s.st, true)

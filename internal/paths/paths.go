@@ -125,6 +125,9 @@ func ForceBlock() string      { return Data(BlockList) }
 // ctl.SyncUserFiles
 func ObserveAll() string { return Data("observe-all.txt") }
 
+// ObserveSplit: observe only's catch-all with the ClientHello cut on
+func ObserveSplit() string { return Data("observe-split.txt") }
+
 // CoreRun: which run of the core this is -- the service writes it anew
 // whenever it starts the core, and the UI's live page starts its history
 // over when it changes

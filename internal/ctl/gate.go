@@ -26,7 +26,9 @@ func (g *gate) allow(now time.Time, health func() (bool, string, error)) bool {
 	g.last = now
 	// ticks come every interval; a gap well past it is a sleep, or a pause
 	// with no network. The network comes back a little after the machine.
-	if !first && gap > 3*g.interval {
+	// Three minutes at least: a cycle of blocked names takes half a minute,
+	// and the next tick waits for it.
+	if !first && gap > max(3*g.interval, 3*time.Minute) {
 		log.Printf("resumed after %s: probes wait a cycle for the network to settle",
 			gap.Round(time.Second))
 		return false

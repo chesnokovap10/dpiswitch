@@ -42,6 +42,20 @@ func observeAll(mode string) []byte {
 	return []byte("# empty\n")
 }
 
+// observeFiles: the catch-alls of observe only -- plain direct, and direct
+// with the ClientHello cut. With the cut switched on everything goes the
+// cut's way: a name not checked yet is cut at once rather than blocked
+// until the detector gets to it, and the ones the cut harms go plain by
+// the detector's direct list, which stands above.
+func observeFiles(s Settings) (plain, cut []byte) {
+	empty := []byte("# empty\n")
+	all := observeAll(s.Mode())
+	if s.Mode() == ModeObserve && s.SplitHello {
+		return empty, all
+	}
+	return all, empty
+}
+
 // wantCopies: the service's copies of a user list, by file name, as the
 // user's file and the mode make them; false when the user has no such list
 // -- the copies are left as they are then.
@@ -109,7 +123,6 @@ func SyncUserFiles() []string {
 	syncMu.Lock()
 	defer syncMu.Unlock()
 	set := LoadSettings(paths.Settings())
-	mode := set.Mode()
 	var changed []string
 	for _, name := range paths.UserLists {
 		want, ok, err := wantCopies(name, set)
@@ -127,8 +140,12 @@ func SyncUserFiles() []string {
 			}
 		}
 	}
-	if replaced(paths.ObserveAll(), observeAll(mode), "observe only list") {
+	plain, cut := observeFiles(set)
+	if replaced(paths.ObserveAll(), plain, "observe only list") {
 		changed = append(changed, ObserveProvider)
+	}
+	if replaced(paths.ObserveSplit(), cut, "observe only list, cut") {
+		changed = append(changed, ObserveSplitProvider)
 	}
 	if replaced(paths.Presets(), wantPresets(set), "presets") {
 		changed = append(changed, PresetsProvider)
@@ -162,6 +179,9 @@ func Awg2Synced() bool {
 
 // ObserveProvider: the rule-provider of paths.ObserveAll
 const ObserveProvider = "observe-all"
+
+// ObserveSplitProvider: the rule-provider of paths.ObserveSplit
+const ObserveSplitProvider = "observe-split"
 
 // replaced: whether the file had to be written to hold want; syncMu held
 func replaced(path string, want []byte, what string) bool {

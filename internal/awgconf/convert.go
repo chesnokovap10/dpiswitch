@@ -602,6 +602,13 @@ func render(c *Conf) (string, error) {
 	w("    behavior: classical")
 	w("    format: text")
 	w("    path: ./observe-all.txt")
+	w("  # the same with the ClientHello cut switched on: everything goes direct")
+	w("  # through the outbound that cuts it")
+	w("  %s:", ctl.ObserveSplitProvider)
+	w("    type: file")
+	w("    behavior: classical")
+	w("    format: text")
+	w("    path: ./%s", filepath.Base(paths.ObserveSplit()))
 	w("  # the user's lists -- direct, via the tunnel, forbidden, via awg2 -- each")
 	w("  # in three: names, addresses and programs. The service writes them from")
 	w("  # what the user wrote; the controller never touches them")
@@ -736,14 +743,19 @@ func render(c *Conf) (string, error) {
 	w("  - AND,((NETWORK,UDP),(DST-PORT,443),(RULE-SET,%s)),REJECT", ctl.SplitProvider)
 	w("  - RULE-SET,%s,%s", ctl.SplitProvider, ctl.SplitOutbound)
 	w("")
-	w("  # 9. observe only: everything the lists above leave goes direct")
-	w("  - RULE-SET,observe-all,DIRECT")
-	w("")
-	w("  # 10. detector verdicts")
+	w("  # 9. detector verdicts: direct as it is. Written in On, and in observe")
+	w("  #    only with the cut on -- there they keep the names the cut harms")
+	w("  #    out of its catch-all below")
 	w("  - RULE-SET,direct-verified,DIRECT")
 	w("  # the same verdicts by the address that was probed, for connections that")
 	w("  # carry no name at all (a speedtest client dialling a bare IP on 20000)")
 	w("  - RULE-SET,direct-verified-addr,DIRECT,no-resolve")
+	w("")
+	w("  # 10. observe only: everything the lists above leave goes direct -- with")
+	w("  #     the ClientHello cut when it is switched on, the service writes one")
+	w("  #     of the two")
+	w("  - RULE-SET,%s,%s", ctl.ObserveSplitProvider, ctl.SplitOutbound)
+	w("  - RULE-SET,observe-all,DIRECT")
 	w("")
 	w("  # 11. everything else: the tunnels as the mode says -- in tunnel only")
 	w("  #     never direct")
@@ -987,7 +999,7 @@ func Regenerate() (bool, error) {
 // EnsureLists creates missing list files: a provider without
 // its file prevents the core from starting
 func EnsureLists() {
-	files := []string{paths.Verified(), paths.VerifiedAddr(), paths.VerifiedSplit(), paths.ObserveAll(), paths.Presets()}
+	files := []string{paths.Verified(), paths.VerifiedAddr(), paths.VerifiedSplit(), paths.ObserveAll(), paths.ObserveSplit(), paths.Presets()}
 	for _, l := range paths.UserLists {
 		files = append(files, paths.Data(l), paths.Data(paths.IPList(l)), paths.Data(paths.AppList(l)))
 	}

@@ -88,7 +88,7 @@ name was really used on are the ones probed.</li>
 every attempt is clean, and the direct path is not slower than the tunnel by more than the
 tolerance.</li>
 </ol>
-<p>Up to 20 names are checked a minute. The checks pause while the tunnel fails the core's own health
+<p>Checks run every 10 seconds, up to 20 names at a time, 8 at once. The checks pause while the tunnel fails the core's own health
 checks, and for a cycle after sleep or a network change: the measurements would say more about that
 moment than about the path.</p>
 
@@ -144,9 +144,10 @@ rules, may not take the cut. A connection left open with no answer has the site 
 term. So it is off by default.</li>
 <li>Switched on, it checks the BLOCKED_TLS names again at once. Switched off, it takes them off the direct
 path at once and closes their connections: they open again through the tunnel.</li>
-<li>It works in On and Observe only: in Observe only everything goes direct, and the names the cut helps go
-direct with it. In Tunnel only nothing goes direct, the cut included; the detector checks and records there
-too.</li>
+<li>It works in On and Observe only. In On only the names checked go with the cut. In Observe only with the
+cut on everything goes with it at once, before any check: a name not checked would hang until the detector
+got to it. The names the detector found clean without the cut go direct as they are. In Tunnel only nothing
+goes direct, the cut included; the detector checks and records there too.</li>
 <li>With no first tunnel (awg1 not loaded) there is nothing to compare against, and the detector checks the
 cut alone: a site is tried direct as it is, and when it is cut on its ClientHello, direct with the cut.
 CLEAN_SPLIT only when the cut gets a certificate that passes the chain check and an answer; speed is not

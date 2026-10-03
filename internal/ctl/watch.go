@@ -140,6 +140,7 @@ func (w *watcher) observe(cfg Config, conns []connection) {
 		// then (see Config.alone).
 		if dom == "" || !c.probeable() ||
 			!(c.viaTunnel(cfg.ProxyName) || c.byProvider(cfg.Provider) || c.byProvider(ObserveProvider) ||
+				c.byProvider(ObserveSplitProvider) ||
 				c.Rule == "Match" && c.viaDirect()) {
 			continue
 		}
@@ -270,7 +271,7 @@ func addrProbeable(c connection, tunnelProxy string) bool {
 	return !c.fromProbe() && !c.pinned() &&
 		strings.EqualFold(c.Metadata.Network, "tcp") &&
 		c.port() > 0 && c.port() != 443 &&
-		(c.viaTunnel(tunnelProxy) || c.byProvider(ObserveProvider))
+		(c.viaTunnel(tunnelProxy) || c.byProvider(ObserveProvider) || c.byProvider(ObserveSplitProvider))
 }
 
 // drain hands over what has been seen since the last call, with the order

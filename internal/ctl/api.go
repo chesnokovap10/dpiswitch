@@ -57,7 +57,9 @@ func Defaults() Config {
 		SplitAddr:     "127.0.0.1:7894", // goes out through direct-split
 		StatePath:     paths.State(),
 		JSONLPath:     paths.Reports(),
-		Interval:      60 * time.Second,
+		// a cycle every 10 s, 8 at once: a name not checked yet goes the
+		// default way until it is -- in a minute it was not checked at all
+		Interval:      10 * time.Second,
 		WatchInterval: time.Second,
 		TTL:           7 * 24 * time.Hour,
 		FailTTL:       time.Hour,
@@ -68,7 +70,7 @@ func Defaults() Config {
 		DirectDNS:     DefaultSettings().apply(Config{}).DirectDNS,
 		Timeout:       8 * time.Second,
 		Attempts:      3,
-		Workers:       4,
+		Workers:       8,
 		PerCycle:      20,
 		Apply:         false,
 		// cloudflare-ech.com is the outer name of every Cloudflare site a
@@ -496,6 +498,19 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 		if old.Split && !cfg.Split {
 			n := closeByProvider(a, cfg.SplitProvider)
 			log.Printf("the ClientHello cut switched off: %d open connections it carried closed", n)
+		}
+		// observe only: its catch-all changed hands -- what the other one
+		// carries opens again the new way
+		if old.Split != cfg.Split && s.Mode() == ModeObserve {
+			listMu.Lock()
+			syncUserFiles(a)
+			listMu.Unlock()
+			was := ObserveProvider
+			if old.Split {
+				was = ObserveSplitProvider
+			}
+			n := closeByProvider(a, was)
+			log.Printf("observe only, the ClientHello cut %v: %d open connections moved", cfg.Split, n)
 		}
 	}
 	return cfg

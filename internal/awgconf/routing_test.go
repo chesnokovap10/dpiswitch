@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -181,6 +182,61 @@ func TestRoutingSplit(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestRoutingObserveCut: observe only with the ClientHello cut on sends
+// what no list names through direct-split at once, before any check -- with
+// no first tunnel too; what the detector found clean without the cut goes
+// plain, the cut's names cut, the user's lists as ever.
+func TestRoutingObserveCut(t *testing.T) {
+	for _, r := range routingTables[ctl.ModeObserve] {
+		t.Run(r.loaded, func(t *testing.T) {
+			_, loaded := setupRouting(t, ctl.ModeObserve, r.loaded)
+			if _, err := ctl.UpdateSettings(paths.Settings(), func(s *ctl.Settings) error {
+				s.SplitHello = true
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			ctl.SyncUserFiles()
+			// the controller writes the direct list there (see ctl.directLists)
+			if err := os.WriteFile(paths.Verified(), []byte(hostClean+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var out string
+			var err error
+			if slices.Contains(loaded, "awg1") {
+				c, err := ParseFile(paths.SourceConf())
+				if err != nil {
+					t.Fatal(err)
+				}
+				if out, err = c.Render(); err != nil {
+					t.Fatal(err)
+				}
+			} else if out, err = RenderNoFirst(); err != nil {
+				t.Fatal(err)
+			}
+			core := parseSimCore(t, out)
+			split := route(ctl.SplitOutbound)
+			for _, c := range []struct {
+				col, host string
+				want      route
+			}{
+				{"what no list names", hostUnnamed, split},
+				{"a clean site", hostClean, D},
+				{"cut by the detector", hostSplit, split},
+				{"Always via tunnel", hostTunnel, r.tunnel},
+				{"Always direct", hostDirect, r.direct},
+				{"Forbidden", hostBlock, r.block},
+			} {
+				for _, alive := range aliveSets(loaded) {
+					if got, why := core.route(c.host, alive); got != c.want.want(alive) {
+						t.Errorf("%s, alive %v: %s, want %s\n  %s", c.col, alive, got, c.want.want(alive), why)
+					}
+				}
+			}
+		})
 	}
 }
 
@@ -489,8 +545,9 @@ func groupBlock(t *testing.T, out, name string) string {
 const conf2 = "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.9.1.3/32\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.8:51820\n"
 
 // The lists go in their order -- Forbidden, Always via tunnel, Always
-// direct, the second tunnel -- above observe only's catch-all, the
-// detector's verdicts and MATCH.
+// direct, the second tunnel -- above the detector's verdicts, the cut's
+// first, then observe only's catch-alls and MATCH: with the cut on, observe
+// only cuts all but what the detector found clean without it.
 func TestRenderRuleOrder(t *testing.T) {
 	t.Setenv("ProgramData", t.TempDir())
 	if err := paths.EnsureDataDir(); err != nil {
@@ -515,7 +572,8 @@ func TestRenderRuleOrder(t *testing.T) {
 		"RULE-SET,force-tunnel-apps,tunnel-lists", "RULE-SET,force-tunnel-ip,tunnel-lists,no-resolve",
 		"RULE-SET,force-direct-apps,DIRECT", "RULE-SET,force-direct-ip,DIRECT,no-resolve",
 		"RULE-SET,presets,tunnel2", "RULE-SET,awg2-hosts-ip,tunnel2,no-resolve",
-		"RULE-SET,observe-all,DIRECT", "RULE-SET,direct-verified,DIRECT", "MATCH,tunnel-rest"}
+		"RULE-SET,direct-split-verified,direct-split", "RULE-SET,direct-verified,DIRECT",
+		"RULE-SET,observe-split,direct-split", "RULE-SET,observe-all,DIRECT", "MATCH,tunnel-rest"}
 	for k := 1; k < len(order); k++ {
 		if at(order[k-1]) > at(order[k]) {
 			t.Errorf("%s below %s", order[k-1], order[k])

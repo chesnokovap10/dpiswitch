@@ -648,6 +648,16 @@ func applyList(cfg Config, a *api, st *state, netID string) {
 	syncList(cfg, a, st, netID, true)
 }
 
+// directLists: whether the detector's direct lists are written: in On, and
+// in observe only with the ClientHello cut on -- everything goes the cut's
+// way there, and the names the cut harms must go plain (see observeFiles)
+func directLists(cfg Config) bool {
+	if cfg.modeNow() == ModeObserve && cfg.Split {
+		return true
+	}
+	return cfg.Apply && !cfg.off()
+}
+
 // splitNames: what the ClientHello cut's list holds -- its names, while the
 // cut is switched on and the mode sends anything direct: On and observe
 // only, not tunnel only. Switched off, its names leave the direct path at
@@ -694,11 +704,19 @@ func syncList(cfg Config, a *api, st *state, netID string, force bool) {
 	retryReloads(a)
 	doms, fams := directRules(cfg, st, netID)
 	splits := splitNames(cfg, st, netID)
-	if !cfg.Apply || cfg.off() {
+	if !directLists(cfg) {
 		// observe only sends everything direct already, and the cut's names
 		// with the cut; tunnel only, nothing direct, the cut's included
 		if err := writeSplit(cfg, a, netID, splits, force); err != nil {
 			log.Print(err)
+		}
+		// left from observe only with the cut on, or from a cycle begun in On
+		for _, l := range [][2]string{{cfg.ListPath, cfg.Provider}, {cfg.AddrListPath, cfg.AddrProvider}} {
+			if l[0] != "" && len(listRules(l[0])) > 0 {
+				if err := replaceList(a, l[0], l[1], "# auto-switch disabled -- everything goes through the tunnel\n"); err != nil {
+					log.Print(err)
+				}
+			}
 		}
 		if force {
 			log.Printf("observe mode: %d domains would go DIRECT (%s)", len(doms), preview(doms))
