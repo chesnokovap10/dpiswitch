@@ -61,7 +61,7 @@
 
   <div>{{.T "Open the UI"}}</div>
   <div><select id="ui_open" name="ui_open"><option value="window" {{if ne $s.UIOpen "tab"}}selected{{end}}>{{.T "In its own window"}}</option><option value="tab" {{if eq $s.UIOpen "tab"}}selected{{end}}>{{.T "In a browser tab"}}</option></select></div>
-  <div class="h">{{.T "How the tray icon opens these pages. Its own window: a window of the default browser with no tabs or address bar -- Chrome, Edge, Brave, Vivaldi and Yandex make one, another browser opens a tab either way. A browser tab: a new one among the browser's others each time."}}{{template "rowmsg" ($d.MsgFor "ui_open")}}</div>
+  <div class="h">{{.T "How the tray icon opens these pages. Its own window: a window of the default browser with no tabs or address bar -- Chrome, Edge, Brave, Vivaldi and Yandex make one, another browser opens a tab either way. A browser tab: among the browser's other tabs."}}{{template "rowmsg" ($d.MsgFor "ui_open")}}</div>
 </form>
 {{end}}
 

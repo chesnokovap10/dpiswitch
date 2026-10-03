@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -24,14 +25,11 @@ import (
 // A browser lets no one outside it pick a tab, but its windows are found by
 // their titles. The UI opens in a window of its own -- an app window of the
 // default browser, where it makes them (Chromium's --app) -- whose title is
-// the page's: "DPI Switch" alone, found again whatever else is open. The
-// settings choose a tab of the browser instead (ctl.UITab): one more each
-// time, as any link opens.
+// the page's: "DPI Switch" alone. The settings choose a tab of the browser
+// instead (ctl.UITab), found by its window's title while it is the tab shown
+// ("DPI Switch - Google Chrome"). Each is looked for alone: a tab of the UI
+// open somewhere did not let the window chosen come.
 func showUI(url string) {
-	if ctl.LoadSettings(paths.Settings()).UIOpen == ctl.UITab {
-		browse(url)
-		return
-	}
 	// one opening at a time: the window takes a second or more to come, and
 	// each click meanwhile found none and opened one more -- five clicks,
 	// five windows. A click now is the window's on its way.
@@ -39,7 +37,10 @@ func showUI(url string) {
 		return
 	}
 	defer opening.Unlock()
-	if h := uiWindow(); h != 0 {
+	exe := appBrowser()
+	// another browser makes no window of its own: a tab there
+	tab := exe == "" || ctl.LoadSettings(paths.Settings()).UIOpen == ctl.UITab
+	if h := uiWindow(tab); h != 0 {
 		if r, _, _ := pIsIconic.Call(uintptr(h)); r != 0 {
 			pShowWindow.Call(uintptr(h), swRestore)
 		}
@@ -48,21 +49,20 @@ func showUI(url string) {
 		}
 		return
 	}
-	exe := appBrowser()
-	if exe == "" {
+	if tab {
 		browse(url)
-		return
+	} else {
+		pAllowSetForegroundWindow.Call(asfwAny)
+		verb, _ := syscall.UTF16PtrFromString("open")
+		file, _ := syscall.UTF16PtrFromString(exe)
+		args, _ := syscall.UTF16PtrFromString("--app=" + url)
+		if err := windows.ShellExecute(0, verb, file, args, nil, windows.SW_SHOWNORMAL); err != nil {
+			log.Printf("tray: %s did not open the UI's window: %v", exe, err)
+			browse(url)
+			return
+		}
 	}
-	pAllowSetForegroundWindow.Call(asfwAny)
-	verb, _ := syscall.UTF16PtrFromString("open")
-	file, _ := syscall.UTF16PtrFromString(exe)
-	args, _ := syscall.UTF16PtrFromString("--app=" + url)
-	if err := windows.ShellExecute(0, verb, file, args, nil, windows.SW_SHOWNORMAL); err != nil {
-		log.Printf("tray: %s did not open the UI's window: %v", exe, err)
-		browse(url)
-		return
-	}
-	for end := time.Now().Add(15 * time.Second); uiWindow() == 0 && time.Now().Before(end); {
+	for end := time.Now().Add(10 * time.Second); uiWindow(tab) == 0 && time.Now().Before(end); {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
@@ -73,10 +73,16 @@ const (
 	// uiTitle: the pages' title (layout.html), and so an app window's
 	uiTitle   = "DPI Switch"
 	swRestore = 9
-	// appClass: Chromium's windows -- a message box of this program is
-	// titled "DPI Switch" too
-	appClass = "Chrome_WidgetWin_1"
 )
+
+// a window whose tab shown is the UI: the page's title and the browser's
+// name, nothing between -- "DPI Switch - Поиск в Google - Google Chrome" is
+// another page
+var uiTabTitles = []string{uiTitle + " - Google Chrome", uiTitle + " — Mozilla Firefox", uiTitle + " - Mozilla Firefox"}
+
+// browser windows, by their class: a message box of this program is titled
+// "DPI Switch" too
+var browserClasses = map[string]bool{"Chrome_WidgetWin_1": true, "MozillaWindowClass": true}
 
 var (
 	pIsIconic            = user32.NewProc("IsIconic")
@@ -85,11 +91,12 @@ var (
 	pGetWindowTextW      = user32.NewProc("GetWindowTextW")
 )
 
-// uiWindow: the app window the UI is open in; 0 for none
-func uiWindow() windows.HWND {
+// uiWindow: the UI's app window, or with tab the window whose tab shown is
+// the UI; 0 for none
+func uiWindow(tab bool) windows.HWND {
 	var found windows.HWND
 	cb := syscall.NewCallback(func(h windows.HWND, _ uintptr) uintptr {
-		if isUIWindow(h) {
+		if isUIWindow(h, tab) {
 			found = h
 			return 0
 		}
@@ -99,17 +106,21 @@ func uiWindow() windows.HWND {
 	return found
 }
 
-func isUIWindow(h windows.HWND) bool {
+func isUIWindow(h windows.HWND, tab bool) bool {
 	if !windows.IsWindowVisible(h) {
 		return false
 	}
 	var cls [64]uint16
-	if n, _ := windows.GetClassName(h, &cls[0], int32(len(cls))); n == 0 || windows.UTF16ToString(cls[:n]) != appClass {
+	if n, _ := windows.GetClassName(h, &cls[0], int32(len(cls))); n == 0 || !browserClasses[windows.UTF16ToString(cls[:n])] {
 		return false
 	}
 	var buf [256]uint16
 	n, _, _ := pGetWindowTextW.Call(uintptr(h), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
-	return windows.UTF16ToString(buf[:n]) == uiTitle
+	title := windows.UTF16ToString(buf[:n])
+	if tab {
+		return slices.Contains(uiTabTitles, title)
+	}
+	return title == uiTitle
 }
 
 // chromium: the default browsers that open an app window (--app), by their

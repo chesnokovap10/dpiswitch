@@ -20,9 +20,10 @@ func TestShowUILive(t *testing.T) {
 	if os.Getenv("DPISWITCH_LIVE_UI") == "" {
 		t.Skip("opens a browser window on the desktop: DPISWITCH_LIVE_UI=1")
 	}
-	if appBrowser() == "" || uiWindow() != 0 {
+	if appBrowser() == "" || uiWindow(false) != 0 {
 		t.Skip("no browser making app windows, or a UI's window open already")
 	}
+	t.Setenv("ProgramData", t.TempDir()) // the default: a window of its own
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "<!doctype html><title>DPI Switch</title>the tray's window test")
 	}))
@@ -37,7 +38,7 @@ func TestShowUILive(t *testing.T) {
 	time.Sleep(time.Second) // a window a second click opened would be up by now
 	var hs []windows.HWND
 	windows.EnumWindows(syscall.NewCallback(func(h windows.HWND, _ uintptr) uintptr {
-		if isUIWindow(h) {
+		if isUIWindow(h, false) {
 			hs = append(hs, h)
 		}
 		return 1
