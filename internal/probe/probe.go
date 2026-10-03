@@ -188,12 +188,21 @@ func readResponse(r *PathResult, resp *http.Response, host string, t2 time.Time)
 	r.BodySHA256 = hex.EncodeToString(sum[:])
 	// A body cut short is what DPI leaves when it lets a session start and
 	// stalls it after some kilobytes. With the length known (Content-Length
-	// or chunked) an error means exactly that; a body that ends with the
-	// connection cannot tell a cut from a server resetting instead of
-	// closing, so there it counts only when nothing arrived at all.
-	if err != nil && (len(body) == 0 || resp.ContentLength >= 0 || len(resp.TransferEncoding) > 0) {
+	// or chunked) an error means exactly that. A close-delimited body cannot
+	// tell a clean end from a cut by its length alone -- but a reset is never
+	// how a server ends one normally, so a reset there is a cut too; without
+	// one it counts only when nothing arrived at all.
+	if err != nil && (len(body) == 0 || resp.ContentLength >= 0 || len(resp.TransferEncoding) > 0 || isReset(err)) {
 		r.Err, r.ErrStage = err.Error(), "body"
 	}
+}
+
+// isReset: the peer reset the connection rather than closing it. Reading it
+// off the error text keeps this independent of the OS's syscall constants,
+// which the probe never sees directly through the SOCKS relay anyway.
+func isReset(err error) bool {
+	e := strings.ToLower(err.Error())
+	return strings.Contains(e, "reset") || strings.Contains(e, "forcibly closed")
 }
 
 // HTTPFailed: the connection (and TLS, if any) went through, but the HTTP
@@ -347,26 +356,44 @@ func verifyChain(host string, certs []*x509.Certificate) bool {
 	return err == nil
 }
 
-// classify the direct-path error -- what exactly DPI did
+// classify the direct-path error -- what exactly DPI did, and at which level.
+// The stage says where: "tcp" is the address itself (nothing was sent yet but
+// the SYN), "tls" is the ClientHello that carries the name, "body"/"http_*" is
+// mid-session once data flows. The kind says how: a reset is an active RST, a
+// timeout is a silent drop (the packets vanish with no answer), and refused or
+// unreachable is the far end or the route, not a filter.
 func ClassifyErr(r PathResult) string {
 	e := strings.ToLower(r.Err)
 	switch {
-	case strings.Contains(e, "reset"):
-		if r.ErrStage == "tls" {
-			return "RST on ClientHello -- SNI filter"
-		}
-		return "RST on " + r.ErrStage
-	case strings.Contains(e, "timeout") || strings.Contains(e, "deadline"):
-		return "timeout on " + r.ErrStage
 	case strings.Contains(e, "refused"):
-		return "connection refused on " + r.ErrStage
+		return "connection refused on " + where(r.ErrStage)
 	case strings.Contains(e, "unreachable"):
 		return "host unreachable"
+	case strings.Contains(e, "reset") || strings.Contains(e, "forcibly closed"):
+		return "RST (reset) on " + where(r.ErrStage)
+	case strings.Contains(e, "timeout") || strings.Contains(e, "deadline"):
+		return "silent drop (no reply) on " + where(r.ErrStage)
 	}
 	if r.Err != "" {
-		return fmt.Sprintf("%s: %s", r.ErrStage, Truncate(r.Err, 60))
+		return fmt.Sprintf("%s: %s", where(r.ErrStage), Truncate(r.Err, 60))
 	}
 	return ""
+}
+
+// where: the stage named as the level DPI acted at.
+func where(stage string) string {
+	switch stage {
+	case "tcp":
+		return "the address (SYN/connect)"
+	case "tls":
+		return "the ClientHello (carries the name/SNI)"
+	case "body", "http_read", "http_write":
+		return "the session after it opened"
+	}
+	if stage == "" {
+		return "the connection"
+	}
+	return stage
 }
 
 func Truncate(s string, n int) string {

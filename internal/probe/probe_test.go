@@ -73,6 +73,30 @@ func TestConfirmDial(t *testing.T) {
 	}
 }
 
+// ClassifyErr names both how DPI acted (reset / silent drop / refused) and the
+// level it acted at (the address, the ClientHello that carries the name, or the
+// open session) -- what the verdict's reason shows.
+func TestClassifyErr(t *testing.T) {
+	cases := []struct {
+		err, stage string
+		want       string
+	}{
+		{"read: connection reset by peer", "tls", "RST (reset) on the ClientHello (carries the name/SNI)"},
+		{"tls: i/o timeout", "tls", "silent drop (no reply) on the ClientHello (carries the name/SNI)"},
+		{"dial tcp: i/o timeout", "tcp", "silent drop (no reply) on the address (SYN/connect)"},
+		{"read: connection reset by peer", "tcp", "RST (reset) on the address (SYN/connect)"},
+		{"wsarecv: An existing connection was forcibly closed", "body", "RST (reset) on the session after it opened"},
+		{"connect: connection refused", "tcp", "connection refused on the address (SYN/connect)"},
+		{"dial tcp: connect: network is unreachable", "tcp", "host unreachable"},
+	}
+	for _, c := range cases {
+		got := ClassifyErr(PathResult{Err: c.err, ErrStage: c.stage})
+		if got != c.want {
+			t.Errorf("%q/%s:\n got  %q\n want %q", c.err, c.stage, got, c.want)
+		}
+	}
+}
+
 // A body cut short counts as a failure where its length was announced; one
 // that simply ends with the connection cannot be told from a complete one.
 func TestHTTPGet(t *testing.T) {
@@ -80,11 +104,16 @@ func TestHTTPGet(t *testing.T) {
 		name, reply  string
 		stage        string
 		redirectHost string
+		reset        bool // close with a RST instead of a clean FIN
 	}{
-		{"content-length cut short", "HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n0123456789", "body", ""},
-		{"ends with the connection", "HTTP/1.1 200 OK\r\n\r\n0123456789", "", ""},
-		{"relative redirect", "HTTP/1.1 302 Found\r\nLocation: /ru/\r\nContent-Length: 0\r\n\r\n", "", "example.com"},
-		{"redirect elsewhere", "HTTP/1.1 302 Found\r\nLocation: http://Warning.RT.ru/?id=1\r\nContent-Length: 0\r\n\r\n", "", "warning.rt.ru"},
+		{"content-length cut short", "HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n0123456789", "body", "", false},
+		{"ends with the connection", "HTTP/1.1 200 OK\r\n\r\n0123456789", "", "", false},
+		// a close-delimited body the peer resets mid-way is a cut too: DPI
+		// stalling a session after some kilobytes leaves exactly this, and by
+		// length alone it was indistinguishable from a clean end
+		{"close-delimited body reset", "HTTP/1.1 200 OK\r\n\r\n0123456789", "body", "", true},
+		{"relative redirect", "HTTP/1.1 302 Found\r\nLocation: /ru/\r\nContent-Length: 0\r\n\r\n", "", "example.com", false},
+		{"redirect elsewhere", "HTTP/1.1 302 Found\r\nLocation: http://Warning.RT.ru/?id=1\r\nContent-Length: 0\r\n\r\n", "", "warning.rt.ru", false},
 	}
 	for _, tc := range cases {
 		client, server := pair(t)
@@ -99,6 +128,12 @@ func TestHTTPGet(t *testing.T) {
 				}
 			}
 			server.Write([]byte(tc.reply))
+			if tc.reset {
+				// SO_LINGER 0: the close sends a RST, as a stalled session does
+				if c, ok := server.(*net.TCPConn); ok {
+					_ = c.SetLinger(0)
+				}
+			}
 			server.Close()
 		}()
 		_ = client.SetDeadline(time.Now().Add(5 * time.Second))
