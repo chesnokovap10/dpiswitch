@@ -46,6 +46,11 @@ type entry struct {
 	// SlowOnce: a CLEAN measured slower once. It is kept and looked at again
 	// after FailTTL; SLOWER a second time in a row reverts it.
 	SlowOnce bool `json:"slow_once,omitempty"`
+	// Alone: made with no first tunnel to measure against (see
+	// probe.CheckAlone). A CLEAN made so sends nothing direct -- with no
+	// tunnel everything goes direct anyway, and once there is one it is
+	// checked first, against it.
+	Alone bool `json:"alone,omitempty"`
 }
 
 // state is split per network: the key is the ISP (AS...), see asn.go;
@@ -232,7 +237,23 @@ func (s *state) verified(id string) []string {
 		if _, addr := probe.AddrKey(dom); addr {
 			continue // goes to the address list, see verifiedAddrs
 		}
-		if e.Verdict == probe.Clean && now.Before(e.ExpiresAt) {
+		if e.Verdict == probe.Clean && !e.Alone && now.Before(e.ExpiresAt) {
+			out = append(out, dom)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// madeAlone: the verdicts made with no tunnel, of names still in use -- to
+// be checked again now that there is one
+func (s *state) madeAlone(id string, idle time.Duration) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	fresh := time.Now().Add(-idle)
+	for dom, e := range s.Networks[id] {
+		if e.Alone && e.lastSeen().After(fresh) {
 			out = append(out, dom)
 		}
 	}

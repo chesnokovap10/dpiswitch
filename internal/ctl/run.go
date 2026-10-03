@@ -55,9 +55,13 @@ type Config struct {
 	// re-checked on a timer, and, at ten times that, is dropped from memory.
 	Idle         time.Duration
 	SettingsPath string
-	Families     bool             // extend verdicts to the whole domain, see family.go
-	Split        bool             // try a BLOCKED_TLS name with the ClientHello cut, see Settings.SplitHello
-	DirectDNS    []probe.Resolver // empty -- the prober's built-in DoH
+	Families     bool // extend verdicts to the whole domain, see family.go
+	Split        bool // try a BLOCKED_TLS name with the ClientHello cut, see Settings.SplitHello
+	// alone: no first tunnel's config is loaded -- nothing to measure
+	// against. With the cut switched on the detector still checks it, see
+	// probe.CheckAlone; without, it checks nothing.
+	alone     bool
+	DirectDNS []probe.Resolver // empty -- the prober's built-in DoH
 	// DNSCache: the settings have the program's DNS cache answer the core
 	// for the direct path; the detector asks it too while it does (see
 	// directResolvers)
@@ -102,6 +106,9 @@ var checkProto = probe.CheckProto
 
 // checkSplit: the probe with the ClientHello cut, see probe.CheckSplit
 var checkSplit = probe.CheckSplit
+
+// checkAlone: the probe with no tunnel, see probe.CheckAlone
+var checkAlone = probe.CheckAlone
 
 func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	conns, err := a.connections()
@@ -156,18 +163,24 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 
 	// order matters: suspicious first, then expired,
 	// and only then new candidates -- rolling back is more urgent than expanding
+	// verdicts made with no tunnel go first once there is one: they were
+	// measured against nothing
+	var madeAlone []string
+	if !cfg.alone {
+		madeAlone = st.madeAlone(netID, cfg.Idle)
+	}
 	queue := dedupe(concat(
 		suspectDirect(cfg, st, netID, conns),
+		madeAlone,
 		st.quicOnly(netID, cfg.Idle),
 		st.expired(netID, cfg.Idle),
 		pickCandidates(cfg, st, netID, order),
 	))
 	queue = slices.DeleteFunc(queue, leaveAlone)
 	if len(queue) == 0 {
-		// verdicts expire with no probe running: the list follows anyway
-		if cfg.Apply {
-			syncList(cfg, a, st, netID, false)
-		}
+		// verdicts expire with no probe running: the list follows anyway --
+		// the cut's in observe only too
+		syncList(cfg, a, st, netID, false)
 		return
 	}
 	total := len(queue)
@@ -265,7 +278,13 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 				stored, was = prev.Endpoints, prev.Verdict
 			}
 			eps, unprobed := mergeEndpoints(ports[dom], stored)
-			if _, addr := probe.AddrKey(dom); addr {
+			if cfg.alone {
+				// with no tunnel only the cut is worth a check: its 443
+				eps = slices.DeleteFunc(eps, func(e endpoint) bool { return e.udp || e.port != 443 })
+				if _, addr := probe.AddrKey(dom); addr || len(eps) == 0 {
+					return
+				}
+			} else if _, addr := probe.AddrKey(dom); addr {
 				// an address is judged by plain TCP only -- 443 would need the
 				// name the sniffer could not find (see addrProbeable)
 				eps = plainTCP(eps)
@@ -286,9 +305,14 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			reachedV6 := false
 			reps := make([]probe.Report, 0, len(eps))
 			for _, ep := range eps {
-				r := checkProto(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp, was)
+				var r probe.Report
+				if cfg.alone {
+					r = checkAlone(direct, split, dom, cfg.Attempts, was)
+				} else {
+					r = checkProto(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp, was)
+				}
 				appendJSONL(cfg.JSONLPath, r)
-				if !r.Aborted && cfg.Split && !ep.udp && ep.port == 443 && r.Verdict == probe.BlockedTLS {
+				if !cfg.alone && !r.Aborted && cfg.Split && !ep.udp && ep.port == 443 && r.Verdict == probe.BlockedTLS {
 					// blocked by its name: once more with the hello cut, on
 					// the same node. The cut path's verdict stands for the
 					// port when it got through -- clean, or merely slower;
@@ -391,14 +415,11 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	if err := st.save(); err != nil {
 		log.Printf("state not saved: %v", err)
 	}
-	switch {
-	case cfg.Apply:
-		// not only when a verdict changed: a CLEAN expiring changes the list
-		// too, and one re-confirmed after it dropped out must come back
-		syncList(cfg, a, st, netID, false)
-	case changed:
-		applyList(cfg, a, st, netID) // observe mode: only logs
-	}
+	// not only when a verdict changed: a CLEAN expiring changes the list
+	// too, and one re-confirmed after it dropped out must come back. With
+	// auto-switch off only the cut's list is written, and the rest logged
+	// when a verdict changed.
+	syncList(cfg, a, st, netID, changed && !cfg.Apply)
 }
 
 // checked: one name's probes, waiting to be filed.
@@ -452,6 +473,7 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 	// BLOCKED it replaces was the old mislabel of the same thing.
 	if had && rep.Verdict == probe.Inconcl && prev.Verdict != probe.Inconcl && !dropClean && !noV6 {
 		kept := *prev
+		kept.Alone = cfg.alone
 		term := cfg.FailTTL
 		// A verdict the check measured and could not overturn -- the
 		// host fails the same on both paths, say -- backs off as a
@@ -494,6 +516,7 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 		TestedIP:   rep.TestedIP,
 		Endpoints:  endpointStrings(eps),
 		DirectDown: rep.Verdict == probe.Inconcl && directDown,
+		Alone:      cfg.alone,
 	}
 	// A new name was just seen by the watcher. A known one keeps its
 	// own mark: the probe is not a use. It used to count as one, and
@@ -625,6 +648,39 @@ func applyList(cfg Config, a *api, st *state, netID string) {
 	syncList(cfg, a, st, netID, true)
 }
 
+// splitNames: what the ClientHello cut's list holds -- its names, while the
+// cut is switched on and the mode sends anything direct: On and observe
+// only, not tunnel only. Switched off, its names leave the direct path at
+// once, not when their verdicts run out.
+func splitNames(cfg Config, st *state, netID string) []string {
+	if !cfg.Split || cfg.modeNow() == ModeTunnel || netID == "" || netID == noNetwork {
+		return nil
+	}
+	return st.verifiedSplit(netID)
+}
+
+// writeSplit writes the cut's list when it differs from what is on disk,
+// or always when forced; listMu held.
+func writeSplit(cfg Config, a *api, netID string, splits []string, force bool) error {
+	if cfg.SplitListPath == "" || !force && slices.Equal(listRules(cfg.SplitListPath), splits) {
+		return nil
+	}
+	var b strings.Builder
+	b.WriteString("# generated by the controller, do not edit\n")
+	fmt.Fprintf(&b, "# network %s, updated %s\n", netID, time.Now().Format(time.RFC3339))
+	b.WriteString("# blocked by name, clean with the ClientHello cut: direct through direct-split\n")
+	for _, d := range splits {
+		b.WriteString(d + "\n")
+	}
+	if err := replaceList(a, cfg.SplitListPath, cfg.SplitProvider, b.String()); err != nil {
+		return err
+	}
+	if len(splits) > 0 {
+		log.Printf("applied: %d domains go direct with the ClientHello cut", len(splits))
+	}
+	return nil
+}
+
 // syncList brings the rule-provider files in line with memory. Unless forced
 // it writes only when the rules differ from what is on disk: it runs every
 // cycle, because verdicts change the list without any verdict changing --
@@ -637,16 +693,15 @@ func syncList(cfg Config, a *api, st *state, netID string, force bool) {
 	// rules until it restarted
 	retryReloads(a)
 	doms, fams := directRules(cfg, st, netID)
-	// the cut switched off: its names go through the tunnel at once, not
-	// when their verdicts run out
-	var splits []string
-	if cfg.Split {
-		splits = st.verifiedSplit(netID)
-	}
+	splits := splitNames(cfg, st, netID)
 	if !cfg.Apply || cfg.off() {
-		log.Printf("observe mode: %d domains would go DIRECT (%s)", len(doms), preview(doms))
-		if len(splits) > 0 {
-			log.Printf("observe mode: %d domains would go direct with the ClientHello cut (%s)", len(splits), preview(splits))
+		// observe only sends everything direct already, and the cut's names
+		// with the cut; tunnel only, nothing direct, the cut's included
+		if err := writeSplit(cfg, a, netID, splits, force); err != nil {
+			log.Print(err)
+		}
+		if force {
+			log.Printf("observe mode: %d domains would go DIRECT (%s)", len(doms), preview(doms))
 		}
 		return
 	}
@@ -659,19 +714,8 @@ func syncList(cfg Config, a *api, st *state, netID string, force bool) {
 		(cfg.AddrListPath == "" || slices.Equal(listRules(cfg.AddrListPath), addrs)) {
 		return
 	}
-	if cfg.SplitListPath != "" && (force || !splitSame) {
-		var sb strings.Builder
-		sb.WriteString("# generated by the controller, do not edit\n")
-		fmt.Fprintf(&sb, "# network %s, updated %s\n", netID, time.Now().Format(time.RFC3339))
-		sb.WriteString("# blocked by name, clean with the ClientHello cut: direct through direct-split\n")
-		for _, d := range splits {
-			sb.WriteString(d + "\n")
-		}
-		if err := replaceList(a, cfg.SplitListPath, cfg.SplitProvider, sb.String()); err != nil {
-			log.Print(err)
-		} else if len(splits) > 0 {
-			log.Printf("applied: %d domains go direct with the ClientHello cut", len(splits))
-		}
+	if err := writeSplit(cfg, a, netID, splits, force); err != nil {
+		log.Print(err)
 	}
 	var b strings.Builder
 	b.WriteString("# generated by the controller, do not edit\n")

@@ -147,9 +147,9 @@ func TestRouting(t *testing.T) {
 }
 
 // TestRoutingSplit: a name the detector sends direct with its ClientHello
-// cut takes direct-split in On, whatever is loaded; Observe only sends it
-// direct as it is, like everything; Tunnel only, whose lists the controller
-// writes empty, where it sends what no list names. QUIC to it is refused,
+// cut takes direct-split in On and Observe only, whatever is loaded -- with
+// no first tunnel too; Tunnel only, whose cut list the controller writes
+// empty, sends it where it sends what no list names. QUIC to it is refused,
 // and the user's lists stand above it.
 func TestRoutingSplit(t *testing.T) {
 	split := route(ctl.SplitOutbound)
@@ -157,7 +157,7 @@ func TestRoutingSplit(t *testing.T) {
 		for _, r := range routingTables[mode] {
 			t.Run(mode+"/"+r.loaded, func(t *testing.T) {
 				core, loaded := setupRouting(t, mode, r.loaded)
-				want := map[string]route{ctl.ModeOn: split, ctl.ModeObserve: D, ctl.ModeTunnel: r.unnamed}[mode]
+				want := map[string]route{ctl.ModeOn: split, ctl.ModeObserve: split, ctl.ModeTunnel: r.unnamed}[mode]
 				for _, alive := range aliveSets(loaded) {
 					if got, why := core.route(hostSplit, alive); got != want.want(alive) {
 						t.Errorf("alive %v: %s, want %s\n  %s", alive, got, want.want(alive), why)
@@ -230,13 +230,17 @@ func setupRouting(t *testing.T, mode, loaded string) (*simCore, []string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// the detector's verdicts: the controller writes the list empty in
-	// every mode but On (see ctl.disableAuto)
+	// the detector's verdicts: the controller writes the direct list empty
+	// in every mode but On (see ctl.disableAuto), the ClientHello cut's in
+	// tunnel only (see ctl.splitNames) -- with or without a first tunnel
 	if mode == ctl.ModeOn {
 		write(paths.Verified(), hostClean+"\n")
-		write(paths.VerifiedSplit(), hostSplit+"\n")
 	} else {
 		write(paths.Verified(), "# auto-switch disabled\n")
+	}
+	if mode != ctl.ModeTunnel {
+		write(paths.VerifiedSplit(), hostSplit+"\n")
+	} else {
 		write(paths.VerifiedSplit(), "# auto-switch disabled\n")
 	}
 	EnsureLists()

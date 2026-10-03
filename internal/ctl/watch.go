@@ -135,8 +135,12 @@ func (w *watcher) observe(cfg Config, conns []connection) {
 		// this way hosts admitted by a family without their own verdict
 		// get checked. And in observe only, everything: it all goes direct.
 		// Already decided ones are filtered by the state
+		// And what no rule but the last took and that went direct: with no
+		// first tunnel loaded, everything -- the ClientHello cut is checked
+		// then (see Config.alone).
 		if dom == "" || !c.probeable() ||
-			!(c.viaTunnel(cfg.ProxyName) || c.byProvider(cfg.Provider) || c.byProvider(ObserveProvider)) {
+			!(c.viaTunnel(cfg.ProxyName) || c.byProvider(cfg.Provider) || c.byProvider(ObserveProvider) ||
+				c.Rule == "Match" && c.viaDirect()) {
 			continue
 		}
 		if w.seen[dom] == nil {

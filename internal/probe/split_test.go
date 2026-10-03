@@ -1,6 +1,7 @@
 package probe
 
 import (
+	"crypto/x509"
 	"io"
 	"net"
 	"net/http"
@@ -77,5 +78,46 @@ func TestCheckSplit(t *testing.T) {
 	cut := Dialer{Addr: forwardStub(t, target, true), Timeout: 2 * time.Second}
 	if r := CheckSplit(cut, tunnel, plain, 2, BlockedTLS); r.Verdict != BlockedTLS {
 		t.Fatalf("cut path blocked too: %s (%s)", r.Verdict, r.Reason)
+	}
+}
+
+// With no tunnel the cut path takes its place: a name cut on its hello
+// direct is CLEAN_SPLIT when the cut gets a valid certificate and an
+// answer, BLOCKED_TLS when it does not; one that works as it is, CLEAN.
+func TestCheckAlone(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("hello"))
+	}))
+	defer srv.Close()
+	pool := x509.NewCertPool()
+	pool.AddCert(srv.Certificate())
+	chainRoots = pool
+	defer func() { chainRoots = nil }()
+	target := srv.Listener.Addr().String()
+	// the name the test server's certificate has, resolved by the stub
+	ip := func(d Dialer) Dialer {
+		d.DNS = []Resolver{{Raw: "stub", Scheme: "stub"}}
+		return d
+	}
+	oldLookup := lookupAnyFn
+	lookupAnyFn = func(Dialer, []Resolver, string) ([]string, error) { return []string{"192.0.2.10"}, nil }
+	defer func() { lookupAnyFn = oldLookup }()
+
+	open := ip(Dialer{Addr: forwardStub(t, target, false), Timeout: 2 * time.Second})
+	cut := ip(Dialer{Addr: forwardStub(t, target, true), Timeout: 2 * time.Second})
+
+	if r := CheckAlone(cut, open, "example.com", 2, ""); r.Verdict != CleanSplit || r.TestedIP != "192.0.2.10" {
+		t.Errorf("cut direct, the cut works: %s (%s)", r.Verdict, r.Reason)
+	}
+	if r := CheckAlone(cut, cut, "example.com", 2, ""); r.Verdict != BlockedTLS {
+		t.Errorf("cut both ways: %s (%s)", r.Verdict, r.Reason)
+	}
+	if r := CheckAlone(open, cut, "example.com", 2, ""); r.Verdict != Clean {
+		t.Errorf("works as it is: %s (%s)", r.Verdict, r.Reason)
+	}
+	// a certificate not of the name is no proof: the cut path's answer
+	// may be anyone's
+	if r := CheckAlone(cut, open, "other.example", 2, ""); r.Verdict != BlockedTLS {
+		t.Errorf("a foreign certificate with the cut: %s (%s)", r.Verdict, r.Reason)
 	}
 }

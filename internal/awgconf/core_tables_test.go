@@ -180,7 +180,7 @@ func coreCells(t *testing.T, core, peer, mode string, r row, alive map[string]bo
 		{"Always direct", hostDirect, r.direct},
 		{"Forbidden", hostBlock, r.block},
 		// not a column of the help's tables: see TestRoutingSplit
-		{"cut by the detector", hostSplit, map[string]route{ctl.ModeOn: route(ctl.SplitOutbound), ctl.ModeObserve: D, ctl.ModeTunnel: r.unnamed}[mode]},
+		{"cut by the detector", hostSplit, map[string]route{ctl.ModeOn: route(ctl.SplitOutbound), ctl.ModeObserve: route(ctl.SplitOutbound), ctl.ModeTunnel: r.unnamed}[mode]},
 	}
 	var wg sync.WaitGroup
 	for _, c := range cells {

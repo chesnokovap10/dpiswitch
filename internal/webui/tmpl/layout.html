@@ -168,6 +168,6 @@
 
 {{/* the mode decides whether the verdicts apply: said while they do not; on
    the verdicts page and under the overview's counts */}}
-{{define "vnote"}}{{if not .St.HasConfig}}<p class="hint warn-t" style="margin:0">{{.T "The first tunnel (awg1) is not loaded: the detector checks nothing, even with auto-switch On. It measures the direct path against awg1 only, never awg2; until awg1 is loaded, what no list names goes direct."}}</p>
+{{define "vnote"}}{{if not .St.HasConfig}}<p class="hint warn-t" style="margin:0">{{.T "The first tunnel (awg1) is not loaded: the detector checks nothing, even with auto-switch On, but the ClientHello cut when DPI bypass has it switched on. It measures the direct path against awg1 only, never awg2; until awg1 is loaded, what no list names goes direct."}}</p>
 {{- else if eq .St.Mode "observe"}}<p class="hint warn-t" style="margin:0">{{.T "Observe only is on: the verdicts are recorded, not applied. Everything goes direct but Forbidden, Always via tunnel and the second tunnel while switched on, until auto-switch is on."}}</p>
 {{- else if eq .St.Mode "tunnel"}}<p class="hint warn-t" style="margin:0">{{.T "Tunnel only is on: the verdicts are recorded, not applied. Everything but Always direct goes through the tunnels and never direct, until auto-switch is on."}}</p>{{end}}{{end}}

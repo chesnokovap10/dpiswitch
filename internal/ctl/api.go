@@ -19,6 +19,15 @@ import (
 // awgconf)
 const DirectListener = "127.0.0.1:7892"
 
+// noFirstTunnel: no first tunnel's config is loaded, see Config.alone
+func noFirstTunnel() bool {
+	_, err := os.Stat(paths.SourceConf())
+	return err != nil
+}
+
+// aloneNote: why probes run with no tunnel to measure against
+const aloneNote = "no first tunnel's config loaded: only the ClientHello cut is checked, direct against direct"
+
 // SplitProvider: the names that go direct with the ClientHello cut -- the
 // rule-provider and, in awgconf, its rules
 const SplitProvider = "direct-split-verified"
@@ -147,7 +156,7 @@ func Run(ctx context.Context, cfg Config) {
 	} else if haveSet {
 		// disabled by the user: the list from the previous run must not
 		// keep sending sites direct
-		disableAuto(cfg, a, set.Mode() != ModeObserve)
+		disableAuto(cfg, a, st, set.Mode() != ModeObserve)
 	}
 
 	w := newWatcher(ctx, cfg, a)
@@ -180,13 +189,18 @@ func Run(ctx context.Context, cfg Config) {
 	defer t.Stop()
 	g := &gate{interval: cfg.Interval}
 	health := func() (bool, string, error) {
-		// with no first tunnel there is no path to measure direct against
-		if _, err := os.Stat(paths.SourceConf()); err != nil {
+		// with no first tunnel there is no path to measure direct against:
+		// only the ClientHello cut is checked then, if switched on
+		if noFirstTunnel() {
+			if cfg.Split {
+				return true, aloneNote, nil
+			}
 			return false, "no first tunnel's config loaded: the detector measures against awg1 only", nil
 		}
 		return a.tunnelHealth(cfg.ProxyName)
 	}
 	if !offline && g.allow(time.Now().Round(0), health) {
+		cfg.alone = noFirstTunnel()
 		cycle(cfg, a, st, netID, w)
 	}
 	for {
@@ -226,11 +240,10 @@ func Run(ctx context.Context, cfg Config) {
 			}
 			if !g.allow(time.Now().Round(0), health) {
 				// the list still follows memory: verdicts expire all the same
-				if cfg.Apply {
-					syncList(cfg, a, st, netID, false)
-				}
+				syncList(cfg, a, st, netID, false)
 				continue
 			}
+			cfg.alone = noFirstTunnel()
 			cycle(cfg, a, st, netID, w)
 		case <-ctx.Done():
 			log.Println("controller stopped")
@@ -468,7 +481,7 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 	case was && !cfg.Apply:
 		// disabled -- the detector's lists are emptied at once, not when
 		// verdicts expire; memory is kept. Usually the watcher has done it.
-		disableAuto(cfg, a, s.Mode() != ModeObserve)
+		disableAuto(cfg, a, st, s.Mode() != ModeObserve)
 	default:
 		if cfg.Apply {
 			enableAuto(cfg)

@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -162,5 +163,104 @@ func TestSplitSuspect(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(listRules(s.cfg.SplitListPath), ","), "ig.example.org") {
 		t.Fatal("not in the cut's list")
+	}
+}
+
+// setMode: the scenario's controller in a mode, auto-switch off as the
+// watcher leaves it for observe only and tunnel only
+func (s *scenario) setMode(m string) {
+	if s.cfg.mode == nil {
+		s.cfg.mode = &atomic.Value{}
+		s.cfg.autoOff = &atomic.Bool{}
+	}
+	s.cfg.mode.Store(m)
+	s.cfg.Apply = m == ModeOn
+	s.cfg.autoOff.Store(m != ModeOn)
+}
+
+// Observe only sends everything direct, the cut's names with the cut: its
+// list is written there, and the plain direct list is not. Tunnel only
+// sends nothing direct: its list goes empty.
+func TestSplitObserveAndTunnel(t *testing.T) {
+	s, _ := splitScenario(t, map[string]probe.Verdict{"ig.example.org": probe.CleanSplit})
+	s.setMode(ModeObserve)
+	s.see(tunnelled("ig.example.org", 443), tunnelled("c.example.org", 443))
+	s.script("ig.example.org tcp/443", blockedTLS("192.0.2.10"))
+	s.script("c.example.org tcp/443", clean("192.0.2.11"))
+	s.cycle()
+	if got := listRules(s.cfg.SplitListPath); !slices.Equal(got, []string{"ig.example.org"}) {
+		t.Fatalf("observe only: cut list %v", got)
+	}
+	if got := listRules(s.cfg.ListPath); len(got) != 0 {
+		t.Fatalf("observe only: plain direct list %v", got)
+	}
+
+	s.setMode(ModeTunnel)
+	disableAuto(s.cfg, s.api, s.st, true)
+	s.cycle()
+	if got := listRules(s.cfg.SplitListPath); len(got) != 0 {
+		t.Fatalf("tunnel only: cut list %v", got)
+	}
+
+	// back to observe only: the list comes back from memory
+	s.setMode(ModeObserve)
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := listRules(s.cfg.SplitListPath); !slices.Equal(got, []string{"ig.example.org"}) {
+		t.Fatalf("observe only again: cut list %v", got)
+	}
+}
+
+// With no first tunnel the cut is checked alone: a name taken by the last
+// rule and gone direct is a candidate, its 443 probed direct against the
+// cut. A verdict made so is marked, sends nothing direct plain, and is the
+// first checked once there is a tunnel.
+func TestSplitAlone(t *testing.T) {
+	s, _ := splitScenario(t, nil)
+	s.cfg.alone = true
+	var tried []string
+	old := checkAlone
+	checkAlone = func(_, _ probe.Dialer, dom string, _ int, _ probe.Verdict) probe.Report {
+		s.mu.Lock()
+		tried = append(tried, dom)
+		s.mu.Unlock()
+		v := map[string]probe.Verdict{"ig.example.org": probe.CleanSplit, "c.example.org": probe.Clean}[dom]
+		return probe.Report{Domain: dom, Port: 443, Proto: "tcp", TestedIP: "192.0.2.10", Verdict: v,
+			Direct: pathOK, Tunnel: pathOK}
+	}
+	t.Cleanup(func() { checkAlone = old })
+	direct := func(h string, port int) connection { return via(h, port, "tcp", "DIRECT", "Match", "") }
+	s.see(direct("ig.example.org", 443), direct("c.example.org", 443), direct("c.example.org", 5228))
+	s.cycle()
+	slices.Sort(tried)
+	if !slices.Equal(tried, []string{"c.example.org", "ig.example.org"}) {
+		t.Fatalf("checked alone %v", tried)
+	}
+	if len(s.probed) != 0 {
+		t.Errorf("probed against a tunnel with none: %v", s.probed)
+	}
+	if e := s.entry("ig.example.org"); e.Verdict != probe.CleanSplit || !e.Alone {
+		t.Fatalf("ig: %s, alone %v", e.Verdict, e.Alone)
+	}
+	if got := listRules(s.cfg.SplitListPath); !slices.Equal(got, []string{"ig.example.org"}) {
+		t.Fatalf("cut list %v", got)
+	}
+	if got := listRules(s.cfg.ListPath); len(got) != 0 {
+		t.Fatalf("a CLEAN with nothing to compare went to the direct list: %v", got)
+	}
+	if e := s.entry("c.example.org"); slices.Contains(e.Endpoints, "tcp/5228") {
+		t.Errorf("a port the cut has nothing to do with was checked: %v", e.Endpoints)
+	}
+
+	// a tunnel loaded: both are checked again against it at once
+	s.cfg.alone = false
+	s.script("ig.example.org tcp/443", blockedTLS("192.0.2.10"))
+	s.script("c.example.org tcp/443", clean("192.0.2.11"))
+	s.see()
+	s.cycle()
+	if !s.wasProbed("ig.example.org tcp/443") || !s.wasProbed("c.example.org tcp/443") {
+		t.Fatalf("not checked again with a tunnel: %v", s.probed)
+	}
+	if e := s.entry("c.example.org"); e.Verdict != probe.Clean || e.Alone {
+		t.Fatalf("c: %s, alone %v", e.Verdict, e.Alone)
 	}
 }

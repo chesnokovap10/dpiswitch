@@ -144,8 +144,13 @@ rules, may not take the cut. A connection left open with no answer has the site 
 term. So it is off by default.</li>
 <li>Switched on, it checks the BLOCKED_TLS names again at once. Switched off, it takes them off the direct
 path at once and closes their connections: they open again through the tunnel.</li>
-<li>It works in On only. In Observe only everything goes direct anyway, with no cut; in Tunnel only nothing
-goes direct. The detector checks and records there too.</li>
+<li>It works in On and Observe only: in Observe only everything goes direct, and the names the cut helps go
+direct with it. In Tunnel only nothing goes direct, the cut included; the detector checks and records there
+too.</li>
+<li>With no first tunnel (awg1 not loaded) there is nothing to compare against, and the detector checks the
+cut alone: a site is tried direct as it is, and when it is cut on its ClientHello, direct with the cut.
+CLEAN_SPLIT only when the cut gets a certificate that passes the chain check and an answer; speed is not
+compared. Once awg1 is loaded, such verdicts are the first checked again against it.</li>
 <li>Such names make no family (Whole domains): the domain is blocked by name.</li>
 </ul>
 

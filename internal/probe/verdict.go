@@ -171,6 +171,75 @@ func checkSplit(split, tunnel Dialer, plain Report, attempts int, prev Verdict) 
 	return rep
 }
 
+// CheckAlone: a name checked with no tunnel to compare against -- no first
+// tunnel's config loaded, the ClientHello cut switched on. Its 443 is tried
+// direct as it is; cut on its ClientHello, it is tried through the cut
+// path, on the same node, as many passes as a plain check. The tunnel's
+// part is taken by the cut: plain failing on the hello where the cut gets a
+// valid certificate and an answer is a block by name, and no server's way.
+// Nothing can be said of speed. CLEAN means the plain path works; anything
+// it cannot tell is INCONCLUSIVE -- with no tunnel, every name goes direct
+// whatever it gets.
+func CheckAlone(direct, split Dialer, dom string, attempts int, prev Verdict) Report {
+	rep := checkAlone(direct, split, dom, attempts)
+	if rep.Verdict != Clean && rep.Verdict != CleanSplit && (!direct.Alive() || !split.Alive()) {
+		rep.Verdict, rep.Aborted = Inconcl, true
+		rep.Reason = "core unavailable (restarting?), check discarded"
+	}
+	return rep
+}
+
+// lookupAnyFn: LookupAny; a var for the tests
+var lookupAnyFn = LookupAny
+
+func checkAlone(direct, split Dialer, dom string, attempts int) Report {
+	rep := Report{Domain: dom, Port: 443, Proto: "tcp", Time: time.Now().Format(time.RFC3339), Attempts: attempts,
+		Note: "no tunnel to compare against"}
+	var ips []string
+	var err error
+	if len(direct.DNS) > 0 {
+		ips, err = lookupAnyFn(direct, direct.DNS, dom)
+	} else {
+		ips, err = ResolveVia(direct, dom)
+	}
+	if err != nil || len(ips) == 0 {
+		rep.Verdict, rep.Reason = Inconcl, "direct DNS did not answer: "+errText(err)
+		rep.Unmeasured = true
+		return rep
+	}
+	rep.DNSDirect = JoinIPs(ips)
+	ip := ips[0]
+	rep.TestedIP = ip
+	// works: the certificate is the name's and an answer came
+	works := func(r PathResult) bool { return r.TLSOk && r.CertValid && r.HTTPStatus != 0 && !r.HTTPFailed() }
+	d := Run(direct, ip, dom)
+	rep.Direct = d
+	switch {
+	case works(d):
+		rep.Verdict = Clean
+		return rep
+	case !d.TCPOk || !d.TLSTried || d.TLSOk:
+		// not the hello: the address, the certificate or the session -- with
+		// no tunnel there is no telling the network's doing from the host's
+		rep.Verdict, rep.Reason = Inconcl, "direct path fails, no tunnel to compare: "+ClassifyErr(d)
+		return rep
+	}
+	for i := 0; i < attempts; i++ {
+		s := Run(split, ip, dom)
+		rep.Tunnel = s // the cut path stands where the tunnel would
+		if !works(s) {
+			rep.Verdict = BlockedTLS
+			rep.Reason = ClassifyErr(d) + "; with the ClientHello cut: " + ClassifyErr(s)
+			if s.TLSOk && !s.CertValid {
+				rep.Reason = ClassifyErr(d) + "; with the ClientHello cut the certificate fails (CN=" + s.CertCN + ")"
+			}
+			return rep
+		}
+	}
+	rep.Verdict, rep.Note = CleanSplit, "ClientHello cut; no tunnel to compare against"
+	return rep
+}
+
 func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool, prev Verdict) Report {
 	proto := "tcp"
 	if udp {

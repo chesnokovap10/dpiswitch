@@ -40,11 +40,12 @@ func (cfg Config) setMode(m string) {
 	}
 }
 
-// disableAuto empties both lists and closes the connections they sent
-// direct -- unless observe only is what it was turned off for: everything
-// goes direct then, and those connections with it. Once: a second call
-// finds it done.
-func disableAuto(cfg Config, a *api, closeDirect bool) {
+// disableAuto empties the detector's direct lists and closes the
+// connections they sent direct -- unless observe only is what it was turned
+// off for: everything goes direct then, and those connections with it. The
+// ClientHello cut's list is the mode's, see splitNames: observe only keeps
+// it. Once: a second call finds it done.
+func disableAuto(cfg Config, a *api, st *state, closeDirect bool) {
 	listMu.Lock()
 	if cfg.autoOff != nil && !cfg.autoOff.CompareAndSwap(false, true) {
 		listMu.Unlock()
@@ -56,7 +57,7 @@ func disableAuto(cfg Config, a *api, closeDirect bool) {
 		err = replaceList(a, cfg.AddrListPath, cfg.AddrProvider, b)
 	}
 	if err == nil && cfg.SplitListPath != "" {
-		err = replaceList(a, cfg.SplitListPath, cfg.SplitProvider, b)
+		err = writeSplit(cfg, a, st.current(), splitNames(cfg, st, st.current()), true)
 	}
 	if err != nil && cfg.autoOff != nil {
 		// the next look tries again
@@ -224,7 +225,7 @@ func watchSettings(ctx context.Context, cfg Config, a *api, st *state, last Sett
 		case now == ModeOn:
 			enableAuto(cfg)
 		default:
-			disableAuto(cfg, a, now != ModeObserve)
+			disableAuto(ns.apply(cfg), a, st, now != ModeObserve)
 		}
 		select {
 		case wake <- struct{}{}:
@@ -247,7 +248,12 @@ func switchMode(cfg Config, a *api, st *state, from, to string, awg2Flipped bool
 	if to == ModeOn {
 		turnOn(cfg, a, st)
 	} else {
-		disableAuto(cfg, a, false)
+		disableAuto(cfg, a, st, false)
+		// off already, observe only and tunnel only one after the other:
+		// the cut's list follows the mode all the same
+		if id := st.current(); id != "" && id != noNetwork {
+			syncList(cfg, a, st, id, false)
+		}
 	}
 	var awg2 func(connection) bool
 	if awg2Flipped {

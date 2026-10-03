@@ -76,7 +76,7 @@ func (s *state) families(id string) []family {
 		switch {
 		case badForFamily(e):
 			bad[f] = true
-		case e.Verdict == probe.Clean && now.Before(e.ExpiresAt):
+		case e.Verdict == probe.Clean && !e.Alone && now.Before(e.ExpiresAt):
 			// an expired CLEAN is out of the list itself; counting it kept
 			// the family -- and so the host -- direct past its term
 			clean[f]++

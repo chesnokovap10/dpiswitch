@@ -48,7 +48,11 @@ func (g *gate) allow(now time.Time, health func() (bool, string, error)) bool {
 		return false
 	}
 	if g.paused {
-		log.Printf("probes resumed: the tunnel answers (%s)", note)
+		if strings.HasPrefix(note, "no first tunnel") {
+			log.Printf("probes resumed: %s", note)
+		} else {
+			log.Printf("probes resumed: the tunnel answers (%s)", note)
+		}
 		g.paused = false
 	}
 	return true

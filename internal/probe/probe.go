@@ -340,6 +340,10 @@ func isTimeout(err error) bool {
 	return errors.As(err, &ne) && ne.Timeout()
 }
 
+// chainRoots: the roots a chain is verified against; nil, the system's. A
+// var for the tests, whose servers have certificates of their own.
+var chainRoots *x509.CertPool
+
 // chain verification against system roots, separate from the handshake
 func verifyChain(host string, certs []*x509.Certificate) bool {
 	if len(certs) == 0 {
@@ -352,6 +356,7 @@ func verifyChain(host string, certs []*x509.Certificate) bool {
 	_, err := certs[0].Verify(x509.VerifyOptions{
 		DNSName:       host,
 		Intermediates: inter,
+		Roots:         chainRoots,
 	})
 	return err == nil
 }
