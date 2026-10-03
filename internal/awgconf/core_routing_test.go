@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -212,8 +213,16 @@ func coreSafe(t *testing.T, out, listeners string, api, dns int) string {
 		t.Fatal("no listeners or tun section in the config")
 	}
 	out = out[:i+1] + listeners + out[j:]
+	ctrl := fmt.Sprintf("external-controller: 127.0.0.1:%d\n", api)
+	if name := physicalIface(); name != "" {
+		// out past the service's TUN: the core's own DIRECT checks went in
+		// through it by bare address, matched its address rules and left
+		// verdicts of theirs. Global addresses only: the core binds no
+		// loopback, so the local peers and sinks are reached as before.
+		ctrl += "interface-name: '" + strings.ReplaceAll(name, "'", "''") + "'\n"
+	}
 	for old, repl := range map[string]string{
-		"external-controller: 127.0.0.1:9090\n": fmt.Sprintf("external-controller: 127.0.0.1:%d\n", api),
+		"external-controller: 127.0.0.1:9090\n": ctrl,
 		"\ntun:\n  enable: true\n":              "\ntun:\n  enable: false\n",
 		"  listen: 127.0.0.1:1053\n":            fmt.Sprintf("  listen: 127.0.0.1:%d\n", dns),
 	} {
@@ -224,6 +233,29 @@ func coreSafe(t *testing.T, out, listeners string, api, dns int) string {
 	}
 	return out
 }
+
+// physicalIface: the interface the machine's IPv4 default route takes past
+// the service's TUN, whose gateway is in 198.18.0.0/16; "" when none is
+// found. The index is read off PowerShell, the name off Go: a name in
+// Russian letters came out of PowerShell's console spoilt.
+var physicalIface = sync.OnceValue(func() string {
+	out, err := exec.Command("powershell", "-NoProfile", "-Command",
+		"Get-NetRoute -AddressFamily IPv4 -DestinationPrefix 0.0.0.0/0 | "+
+			"Where-Object { $_.NextHop -notlike '198.18.*' -and $_.NextHop -ne '0.0.0.0' } | "+
+			"Sort-Object { $_.RouteMetric + $_.InterfaceMetric } | Select-Object -First 1 -ExpandProperty ifIndex").Output()
+	if err != nil {
+		return ""
+	}
+	idx, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return ""
+	}
+	ifc, err := net.InterfaceByIndex(idx)
+	if err != nil {
+		return ""
+	}
+	return ifc.Name
+})
 
 func freePort(t *testing.T) int {
 	t.Helper()
