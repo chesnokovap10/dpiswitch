@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"dpiswitch/internal/ctl"
+	"dpiswitch/internal/dnscache"
 	"dpiswitch/internal/paths"
 	"dpiswitch/internal/probe"
 )
@@ -286,6 +287,15 @@ func render(c *Conf) (string, error) {
 	}
 	directDNS := set.DirectDNS
 	bootstrap := bootstrapDNS(directDNS)
+	// the direct path's names, as the core resolves them to dial: the
+	// program's own cache when it is on and answering (see dnscache) -- it
+	// asks directDNS itself
+	directNS := directDNS
+	if set.DNSCache {
+		if a := cacheAddr(); a != "" {
+			directNS = []string{"udp://" + a}
+		}
+	}
 	var b strings.Builder
 	w := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
 
@@ -467,7 +477,7 @@ func render(c *Conf) (string, error) {
 	w("      - 'dhcp://system'")
 	w("      - 'system'")
 	w("  direct-nameserver:")
-	for _, d := range directDNS {
+	for _, d := range directNS {
 		w("    - %s", yq(d))
 	}
 	w("  proxy-server-nameserver:")
@@ -912,6 +922,10 @@ func (c *Conf) writeProxy(w func(string, ...any), name string, tunDNS []string, 
 		}
 	}
 }
+
+// cacheAddr: where the program's DNS cache answers, "" when it does not; a
+// var for tests
+var cacheAddr = dnscache.Serving
 
 // Regenerate rebuilds config.yaml from the saved source.
 //

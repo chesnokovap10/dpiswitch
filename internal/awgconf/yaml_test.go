@@ -79,6 +79,65 @@ func TestRenderQuotesResolvers(t *testing.T) {
 	}
 }
 
+// The core asks the program's DNS cache for the direct path when the
+// settings have it and it answers -- the direct list otherwise, and for
+// everything else always.
+func TestRenderDNSCache(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Parse("[Interface]\nPrivateKey = k\nAddress = 10.8.1.3/32\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.7:51820\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := cacheAddr
+	defer func() { cacheAddr = old }()
+	// the list under a key of the dns section
+	list := func(out, key string) string {
+		i := strings.Index(out, "\n  "+key+":\n")
+		if i < 0 {
+			t.Fatalf("no %s in\n%s", key, out)
+		}
+		var items []string
+		for _, l := range strings.Split(out[i+len(key)+5:], "\n") {
+			if !strings.HasPrefix(l, "    - ") {
+				break
+			}
+			items = append(items, strings.TrimPrefix(l, "    - "))
+		}
+		return strings.Join(items, " ")
+	}
+	const direct = "'tls://8.8.8.8' 'tls://8.8.4.4'"
+	for _, tc := range []struct {
+		on      bool
+		serving string
+		want    string
+	}{
+		{false, "127.0.0.1:1054", direct},
+		{true, "", direct},
+		{true, "127.0.0.1:1054", "'udp://127.0.0.1:1054'"},
+	} {
+		if _, err := ctl.UpdateSettings(paths.Settings(), func(s *ctl.Settings) error {
+			s.DNSCache = tc.on
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		cacheAddr = func() string { return tc.serving }
+		out, err := c.Render()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := list(out, "direct-nameserver"); got != tc.want {
+			t.Errorf("on=%v serving=%q: direct-nameserver %s, want %s", tc.on, tc.serving, got, tc.want)
+		}
+		if got := list(out, "nameserver"); got != direct {
+			t.Errorf("on=%v serving=%q: nameserver %s", tc.on, tc.serving, got)
+		}
+	}
+}
+
 // A second address of the same family is refused, not dropped in silence.
 func TestAddrs(t *testing.T) {
 	for addr, ok := range map[string]bool{

@@ -238,6 +238,18 @@ func TestSettingInstant(t *testing.T) {
 	if w := do(t, h, "POST", "/act/set", url.Values{"field": {"nope"}, "value": {"1"}}, nil); w.Code != 400 {
 		t.Fatalf("an unknown setting: %d", w.Code)
 	}
+	// how the tray opens the UI: a window by default, a tab when chosen;
+	// nothing else is taken
+	if got := ctl.LoadSettings(paths.Settings()).UIOpen; got != ctl.UIWindow {
+		t.Fatalf("the UI opens in %q by default", got)
+	}
+	post("ui_open", "tab")
+	if got := ctl.LoadSettings(paths.Settings()).UIOpen; got != ctl.UITab {
+		t.Fatalf("the UI opens in %q after a tab was chosen", got)
+	}
+	if body := post("ui_open", "popup"); !strings.Contains(body, `msg bad`) || ctl.LoadSettings(paths.Settings()).UIOpen != ctl.UITab {
+		t.Fatalf("an unknown way to open the UI was not refused:\n%s", body)
+	}
 }
 
 // A term offers only what the settings take: the blocked re-check once
@@ -343,6 +355,21 @@ func TestDNSSave(t *testing.T) {
 	}
 	if b := ipv6("0"); strings.Contains(b, restart) {
 		t.Fatalf("IPv6 left as it was announced a restart:\n%s", b)
+	}
+	// and so does the DNS cache, which the core asks instead of the list
+	cache := func(v string) string {
+		return do(t, h, "POST", "/act/set", url.Values{"field": {"dns_cache"}, "value": {v}}, nil).Body.String()
+	}
+	if b := cache("1"); !strings.Contains(b, restart) || !ctl.LoadSettings(paths.Settings()).DNSCache {
+		t.Fatalf("the DNS cache switched on did not announce the restart:\n%s", b)
+	}
+	if b := cache("1"); strings.Contains(b, restart) {
+		t.Fatalf("the DNS cache left as it was announced a restart:\n%s", b)
+	}
+	// with no server given by address it has none to ask: the page says so
+	if b := save("https://dns.google/dns-query"); !strings.Contains(do(t, h, "GET", "/settings", nil, nil).Body.String(),
+		"No server for direct sites is given by address") {
+		t.Fatalf("no warning of the cache with no server to ask:\n%s", b)
 	}
 	// defaults put the DNS back: that restarts the core too
 	if w := do(t, h, "POST", "/act/defaults", url.Values{}, nil); w.Code != http.StatusSeeOther {
@@ -1030,7 +1057,7 @@ func TestNoFirstTunnel(t *testing.T) {
 	st.Installed, st.ServiceRun, st.HasConfig, st.Awg2, st.Awg2On, st.Awg2Alive = true, true, false, true, true, true
 	s.statusFn = func() status { return st }
 	head := do(t, h, "GET", "/frag/awg2/header", nil, nil).Body.String()
-	if !strings.Contains(head, "awg no config loaded") || strings.Contains(head, "not responding") {
+	if !strings.Contains(head, "awg1 no config loaded") || strings.Contains(head, "not responding") {
 		t.Errorf("header: %s", head)
 	}
 	if b := do(t, h, "GET", "/frag/awg2/awg2state", nil, nil).Body.String(); !strings.Contains(b, "The first tunnel (awg1) is not loaded") {

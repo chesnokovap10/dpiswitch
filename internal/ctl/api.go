@@ -14,10 +14,19 @@ import (
 	"dpiswitch/internal/paths"
 )
 
+// DirectListener: the core's listener that goes direct, past the rules --
+// the detector's direct path, and the DNS cache's to its servers (see
+// awgconf)
+const DirectListener = "127.0.0.1:7892"
+
+// SavedNetwork: the network the controller last worked in, as its state
+// file keeps it; "" for none
+func SavedNetwork(statePath string) string { return loadState(statePath).Current }
+
 // Defaults: default settings derived from the data directory.
 func Defaults() Config {
 	return Config{
-		DirectAddr:    "127.0.0.1:7892",
+		DirectAddr:    DirectListener,
 		TunnelAddr:    "127.0.0.1:7891", // listener bound directly to awg
 		Tunnel2Addr:   "127.0.0.1:7893", // bound to awg2: the DNS test of the settings
 		APIAddr:       "127.0.0.1:9090",
@@ -88,6 +97,7 @@ func Run(ctx context.Context, cfg Config) {
 	if !offline {
 		st.setCurrent(netID)
 		_ = st.save()
+		cfg.network(netID)
 	}
 
 	// the user's settings file overrides the service values; if it is missing,
@@ -199,6 +209,7 @@ func Run(ctx context.Context, cfg Config) {
 				netID = id
 				st.setCurrent(id)
 				_ = st.save()
+				cfg.network(id)
 				if cfg.Apply {
 					applyList(cfg, a, st, netID)
 				}

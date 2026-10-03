@@ -111,7 +111,7 @@ type dlg struct{ Name, Title, Hint, Cancel, Load, Busy string }
 func (v *view) Dlg(name string) dlg {
 	d := dlg{Name: name, Cancel: v.T("Cancel"), Load: v.T("Load and apply"), Busy: v.T("Applying…"),
 		Hint: v.T("Paste the .conf, drop the file on the field or pick it below. Keys stay on this machine. A running service restarts: the tunnel drops for a couple of seconds.")}
-	d.Title = v.T("Main tunnel config (awg)")
+	d.Title = v.T("Main tunnel config (awg1)")
 	if name == "config2" {
 		d.Title = v.T("Second tunnel config (awg2)")
 	}

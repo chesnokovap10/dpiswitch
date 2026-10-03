@@ -154,6 +154,12 @@ traffic will go to. DoH or DoT by address is the safe choice: many ISPs block or
 <li><b>Tunnelled sites</b> are resolved inside the tunnel they go through, by that tunnel's own DNS: <a href="/settings#tunnel_dns">awg1's</a> and <a href="/settings#tunnel_dns2">awg2's</a> are set apart, each from its <code>.conf</code> unless set. A <code>.conf</code> with no <code>DNS =</code> and nothing set: the names are resolved by the resolvers for direct sites, outside the tunnel.</li>
 <li>Programs get stand-in addresses from the core (<code>198.18.0.0/16</code>, <code>2001:2::/48</code>) and
 the core resolves the real one on the chosen route. That is why a name, not an address, decides the route.</li>
+<li><b><a href="/settings#dns_cache">Local DNS cache</a></b> (off by default): the core asks the service for
+direct sites' names, not the servers. A name it knows is answered at once from memory, with no server asked;
+an answer is kept for 7 days from when it was last fetched and outlives restarts of the core and of Windows,
+and one past its TTL is given at once and fetched again behind it. A new name is asked of the fastest
+resolver for direct sites, the others joining in when it is slow. Answers are kept per network, and the
+detector asks the same cache. Resolvers given by name, not by address, are not asked by the cache.</li>
 </ul>
 
 <h4>IPv6</h4>

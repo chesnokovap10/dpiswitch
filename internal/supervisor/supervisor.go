@@ -19,7 +19,9 @@ import (
 	"dpiswitch/internal/awgconf"
 	"dpiswitch/internal/core"
 	"dpiswitch/internal/ctl"
+	"dpiswitch/internal/dnscache"
 	"dpiswitch/internal/paths"
+	"dpiswitch/internal/probe"
 	"dpiswitch/internal/winexec"
 )
 
@@ -42,6 +44,9 @@ type Supervisor struct {
 	// process down at once -- TUN disabled twice, kill racing kill, and at
 	// worst a fresh core killed by a request meant for the one before it.
 	stopMu sync.Mutex
+	// dns: the program's DNS cache, answering the core for the direct path
+	// when the settings have it (see dnsCache)
+	dns *dnscache.Server
 }
 
 // apiAddr: the core's external controller, as awgconf writes it
@@ -71,6 +76,10 @@ func (s *Supervisor) Run(ctx context.Context, apply bool) {
 	// with none left running from it, the core an older version extracted
 	// into the data directory goes
 	core.RemoveLegacy()
+
+	s.dns = dnscache.New(paths.DNSCache(), paths.DNSCacheStats())
+	s.dns.SetNetwork(ctl.SavedNetwork(paths.State()))
+	defer s.dns.Close()
 
 	if job, err := newKillJob(); err == nil {
 		s.job = job
@@ -108,6 +117,7 @@ func (s *Supervisor) Run(ctx context.Context, apply bool) {
 		cfg := ctl.Defaults()
 		cfg.Apply = apply
 		cfg.OnCoreChange = func() { go s.restartCore() }
+		cfg.OnNetwork = s.dns.SetNetwork
 		ctl.Run(ctx, cfg)
 	}()
 
@@ -196,12 +206,19 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 	if err := start.Save(paths.TunnelIPv6()); err != nil {
 		log.Printf("IPv6 state not reset: %v", err)
 	}
+	// the DNS cache as the settings have it, before the config is built:
+	// the core asks the cache only while it answers
+	set := s.dnsCache()
 	if changed, err := awgconf.Regenerate(); err != nil {
 		log.Printf("config not rebuilt, using the old one: %v", err)
 	} else if changed {
 		log.Println("config rebuilt")
 	}
 	s.v6mu.Unlock()
+	if set.DNSCache {
+		// the listener's password: the secret of the config just built
+		s.dns.Configure(set.DirectDNS, cacheDialer())
+	}
 	// the user's lists as they are now, before the core reads them
 	awgconf.EnsureLists()
 	ctl.SyncUserFiles()
@@ -485,7 +502,7 @@ func (s *Supervisor) keepHealthy(ctx context.Context) {
 			fails = 0
 		} else {
 			fails++
-			log.Printf("tunnel %s not responding (%s), in a row: %d", name, detail, fails)
+			log.Printf("tunnel %s not responding (%s), in a row: %d", ctl.TunnelLabel(name), detail, fails)
 			if fails >= failsMax {
 				// another client with the same key is stealing the session on the server.
 				// restarting the core is pointless: it would just seesaw
@@ -585,3 +602,35 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 		return true
 	}
 }
+
+// dnsCache starts the DNS cache or stops it, as the settings have it, and
+// gives it the servers of the direct list to ask. Started, it lives on
+// across the core's restarts: what it keeps is what a restart lost.
+func (s *Supervisor) dnsCache() ctl.Settings {
+	set := ctl.LoadSettings(paths.Settings())
+	if s.dns == nil {
+		set.DNSCache = false // a supervisor of the tests'
+		return set
+	}
+	if !set.DNSCache {
+		s.dns.Close()
+		return set
+	}
+	s.dns.Configure(set.DirectDNS, cacheDialer())
+	if len(dnscache.Usable(set.DirectDNS)) == 0 {
+		log.Println("DNS cache: no direct DNS server is given by address -- the core asks the list itself")
+	}
+	if err := s.dns.Serve(); err != nil {
+		log.Printf("%v -- the core asks the direct DNS servers itself", err)
+	}
+	return set
+}
+
+// cacheDialer: the DNS cache's path to its servers -- the core's direct
+// listener, as the detector's
+func cacheDialer() probe.Dialer {
+	return probe.Dialer{Addr: ctl.DirectListener, Timeout: cacheTimeout, Pass: ctl.SecretFromConfig(paths.Config())}
+}
+
+// cacheTimeout: how long the cache waits for one server
+const cacheTimeout = 4 * time.Second

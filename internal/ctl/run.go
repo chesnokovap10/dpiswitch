@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"dpiswitch/internal/dnscache"
 	"dpiswitch/internal/logfile"
 	"dpiswitch/internal/paths"
 	"dpiswitch/internal/probe"
@@ -51,6 +52,13 @@ type Config struct {
 	SettingsPath string
 	Families     bool             // extend verdicts to the whole domain, see family.go
 	DirectDNS    []probe.Resolver // empty -- the prober's built-in DoH
+	// DNSCache: the settings have the program's DNS cache answer the core
+	// for the direct path; the detector asks it too while it does (see
+	// directResolvers)
+	DNSCache bool
+	// OnNetwork: the network the controller works in, at its start and at
+	// every change -- the DNS cache keeps its answers by it
+	OnNetwork func(id string)
 	// asks for a core restart: changing resolvers or IPv6 changes its config
 	OnCoreChange func()
 	Timeout      time.Duration
@@ -174,7 +182,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 
 	// the listeners' password is the API's secret (see awgconf)
 	pass := *a.secret.Load()
-	direct := probe.Dialer{Addr: cfg.DirectAddr, Timeout: cfg.Timeout, DNS: cfg.DirectDNS,
+	direct := probe.Dialer{Addr: cfg.DirectAddr, Timeout: cfg.Timeout, DNS: directResolvers(cfg),
 		Established: a.established, NoV6: st.directNoV6(netID), Pass: pass}
 	tunnel := probe.Dialer{Addr: cfg.TunnelAddr, Timeout: cfg.Timeout, Established: a.established, Pass: pass}
 
@@ -1175,4 +1183,22 @@ func plainTCP(eps []endpoint) []endpoint {
 		}
 	}
 	return out
+}
+
+// directResolvers: the detector's resolvers for the direct path -- the
+// program's DNS cache while it answers the core (see dnscache), else the
+// direct list the core asks itself. The node probed must be the one the
+// traffic goes to, and the cache keeps a node for days past what a server
+// names now.
+func directResolvers(cfg Config) []probe.Resolver {
+	if cfg.DNSCache && dnscache.Serving() != "" {
+		return []probe.Resolver{probe.LocalResolver()}
+	}
+	return cfg.DirectDNS
+}
+
+func (cfg Config) network(id string) {
+	if cfg.OnNetwork != nil {
+		cfg.OnNetwork(id)
+	}
 }

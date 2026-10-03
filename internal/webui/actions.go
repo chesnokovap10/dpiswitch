@@ -632,7 +632,7 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 		return n, nil
 	}
 	switch field {
-	case "auto_switch", "families", "ipv6", "clean_ttl_min", "fail_ttl_min", "max_backoff_min", "slow_pct", "attempts":
+	case "auto_switch", "families", "ipv6", "dns_cache", "ui_open", "clean_ttl_min", "fail_ttl_min", "max_backoff_min", "slow_pct", "attempts":
 	default:
 		http.Error(w, "unknown setting", http.StatusBadRequest)
 		return
@@ -651,6 +651,14 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 			case "ipv6":
 				set.IPv6 = val == "1"
 				restart = !set.SameCore(was)
+			case "dns_cache":
+				set.DNSCache = val == "1"
+				restart = !set.SameCore(was)
+			case "ui_open":
+				if val != ctl.UIWindow && val != ctl.UITab {
+					return errors.New("unknown way to open the UI")
+				}
+				set.UIOpen = val
 			case "clean_ttl_min":
 				set.CleanTTLMin, err = num()
 			case "fail_ttl_min":
@@ -671,7 +679,7 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 			return err
 		})
 	}
-	if field == "ipv6" {
+	if field == "ipv6" || field == "dns_cache" {
 		note = s.coreNote(restart)
 	}
 	ok, msg := done(r, err, note)

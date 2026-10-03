@@ -138,8 +138,13 @@ func UserPresets() string { return User("presets.json") }
 func Presets() string     { return Data("presets.txt") }
 func ForceTunnel() string { return Data(TunnelList) }
 func TunnelIPv6() string  { return Data("tunnel-ipv6.json") }
-func ServiceLog() string  { return filepath.Join(LogDir(), "service.log") }
-func MihomoLog() string   { return filepath.Join(LogDir(), "mihomo.log") }
+
+// DNSCache: the answers the program's DNS cache keeps (see dnscache), and
+// what the UI shows of it
+func DNSCache() string      { return Data("dns-cache.json") }
+func DNSCacheStats() string { return Data("dns-cache-stats.json") }
+func ServiceLog() string    { return filepath.Join(LogDir(), "service.log") }
+func MihomoLog() string     { return filepath.Join(LogDir(), "mihomo.log") }
 
 // TunnelIPv6Held: when each tunnel was found without IPv6, see
 // supervisor.tunnelV6Hold

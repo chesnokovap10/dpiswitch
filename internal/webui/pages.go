@@ -13,6 +13,7 @@ import (
 
 	"dpiswitch/internal/awgconf"
 	"dpiswitch/internal/ctl"
+	"dpiswitch/internal/dnscache"
 	"dpiswitch/internal/netprocs"
 	"dpiswitch/internal/paths"
 	"dpiswitch/internal/presets"
@@ -321,6 +322,10 @@ type settings struct {
 	// in that setting's row
 	Field string
 	Res   *flash
+	// the DNS cache switched on: whether it has a server to ask, and what it
+	// last said of itself
+	CacheUsable bool
+	Cache       *dnscache.Stats
 }
 
 // MsgFor: the result to show in a setting's row, if it was the one changed
@@ -342,6 +347,12 @@ func settingsData() settings {
 	}
 	if c2, _ := awgconf.Second(first); c2 != nil {
 		d.ConfDNS2, d.Second = strings.Join(c2.DNS(), ", "), true
+	}
+	if d.S.DNSCache {
+		d.CacheUsable = len(dnscache.Usable(d.S.DirectDNS)) > 0
+		if st, ok := dnscache.LoadStats(paths.DNSCacheStats()); ok {
+			d.Cache = &st
+		}
 	}
 	return d
 }

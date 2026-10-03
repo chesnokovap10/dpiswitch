@@ -53,7 +53,19 @@ type Settings struct {
 	// resolvers inside the second tunnel; empty -- DNS from its .conf. Its
 	// own: the first server's resolver may answer inside the first tunnel only
 	TunnelDNS2 []string `json:"tunnel_dns2"`
+	// DNSCache: the service's own DNS cache answers the core for the direct
+	// path, from what it kept for up to a week, and asks the fastest of
+	// DirectDNS what it has not (see dnscache)
+	DNSCache bool `json:"dns_cache"`
+	// UIOpen: how the tray opens the UI -- UIWindow, an app window of the
+	// default browser opened full screen, or UITab, a tab of the browser
+	UIOpen string `json:"ui_open"`
 }
+
+const (
+	UIWindow = "window"
+	UITab    = "tab"
+)
 
 // Google's DoT, on both its addresses: reachable directly (39-51 ms on
 // 02.10, as Yandex's 30-49), and an answer for a blocked domain is not
@@ -67,7 +79,7 @@ var defaultDirectDNS = []string{"tls://8.8.8.8", "tls://8.8.4.4"}
 func (s Settings) SameCore(o Settings) bool {
 	return reflect.DeepEqual(s.DirectDNS, o.DirectDNS) &&
 		reflect.DeepEqual(s.TunnelDNS, o.TunnelDNS) && reflect.DeepEqual(s.TunnelDNS2, o.TunnelDNS2) &&
-		s.IPv6 == o.IPv6
+		s.IPv6 == o.IPv6 && s.DNSCache == o.DNSCache
 }
 
 func (s Settings) Equal(o Settings) bool { return reflect.DeepEqual(s, o) }
@@ -145,6 +157,7 @@ func DefaultSettings() Settings {
 		DirectDNS:     append([]string(nil), defaultDirectDNS...),
 		TunnelDNS:     []string{},
 		TunnelDNS2:    []string{},
+		UIOpen:        UIWindow,
 	}
 }
 
@@ -345,6 +358,9 @@ func (s *Settings) clamp() {
 	if len(s.DirectDNS) == 0 {
 		s.DirectDNS = d.DirectDNS
 	}
+	if s.UIOpen != UITab {
+		s.UIOpen = UIWindow
+	}
 }
 
 // cleanDNS drops empty and unparseable entries: the core will not start
@@ -372,6 +388,7 @@ func (s Settings) apply(cfg Config) Config {
 	cfg.MaxBackoff = time.Duration(s.MaxBackoffMin) * time.Minute
 	cfg.Attempts = s.Attempts
 	cfg.Families = s.Families
+	cfg.DNSCache = s.DNSCache
 	cfg.DirectDNS = nil
 	for _, d := range s.DirectDNS {
 		if r, err := probe.ParseResolver(d); err == nil {
@@ -380,4 +397,15 @@ func (s Settings) apply(cfg Config) Config {
 	}
 	probe.SetSlowFactor(1 + float64(s.SlowPct)/100)
 	return cfg
+}
+
+// TunnelLabel: a tunnel as the pages and the logs name it. The core calls
+// the first one "awg" -- its proxy, rules and state files do -- and the
+// pages called it "awg" in places and "awg1" in others; it is awg1 to the
+// user everywhere now.
+func TunnelLabel(name string) string {
+	if name == "awg" {
+		return "awg1"
+	}
+	return name
 }

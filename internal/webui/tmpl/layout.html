@@ -41,9 +41,9 @@
   {{else if $s.ServiceRun}}
     <span class="chip"><span class="dot ok"></span>{{.T "Service running"}}</span>
     {{if not $s.HasConfig}}
-    <span class="chip" title="{{.T "Without it what the lists do not name goes direct"}}"><span class="dot warn"></span>awg {{.T "no config loaded"}}</span>
+    <span class="chip" title="{{.T "Without it what the lists do not name goes direct"}}"><span class="dot warn"></span>awg1 {{.T "no config loaded"}}</span>
     {{else}}
-    <span class="chip" data-tunnel="awg" title="{{$s.Endpoint}}"><span class="dot {{if $s.TunnelAlive}}ok{{else}}bad{{end}}"></span>awg {{if $s.TunnelAlive}}{{.Note $s.TunnelNote}}{{else}}{{.T "not responding"}}{{end}}</span>
+    <span class="chip" data-tunnel="awg" title="{{$s.Endpoint}}"><span class="dot {{if $s.TunnelAlive}}ok{{else}}bad{{end}}"></span>awg1 {{if $s.TunnelAlive}}{{.Note $s.TunnelNote}}{{else}}{{.T "not responding"}}{{end}}</span>
     {{end}}
     {{if $s.Awg2}}{{if $s.Awg2On}}<span class="chip" data-tunnel="awg2" title="{{$s.Endpoint2}}"><span class="dot {{if $s.Awg2Alive}}ok{{else}}bad{{end}}"></span>awg2 {{if $s.Awg2Alive}}{{.Note $s.Awg2Note}}{{else}}{{.T "not responding"}}{{end}}</span>
     {{- else}}<span class="chip" title="{{$s.Endpoint2}}"><span class="dot"></span>awg2 {{.T "switched off"}}</span>{{end}}{{end}}

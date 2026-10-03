@@ -35,7 +35,7 @@
   {{- template "vnote" .}}
   <div class="cols2">
     <div class="box">
-      <h3>{{.T "Main tunnel"}} · awg</h3>
+      <h3>{{.T "Main tunnel"}} · awg1</h3>
       {{if $s.HasConfig}}
       <div class="kv">
         <span>{{.T "State"}}</span><div>{{template "tunstate" (tun . "awg" $s.TunnelAlive $s.TunnelNote)}}</div>

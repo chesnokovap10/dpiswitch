@@ -114,7 +114,7 @@
 Внизу боковой панели — установка и удаление службы, автозапуск трея и выбор языка (English / Русский).
 Трей говорит на том же языке, что и интерфейс.
 
-**Меню трея:** «Настройки…» (открыть интерфейс: уже открытое окно поднимается, новое открывается отдельным окном Chrome/Edge без вкладок), «Установить службу…» / «Остановить туннель» /
+**Меню трея:** «Настройки…» (открыть интерфейс: уже открытое окно поднимается, новое открывается отдельным окном Chrome/Edge без вкладок на весь экран или вкладкой браузера — как выбрано в настройках; щелчки, пока окно открывается, нового не открывают), «Установить службу…» / «Остановить туннель» /
 «Запустить туннель», «Всё через туннель (сбросить вердикты)» — текущей сети, «Запускать с Windows», «Папка данных»,
 «Выход». Цвет значка показывает состояние: выключен, туннель работает, ошибка. Подсказка значка —
 сколько сайтов идёт напрямую и сколько заблокировано.
@@ -133,6 +133,8 @@
 | IPv6 | Через туннель | Даёт IPv6 даже там, где у провайдера его нет |
 | DNS для прямых сайтов | `tls://8.8.8.8`, `tls://8.8.4.4` | DoT Google, мимо туннеля |
 | DNS внутри туннеля | из `.conf` | Для сайтов, идущих через туннель |
+| Локальный DNS-кэш | Выкл | Имена прямых сайтов отвечаются из памяти компьютера, 7 дней, и после перезапусков; новое имя спрашивается у самого быстрого DNS для прямых сайтов |
+| Открывать интерфейс | В отдельном окне | Окно браузера без вкладок на весь экран или вкладка браузера |
 
 ### Куда идёт соединение
 
@@ -259,6 +261,15 @@ CDN, спидтестам, обновлениям.
   ядро узнаёт уже на выбранном маршруте. Поэтому маршрут решает имя, а не адрес. Диапазон IPv6
   намеренно не ULA: Chrome считает `fc00::/7` локальной сетью и блокирует запросы к ней (Local Network
   Access).
+- **Локальный DNS-кэш** (в настройках, по умолчанию выключен): ядро спрашивает имена прямых сайтов не
+  у серверов, а у службы (`127.0.0.1:1054`). Имя, которое она уже знает, отвечается сразу из памяти —
+  у нас это 0,13 мс против 8,5 мс у DNS провайдера и 38 мс у DoH/DoT на VPS. Ответ хранится 7 дней с
+  последнего обновления, переживает перезапуски ядра (до десятка в день) и Windows
+  (`%ProgramData%\dpiswitch\dns-cache.json`); устаревший по TTL отдаётся сразу и обновляется в фоне.
+  Нового имени служба спрашивает у самого быстрого сервера из DNS для прямых сайтов (их время
+  меряется), остальных — если он не ответил за несколько своих обычных времён. Ответы хранятся
+  отдельно для каждой сети. Детектор спрашивает тот же кэш, так что проверяет тот же узел. Серверы,
+  заданные именем, кэш не спрашивает: их имя пришлось бы разрешать ему же.
 
 > [!NOTE]
 > Сохранение DNS перезапускает ядро: туннель пропадает на пару секунд.
@@ -366,7 +377,7 @@ Claude, Gemini, Grok, Copilot, DeepL и др.), Instagram, Facebook, X и ваш
   программой, а не в папке данных: там ядро само создаёт файлы, которые называет его конфиг.
 - `%ProgramData%\dpiswitch` — данные службы: конфиг ядра, вердикты (`controller-state.json`), каждая
   проба (`reports.jsonl`), логи (`logs\service.log`, `logs\mihomo.log`), метка запуска ядра, по
-  которой Live узнаёт новый запуск (`core-run.txt`). Писать туда могут только SYSTEM и администраторы,
+  которой Live узнаёт новый запуск (`core-run.txt`), DNS-кэш (`dns-cache.json`). Писать туда могут только SYSTEM и администраторы,
   читать — ещё вы: лог ядра и пробы называют каждый сайт, куда ходит компьютер, и другим учётным
   записям их видеть незачем.
 - `%ProgramData%\dpiswitch\user` — то, что вы меняете в интерфейсе: `.conf`, списки, настройки.
@@ -524,7 +535,7 @@ The header shows the service and tunnels' state, the auto-switch toggle and Star
 of the sidebar holds installing and removing the service, the tray's autostart and the language
 (English / Русский). The tray speaks the same language as the UI.
 
-**Tray menu:** "Settings…" (opens the UI: a window already open comes forward, a new one is a Chrome/Edge window of its own, with no tabs), "Install service…" / "Stop tunnel" / "Start tunnel",
+**Tray menu:** "Settings…" (opens the UI: a window already open comes forward, a new one is a Chrome/Edge window of its own with no tabs, full screen, or a browser tab, as the settings choose; clicks while it opens open no other), "Install service…" / "Stop tunnel" / "Start tunnel",
 "Everything via tunnel (reset verdicts)" of the current network, "Start with Windows", "Data folder", "Exit". The icon's
 colour shows the state: off, tunnel up, error. Its tooltip tells how many sites go direct and how
 many are blocked.
@@ -543,6 +554,8 @@ many are blocked.
 | IPv6 | Through the tunnel | Gives IPv6 even where the ISP has none |
 | DNS for direct sites | `tls://8.8.8.8`, `tls://8.8.4.4` | Google DoT, outside the tunnel |
 | DNS inside the tunnel | from the `.conf` | For the sites that go through the tunnel |
+| Local DNS cache | Off | Direct sites' names answered from the computer's memory, for 7 days and across restarts; a new name is asked of the fastest resolver for direct sites |
+| Open the UI | In its own window | A browser window with no tabs, full screen, or a browser tab |
 
 ### Where a connection goes
 
@@ -670,6 +683,15 @@ current network. The tray's reset is of the current network.
   core resolves the real one on the chosen route. That is why a name, not an address, decides the
   route. The IPv6 range is deliberately not ULA: Chrome treats `fc00::/7` as a local network and
   blocks requests to it (Local Network Access).
+- **Local DNS cache** (in the settings, off by default): the core asks the service for direct sites'
+  names (`127.0.0.1:1054`), not the servers. A name it knows is answered at once from memory -- here
+  0.13 ms against 8.5 ms for the ISP's DNS and 38 ms for DoH/DoT on a VPS. An answer is kept for 7 days
+  from when it was last fetched, across the core's restarts (up to a dozen a day) and Windows'
+  (`%ProgramData%\dpiswitch\dns-cache.json`); one past its TTL is given at once and fetched again
+  behind it. A new name is asked of the fastest resolver for direct sites (their times are measured),
+  the others when it has not answered in a few of its usual times. Answers are kept per network. The
+  detector asks the same cache, so it tests the same node. Resolvers given by name are not asked by
+  the cache: their names would have to be resolved by the cache itself.
 
 > [!NOTE]
 > Saving the DNS restarts the core: the tunnel drops for a couple of seconds.
@@ -775,7 +797,7 @@ state.
   beside the program, not in the data directory: there the core makes the files its config names.
 - `%ProgramData%\dpiswitch` — the service's own data: the core's config, the verdicts
   (`controller-state.json`), every probe (`reports.jsonl`), the logs (`logs\service.log`,
-  `logs\mihomo.log`), the name of the core's run Live tells a new run by (`core-run.txt`). Writable by
+  `logs\mihomo.log`), the name of the core's run Live tells a new run by (`core-run.txt`), the DNS cache (`dns-cache.json`). Writable by
   SYSTEM and Administrators only, readable by you as well: the core's log and the probes name every
   site the computer goes to, and other accounts have no business seeing them.
 - `%ProgramData%\dpiswitch\user` — what you change in the UI: the `.conf` files, lists, settings.

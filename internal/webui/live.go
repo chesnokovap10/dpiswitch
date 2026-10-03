@@ -801,11 +801,12 @@ func liveRoute(chains []string) string {
 	return "other"
 }
 
-// liveChain: the chain in the order it was passed -- group, then outbound
+// liveChain: the chain in the order it was passed -- group, then outbound;
+// the first tunnel by the name the pages give it (see ctl.TunnelLabel)
 func liveChain(chains []string) string {
 	out := make([]string, 0, len(chains))
 	for i := len(chains) - 1; i >= 0; i-- {
-		out = append(out, chains[i])
+		out = append(out, ctl.TunnelLabel(chains[i]))
 	}
 	return strings.Join(out, " → ")
 }

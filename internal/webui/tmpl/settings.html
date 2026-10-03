@@ -52,6 +52,16 @@
   <div>IPv6</div>
   <div><select name="ipv6"><option value="1" {{if $s.IPv6}}selected{{end}}>{{.T "Through the tunnel"}}</option><option value="0" {{if not $s.IPv6}}selected{{end}}>{{.T "Off"}}</option></select></div>
   <div class="h">{{.T "Gives IPv6 even where the ISP has none. Changing it restarts the core."}}{{if and $s.IPv6 .St.IPv6Blocked}}<span class="warn-t">{{.T "Switched off by the program: Windows does not let IPv6 reach the DPI Switch adapter -- a third-party network filter (a VPN client, an antivirus) takes it first. Checked again at the service's next start."}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "ipv6")}}</div>
+
+  <div>{{.T "Local DNS cache"}}</div>
+  <div><select id="dns_cache" name="dns_cache"><option value="1" {{if $s.DNSCache}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.DNSCache}}selected{{end}}>{{.T "Off"}}</option></select></div>
+  <div class="h">{{.T "Direct sites' names are answered from this computer's memory: at once, with no server asked -- after a restart of the core or of Windows too. An answer is kept for 7 days from when it was last fetched; one past its TTL is given at once and fetched again behind it. A name not kept is asked of the fastest server of “For direct sites” below. Changing it restarts the core."}}{{if $s.DNSCache}}{{if not $d.CacheUsable}} <span class="warn-t">{{.T "No server for direct sites is given by address: the cache cannot ask one, and the core asks them itself."}}</span>{{else}}{{with $d.Cache}}<br><span class="muted">{{$.Tf "Kept: %d names. Answered from the cache: %d%% of %d queries." .Names .HitPct .Asked}}{{with .Fastest}} {{$.Tf "Asked first: %s, %.0f ms." .Addr .Ms}}{{end}}</span>{{end}}{{end}}{{end}}{{template "rowmsg" ($d.MsgFor "dns_cache")}}</div>
+
+  <div class="g">{{.T "Program"}}</div>
+
+  <div>{{.T "Open the UI"}}</div>
+  <div><select id="ui_open" name="ui_open"><option value="window" {{if ne $s.UIOpen "tab"}}selected{{end}}>{{.T "In its own window"}}</option><option value="tab" {{if eq $s.UIOpen "tab"}}selected{{end}}>{{.T "In a browser tab"}}</option></select></div>
+  <div class="h">{{.T "How the tray icon opens these pages. Its own window: a window of the default browser with no tabs or address bar, opened full screen -- Chrome, Edge, Brave, Vivaldi and Yandex make one, another browser opens a tab either way. A browser tab: among the browser's other tabs."}}{{template "rowmsg" ($d.MsgFor "ui_open")}}</div>
 </form>
 {{end}}
 

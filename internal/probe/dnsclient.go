@@ -151,7 +151,9 @@ func (r Resolver) lookup(d Dialer, name string, qtype uint16) ([]string, error) 
 	case "https":
 		resp, err = r.doh(d, q)
 	case "udp":
-		resp, err = r.datagram(d, q, id)
+		resp, err = r.datagram(d, q)
+	case "local":
+		resp, err = askLocal(q)
 	default:
 		resp, err = r.stream(d, q)
 	}
@@ -177,13 +179,14 @@ func (r Resolver) tlsConf() *tls.Config {
 // "direct DNS did not answer: tls: EOF" came from those handshakes. Over
 // HTTP/2 the queries of a cycle now share one connection, closed after
 // dohIdle unused.
-var dohClients sync.Map // "listener|timeout|host:port" -> *http.Client
+var dohClients sync.Map // "listener|password|timeout|host:port" -> *http.Client
 
 const dohIdle = 90 * time.Second
 
 func (r Resolver) dohClient(d Dialer) *http.Client {
 	server := net.JoinHostPort(r.Host, strconv.Itoa(r.Port))
-	key := d.Addr + "|" + d.Timeout.String() + "|" + server
+	// the password too: a client dials with the dialer it was made with
+	key := d.Addr + "|" + d.Pass + "|" + d.Timeout.String() + "|" + server
 	if c, ok := dohClients.Load(key); ok {
 		return c.(*http.Client)
 	}
@@ -366,9 +369,8 @@ var udpResend = 2 * time.Second
 // again over TCP, as a resolver client does. A resolver given by name is
 // asked over TCP as before: a datagram goes to an address, and resolving the
 // name here would ask the system, not the path under test.
-func (r Resolver) datagram(d Dialer, q []byte, id uint16) ([]byte, error) {
-	ip := net.ParseIP(r.Host)
-	if ip == nil {
+func (r Resolver) datagram(d Dialer, q []byte) ([]byte, error) {
+	if net.ParseIP(r.Host) == nil {
 		return r.stream(d, q)
 	}
 	u, err := d.DialUDP()
@@ -376,41 +378,12 @@ func (r Resolver) datagram(d Dialer, q []byte, id uint16) ([]byte, error) {
 		return nil, err
 	}
 	defer u.Close()
-	to := &net.UDPAddr{IP: ip, Port: r.Port}
-	deadline := time.Now().Add(d.Timeout)
-	buf := make([]byte, 64<<10)
-	for {
-		if _, err := u.WriteTo(q, to); err != nil {
-			return nil, err
-		}
-		resend := time.Now().Add(udpResend)
-		_ = u.SetReadDeadline(minTime(resend, deadline))
-		for {
-			n, from, err := u.ReadFrom(buf)
-			var ne net.Error
-			if errors.As(err, &ne) && ne.Timeout() {
-				break
-			}
-			if err != nil {
-				return nil, err
-			}
-			m := buf[:n]
-			// an answer is the resolver's, to this very question: a 16-bit ID
-			// alone let any datagram that guessed it pass for one
-			if fa, ok := from.(*net.UDPAddr); !ok || !fa.IP.Equal(to.IP) || fa.Port != to.Port ||
-				len(m) < len(q) || binary.BigEndian.Uint16(m) != id || m[2]&0x80 == 0 ||
-				!bytes.EqualFold(m[12:len(q)], q[12:]) {
-				continue // not the answer to this query
-			}
-			if m[2]&0x02 != 0 {
-				return r.stream(d, q) // truncated
-			}
-			return append([]byte(nil), m...), nil
-		}
-		if !time.Now().Before(deadline) {
-			return nil, fmt.Errorf("udp: no answer in %s", d.Timeout)
-		}
+	resp, err := r.datagramOn(u, d, q)
+	var tc truncated
+	if errors.As(err, &tc) {
+		return r.stream(d, q)
 	}
+	return resp, err
 }
 
 func minTime(a, b time.Time) time.Time {

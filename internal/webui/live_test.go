@@ -115,7 +115,7 @@ func TestLiveUpdate(t *testing.T) {
 	if !m.Ready || len(m.Add) != 2 || m.Add[0].US != 0 || m.Add[0].DS != 0 || m.Tot.DS != 0 {
 		t.Fatalf("first answer: %+v", m)
 	}
-	if r := m.Add[0]; r.Proto != "TLS" || r.Route != "awg" || r.Chain != "tunnel → awg" || r.Rule != "Match" ||
+	if r := m.Add[0]; r.Proto != "TLS" || r.Route != "awg" || r.Chain != "tunnel → awg1" || r.Rule != "Match" ||
 		r.Start != t0.Add(-5*time.Second).UnixMilli() || r.Act != t0.UnixMilli() {
 		t.Errorf("a row: %+v", r)
 	}
@@ -482,7 +482,7 @@ func TestLiveStream(t *testing.T) {
 	// the address a name went to is the one its TCP outbound dialled; a UDP
 	// one names the tunnel's server there, and its own stays
 	if r := byID["1111"]; r.Host != "example.com" || r.IP != "93.184.216.34" || r.Proto != "TLS" || r.Sure ||
-		r.Route != "awg" || r.Chain != "tunnel → awg" || r.Proc != "chrome.exe" || r.Port != 443 {
+		r.Route != "awg" || r.Chain != "tunnel → awg1" || r.Proc != "chrome.exe" || r.Port != 443 {
 		t.Errorf("tcp row: %+v", r)
 	}
 	if r := byID["2222"]; r.Host != "www.youtube.com" || r.IP != "142.250.74.46" || r.Proto != "QUIC" || !r.Sure ||
@@ -504,7 +504,7 @@ func TestLiveStream(t *testing.T) {
 		}
 	}
 	if f.N != 2 || f.Why != "timeout" || f.Host != "blocked.example" || f.IP != "203.0.113.7" || f.Route != "awg" ||
-		f.Chain != "tunnel → awg" || f.Proc != "chrome.exe" || f.Proto != "TLS" || f.Rule != "Match" || f.Probe {
+		f.Chain != "tunnel → awg1" || f.Proc != "chrome.exe" || f.Proto != "TLS" || f.Rule != "Match" || f.Probe {
 		t.Errorf("the failure: %+v", f)
 	}
 
@@ -691,7 +691,7 @@ func TestLiveFailure(t *testing.T) {
 	h.failure(ctx, "", byB, direct, at)
 	h.failure(ctx, "", e, []string{"awg", "tunnel"}, at)
 	if len(h.failed) != 4 || h.failed[1].Why != "dns" || h.failed[2].Rule != "RuleSet force-direct" ||
-		h.failed[3].Route != "awg" || h.failed[3].Chain != "tunnel → awg" {
+		h.failed[3].Route != "awg" || h.failed[3].Chain != "tunnel → awg1" {
 		t.Errorf("rows: %+v %+v %+v", h.failed[1], h.failed[2], h.failed[3])
 	}
 
@@ -784,8 +784,8 @@ func TestLiveClear(t *testing.T) {
 func TestGroupChain(t *testing.T) {
 	groups := map[string]string{"tunnel": "awg", "tunnel2": "tunnel", "fell": "DIRECT", "a": "b", "b": "a"}
 	for name, want := range map[string]string{
-		"tunnel":  "tunnel → awg",
-		"tunnel2": "tunnel2 → tunnel → awg",
+		"tunnel":  "tunnel → awg1",
+		"tunnel2": "tunnel2 → tunnel → awg1",
 		"fell":    "fell → DIRECT",
 		"DIRECT":  "DIRECT",
 		"a":       "a → b", // a loop is cut
