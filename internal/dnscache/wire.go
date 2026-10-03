@@ -2,14 +2,17 @@ package dnscache
 
 import (
 	"encoding/binary"
+	"net"
 )
 
 // Just enough of the DNS message format for a cache: a query's question,
 // the TTLs of an answer's records, and an answer made out of a kept one.
 
 const (
-	typeSOA = 6
-	typeOPT = 41
+	typeA    = 1
+	typeSOA  = 6
+	typeAAAA = 28
+	typeOPT  = 41
 
 	rcodeOK       = 0
 	rcodeFormErr  = 1
@@ -104,6 +107,24 @@ func records(m []byte, f func(sec int, typ uint16, ttlOff int, rdata []byte)) bo
 		}
 	}
 	return true
+}
+
+// sinkhole: an answer whose every address is a loopback or unspecified one
+// -- what an ISP's resolver gives for a name it blocks: Rostelecom's answer
+// 127.0.0.1 for Meta's names (03.10.2026), and the detector probed localhost
+// on both paths. An answer with no address says nothing either way.
+func sinkhole(m []byte) bool {
+	n, bad := 0, 0
+	records(m, func(sec int, typ uint16, _ int, rdata []byte) {
+		if sec != 0 || typ != typeA && typ != typeAAAA || len(rdata) != net.IPv4len && len(rdata) != net.IPv6len {
+			return
+		}
+		n++
+		if ip := net.IP(rdata); ip.IsLoopback() || ip.IsUnspecified() {
+			bad++
+		}
+	})
+	return n > 0 && bad == n
 }
 
 // negativeTTL: how long a "no such name" or "no such record" with no SOA to

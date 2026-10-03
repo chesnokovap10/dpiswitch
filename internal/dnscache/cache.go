@@ -98,7 +98,8 @@ type Server struct {
 	dirty    bool
 	lastRace time.Time
 	counts   Counts
-	changed  bool // counts since the stats were written
+	changed  bool            // counts since the stats were written
+	holes    map[string]bool // the sinkholes said in the log, see noteHole
 
 	lmu     sync.Mutex
 	addr    string // listened on
@@ -245,9 +246,12 @@ func (s *Server) fetch(key string, q []byte) ([]byte, error) {
 	netID := s.net
 	s.mu.Unlock()
 
-	f.msg, f.err = s.ask(q)
+	var hole bool
+	f.msg, hole, f.err = s.ask(q)
 	s.mu.Lock()
-	if f.err == nil {
+	// a sinkhole every server gave is passed on, not kept: the name is
+	// asked again next time, and a server that has it right by then wins
+	if f.err == nil && !hole {
 		if ttl, ok := keepable(f.msg); ok {
 			s.keepLocked(netID, key, f.msg, ttl)
 		}
@@ -283,7 +287,12 @@ func (s *Server) keepLocked(netID, key string, msg []byte, ttl uint32) {
 // ask: the answer of the fastest server; the others are asked too when it
 // fails, or has not answered in a few times what it usually takes. Every
 // so often all are asked at once, and each one's time is measured.
-func (s *Server) ask(q []byte) ([]byte, error) {
+//
+// A sinkhole -- loopback for a name the server blocks, see sinkhole -- is
+// no answer while another server may have one: the others are asked, and
+// the first real answer is taken. Only when none has one is the sinkhole
+// given (hole), for a name that does live on localhost.
+func (s *Server) ask(q []byte) (msg []byte, hole bool, err error) {
 	s.mu.Lock()
 	ups := slices.Clone(s.ups)
 	d := s.dialer
@@ -298,7 +307,7 @@ func (s *Server) ask(q []byte) ([]byte, error) {
 	hedge := hedgeAfter(ups)
 	s.mu.Unlock()
 	if len(ups) == 0 {
-		return nil, errors.New("no direct DNS server given by address")
+		return nil, false, errors.New("no direct DNS server given by address")
 	}
 
 	// an ID of its own: the asker's is put back in the answer (see reply)
@@ -329,26 +338,65 @@ func (s *Server) ask(q []byte) ([]byte, error) {
 	dt := time.NewTimer(fetchTimeout)
 	defer dt.Stop()
 	var errs []string
+	var holed []byte   // the first sinkhole, see above
+	var holedBy string // the server that gave it
 	for got := 0; ; {
 		select {
 		case r := <-ch:
 			got++
 			if r.err == nil {
 				if rc := r.msg[3] & 0x0f; rc == rcodeOK || rc == rcodeNXDomain {
-					return r.msg, nil
+					if !sinkhole(r.msg) {
+						if holed != nil {
+							s.noteHole(holedBy, uq)
+						}
+						return r.msg, false, nil
+					}
+					if holed == nil {
+						holed, holedBy = r.msg, r.u.r.Raw
+					}
+					r.err = errors.New("a loopback address: the name is blocked there")
+				} else {
+					r.err = fmt.Errorf("rcode %d", r.msg[3]&0x0f)
 				}
-				r.err = fmt.Errorf("rcode %d", r.msg[3]&0x0f)
 			}
 			errs = append(errs, r.u.r.Raw+": "+r.err.Error())
 			sendNext(true)
 			if got == sent {
-				return nil, errors.New(strings.Join(errs, "; "))
+				if holed != nil {
+					return holed, true, nil
+				}
+				return nil, false, errors.New(strings.Join(errs, "; "))
 			}
 		case <-ht.C:
 			sendNext(true)
 		case <-dt.C:
-			return nil, fmt.Errorf("no answer in %s", fetchTimeout)
+			if holed != nil {
+				return holed, true, nil
+			}
+			return nil, false, fmt.Errorf("no answer in %s", fetchTimeout)
 		}
+	}
+}
+
+// noteHole: a server's sinkhole passed over for another server's answer,
+// said once per server and name
+func (s *Server) noteHole(server string, q []byte) {
+	key, _, _ := question(q)
+	var labels []string
+	for i := 0; i < len(key) && key[i] != 0 && i+1+int(key[i]) <= len(key); i += 1 + int(key[i]) {
+		labels = append(labels, key[i+1:i+1+int(key[i])])
+	}
+	name := strings.Join(labels, ".")
+	s.mu.Lock()
+	if s.holes == nil {
+		s.holes = map[string]bool{}
+	}
+	seen := s.holes[server+" "+key]
+	s.holes[server+" "+key] = true
+	s.mu.Unlock()
+	if !seen {
+		log.Printf("DNS cache: %s answers %s with a loopback address -- blocked there; another server's answer taken", server, name)
 	}
 }
 
@@ -577,7 +625,9 @@ func (s *Server) load() {
 	for id, es := range f.Nets {
 		m := map[string]*entry{}
 		for _, e := range es {
-			if e == nil || now.Sub(e.At) >= keepFor || e.At.After(now) {
+			// a sinkhole kept before they were told apart goes: the name
+			// is asked anew, and another server's answer taken
+			if e == nil || now.Sub(e.At) >= keepFor || e.At.After(now) || sinkhole(e.Msg) {
 				continue
 			}
 			if key, _, ok := answerQuestion(e.Msg); ok {

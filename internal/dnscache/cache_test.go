@@ -424,3 +424,107 @@ func TestServe(t *testing.T) {
 		t.Error("the in-process cache answered after Close")
 	}
 }
+
+// A server that blocks a name answers it with a loopback address --
+// Rostelecom's answer for Meta's names. That is no answer while another
+// server has one: the other's is given and kept, the fastest server asked
+// first all the same.
+func TestSinkholePassedOver(t *testing.T) {
+	isp := &fakeServer{delay: time.Millisecond, answer: gives("127.0.0.1", 60)}
+	own := &fakeServer{delay: 20 * time.Millisecond, answer: gives("192.0.2.7", 60)}
+	fakeServers(t, map[string]*fakeServer{"udp://192.0.2.53": isp, "tls://192.0.2.54": own})
+	s := newCache(t, "udp://192.0.2.53", "tls://192.0.2.54")
+
+	// the first fetch races both: the ISP's answer comes first
+	if ip := firstIP(ask(t, s, "www.instagram.com", 1)); ip != "192.0.2.7" {
+		t.Fatalf("got %s, want the other server's", ip)
+	}
+	time.Sleep(50 * time.Millisecond)
+	// measured faster, the ISP's is asked alone first -- and passed over
+	if ip := firstIP(ask(t, s, "gateway.instagram.com", 2)); ip != "192.0.2.7" {
+		t.Fatalf("got %s, want the other server's", ip)
+	}
+	if n := own.asked.Load(); n != 2 {
+		t.Errorf("the other server was asked %d times, want 2", n)
+	}
+	// and the real answer kept: asked again, no server is
+	asked := isp.asked.Load() + own.asked.Load()
+	if ip := firstIP(ask(t, s, "www.instagram.com", 3)); ip != "192.0.2.7" {
+		t.Fatalf("kept %s", ip)
+	}
+	if n := isp.asked.Load() + own.asked.Load(); n != asked {
+		t.Errorf("a kept answer asked of a server again")
+	}
+	// a name the ISP answers right is still taken from it alone
+	isp.answer = gives("192.0.2.1", 60)
+	if ip := firstIP(ask(t, s, "static.cdninstagram.com", 4)); ip != "192.0.2.1" {
+		t.Fatalf("got %s", ip)
+	}
+}
+
+// Every server answers loopback: the name lives there. It is given, and not
+// kept -- it is asked again, and a server that has it right by then wins.
+func TestSinkholeEveryServer(t *testing.T) {
+	a := &fakeServer{delay: time.Millisecond, answer: gives("127.0.0.1", 60)}
+	b := &fakeServer{delay: 2 * time.Millisecond, answer: gives("127.0.0.1", 60)}
+	fakeServers(t, map[string]*fakeServer{"udp://192.0.2.53": a, "udp://192.0.2.54": b})
+	s := newCache(t, "udp://192.0.2.53", "udp://192.0.2.54")
+	if ip := firstIP(ask(t, s, "localhost.example", 1)); ip != "127.0.0.1" {
+		t.Fatalf("got %q", ip)
+	}
+	if n := len(s.nets["AS1"]); n != 0 {
+		t.Fatalf("%d answers kept", n)
+	}
+	b.answer = gives("192.0.2.9", 60)
+	if ip := firstIP(ask(t, s, "localhost.example", 2)); ip != "192.0.2.9" {
+		t.Fatalf("got %q after a server had it right", ip)
+	}
+}
+
+// A sinkhole kept before they were told apart does not come back from the
+// file.
+func TestSinkholeNotLoaded(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "cache.json")
+	s := New(file, "")
+	s.Configure([]string{"udp://192.0.2.53"}, probe.Dialer{})
+	s.SetNetwork("AS1")
+	s.mu.Lock()
+	s.keepLocked("AS1", "a", answer(query("www.instagram.com", 1), net.ParseIP("127.0.0.1"), 60), 60)
+	s.keepLocked("AS1", "b", answer(query("example.com", 2), net.ParseIP("192.0.2.1"), 60), 60)
+	s.mu.Unlock()
+	s.save(true)
+	got := New(file, "")
+	if n := len(got.nets["AS1"]); n != 1 {
+		t.Fatalf("%d answers loaded, want the real one alone", n)
+	}
+}
+
+func TestSinkhole(t *testing.T) {
+	q := query("a.example", 1)
+	aaaa := func(ip string) []byte {
+		m := append([]byte(nil), q...)
+		m[2], m[3] = 0x81, 0x80
+		binary.BigEndian.PutUint16(m[6:], 1)
+		m = append(m, 0xc0, 0x0c, 0, 28, 0, 1, 0, 0, 0, 60, 0, 16)
+		return append(m, net.ParseIP(ip).To16()...)
+	}
+	nx := answer(q, net.ParseIP("192.0.2.1"), 60)[:len(q)]
+	nx[2], nx[3] = 0x81, 0x83
+	for name, c := range map[string]struct {
+		m    []byte
+		want bool
+	}{
+		"127.0.0.1":   {answer(q, net.ParseIP("127.0.0.1"), 60), true},
+		"127.1.2.3":   {answer(q, net.ParseIP("127.1.2.3"), 60), true},
+		"0.0.0.0":     {answer(q, net.ParseIP("0.0.0.0"), 60), true},
+		"::1":         {aaaa("::1"), true},
+		"::":          {aaaa("::"), true},
+		"a real one":  {answer(q, net.ParseIP("192.0.2.1"), 60), false},
+		"a real IPv6": {aaaa("2001:db8::1"), false},
+		"no address":  {nx, false},
+	} {
+		if got := sinkhole(c.m); got != c.want {
+			t.Errorf("%s: %v, want %v", name, got, c.want)
+		}
+	}
+}
