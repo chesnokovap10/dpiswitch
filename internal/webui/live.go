@@ -571,7 +571,7 @@ func (h *liveHub) failure(ctx context.Context, run string, e ctl.DialErr, chain 
 	}
 	h.failSeq++
 	r := &liveRow{ID: h.failID + fmt.Sprint(h.failSeq), Host: e.Host, Dom: liveDomain(e.Host), IP: e.IP, Port: e.Port,
-		Net: e.Network, Route: liveRoute(chain), Chain: route, Rule: rule, Probe: e.Probe, Proc: e.Process,
+		Net: e.Network, Route: liveRoute(chain), Chain: route, Rule: rule, Probe: e.Probe, Proc: liveProc(e.Probe, e.Process),
 		Start: ms, Act: ms, End: ms, Err: e.Err, Why: why, N: 1, Seq: h.seq, run: run}
 	r.Proto, _ = liveProto(r.Net, e.Port, false)
 	h.failed = append(h.failed, r)
@@ -742,10 +742,20 @@ func rate(bytes int64, secs float64) int64 {
 	return int64(float64(bytes)/secs + 0.5)
 }
 
+// liveProc: the program behind a connection. The detector's checks are the
+// service's own, through listeners that send straight to an outbound: the
+// core looks no program up for them.
+func liveProc(probe bool, proc string) string {
+	if probe && proc == "" {
+		return "dpiswitch.exe"
+	}
+	return proc
+}
+
 func newLiveRow(c ctl.LiveConn, now time.Time) *liveRow {
 	r := &liveRow{ID: c.ID, Host: c.Host, Dom: liveDomain(c.Host), IP: c.DstIP, Port: c.Port, Net: strings.ToLower(c.Network),
 		Route: liveRoute(c.Chains), Chain: liveChain(c.Chains), Probe: c.Probe,
-		Proc: c.Process, Path: c.ProcessPath, Up: c.Upload, Down: c.Download,
+		Proc: liveProc(c.Probe, c.Process), Path: c.ProcessPath, Up: c.Upload, Down: c.Download,
 		// on the first sight its bytes may have moved a moment ago: it is
 		// not called idle until they have stood still for a while
 		Act: now.UnixMilli()}
