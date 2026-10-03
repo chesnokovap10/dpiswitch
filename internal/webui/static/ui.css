@@ -236,7 +236,7 @@ button.lx:hover{color:var(--bad)}
 .ltable tr.sel td:last-child,.vtable tr.sel td:last-child{box-shadow:inset -2px 2px 0 var(--accent),inset 0 -2px 0 var(--accent)}
 .ltable tr.sel button.lx,.vtable tr.sel button.lx{visibility:visible}
 /* paused, the rows are not told a connection closed: no closing from them */
-#live.paused button.lx{display:none}
+#live.paused button.lx{visibility:hidden}
 
 /* a row's menu, where it was right-clicked */
 .cmenu{position:fixed;z-index:20;min-width:210px;max-width:420px;padding:4px;background:var(--panel);
