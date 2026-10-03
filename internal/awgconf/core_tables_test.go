@@ -179,6 +179,8 @@ func coreCells(t *testing.T, core, peer, mode string, r row, alive map[string]bo
 		{"Always via tunnel", hostTunnel, r.tunnel},
 		{"Always direct", hostDirect, r.direct},
 		{"Forbidden", hostBlock, r.block},
+		// not a column of the help's tables: see TestRoutingSplit
+		{"cut by the detector", hostSplit, map[string]route{ctl.ModeOn: route(ctl.SplitOutbound), ctl.ModeObserve: D, ctl.ModeTunnel: r.unnamed}[mode]},
 	}
 	var wg sync.WaitGroup
 	for _, c := range cells {
@@ -246,7 +248,7 @@ func (a *coreAPI) resolve(target string) (proxy, path string) {
 	name, hops := target, []string{target}
 	for range 8 {
 		switch name {
-		case "awg1", "awg2", "DIRECT", "REJECT", "COMPATIBLE":
+		case "awg1", "awg2", "DIRECT", "REJECT", "COMPATIBLE", ctl.SplitOutbound:
 			return name, strings.Join(hops, " > ")
 		}
 		name = a.now(name)

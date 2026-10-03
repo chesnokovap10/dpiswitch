@@ -96,6 +96,7 @@ moment than about the path.</p>
 <table>
 <tr><th>Verdict</th><th>What was seen</th><th>Route</th></tr>
 <tr><td><span class="pill ok">CLEAN</span></td><td>Every attempt passed directly just as through the tunnel, not slower</td><td>direct</td></tr>
+<tr><td><span class="pill ok">CLEAN_SPLIT</span></td><td>Blocked direct by name (BLOCKED_TLS), but with the ClientHello cut every attempt went as well as through the tunnel, and no slower. Only with the <a href="/settings#split_hello">cut</a> on</td><td>direct with the cut; cut off: tunnel</td></tr>
 <tr><td><span class="pill bad">BLOCKED_TCP</span></td><td>The connection is refused, reset or times out directly, and works through the tunnel</td><td>tunnel</td></tr>
 <tr><td><span class="pill bad">BLOCKED_TLS</span></td><td>TCP connects, but the TLS handshake is cut once the site's name is seen: the typical DPI block</td><td>tunnel</td></tr>
 <tr><td><span class="pill bad">BLOCKED_QUIC</span></td><td>QUIC (UDP 443) is blocked directly. TCP may work, but a name goes one way as a whole</td><td>tunnel</td></tr>
@@ -121,6 +122,32 @@ left alone, and after ten days it is forgotten. If its term is over, the Verdict
 <p>When a domain has 3 or more clean subdomains and none blocked, slower or failing directly, the whole
 domain (<code>+.example.com</code>) goes direct: new subdomains do not wait for a check. The first
 bad subdomain removes the rule. It helps services with pools of servers: CDNs, speed tests, updates.</p>
+
+<h4>DPI bypass: cutting the ClientHello</h4>
+<p>ISPs block many sites by name: they read it off the first message of a TLS connection (the
+ClientHello) and cut the connection. With the <a href="/settings#split_hello">cut</a> on, a site found
+BLOCKED_TLS is checked once more -- through the core's <code>direct-split</code> outbound, which cuts the
+ClientHello into two TLS records in the middle of the name and sends them as two TCP segments, the boundary
+between them inside the first record. The DPI does not find the name, and the server puts the message
+together as usual: TLS allows it to be split into records. The check is as strict as a plain one: the same
+node, the handshake, a request and its answer, and the speed against the tunnel.</p>
+<ul>
+<li>It passes: the verdict is CLEAN_SPLIT, and the site goes direct with the cut, for the same term as a
+clean one. QUIC (UDP 443) to it is refused, and the browser takes TCP at once.</li>
+<li>It fails: BLOCKED_TLS stays, and the tunnel. Only slower than the tunnel: SLOWER.</li>
+<li>Only the first message is cut; the rest of the traffic goes as it is. Encryption is not touched: the
+browser checks the certificate itself.</li>
+<li>Every network keeps its own verdicts: measured on 03.10.2026, one ISP let the cut through almost
+everywhere, a mobile one only to some addresses (Google's yes, Meta's and Akamai's no).</li>
+<li>It can break traffic: the check opens the main page, and other parts of the site, or the ISP's later
+rules, may not take the cut. A connection left open with no answer has the site checked again before its
+term. So it is off by default.</li>
+<li>Switched on, it checks the BLOCKED_TLS names again at once. Switched off, it takes them off the direct
+path at once and closes their connections: they open again through the tunnel.</li>
+<li>It works in On only. In Observe only everything goes direct anyway, with no cut; in Tunnel only nothing
+goes direct. The detector checks and records there too.</li>
+<li>Such names make no family (Whole domains): the domain is blocked by name.</li>
+</ul>
 
 <h4>Auto-switch: on, observe only, tunnel only</h4>
 <p>The detector checks sites and records verdicts in all three <a href="/settings#auto_switch">modes</a>; the modes differ only in where

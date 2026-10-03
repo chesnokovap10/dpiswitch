@@ -240,6 +240,25 @@ func (s *state) verified(id string) []string {
 	return out
 }
 
+// verifiedSplit: the names that go direct with the ClientHello cut. A bare
+// address has no name to cut.
+func (s *state) verifiedSplit(id string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	now := time.Now()
+	for dom, e := range s.Networks[id] {
+		if _, addr := probe.AddrKey(dom); addr {
+			continue
+		}
+		if e.Verdict == probe.CleanSplit && now.Before(e.ExpiresAt) {
+			out = append(out, dom)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // verifiedAddrs: rules for connections that carry no name at all, one per
 // node a CLEAN verdict was probed on, limited to what the probe really showed.
 //

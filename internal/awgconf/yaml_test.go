@@ -288,8 +288,16 @@ func TestRenderSecondDNS(t *testing.T) {
 		// password: any program of any account took them
 		secret := ctl.SecretFromConfig(writeTemp(t, out))
 		users := "    users:\n      - username: " + probe.SocksUser + "\n        password: '" + secret + "'\n"
-		if secret == "" || strings.Count(out, users) != 3 {
-			t.Errorf("listeners without the prober's user: %d of 3", strings.Count(out, users))
+		if secret == "" || strings.Count(out, users) != 4 {
+			t.Errorf("listeners without the prober's user: %d of 4", strings.Count(out, users))
+		}
+		// the detector's second try at a name blocked by its hello goes
+		// out through the outbound that cuts it, and that outbound cuts
+		if !strings.Contains(out, "  - name: probe-split\n    type: socks\n    listen: 127.0.0.1\n    port: 7894\n    proxy: direct-split\n") {
+			t.Error("no listener through direct-split")
+		}
+		if !strings.Contains(out, "  - name: direct-split\n    type: direct\n    tls-split: true\n") {
+			t.Error("no direct-split outbound")
 		}
 	}
 }

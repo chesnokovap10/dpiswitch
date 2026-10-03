@@ -47,6 +47,12 @@
   <div><select name="max_backoff_min">{{template "durs" (dur . ($d.DurOpts "max_backoff_min" $s.MaxBackoffMin) $s.MaxBackoffMin)}}</select></div>
   <div class="h">{{.T "The longest wait between checks of a site that keeps failing. Not less than the re-check above."}}{{template "rowmsg" ($d.MsgFor "max_backoff_min")}}</div>
 
+  <div class="g">{{.T "DPI bypass"}}</div>
+
+  <div>{{.T "Cut the ClientHello"}}</div>
+  <div><select id="split_hello" name="split_hello"><option value="1" {{if $s.SplitHello}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.SplitHello}}selected{{end}}>{{.T "Off"}}</option></select></div>
+  <div class="h">{{.T "A site the ISP blocks by its name -- read off the first message of the connection, the ClientHello -- is checked once more with that message cut in two, so the name cannot be read off it. If the site works that way, as fast as through the tunnel, it goes direct with the message cut; QUIC to it is refused, and the browser takes TCP at once. Every network keeps its own verdicts: one ISP lets the cut through, another does not."}} <span class="warn-t">{{.T "It can break traffic: the check opens the site's main page only, and other parts of it, or the ISP's later rules, may not take the cut -- such a site sits broken until its next check sends it back to the tunnel. Off by default."}}</span>{{$m := $s.Mode}}{{if and $s.SplitHello (eq $m "observe")}} <span class="warn-t">{{.T "Not working now: in Observe only everything goes direct as it is, with no cut. The detector still checks and records; the verdicts apply once auto-switch is On."}}</span>{{else if and $s.SplitHello (eq $m "tunnel")}} <span class="warn-t">{{.T "Not working now: in Tunnel only nothing goes direct, the cut included. The detector still checks and records; the verdicts apply once auto-switch is On."}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "split_hello")}}</div>
+
   <div class="g">{{.T "Network"}}</div>
 
   <div>IPv6</div>

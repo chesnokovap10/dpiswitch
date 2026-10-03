@@ -339,6 +339,14 @@ func render(c *Conf) (string, error) {
 	w("    port: 7892")
 	w("    proxy: DIRECT")
 	users()
+	w("  # the direct path with the ClientHello cut: the detector's second try")
+	w("  # at a name blocked by it -- through the very outbound such names take")
+	w("  - name: probe-split")
+	w("    type: socks")
+	w("    listen: 127.0.0.1")
+	w("    port: 7894")
+	w("    proxy: %s", ctl.SplitOutbound)
+	users()
 	if c != nil {
 		// with no first tunnel the detector has nothing to measure against:
 		// it probes nothing, and has no listener
@@ -609,6 +617,11 @@ func render(c *Conf) (string, error) {
 		}
 	}
 	w("  # detector memory: rewritten by the controller")
+	w("  %s:", ctl.SplitProvider)
+	w("    type: file")
+	w("    behavior: domain")
+	w("    format: text")
+	w("    path: ./%s", filepath.Base(paths.VerifiedSplit()))
 	w("  direct-verified:")
 	w("    type: file")
 	w("    behavior: domain")
@@ -624,9 +637,14 @@ func render(c *Conf) (string, error) {
 	w("")
 	// a tunnel the check found IPv6 dead on keeps its address but resolves
 	// IPv4 only -- otherwise every IPv6-only host hangs until its timeout
-	if c != nil || c2 != nil {
-		w("proxies:")
-	}
+	w("proxies:")
+	w("  # direct, with the client's ClientHello cut in two TLS records in the")
+	w("  # middle of the server name and the first TCP segment ending inside the")
+	w("  # first record: DPI that reads the name off the hello does not find it.")
+	w("  # Only the names the detector found blocked by name and clean this way.")
+	w("  - name: %s", ctl.SplitOutbound)
+	w("    type: direct")
+	w("    tls-split: true")
 	if c != nil {
 		c.writeProxy(w, "awg1", tunDNS, ipv6, tunV6.Dead("awg1"))
 	}
@@ -718,6 +736,10 @@ func render(c *Conf) (string, error) {
 	w("  # the same verdicts by the address that was probed, for connections that")
 	w("  # carry no name at all (a speedtest client dialling a bare IP on 20000)")
 	w("  - RULE-SET,direct-verified-addr,DIRECT,no-resolve")
+	w("  # blocked by name, clean with the ClientHello cut. QUIC cannot be cut:")
+	w("  # refused, the browser goes over TCP at once")
+	w("  - AND,((NETWORK,UDP),(DST-PORT,443),(RULE-SET,%s)),REJECT", ctl.SplitProvider)
+	w("  - RULE-SET,%s,%s", ctl.SplitProvider, ctl.SplitOutbound)
 	w("")
 	w("  # 11. everything else: the tunnels as the mode says -- in tunnel only")
 	w("  #     never direct")
@@ -961,7 +983,7 @@ func Regenerate() (bool, error) {
 // EnsureLists creates missing list files: a provider without
 // its file prevents the core from starting
 func EnsureLists() {
-	files := []string{paths.Verified(), paths.VerifiedAddr(), paths.ObserveAll(), paths.Presets()}
+	files := []string{paths.Verified(), paths.VerifiedAddr(), paths.VerifiedSplit(), paths.ObserveAll(), paths.Presets()}
 	for _, l := range paths.UserLists {
 		files = append(files, paths.Data(l), paths.Data(paths.IPList(l)), paths.Data(paths.AppList(l)))
 	}

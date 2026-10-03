@@ -118,6 +118,10 @@ var verdictCats = map[string]func(v probe.Verdict) bool{
 		switch v {
 		case probe.BlockedTCP, probe.BlockedTLS, probe.BlockedQUIC, probe.MITM, probe.ContentDiff:
 			return true
+		case probe.CleanSplit:
+			// listed here only while the cut is off: it goes through the
+			// tunnel then (see ctl.LoadNet)
+			return true
 		}
 		return false
 	},
@@ -217,6 +221,8 @@ func (v *view) VName(verdict string) string {
 		return v.T("connection cut")
 	case probe.BlockedTLS:
 		return v.T("TLS cut by site name")
+	case probe.CleanSplit:
+		return v.T("TLS cut by site name; gets through with the ClientHello cut, which is off")
 	case probe.BlockedQUIC:
 		return v.T("QUIC blocked")
 	case probe.MITM:

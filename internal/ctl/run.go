@@ -37,8 +37,13 @@ type Config struct {
 	Provider    string
 	ListPath    string
 	// the same verdicts as addresses, see verifiedAddrs
-	AddrProvider  string
-	AddrListPath  string
+	AddrProvider string
+	AddrListPath string
+	// the names that go direct with the ClientHello cut, see verifiedSplit
+	SplitProvider string
+	SplitListPath string
+	// the core's listener whose outbound cuts the ClientHello
+	SplitAddr     string
 	StatePath     string
 	JSONLPath     string
 	Interval      time.Duration
@@ -51,6 +56,7 @@ type Config struct {
 	Idle         time.Duration
 	SettingsPath string
 	Families     bool             // extend verdicts to the whole domain, see family.go
+	Split        bool             // try a BLOCKED_TLS name with the ClientHello cut, see Settings.SplitHello
 	DirectDNS    []probe.Resolver // empty -- the prober's built-in DoH
 	// DNSCache: the settings have the program's DNS cache answer the core
 	// for the direct path; the detector asks it too while it does (see
@@ -93,6 +99,9 @@ func (cfg Config) stopping() bool {
 
 // checkProto runs one probe; the scenario tests put a script in its place.
 var checkProto = probe.CheckProto
+
+// checkSplit: the probe with the ClientHello cut, see probe.CheckSplit
+var checkSplit = probe.CheckSplit
 
 func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	conns, err := a.connections()
@@ -185,6 +194,8 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	direct := probe.Dialer{Addr: cfg.DirectAddr, Timeout: cfg.Timeout, DNS: directResolvers(cfg),
 		Established: a.established, NoV6: st.directNoV6(netID), Pass: pass}
 	tunnel := probe.Dialer{Addr: cfg.TunnelAddr, Timeout: cfg.Timeout, Established: a.established, Pass: pass}
+	split := direct
+	split.Addr = cfg.SplitAddr
 
 	// the verdicts are filed under netID: a probe made after the machine
 	// moved to another network measured that one
@@ -273,9 +284,24 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			var downOn probe.Report
 			noV6 := false // see probe.Report.DirectNoV6
 			reachedV6 := false
+			reps := make([]probe.Report, 0, len(eps))
 			for _, ep := range eps {
 				r := checkProto(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp, was)
 				appendJSONL(cfg.JSONLPath, r)
+				if !r.Aborted && cfg.Split && !ep.udp && ep.port == 443 && r.Verdict == probe.BlockedTLS {
+					// blocked by its name: once more with the hello cut, on
+					// the same node. The cut path's verdict stands for the
+					// port when it got through -- clean, or merely slower;
+					// otherwise the block the plain path found does.
+					s := checkSplit(split, tunnel, r, cfg.Attempts, was)
+					appendJSONL(cfg.JSONLPath, s)
+					switch {
+					case s.Aborted, s.Verdict == probe.CleanSplit, s.Verdict == probe.Slower:
+						r = s
+					default:
+						r.Note = "ClientHello cut: " + string(s.Verdict) + " " + s.Reason
+					}
+				}
 				if r.Aborted {
 					// leave memory alone: the name goes back to the
 					// watcher and is checked once the core is back
@@ -291,16 +317,15 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 				}
 				noV6 = noV6 || r.DirectNoV6
 				reachedV6 = reachedV6 || directReachedV6(r)
-				if rep.Domain == "" || worse(r.Verdict, rep.Verdict) {
-					rep = r
-				}
+				reps = append(reps, r)
 			}
+			rep = worstPort(eps, reps)
 			// A port whose direct side failed while the tunnel failed too is
 			// INCONCLUSIVE, and that must not override a definite verdict --
 			// but CLEAN is a promise that the name works direct on every port
 			// it uses, and on this one it does not. Clean on 443 plus dead
 			// direct on 5228 used to come out CLEAN.
-			if rep.Verdict == probe.Clean && directDown {
+			if goesDirect(rep.Verdict) && directDown {
 				rep = downOn
 				rep.Verdict = probe.Inconcl
 				rep.Reason = fmt.Sprintf("direct path fails on %s/%d: %s",
@@ -398,7 +423,7 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 	// A name used on more ports than a check takes cannot be promised clean:
 	// CLEAN sends it direct on all of them, and the ones beyond the cap were
 	// never probed. It used to come out CLEAN all the same.
-	if rep.Verdict == probe.Clean && f.unprobed > 0 {
+	if goesDirect(rep.Verdict) && f.unprobed > 0 {
 		rep.Verdict = probe.Inconcl
 		rep.Reason = fmt.Sprintf("used on %d more ports than a check takes (%d)", f.unprobed, maxEndpoints)
 	}
@@ -415,13 +440,13 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 	// works -- a false "clean" breaks a site, a false "blocked" only
 	// costs a detour. It drops out of the direct list until the next
 	// check, without counting as a revert.
-	expiredClean := had && prev.Verdict == probe.Clean && time.Now().After(prev.ExpiresAt)
+	expiredClean := had && goesDirect(prev.Verdict) && time.Now().After(prev.ExpiresAt)
 	// Keeping a verdict is for the tunnel side failing. When the
 	// DIRECT path itself failed, a CLEAN is not kept either: whatever
 	// this means about blocking, the host does not work direct now.
 	// On any TCP port it uses, not only the one the report came from --
 	// and not over QUIC, which most hosts simply do not have.
-	dropClean := had && prev.Verdict == probe.Clean && (expiredClean || directDown || f.unprobed > 0)
+	dropClean := had && goesDirect(prev.Verdict) && (expiredClean || directDown || f.unprobed > 0)
 	// Nor is a verdict kept against an IPv6 node the direct path does
 	// not reach: that is a finding about the direct path, and the
 	// BLOCKED it replaces was the old mislabel of the same thing.
@@ -433,7 +458,7 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 		// repeat does: e2cNN.gcp.gvt2.com names came back every hour
 		// to fail on both paths again. Not when our own side failed
 		// (the resolver, the tunnel): that says nothing about the host.
-		if prev.Verdict != probe.Clean && !rep.Unmeasured {
+		if !goesDirect(prev.Verdict) && !rep.Unmeasured {
 			kept.Streak++
 			term = failTerm(cfg, kept.Streak, kept.Reverts)
 		}
@@ -451,14 +476,14 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 	// The CLEAN is kept and measured again after FailTTL; SLOWER the
 	// second time in a row reverts it. The direct path did work, so an
 	// expired CLEAN may be kept this way too.
-	if had && prev.Verdict == probe.Clean && rep.Verdict == probe.Slower && !prev.SlowOnce && !directDown {
+	if had && goesDirect(prev.Verdict) && rep.Verdict == probe.Slower && !prev.SlowOnce && !directDown {
 		kept := *prev
 		kept.SlowOnce = true
 		kept.ExpiresAt = time.Now().Add(cfg.FailTTL)
 		kept.Endpoints = endpointStrings(eps)
 		st.put(netID, dom, &kept)
-		log.Printf("  %s slower once (%s), keeping CLEAN, measuring again in %s",
-			dom, rep.Reason, cfg.FailTTL)
+		log.Printf("  %s slower once (%s), keeping %s, measuring again in %s",
+			dom, rep.Reason, prev.Verdict, cfg.FailTTL)
 		return false
 	}
 
@@ -483,14 +508,14 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 	if had {
 		e.Reverts = prev.Reverts
 		// the same finding again: the wait before the next check grows
-		if rep.Verdict != probe.Clean && sameFinding(prev.Verdict, rep.Verdict) {
+		if !goesDirect(rep.Verdict) && sameFinding(prev.Verdict, rep.Verdict) {
 			e.Streak = prev.Streak
 			if !rep.Unmeasured {
 				e.Streak++
 			}
 		}
 	}
-	if rep.Verdict == probe.Clean {
+	if goesDirect(rep.Verdict) {
 		e.ExpiresAt = time.Now().Add(cfg.TTL)
 	} else {
 		e.ExpiresAt = time.Now().Add(failTerm(cfg, e.Streak, e.Reverts))
@@ -504,7 +529,10 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 			e.ExpiresAt = time.Now().Add(cfg.FailTTL)
 			log.Printf("  %s inconclusive (%s), CLEAN not confirmed -- "+
 				"through the tunnel until the next check in %s", dom, rep.Reason, cfg.FailTTL)
-		} else if prev.Verdict == probe.Clean && rep.Verdict != probe.Clean {
+		} else if prev.Verdict == probe.CleanSplit && !cfg.Split && rep.Verdict == probe.BlockedTLS {
+			// the cut was switched off: the name lost nothing it was
+			// checked for, and is no revert
+		} else if goesDirect(prev.Verdict) && !goesDirect(rep.Verdict) {
 			e.Reverts++
 			// from the blocked re-check up: the direct term (a week)
 			// hit the cap on the very first revert, so it never grew
@@ -517,12 +545,12 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 	if had && prev.Verdict == rep.Verdict {
 		return false
 	}
-	if rep.Verdict == probe.Clean {
+	if goesDirect(rep.Verdict) {
 		// log the BEST measurements -- the very ones the decision
 		// is based on. The last pass may have been slow by chance,
 		// and showing it would be misleading
-		log.Printf("CLEAN %s (node %s, direct %s vs tunnel %s)",
-			dom, rep.TestedIP, msVal(rep.DirectMs, rep.Direct), msVal(rep.TunnelMs, rep.Tunnel))
+		log.Printf("%s %s (node %s, direct %s vs tunnel %s)",
+			rep.Verdict, dom, rep.TestedIP, msVal(rep.DirectMs, rep.Direct), msVal(rep.TunnelMs, rep.Tunnel))
 	} else if !had {
 		log.Printf("  %s %s: %s", rep.Verdict, dom, rep.Reason)
 	}
@@ -576,7 +604,7 @@ func suspectDirect(cfg Config, st *state, netID string, conns []connection) []st
 		}
 		e, had := st.get(netID, dom)
 		switch {
-		case had && e.Verdict == probe.Clean:
+		case had && goesDirect(e.Verdict):
 		case !had && fams[familyOf(dom)]:
 			// sent direct by a family, never checked on its own
 		case had && e.Verdict == probe.Inconcl && fams[familyOf(dom)]:
@@ -609,17 +637,41 @@ func syncList(cfg Config, a *api, st *state, netID string, force bool) {
 	// rules until it restarted
 	retryReloads(a)
 	doms, fams := directRules(cfg, st, netID)
+	// the cut switched off: its names go through the tunnel at once, not
+	// when their verdicts run out
+	var splits []string
+	if cfg.Split {
+		splits = st.verifiedSplit(netID)
+	}
 	if !cfg.Apply || cfg.off() {
 		log.Printf("observe mode: %d domains would go DIRECT (%s)", len(doms), preview(doms))
+		if len(splits) > 0 {
+			log.Printf("observe mode: %d domains would go direct with the ClientHello cut (%s)", len(splits), preview(splits))
+		}
 		return
 	}
 	var addrs []string
 	if cfg.AddrListPath != "" {
 		addrs = st.verifiedAddrs(netID)
 	}
-	if !force && slices.Equal(listRules(cfg.ListPath), doms) &&
+	splitSame := cfg.SplitListPath == "" || slices.Equal(listRules(cfg.SplitListPath), splits)
+	if !force && splitSame && slices.Equal(listRules(cfg.ListPath), doms) &&
 		(cfg.AddrListPath == "" || slices.Equal(listRules(cfg.AddrListPath), addrs)) {
 		return
+	}
+	if cfg.SplitListPath != "" && (force || !splitSame) {
+		var sb strings.Builder
+		sb.WriteString("# generated by the controller, do not edit\n")
+		fmt.Fprintf(&sb, "# network %s, updated %s\n", netID, time.Now().Format(time.RFC3339))
+		sb.WriteString("# blocked by name, clean with the ClientHello cut: direct through direct-split\n")
+		for _, d := range splits {
+			sb.WriteString(d + "\n")
+		}
+		if err := replaceList(a, cfg.SplitListPath, cfg.SplitProvider, sb.String()); err != nil {
+			log.Print(err)
+		} else if len(splits) > 0 {
+			log.Printf("applied: %d domains go direct with the ClientHello cut", len(splits))
+		}
 	}
 	var b strings.Builder
 	b.WriteString("# generated by the controller, do not edit\n")
@@ -729,7 +781,7 @@ func takeReset(cfg Config, a *api, st *state) bool {
 		err = fmt.Errorf("state not saved: %w", err)
 	}
 	body := []byte("# verdicts reset -- everything goes through the tunnel\n")
-	for _, l := range [][2]string{{cfg.ListPath, cfg.Provider}, {cfg.AddrListPath, cfg.AddrProvider}} {
+	for _, l := range [][2]string{{cfg.ListPath, cfg.Provider}, {cfg.AddrListPath, cfg.AddrProvider}, {cfg.SplitListPath, cfg.SplitProvider}} {
 		path, provider := l[0], l[1]
 		if path == "" || id != cur {
 			continue
@@ -1132,16 +1184,42 @@ func sameFinding(a, b probe.Verdict) bool {
 var verdictRank = map[probe.Verdict]int{
 	probe.Inconcl:     0,
 	probe.Clean:       1,
-	probe.Slower:      2,
-	probe.BlockedQUIC: 3,
-	probe.ContentDiff: 4,
-	probe.BlockedTCP:  5,
-	probe.BlockedTLS:  5,
-	probe.MITM:        6,
+	probe.CleanSplit:  2,
+	probe.Slower:      3,
+	probe.BlockedQUIC: 4,
+	probe.ContentDiff: 5,
+	probe.BlockedTCP:  6,
+	probe.BlockedTLS:  6,
+	probe.MITM:        7,
 }
 
 // worse: whether a is worse than b; of two alike the first stays
 func worse(a, b probe.Verdict) bool { return verdictRank[a] > verdictRank[b] }
+
+// worstPort: the name's verdict, its worst port's. A name going direct with
+// its hello cut has its QUIC on 443 refused by the core (see awgconf): the
+// browser falls back to TCP at once, and what QUIC showed does not count.
+func worstPort(eps []endpoint, reps []probe.Report) probe.Report {
+	split := false
+	for i, r := range reps {
+		if !eps[i].udp && eps[i].port == 443 && r.Verdict == probe.CleanSplit {
+			split = true
+		}
+	}
+	var rep probe.Report
+	for i, r := range reps {
+		if split && eps[i].udp && eps[i].port == 443 {
+			continue
+		}
+		if rep.Domain == "" || worse(r.Verdict, rep.Verdict) {
+			rep = r
+		}
+	}
+	return rep
+}
+
+// goesDirect: a verdict that sends the name direct, with its hello cut or not
+func goesDirect(v probe.Verdict) bool { return v == probe.Clean || v == probe.CleanSplit }
 
 func isBlocked(v probe.Verdict) bool {
 	return v == probe.BlockedTCP || v == probe.BlockedTLS || v == probe.BlockedQUIC

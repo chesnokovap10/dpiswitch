@@ -55,6 +55,9 @@ func disableAuto(cfg Config, a *api, closeDirect bool) {
 	if err == nil && cfg.AddrListPath != "" {
 		err = replaceList(a, cfg.AddrListPath, cfg.AddrProvider, b)
 	}
+	if err == nil && cfg.SplitListPath != "" {
+		err = replaceList(a, cfg.SplitListPath, cfg.SplitProvider, b)
+	}
 	if err != nil && cfg.autoOff != nil {
 		// the next look tries again
 		cfg.autoOff.Store(false)
@@ -111,6 +114,9 @@ func closeTunnelledNowDirect(cfg Config, a *api, st *state, id string) int {
 		return 0
 	}
 	rules := listRules(cfg.ListPath)
+	if cfg.SplitListPath != "" {
+		rules = append(rules, listRules(cfg.SplitListPath)...)
+	}
 	direct := func(c connection) bool {
 		if dom := c.domain(); dom != "" {
 			for _, r := range rules {
@@ -148,7 +154,32 @@ func closeDetectorDirect(cfg Config, a *api) int {
 	n := 0
 	for _, c := range conns {
 		if c.ID == "" || !(c.byProvider(cfg.Provider) ||
-			cfg.AddrProvider != "" && c.byProvider(cfg.AddrProvider)) {
+			cfg.AddrProvider != "" && c.byProvider(cfg.AddrProvider) ||
+			cfg.SplitProvider != "" && c.byProvider(cfg.SplitProvider)) {
+			continue
+		}
+		if err := a.closeConnection(c.ID); err != nil {
+			log.Printf("connection %s not closed: %v", c.ID, err)
+			continue
+		}
+		n++
+	}
+	return n
+}
+
+// closeByProvider closes the open connections a rule of this provider routed
+func closeByProvider(a *api, provider string) int {
+	if provider == "" {
+		return 0
+	}
+	conns, err := a.connections()
+	if err != nil {
+		log.Printf("cannot read connections: %v", err)
+		return 0
+	}
+	n := 0
+	for _, c := range conns {
+		if c.ID == "" || !c.byProvider(provider) {
 			continue
 		}
 		if err := a.closeConnection(c.ID); err != nil {

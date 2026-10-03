@@ -8,8 +8,9 @@
 # nothing.
 #
 # Only what DPI Switch uses is kept:
-#  - outbounds: wireguard (AmneziaWG) only; DIRECT and REJECT are built into
-#    the core and do not go through the parser;
+#  - outbounds: wireguard (AmneziaWG), and direct for direct-split, the one
+#    that cuts the ClientHello (tls-split, the fork's own); DIRECT and REJECT
+#    are built into the core and do not go through the parser;
 #  - inbounds: tun and socks (the prober's listeners);
 #  - no gVisor: the TUN inbound runs on the Windows stack ("system") and the
 #    WireGuard outbounds on mihomo's own "mips" stack (see awgconf).
@@ -24,8 +25,9 @@ param(
     # stack one packet at a time (the first DNS queries after a start went
     # unanswered on half the starts), the API narrowed to what DPI Switch
     # calls, and UDP on a SOCKS listener with users only through an
-    # association; see DPISWITCH.md there
-    [string]$Commit = "e6e6a951d038adf5653fa7e303ee7de1dbd85dea",
+    # association, and a direct outbound that cuts the ClientHello
+    # (tls-split); see DPISWITCH.md there
+    [string]$Commit = "016b747402d12f0f4013f583875539d669c3e2be",
     [string]$Repo = "https://github.com/chesnokovap10/mihomo-dpiswitch.git"
 )
 
@@ -77,7 +79,7 @@ function Limit-Switch([string]$File, [string[]]$Keep) {
     if ($missing) { throw "$File`: no case for $($missing -join ', ')" }
     [IO.File]::WriteAllLines($path, $out)
 }
-Limit-Switch "adapter\parser.go" @("wireguard")
+Limit-Switch "adapter\parser.go" @("wireguard", "direct")
 Limit-Switch "listener\parse.go" @("socks", "tun")
 
 $tags = "no_tailscale,no_zerotier,no_easytier,no_fake_tcp"

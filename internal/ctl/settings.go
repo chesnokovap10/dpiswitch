@@ -40,6 +40,11 @@ type Settings struct {
 	Families bool `json:"families"`
 	// IPv6 through the tunnel: TUN gets IPv6 and a route
 	IPv6 bool `json:"ipv6"`
+	// SplitHello: a name blocked by its ClientHello is tried once more with
+	// the hello cut (see probe.CheckSplit), and goes direct through the
+	// core's direct-split outbound if that is clean. Off by default: the
+	// cut can break a site the check did not exercise.
+	SplitHello bool `json:"split_hello"`
 	// second tunnel (awg2): the IDs of the presets switched on
 	Awg2Presets []string `json:"awg2_presets"`
 	// second tunnel switched on or off by hand, by auto-switch mode: each
@@ -388,6 +393,7 @@ func (s Settings) apply(cfg Config) Config {
 	cfg.MaxBackoff = time.Duration(s.MaxBackoffMin) * time.Minute
 	cfg.Attempts = s.Attempts
 	cfg.Families = s.Families
+	cfg.Split = s.SplitHello
 	cfg.DNSCache = s.DNSCache
 	cfg.DirectDNS = nil
 	for _, d := range s.DirectDNS {

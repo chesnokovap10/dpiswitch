@@ -19,6 +19,13 @@ import (
 // awgconf)
 const DirectListener = "127.0.0.1:7892"
 
+// SplitProvider: the names that go direct with the ClientHello cut -- the
+// rule-provider and, in awgconf, its rules
+const SplitProvider = "direct-split-verified"
+
+// SplitOutbound: the core's direct outbound that cuts the ClientHello
+const SplitOutbound = "direct-split"
+
 // SavedNetwork: the network the controller last worked in, as its state
 // file keeps it; "" for none
 func SavedNetwork(statePath string) string { return loadState(statePath).Current }
@@ -36,6 +43,9 @@ func Defaults() Config {
 		ListPath:      paths.Verified(),
 		AddrProvider:  "direct-verified-addr",
 		AddrListPath:  paths.VerifiedAddr(),
+		SplitProvider: SplitProvider,
+		SplitListPath: paths.VerifiedSplit(),
+		SplitAddr:     "127.0.0.1:7894", // goes out through direct-split
 		StatePath:     paths.State(),
 		JSONLPath:     paths.Reports(),
 		Interval:      60 * time.Second,
@@ -324,7 +334,14 @@ func LoadNet(statePath, id string) Snapshot {
 	// names, and bare addresses with a CLEAN of their own: both go direct,
 	// and the counts already held the addresses the list left out
 	s.Direct = append(st.verified(id), st.cleanAddrs(id)...)
-	if LoadSettings(paths.Settings()).Families {
+	set := LoadSettings(paths.Settings())
+	// with the cut on, its names go direct too; off, they go through the
+	// tunnel and are listed with the blocked
+	if set.SplitHello {
+		s.Direct = append(s.Direct, st.verifiedSplit(id)...)
+		sort.Strings(s.Direct)
+	}
+	if set.Families {
 		s.Families = st.families(id)
 	}
 	now := time.Now()
@@ -335,7 +352,7 @@ func LoadNet(statePath, id string) Snapshot {
 	}
 	st.mu.Lock()
 	for dom, e := range st.Networks[id] {
-		if e.Verdict != probe.Clean {
+		if e.Verdict != probe.Clean && !(set.SplitHello && e.Verdict == probe.CleanSplit) {
 			s.Others = append(s.Others, directEntry(dom, e, now))
 		}
 	}
@@ -414,8 +431,8 @@ func readSettings(cfg Config) (Settings, bool) {
 func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) Config {
 	was, old := cfg.Apply, cfg
 	cfg = s.apply(cfg)
-	log.Printf("settings: auto-switch %s, direct TTL %s, blocked TTL %s, cap %s, tolerance +%d%%, attempts %d",
-		s.Mode(), cfg.TTL, cfg.FailTTL, cfg.MaxBackoff, s.SlowPct, cfg.Attempts)
+	log.Printf("settings: auto-switch %s, direct TTL %s, blocked TTL %s, cap %s, tolerance +%d%%, attempts %d, ClientHello cut %v",
+		s.Mode(), cfg.TTL, cfg.FailTTL, cfg.MaxBackoff, s.SlowPct, cfg.Attempts, cfg.Split)
 
 	// Terms follow the setting they come from, and only when it changed.
 	// The other verdicts' terms were left as they were -- a blocked re-check
@@ -423,11 +440,17 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 	// save, whatever it changed, reset the CLEAN ones, a CLEAN measured
 	// slower once among them (see entry.SlowOnce).
 	failChanged := cfg.FailTTL != old.FailTTL || cfg.MaxBackoff != old.MaxBackoff
+	// the cut switched on: the names blocked by their hello are tried with
+	// it now, not when their re-check comes -- a day away for some
+	splitOn := cfg.Split && !old.Split
+	now := time.Now()
 	st.mu.Lock()
 	for _, m := range st.Networks {
 		for _, e := range m {
 			switch {
-			case e.Verdict == probe.Clean:
+			case splitOn && e.Verdict == probe.BlockedTLS:
+				e.ExpiresAt = now
+			case goesDirect(e.Verdict):
 				if cfg.TTL != old.TTL && !e.SlowOnce {
 					e.ExpiresAt = e.DecidedAt.Add(cfg.TTL)
 				}
@@ -454,6 +477,12 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 		// the main loop writes it once it finds the network
 		if netID != noNetwork {
 			applyList(cfg, a, st, netID)
+		}
+		// the cut switched off: its list is empty now, and what it sent
+		// direct goes through the tunnel once it opens again
+		if old.Split && !cfg.Split {
+			n := closeByProvider(a, cfg.SplitProvider)
+			log.Printf("the ClientHello cut switched off: %d open connections it carried closed", n)
 		}
 	}
 	return cfg

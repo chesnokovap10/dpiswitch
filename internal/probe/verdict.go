@@ -12,6 +12,7 @@ type Verdict string
 
 const (
 	Clean       Verdict = "CLEAN"        // direct path is clean -- a DIRECT candidate
+	CleanSplit  Verdict = "CLEAN_SPLIT"  // blocked by name, clean with the ClientHello cut -- see CheckSplit
 	BlockedTCP  Verdict = "BLOCKED_TCP"  // cut at the connection level
 	BlockedTLS  Verdict = "BLOCKED_TLS"  // cut on ClientHello -- SNI filter
 	MITM        Verdict = "MITM"         // certificate substitution
@@ -99,6 +100,73 @@ func CheckProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool,
 	if rep.Verdict != Clean && (!direct.Alive() || !tunnel.Alive()) {
 		rep.Verdict, rep.Aborted = Inconcl, true
 		rep.Reason = "core unavailable (restarting?), check discarded"
+	}
+	return rep
+}
+
+// CheckSplit: a name the plain direct path found blocked on its ClientHello
+// (BLOCKED_TLS), tried again through the core's outbound that cuts the
+// hello (see direct-split in awgconf) -- on the same node, against the
+// tunnel, as many passes as a plain check, and just as strictly: the
+// handshake, a real request and its answer, and the latency. CLEAN_SPLIT
+// only if every pass is clean and the cut path is not slower; otherwise the
+// verdict the cut path got.
+//
+// The prober cannot cut the hello itself: its bytes go to the core's SOCKS
+// listener, and the core writes them on to the site in segments of its own.
+// So the cut is the core's, the same one the traffic will get.
+func CheckSplit(split, tunnel Dialer, plain Report, attempts int, prev Verdict) Report {
+	rep := checkSplit(split, tunnel, plain, attempts, prev)
+	if rep.Verdict != CleanSplit && (!split.Alive() || !tunnel.Alive()) {
+		rep.Verdict, rep.Aborted = Inconcl, true
+		rep.Reason = "core unavailable (restarting?), check discarded"
+	}
+	return rep
+}
+
+func checkSplit(split, tunnel Dialer, plain Report, attempts int, prev Verdict) Report {
+	rep := Report{Domain: plain.Domain, Port: plain.Port, Proto: "tcp", Time: time.Now().Format(time.RFC3339),
+		Attempts: attempts, TestedIP: plain.TestedIP, DNSDirect: plain.DNSDirect, DNSTunnel: plain.DNSTunnel,
+		Note: "ClientHello cut"}
+	// the band around the latency threshold holds for a name going direct
+	// either way
+	if prev == CleanSplit {
+		prev = Clean
+	}
+	var bestDirect, bestTunnel time.Duration
+	measured := false
+	for i := 0; i < attempts; i++ {
+		d, t := Run(split, plain.TestedIP, plain.Domain), Run(tunnel, plain.TestedIP, plain.Domain)
+		rep.Direct, rep.Tunnel = d, t
+		v, reason := Judge(d, t)
+		rep.Unmeasured = v == Inconcl && strings.HasPrefix(reason, tunnelDown)
+		rep.Verdict, rep.Reason = v, reason
+		if v != Clean {
+			return rep
+		}
+		dt, dok := latency(d)
+		tt, tok := latency(t)
+		if !dok || !tok {
+			continue
+		}
+		if !measured || dt < bestDirect {
+			bestDirect = dt
+		}
+		if !measured || tt < bestTunnel {
+			bestTunnel = tt
+		}
+		measured = true
+	}
+	rep.Verdict, rep.Reason = CleanSplit, ""
+	if !measured {
+		return rep
+	}
+	rep.DirectMs = bestDirect.Milliseconds()
+	rep.TunnelMs = bestTunnel.Milliseconds()
+	if slower(bestDirect, bestTunnel, prev) {
+		rep.Verdict = Slower
+		rep.Reason = fmt.Sprintf("direct path with the ClientHello cut is slower: %d ms vs %d via tunnel",
+			bestDirect.Milliseconds(), bestTunnel.Milliseconds())
 	}
 	return rep
 }

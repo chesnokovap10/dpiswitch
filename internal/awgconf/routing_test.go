@@ -40,6 +40,7 @@ const (
 	hostTunnel  = "t.example" // in Always via tunnel
 	hostDirect  = "d.example" // in Always direct
 	hostBlock   = "b.example" // in Forbidden
+	hostSplit   = "s.example" // the detector found it blocked by name, clean with the ClientHello cut
 )
 
 // A route as the tables write it: the tunnels in the order they are tried,
@@ -52,7 +53,7 @@ type route string
 func (r route) want(alive map[string]bool) string {
 	for _, hop := range strings.Split(string(r), " > ") {
 		switch hop {
-		case "DIRECT", "REJECT":
+		case "DIRECT", "REJECT", ctl.SplitOutbound:
 			return hop
 		case "awg1":
 			if alive["awg1"] {
@@ -145,6 +146,44 @@ func TestRouting(t *testing.T) {
 	}
 }
 
+// TestRoutingSplit: a name the detector sends direct with its ClientHello
+// cut takes direct-split in On, whatever is loaded; Observe only sends it
+// direct as it is, like everything; Tunnel only, whose lists the controller
+// writes empty, where it sends what no list names. QUIC to it is refused,
+// and the user's lists stand above it.
+func TestRoutingSplit(t *testing.T) {
+	split := route(ctl.SplitOutbound)
+	for _, mode := range []string{ctl.ModeOn, ctl.ModeObserve, ctl.ModeTunnel} {
+		for _, r := range routingTables[mode] {
+			t.Run(mode+"/"+r.loaded, func(t *testing.T) {
+				core, loaded := setupRouting(t, mode, r.loaded)
+				want := map[string]route{ctl.ModeOn: split, ctl.ModeObserve: D, ctl.ModeTunnel: r.unnamed}[mode]
+				for _, alive := range aliveSets(loaded) {
+					if got, why := core.route(hostSplit, alive); got != want.want(alive) {
+						t.Errorf("alive %v: %s, want %s\n  %s", alive, got, want.want(alive), why)
+					}
+				}
+				at := func(rule string) int {
+					for i, x := range core.rules {
+						if strings.Join(x, ",") == rule {
+							return i
+						}
+					}
+					t.Fatalf("no rule %s", rule)
+					return -1
+				}
+				cut := at("RULE-SET," + ctl.SplitProvider + "," + ctl.SplitOutbound)
+				if quic := at("AND,((NETWORK,UDP),(DST-PORT,443),(RULE-SET," + ctl.SplitProvider + ")),REJECT"); quic > cut {
+					t.Error("QUIC to the cut's names is refused after they are sent direct")
+				}
+				if at("RULE-SET,force-tunnel,"+ctl.TunnelListsGroup) > cut || at("RULE-SET,force-block,REJECT") > cut {
+					t.Error("the user's lists below the cut's")
+				}
+			})
+		}
+	}
+}
+
 // setupRouting: a data directory as the service would hold it for the mode
 // and the configs loaded, and the core's config rendered from it
 func setupRouting(t *testing.T, mode, loaded string) (*simCore, []string) {
@@ -195,8 +234,10 @@ func setupRouting(t *testing.T, mode, loaded string) (*simCore, []string) {
 	// every mode but On (see ctl.disableAuto)
 	if mode == ctl.ModeOn {
 		write(paths.Verified(), hostClean+"\n")
+		write(paths.VerifiedSplit(), hostSplit+"\n")
 	} else {
 		write(paths.Verified(), "# auto-switch disabled\n")
+		write(paths.VerifiedSplit(), "# auto-switch disabled\n")
 	}
 	EnsureLists()
 	ctl.SyncUserFiles()
@@ -356,7 +397,7 @@ func (c *simCore) route(host string, alive map[string]bool) (string, string) {
 			why += " -> " + target
 			target = next
 		}
-		if target != "DIRECT" && target != "REJECT" && !alive[target] {
+		if target != "DIRECT" && target != "REJECT" && target != ctl.SplitOutbound && !alive[target] {
 			return "REJECT", why + " -> " + target + " (down)"
 		}
 		return target, why + " -> " + target
@@ -397,6 +438,12 @@ func (c *simCore) fits(r []string, host string) bool {
 		return false
 	case "PROCESS-NAME", "PROCESS-PATH", "NETWORK":
 		return false
+	case "AND":
+		// the one AND written refuses QUIC to the cut's names: a TCP
+		// connection never fits it
+		if strings.HasPrefix(strings.Join(r, ","), "AND,((NETWORK,UDP),") {
+			return false
+		}
 	}
 	panic(fmt.Sprintf("a rule the checks do not know: %v", r))
 }

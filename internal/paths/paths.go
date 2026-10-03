@@ -116,6 +116,7 @@ func State() string           { return Data("controller-state.json") }
 func Reports() string         { return Data("reports.jsonl") }
 func Verified() string        { return Data("direct-verified.txt") }
 func VerifiedAddr() string    { return Data("direct-verified-addr.txt") }
+func VerifiedSplit() string   { return Data("direct-split-verified.txt") }
 func ForceDirect() string     { return Data(DirectList) }
 func ForceDirectApps() string { return Data(AppList(DirectList)) }
 func ForceBlock() string      { return Data(BlockList) }

@@ -144,7 +144,7 @@ type connection struct {
 // every re-check, and a name nothing went to was never forgotten.
 func (c connection) fromProbe() bool {
 	switch c.Metadata.InboundName {
-	case "probe-direct", "probe-tunnel", "probe-tunnel2":
+	case "probe-direct", "probe-split", "probe-tunnel", "probe-tunnel2":
 		return true
 	}
 	ip := net.ParseIP(c.Metadata.SourceIP)
@@ -363,9 +363,10 @@ func (c connection) pinned() bool {
 	return false
 }
 
+// viaDirect: the connection went direct, its hello cut or not
 func (c connection) viaDirect() bool {
 	for _, ch := range c.Chains {
-		if ch == "DIRECT" {
+		if ch == "DIRECT" || ch == SplitOutbound {
 			return true
 		}
 	}
