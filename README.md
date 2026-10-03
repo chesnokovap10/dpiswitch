@@ -114,7 +114,7 @@
 Внизу боковой панели — установка и удаление службы, автозапуск трея и выбор языка (English / Русский).
 Трей говорит на том же языке, что и интерфейс.
 
-**Меню трея:** «Настройки…» (открыть интерфейс: уже открытое окно поднимается, новое открывается отдельным окном Chrome/Edge без вкладок на весь экран или вкладкой браузера — как выбрано в настройках; щелчки, пока окно открывается, нового не открывают), «Установить службу…» / «Остановить туннель» /
+**Меню трея:** «Настройки…» (открыть интерфейс: уже открытое окно поднимается, новое открывается отдельным окном Chrome/Edge без вкладок или вкладкой браузера — как выбрано в настройках; щелчки, пока окно открывается, нового не открывают), «Установить службу…» / «Остановить туннель» /
 «Запустить туннель», «Всё через туннель (сбросить вердикты)» — текущей сети, «Запускать с Windows», «Папка данных»,
 «Выход». Цвет значка показывает состояние: выключен, туннель работает, ошибка. Подсказка значка —
 сколько сайтов идёт напрямую и сколько заблокировано.
@@ -134,7 +134,7 @@
 | DNS для прямых сайтов | `tls://8.8.8.8`, `tls://8.8.4.4` | DoT Google, мимо туннеля |
 | DNS внутри туннеля | из `.conf` | Для сайтов, идущих через туннель |
 | Локальный DNS-кэш | Выкл | Имена прямых сайтов отвечаются из памяти компьютера, 7 дней, и после перезапусков; новое имя спрашивается у самого быстрого DNS для прямых сайтов |
-| Открывать интерфейс | В отдельном окне | Окно браузера без вкладок на весь экран или вкладка браузера |
+| Открывать интерфейс | В отдельном окне | Окно браузера без вкладок или вкладка браузера |
 
 ### Куда идёт соединение
 
@@ -535,7 +535,7 @@ The header shows the service and tunnels' state, the auto-switch toggle and Star
 of the sidebar holds installing and removing the service, the tray's autostart and the language
 (English / Русский). The tray speaks the same language as the UI.
 
-**Tray menu:** "Settings…" (opens the UI: a window already open comes forward, a new one is a Chrome/Edge window of its own with no tabs, full screen, or a browser tab, as the settings choose; clicks while it opens open no other), "Install service…" / "Stop tunnel" / "Start tunnel",
+**Tray menu:** "Settings…" (opens the UI: a window already open comes forward, a new one is a Chrome/Edge window of its own with no tabs, or a browser tab, as the settings choose; clicks while it opens open no other), "Install service…" / "Stop tunnel" / "Start tunnel",
 "Everything via tunnel (reset verdicts)" of the current network, "Start with Windows", "Data folder", "Exit". The icon's
 colour shows the state: off, tunnel up, error. Its tooltip tells how many sites go direct and how
 many are blocked.
@@ -555,7 +555,7 @@ many are blocked.
 | DNS for direct sites | `tls://8.8.8.8`, `tls://8.8.4.4` | Google DoT, outside the tunnel |
 | DNS inside the tunnel | from the `.conf` | For the sites that go through the tunnel |
 | Local DNS cache | Off | Direct sites' names answered from the computer's memory, for 7 days and across restarts; a new name is asked of the fastest resolver for direct sites |
-| Open the UI | In its own window | A browser window with no tabs, full screen, or a browser tab |
+| Open the UI | In its own window | A browser window with no tabs, or a browser tab |
 
 ### Where a connection goes
 

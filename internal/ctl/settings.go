@@ -58,7 +58,7 @@ type Settings struct {
 	// DirectDNS what it has not (see dnscache)
 	DNSCache bool `json:"dns_cache"`
 	// UIOpen: how the tray opens the UI -- UIWindow, an app window of the
-	// default browser opened full screen, or UITab, a tab of the browser
+	// default browser, or UITab, a tab of the browser
 	UIOpen string `json:"ui_open"`
 }
 

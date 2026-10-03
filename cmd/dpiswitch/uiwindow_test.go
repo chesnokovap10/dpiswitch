@@ -15,20 +15,3 @@ func TestCommandExe(t *testing.T) {
 		}
 	}
 }
-
-// A window whose tab shown is the UI is told by its whole title: another
-// page that only starts with the name is not the UI.
-func TestUITabTitle(t *testing.T) {
-	for title, want := range map[string]bool{
-		"DPI Switch - Google Chrome":                  true,
-		"DPI Switch — Mozilla Firefox":                true,
-		"DPI Switch - Поиск в Google - Google Chrome": false,
-		"DPI Switch":                false, // an app window: told apart before
-		"Live - DPI Switch":         false,
-		"dpiswitch - Google Chrome": false,
-	} {
-		if got := isUITab(title); got != want {
-			t.Errorf("%q: %v", title, got)
-		}
-	}
-}

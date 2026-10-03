@@ -260,7 +260,7 @@ var ru = map[string]string{
 	"Open the UI":               "Открывать интерфейс",
 	"In its own window":         "В отдельном окне",
 	"In a browser tab":          "Во вкладке браузера",
-	"How the tray icon opens these pages. Its own window: a window of the default browser with no tabs or address bar, opened full screen -- Chrome, Edge, Brave, Vivaldi and Yandex make one, another browser opens a tab either way. A browser tab: among the browser's other tabs.": "Как значок в трее открывает эти страницы. Отдельное окно — окно браузера по умолчанию без вкладок и адресной строки, на весь экран: его умеют Chrome, Edge, Brave, Vivaldi и Яндекс, другой браузер всё равно откроет вкладку. Вкладка браузера — среди остальных вкладок браузера.",
+	"How the tray icon opens these pages. Its own window: a window of the default browser with no tabs or address bar -- Chrome, Edge, Brave, Vivaldi and Yandex make one, another browser opens a tab either way. A browser tab: a new one among the browser's others each time.": "Как значок в трее открывает эти страницы. Отдельное окно — окно браузера по умолчанию без вкладок и адресной строки: его умеют Chrome, Edge, Brave, Vivaldi и Яндекс, другой браузер всё равно откроет вкладку. Вкладка браузера — каждый раз новая среди остальных вкладок браузера.",
 	"unknown way to open the UI": "неизвестный способ открыть интерфейс",
 	"For direct sites":           "Для прямых сайтов",
 	"Asked outside the tunnel, so CDNs pick nodes near your ISP. The detector asks it too: it tests the node the traffic will go to.": "Опрашивается мимо туннеля, поэтому CDN выбирают узлы рядом с вашим провайдером. Детектор спрашивает его же и проверяет тот узел, куда пойдёт трафик.",
