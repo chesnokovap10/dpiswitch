@@ -471,8 +471,12 @@ function selectedIn(el) {
   return s && !s.isCollapsed && (el.contains(s.anchorNode) || el.contains(s.focusNode));
 }
 async function poll(el) {
-  // a field being edited is not replaced under the user's hands
-  if (el.contains(document.activeElement) && document.activeElement !== el) return;
+  // a field being edited is not replaced under the user's hands. A field
+  // only: a menu item or a button keeps the focus once clicked -- the pages
+  // are one document -- and the menu's counts stopped there for good, "0 · 0"
+  // from a reset while the verdicts page under them was full again.
+  const a = document.activeElement;
+  if (a !== el && el.contains(a) && a.matches('input, textarea, select, [contenteditable]')) return;
   if (selectedIn(el)) return;
   // a newer request -- the filter's, an action's -- wins over this one
   const current = ticket(el);
