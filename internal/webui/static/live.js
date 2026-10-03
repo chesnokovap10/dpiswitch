@@ -110,8 +110,7 @@ pageInit.live = function (sec) {
     if (m.keep) keep = m.keep;
     if (m.kind === 'full') {
       // the state as it stands. Of the history the page holds it takes what
-      // came since; of another -- the core ran anew, a page cleared it -- it
-      // drops what it held.
+      // came since; of another -- the core ran anew -- it drops what it held.
       const picked = sel && sel.id;
       drop(open);
       if (!(m.part && m.sess === sess)) {
@@ -424,14 +423,6 @@ pageInit.live = function (sec) {
     paused = !paused;
     if (paused) stop(); else start();
     state();
-  });
-  $('lclear').addEventListener('click', () => {
-    if (sel && !open.has(sel.id)) unpick();
-    drop(closed); drop(failed); drop(blocked);
-    // the server forgets them too, for every page: a failure after this is
-    // counted from one, not added to the count before it
-    fetch('/act/liveclear', {method: 'POST'}).catch(() => {});
-    draw();
   });
 
   tbody.addEventListener('click', async e => {

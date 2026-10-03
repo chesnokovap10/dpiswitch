@@ -126,7 +126,6 @@ func (s *Server) Handler() http.Handler {
 		"/act/dnstest":       s.actDNSTest,
 		"/act/defaults":      s.actDefaults,
 		"/act/liveclose":     s.actLiveClose,
-		"/act/liveclear":     s.actLiveClear,
 		"/act/liveadd":       s.actLiveAdd,
 		"/act/livereveal":    s.actLiveReveal,
 	} {

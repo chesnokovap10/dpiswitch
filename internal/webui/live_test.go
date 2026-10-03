@@ -753,34 +753,6 @@ func TestKeepLast(t *testing.T) {
 	}
 }
 
-// Clear forgets the failures: the same one after it is a new row, counted
-// from one -- it used to come back with the count and the first time from
-// before -- and every page is told.
-func TestLiveClear(t *testing.T) {
-	h := testHub()
-	h.failID = "f-"
-	ctx := context.Background()
-	t0 := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
-	e := ctl.DialErr{Network: "tcp", Proxy: "DIRECT", Host: "a.example", Port: 443, Err: "i/o timeout"}
-	h.failure(ctx, "", e, []string{"DIRECT"}, t0)
-	h.failure(ctx, "", e, []string{"DIRECT"}, t0.Add(10*time.Second))
-	h.closed = []*liveRow{{ID: "x", End: t0.UnixMilli()}}
-	first, sess := h.failed[0].ID, h.sess
-	sub := watch(h)
-	h.clear()
-	if len(h.failed)+len(h.closed)+len(h.failKey)+len(h.failNew) != 0 {
-		t.Fatalf("left after clear: %d failed, %d closed", len(h.failed), len(h.closed))
-	}
-	// every page drops what it held: a new history, sent whole
-	if m := next(t, sub); m.Kind != "full" || m.Part || m.Sess == sess || len(m.Closed)+len(m.Failed) != 0 {
-		t.Errorf("the pages after clear: %+v", m)
-	}
-	h.failure(ctx, "", e, []string{"DIRECT"}, t0.Add(20*time.Second))
-	if r := h.failed[0]; r.N != 1 || r.ID == first || r.Start != t0.Add(20*time.Second).UnixMilli() {
-		t.Errorf("after clear: %+v", r)
-	}
-}
-
 func TestGroupChain(t *testing.T) {
 	groups := map[string]string{"tunnel": "awg1", "tunnel2": "tunnel", "fell": "DIRECT", "a": "b", "b": "a"}
 	for name, want := range map[string]string{

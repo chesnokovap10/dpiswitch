@@ -188,7 +188,7 @@ type liveHub struct {
 	downAt  time.Time // when the core was seen gone; zero while it answers
 	lastRun string    // the core's run at the last answer
 
-	// the history: a new one when the core runs anew or a page clears it.
+	// the history: a new one when the core runs anew.
 	// seq counts what closed and failed in it.
 	sess string
 	seq  int64
@@ -645,18 +645,6 @@ func (h *liveHub) keepFailed(kept []*liveRow) {
 	})
 }
 
-// clear forgets the closed connections and the failures: a failure after it
-// starts a row of its own, counted from one. It is a new history: every page
-// is sent the state anew, and drops what it held.
-func (h *liveHub) clear() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.closed = nil
-	h.keepFailed(nil)
-	h.sess = newLiveSess()
-	h.send(h.full(time.Now(), "", 0))
-}
-
 // pathOf: the file of the program behind a connection, open or closed
 func (h *liveHub) pathOf(id string) string {
 	h.mu.Lock()
@@ -866,12 +854,6 @@ func (s *Server) actLiveClose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("ui: live: connection %s closed by hand", id)
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// actLiveClear: the page's Clear -- see clear
-func (s *Server) actLiveClear(w http.ResponseWriter, r *http.Request) {
-	s.live.clear()
 	w.WriteHeader(http.StatusNoContent)
 }
 
