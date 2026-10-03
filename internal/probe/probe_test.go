@@ -117,6 +117,11 @@ func TestHTTPGet(t *testing.T) {
 	}
 	for _, tc := range cases {
 		client, server := pair(t)
+		// the reset waits for the client to have read the whole reply:
+		// Windows drops what was received and not yet read when a RST
+		// comes, and the client then failed on the headers
+		read := make(chan struct{})
+		client = &readCounter{Conn: client, want: len(tc.reply), done: read}
 		go func() {
 			// read the request first: closing on unread data sends a reset,
 			// which may discard the reply before the client reads it
@@ -129,6 +134,10 @@ func TestHTTPGet(t *testing.T) {
 			}
 			server.Write([]byte(tc.reply))
 			if tc.reset {
+				select {
+				case <-read:
+				case <-time.After(5 * time.Second):
+				}
 				// SO_LINGER 0: the close sends a RST, as a stalled session does
 				if c, ok := server.(*net.TCPConn); ok {
 					_ = c.SetLinger(0)
@@ -150,4 +159,20 @@ func TestHTTPGet(t *testing.T) {
 			t.Errorf("%s: redirect host %q, want %q", tc.name, r.RedirectHost, tc.redirectHost)
 		}
 	}
+}
+
+// readCounter closes done once want bytes were read through it
+type readCounter struct {
+	net.Conn
+	want, got int
+	done      chan struct{}
+}
+
+func (c *readCounter) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	if c.got < c.want && c.got+n >= c.want {
+		close(c.done)
+	}
+	c.got += n
+	return n, err
 }
