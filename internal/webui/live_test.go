@@ -52,6 +52,7 @@ func TestLiveRoute(t *testing.T) {
 		"awg2,tunnel2":  "awg2",
 		"awg1,tunnel2":  "awg1",
 		"REJECT":        "reject",
+		"direct-split":  "split",
 		"":              "other",
 	} {
 		var cs []string

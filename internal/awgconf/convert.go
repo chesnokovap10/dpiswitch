@@ -652,6 +652,11 @@ func render(c *Conf) (string, error) {
 	w("  - name: %s", ctl.SplitOutbound)
 	w("    type: direct")
 	w("    tls-split: true")
+	if set.QUICFake {
+		w("    # and a decoy QUIC Initial for www.google.com ahead of the client's")
+		w("    # first one: DPI that reads the name off the Initial reads the decoy's")
+		w("    quic-fake: true")
+	}
 	if c != nil {
 		c.writeProxy(w, "awg1", tunDNS, ipv6, tunV6.Dead("awg1"))
 	}
@@ -738,9 +743,13 @@ func render(c *Conf) (string, error) {
 	w("  # 8. the detector's names blocked by name and clean with the ClientHello")
 	w("  #    cut: direct through the outbound that cuts it -- above observe only's")
 	w("  #    catch-all, which would send them direct uncut. The controller writes")
-	w("  #    the list in On and observe only, empty in tunnel only. QUIC cannot be")
-	w("  #    cut: refused, the browser goes over TCP at once")
-	w("  - AND,((NETWORK,UDP),(DST-PORT,443),(RULE-SET,%s)),REJECT", ctl.SplitProvider)
+	w("  #    the list in On and observe only, empty in tunnel only.")
+	if set.QUICFake {
+		w("  #    QUIC goes the same way, the decoy Initial ahead of it")
+	} else {
+		w("  #    QUIC cannot be cut: refused, the browser goes over TCP at once")
+		w("  - AND,((NETWORK,UDP),(DST-PORT,443),(RULE-SET,%s)),REJECT", ctl.SplitProvider)
+	}
 	w("  - RULE-SET,%s,%s", ctl.SplitProvider, ctl.SplitOutbound)
 	w("")
 	w("  # 9. detector verdicts: direct as it is. Written in On, and in observe")

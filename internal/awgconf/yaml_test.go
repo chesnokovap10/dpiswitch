@@ -349,3 +349,45 @@ func TestRenderIPv6Blocked(t *testing.T) {
 		}
 	}
 }
+
+// With the QUIC decoy on, direct-split sends it, and QUIC to the cut's
+// names goes there instead of being refused
+func TestRenderQUICFake(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Parse("[Interface]\nPrivateKey = k\nAddress = 10.8.1.3/32\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.7:51820\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reject := "  - AND,((NETWORK,UDP),(DST-PORT,443),(RULE-SET," + ctl.SplitProvider + ")),REJECT\n"
+	for _, on := range []bool{false, true} {
+		if _, err := ctl.UpdateSettings(paths.Settings(), func(s *ctl.Settings) error {
+			s.SplitHello, s.QUICFake = true, on
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		out, err := c.Render()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Contains(out, "    tls-split: true\n    # and a decoy QUIC Initial"); got != on {
+			t.Errorf("on=%v: decoy in direct-split %v", on, got)
+		}
+		if got := strings.Contains(out, "\n    quic-fake: true\n"); got != on {
+			t.Errorf("on=%v: quic-fake %v", on, got)
+		}
+		if got := strings.Contains(out, reject); got == on {
+			t.Errorf("on=%v: QUIC to the cut's names refused %v", on, got)
+		}
+		if !strings.Contains(out, "  - RULE-SET,"+ctl.SplitProvider+","+ctl.SplitOutbound+"\n") {
+			t.Errorf("on=%v: the cut's names do not go through %s", on, ctl.SplitOutbound)
+		}
+	}
+	// a different core config: switching it restarts the core
+	if (ctl.Settings{QUICFake: true}).SameCore(ctl.Settings{}) {
+		t.Error("the decoy is not part of the core's config")
+	}
+}

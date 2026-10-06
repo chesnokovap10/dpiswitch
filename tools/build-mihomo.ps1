@@ -26,9 +26,10 @@ param(
     # unanswered on half the starts), the API narrowed to what DPI Switch
     # calls, and UDP on a SOCKS listener with users only through an
     # association, and a direct outbound that cuts the ClientHello
-    # (tls-split), cutting the name inside the registered domain's label;
+    # (tls-split), cutting the name inside the registered domain's label,
+    # and a decoy QUIC Initial ahead of the first one (quic-fake);
     # see DPISWITCH.md there
-    [string]$Commit = "929ab611dc809e2d5b9234d35d415e376ea0deba",
+    [string]$Commit = "8067c742845cacda61529b7e8e5bd790efe33650",
     [string]$Repo = "https://github.com/chesnokovap10/mihomo-dpiswitch.git"
 )
 

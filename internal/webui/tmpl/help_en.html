@@ -133,7 +133,11 @@ together as usual: TLS allows it to be split into records. The check is as stric
 node, the handshake, a request and its answer, and the speed against the tunnel.</p>
 <ul>
 <li>It passes: the verdict is CLEAN_SPLIT, and the site goes direct with the cut, for the same term as a
-clean one. QUIC (UDP 443) to it is refused, and the browser takes TCP at once.</li>
+clean one. QUIC (UDP 443) to it is refused, and the browser takes TCP at once. With the <a
+href="/settings#quic_fake">QUIC decoy</a> on, QUIC goes the same way: ahead of a connection's first packet the core
+sends a decoy one with the name www.google.com, the ISP judges the connection by it and lets the real one
+through. The detector does not check QUIC this way: where the decoy does not help, the browser takes TCP after
+a short pause.</li>
 <li>It fails: BLOCKED_TLS stays, and the tunnel. Only slower than the tunnel: SLOWER.</li>
 <li>Only the first message is cut; the rest of the traffic goes as it is. Encryption is not touched: the
 browser checks the certificate itself.</li>

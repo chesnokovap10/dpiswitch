@@ -632,7 +632,7 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 		return n, nil
 	}
 	switch field {
-	case "auto_switch", "families", "split_hello", "ipv6", "dns_cache", "ui_open", "clean_ttl_min", "fail_ttl_min", "max_backoff_min", "slow_pct", "attempts":
+	case "auto_switch", "families", "split_hello", "quic_fake", "ipv6", "dns_cache", "ui_open", "clean_ttl_min", "fail_ttl_min", "max_backoff_min", "slow_pct", "attempts":
 	default:
 		http.Error(w, "unknown setting", http.StatusBadRequest)
 		return
@@ -650,6 +650,9 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 				set.Families = val == "1"
 			case "split_hello":
 				set.SplitHello = val == "1"
+			case "quic_fake":
+				set.QUICFake = val == "1"
+				restart = !set.SameCore(was)
 			case "ipv6":
 				set.IPv6 = val == "1"
 				restart = !set.SameCore(was)
@@ -681,7 +684,7 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 			return err
 		})
 	}
-	if field == "ipv6" || field == "dns_cache" {
+	if field == "ipv6" || field == "dns_cache" || field == "quic_fake" {
 		note = s.coreNote(restart)
 	}
 	ok, msg := done(r, err, note)

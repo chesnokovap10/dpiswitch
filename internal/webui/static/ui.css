@@ -201,7 +201,7 @@ td small{display:block;color:var(--muted)}
 .ltable .c-h{max-width:320px;overflow:hidden;text-overflow:ellipsis}
 .ltable .c-r{max-width:220px;overflow:hidden;text-overflow:ellipsis}
 .ltable .c-x,.vtable .c-x{width:24px;padding:0 4px}
-.r-direct td,.sw.r-direct{background:var(--ok-bg)}
+.r-direct td,.sw.r-direct,.r-split td,.sw.r-split{background:var(--ok-bg)}
 .r-awg1 td,.sw.r-awg1{background:var(--accent-bg)}
 .r-awg2 td,.sw.r-awg2{background:var(--awg2-bg)}
 .r-probe td,.sw.r-probe{background:var(--probe-bg)}

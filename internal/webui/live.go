@@ -789,6 +789,8 @@ func liveRoute(chains []string) string {
 	switch chains[0] {
 	case "DIRECT":
 		return "direct"
+	case ctl.SplitOutbound:
+		return "split"
 	case "awg1", "tunnel", "tunnel-rest", "tunnel-soft-any", "tunnel-lists", "tunnel-one", "tunnel-any":
 		return "awg1"
 	case "awg2", "tunnel2", "tunnel2-soft", "tunnel2-strict":
@@ -865,6 +867,7 @@ type liveData struct {
 func liveWords(v *view) liveData {
 	return liveData{Words: map[string]string{
 		"direct":        v.T("Direct"),
+		"split":         v.T("DPI bypass"),
 		"awg1":          v.T("Tunnel"),
 		"awg2":          v.T("Tunnel 2"),
 		"reject":        v.T("Forbidden"),
