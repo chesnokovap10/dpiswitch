@@ -222,7 +222,7 @@ func (v *view) VName(verdict string) string {
 	case probe.BlockedTLS:
 		return v.T("TLS cut by site name")
 	case probe.BlockedDPI:
-		return v.T("Blocked by DPI")
+		return v.T("DPI bypass failed")
 	case probe.CleanSplit:
 		return v.T("TLS cut by site name; gets through with the ClientHello cut, which is off")
 	case probe.BlockedQUIC:
