@@ -104,7 +104,13 @@ pageInit.verdicts = function (sec) {
     const tr = e.target.closest('tr[data-key]');
     if (!tr) return;
     const k = tr.dataset.key;
-    if ((e.button === 2 || e.target.closest('button.lx')) && sel.has(k)) return;
+    // a row picked, clicked plainly, keeps them all picked: only a click
+    // elsewhere lets them go
+    const plain = !(e.ctrlKey || e.metaKey || e.shiftKey);
+    if (sel.has(k) && (e.button === 2 || plain || e.target.closest('button.lx'))) {
+      if (e.button === 0) anchor = k;
+      return;
+    }
     if (e.button === 2) { setSel(new Set([k]), k); return; }
     const p = pickRows(sel, rows().map(r => r.dataset.key), k, e, anchor);
     setSel(p.sel, p.anchor);

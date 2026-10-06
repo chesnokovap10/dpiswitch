@@ -540,7 +540,13 @@ pageInit.live = function (sec) {
     const tr = e.target.closest('tr');
     if (!tr || !tr._r) return;
     const r = tr._r;
-    if ((e.button === 2 || e.target.closest('button.lx')) && sel.has(r)) return;
+    // a row picked, clicked plainly, keeps them all picked: only a click
+    // elsewhere lets them go
+    const plain = !(e.ctrlKey || e.metaKey || e.shiftKey);
+    if (sel.has(r) && (e.button === 2 || plain || e.target.closest('button.lx'))) {
+      if (e.button === 0) anchor = r;
+      return;
+    }
     if (e.button === 2) { setSel(new Set([r]), r); return; }
     const p = pickRows(sel, Array.from(tbody.children, t => t._r), r, e, anchor);
     setSel(p.sel, p.anchor);
