@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -149,8 +150,8 @@ func TestCheckSplitServerDiffers(t *testing.T) {
 	split := Dialer{Addr: forwardStub(t, here, false), Timeout: 2 * time.Second}
 	tunnel := Dialer{Addr: forwardStub(t, there, false), Timeout: 2 * time.Second}
 	plain := Report{Domain: "example.com", Port: 443, Verdict: BlockedTLS, TestedIP: "192.0.2.10"}
-	if r := CheckSplit(split, tunnel, plain, 2, BlockedTLS); r.Verdict != CleanSplit {
-		t.Errorf("verified answer, differing from the tunnel's: %s (%s)", r.Verdict, r.Reason)
+	if r := CheckSplit(split, tunnel, plain, 3, BlockedTLS); r.Verdict != CleanSplit || strings.Count(r.Note, serverOwn) != 1 {
+		t.Errorf("verified answer, differing from the tunnel's: %s (%s), note %q", r.Verdict, r.Reason, r.Note)
 	}
 	chainRoots = x509.NewCertPool()
 	if r := CheckSplit(split, tunnel, plain, 2, BlockedTLS); r.Verdict != ContentDiff {

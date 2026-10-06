@@ -138,6 +138,10 @@ func checkSplitAlive(split, tunnel Dialer, plain Report, attempts int, prev Verd
 	return rep
 }
 
+// serverOwn: the note of a pass whose answer differs from the tunnel's,
+// the server's own, see checkSplit
+const serverOwn = "; the answer differs from the tunnel's, the server's own"
+
 func checkSplit(split, tunnel Dialer, plain Report, attempts int, prev Verdict, udp bool) Report {
 	proto, note, run := "tcp", "ClientHello cut", func(d Dialer) PathResult { return Run(d, plain.TestedIP, plain.Domain) }
 	if udp {
@@ -166,7 +170,10 @@ func checkSplit(split, tunnel Dialer, plain Report, attempts int, prev Verdict, 
 		// blocked with the cut, and the cut works.
 		if v == ContentDiff && d.CertValid && d.HTTPStatus != 0 && !d.HTTPFailed() {
 			v, reason = Clean, ""
-			rep.Note += "; the answer differs from the tunnel's, the server's own"
+			// once, not per pass: it read the same thing three times over
+			if !strings.Contains(rep.Note, serverOwn) {
+				rep.Note += serverOwn
+			}
 		}
 		// as in checkProto: QUIC's handshake is one step, and what fails in
 		// it is QUIC's alone
