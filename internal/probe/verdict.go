@@ -158,6 +158,16 @@ func checkSplit(split, tunnel Dialer, plain Report, attempts int, prev Verdict, 
 		d, t := run(split), run(tunnel)
 		rep.Direct, rep.Tunnel = d, t
 		v, reason := Judge(d, t)
+		// The cut got the site's own answer -- a certificate that passes
+		// the chain check, a whole HTTP answer -- and only the tunnel's
+		// differs: that is the server answering another country, not the
+		// ISP, which cannot forge a verified answer. music.youtube.com
+		// gives 200 here and 302 to the tunnel's country; it was called
+		// blocked with the cut, and the cut works.
+		if v == ContentDiff && d.CertValid && d.HTTPStatus != 0 && !d.HTTPFailed() {
+			v, reason = Clean, ""
+			rep.Note += "; the answer differs from the tunnel's, the server's own"
+		}
 		// as in checkProto: QUIC's handshake is one step, and what fails in
 		// it is QUIC's alone
 		if udp && (v == BlockedTCP || v == BlockedTLS || v == ContentDiff) {

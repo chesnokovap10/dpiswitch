@@ -121,3 +121,39 @@ func TestCheckAlone(t *testing.T) {
 		t.Errorf("a foreign certificate with the cut: %s (%s)", r.Verdict, r.Reason)
 	}
 }
+
+// The cut gets the site's own answer and the tunnel another -- the server
+// answering the tunnel's country (music.youtube.com: 200 here, 302 there).
+// With a certificate that passes the chain check the ISP cannot have
+// forged it: CLEAN_SPLIT. Without one the difference may be anyone's.
+func TestCheckSplitServerDiffers(t *testing.T) {
+	answer := func(code int) string {
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if code == http.StatusFound {
+				w.Header().Set("Location", "https://example.com/unavailable")
+			}
+			w.WriteHeader(code)
+		}))
+		t.Cleanup(srv.Close)
+		pool := x509.NewCertPool()
+		pool.AddCert(srv.Certificate())
+		if chainRoots == nil {
+			chainRoots = pool
+		} else {
+			chainRoots.AddCert(srv.Certificate())
+		}
+		return srv.Listener.Addr().String()
+	}
+	defer func() { chainRoots = nil }()
+	here, there := answer(http.StatusOK), answer(http.StatusFound)
+	split := Dialer{Addr: forwardStub(t, here, false), Timeout: 2 * time.Second}
+	tunnel := Dialer{Addr: forwardStub(t, there, false), Timeout: 2 * time.Second}
+	plain := Report{Domain: "example.com", Port: 443, Verdict: BlockedTLS, TestedIP: "192.0.2.10"}
+	if r := CheckSplit(split, tunnel, plain, 2, BlockedTLS); r.Verdict != CleanSplit {
+		t.Errorf("verified answer, differing from the tunnel's: %s (%s)", r.Verdict, r.Reason)
+	}
+	chainRoots = x509.NewCertPool()
+	if r := CheckSplit(split, tunnel, plain, 2, BlockedTLS); r.Verdict != ContentDiff {
+		t.Errorf("unverified answer, differing from the tunnel's: %s (%s)", r.Verdict, r.Reason)
+	}
+}

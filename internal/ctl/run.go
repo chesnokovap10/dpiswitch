@@ -335,7 +335,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 						r.Note = "ClientHello cut: " + string(s.Verdict) + " " + s.Reason
 						// blocked with the cut too: the DPI box beats it here.
 						// Re-checked like any block, the cut tried again each time
-						if isBlocked(s.Verdict) || s.Verdict == probe.MITM || s.Verdict == probe.ContentDiff {
+						if isBlocked(s.Verdict) || s.Verdict == probe.MITM {
 							r.Verdict = probe.BlockedDPI
 						}
 					}
