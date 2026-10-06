@@ -5,6 +5,30 @@
 // "rowmenu" template, one for both pages: they share the document, and so
 // the menu -- each asks for it, and gets the same one.
 'use strict';
+
+// The rows picked, on Live and on Verdicts alike, as a file manager picks
+// them: a click picks one row, Ctrl+click adds one or takes it away, and
+// Shift+click a range from the row clicked before it -- with Ctrl too,
+// added to those picked. sel: the rows picked, a Set; order: the rows as
+// the table shows them; anchor: where a range starts. Returns the rows
+// picked and the anchor now.
+function pickRows(sel, order, item, e, anchor) {
+  const ctrl = e.ctrlKey || e.metaKey;
+  const a = anchor == null ? -1 : order.indexOf(anchor);
+  if (e.shiftKey && a >= 0) {
+    const b = order.indexOf(item);
+    const next = ctrl ? new Set(sel) : new Set();
+    for (let i = Math.min(a, b); i <= Math.max(a, b); i++) next.add(order[i]);
+    return {sel: next, anchor};
+  }
+  if (ctrl) {
+    const next = new Set(sel);
+    if (next.has(item)) next.delete(item); else next.add(item);
+    return {sel: next, anchor: item};
+  }
+  return {sel: new Set([item]), anchor: item};
+}
+
 function rowMenu(W) {
   if (!rowMenu.one) rowMenu.one = makeRowMenu(W);
   return rowMenu.one;
@@ -12,26 +36,28 @@ function rowMenu(W) {
 function makeRowMenu(W) {
   const $ = id => document.getElementById(id);
   const menu = $('lmenu'), sub = $('lpresets'), reveal = $('lreveal'), revealHr = $('lrevealhr');
-  // what the item picked sends, and what the file location opens
-  let what = '', onReveal = null;
+  // the lines the item picked sends, and what the file location opens
+  let what = [], onReveal = null;
 
-  // ws: [value, title] pairs, the first picked; rev: the program's file and
-  // what opens it, on Live only
+  // ws: [value, title, label] items, the first picked. A value is one line,
+  // shown as it is, or the lines of the rows picked, shown by the label
+  // with the lines themselves in the tooltip. rev: the program's file and
+  // what opens it, on Live only and for one row
   function open(ws, x, y, rev) {
     const w = $('lwhat');
     w.textContent = '';
-    what = ws.length ? ws[0][0] : '';
-    for (const [v, t] of ws) {
+    ws.forEach(([v, t, label], i) => {
       const b = document.createElement('button');
       b.type = 'button';
-      b.textContent = v;
-      b.title = t;
-      b.dataset.v = v;
-      b.classList.toggle('on', v === what);
+      b.textContent = label || v;
+      b._v = [].concat(v);
+      b.title = Array.isArray(v) ? t + '\n\n' + b._v.slice(0, 20).join('\n') + (b._v.length > 20 ? '\n…' : '') : t;
+      b.classList.toggle('on', i === 0);
       w.append(b);
-    }
+    });
+    what = ws.length ? w.firstChild._v : [];
     w.hidden = !ws.length;
-    for (const b of menu.querySelectorAll('[data-to], #lpresetbtn')) b.disabled = !what;
+    for (const b of menu.querySelectorAll('[data-to], #lpresetbtn')) b.disabled = !what.length;
     onReveal = rev && rev.path ? rev.run : null;
     // the program's file is Live's: a verdict's row has none
     reveal.hidden = revealHr.hidden = !rev;
@@ -51,7 +77,7 @@ function makeRowMenu(W) {
     menu.hidden = true;
     sub.classList.remove('shown');
     sub.style.top = '';
-    what = '';
+    what = [];
     onReveal = null;
   }
 
@@ -107,7 +133,7 @@ function makeRowMenu(W) {
   $('lwhat').addEventListener('click', e => {
     const b = e.target.closest('button');
     if (!b) return;
-    what = b.dataset.v;
+    what = b._v;
     for (const c of $('lwhat').children) c.classList.toggle('on', c === b);
   });
   // the presets open on hover, and on a click for those without a mouse
@@ -128,10 +154,11 @@ function makeRowMenu(W) {
   });
 
   async function send(to, preset) {
-    const v = what;
+    const vs = what;
     close();
-    if (!v) return;
-    const body = new URLSearchParams({to, entry: v});
+    if (!vs.length) return;
+    const body = new URLSearchParams({to});
+    for (const v of vs) body.append('entry', v);
     if (preset) body.set('preset', preset);
     toast(W.sending, true);
     try {

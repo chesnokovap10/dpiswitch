@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -318,20 +319,34 @@ func otherNet(r *http.Request) string {
 	return net
 }
 
-// actForget resets one verdict, from its row on the verdicts page: the
-// name goes back to the tunnel, and the detector checks it anew when it is
-// used. The service does it, as it does a reset (see ctl.takeForget): the
-// request is a file of its own, and the page is answered once it is taken
-// -- then the connections the name has open are closed, or they would go
-// on as they went.
+// actForget resets verdicts, from their rows on the verdicts page -- one,
+// or the rows picked at once: the names go back to the tunnel, and the
+// detector checks them anew when they are used. The service does it, as it
+// does a reset (see ctl.takeForget): the request is a file of its own, all
+// the names in it, and the page is answered once it is taken -- then the
+// connections the names have open are closed, or they would go on as they
+// went.
 func (s *Server) actForget(w http.ResponseWriter, r *http.Request) {
 	l := lang(r)
-	key := strings.ToLower(strings.TrimSpace(r.FormValue("key")))
-	entry, ok := forgetEntry(key)
-	if !ok {
+	_ = r.ParseForm()
+	var keys, entries []string
+	for _, k := range r.Form["key"] {
+		k = strings.ToLower(strings.TrimSpace(k))
+		entry, ok := forgetEntry(k)
+		if !ok {
+			http.Error(w, "not a verdict", http.StatusBadRequest)
+			return
+		}
+		if !slices.Contains(keys, k) {
+			keys = append(keys, k)
+			entries = append(entries, entry)
+		}
+	}
+	if len(keys) == 0 || len(keys) > maxSend {
 		http.Error(w, "not a verdict", http.StatusBadRequest)
 		return
 	}
+	entry := entries[0]
 	if err := paths.UserReady(); err != nil {
 		writeJSON(w, liveAnswer{false, tr(l, err.Error())})
 		return
@@ -341,7 +356,7 @@ func (s *Server) actForget(w http.ResponseWriter, r *http.Request) {
 	// said the verdict was reset, and nothing was
 	// of the network the page shows: another's verdict goes from that one
 	net := otherNet(r)
-	body := key + "\n"
+	body := strings.Join(keys, "\n") + "\n"
 	if net != "" {
 		body = ctl.NetworkLine(net) + body
 	}
@@ -366,11 +381,18 @@ func (s *Server) actForget(w http.ResponseWriter, r *http.Request) {
 	}
 	if net != "" {
 		// nothing goes by another network's verdicts: no connection to move
-		writeJSON(w, liveAnswer{true, fmt.Sprintf(tr(l, "Verdict reset in network %s: %s is checked anew when you are on it again"), net, entry)})
+		msg := fmt.Sprintf(tr(l, "Verdict reset in network %s: %s is checked anew when you are on it again"), net, entry)
+		if len(keys) > 1 {
+			msg = fmt.Sprintf(tr(l, "Verdicts reset in network %s: %d names are checked anew when you are on it again"), net, len(keys))
+		}
+		writeJSON(w, liveAnswer{true, msg})
 		return
 	}
 	msg := fmt.Sprintf(tr(l, "Verdict reset: %s goes through the tunnel until the detector checks it again"), entry)
-	n, err := ctl.CloseConns(apiAddr, ctl.SecretFromConfig(paths.Config()), entryMatch([]string{entry}))
+	if len(keys) > 1 {
+		msg = fmt.Sprintf(tr(l, "Verdicts reset: %d names go through the tunnel until the detector checks them again"), len(keys))
+	}
+	n, err := ctl.CloseConns(apiAddr, ctl.SecretFromConfig(paths.Config()), entryMatch(entries))
 	if n > 0 {
 		msg += fmt.Sprintf(tr(l, "; open connections moved: %d"), n)
 	}

@@ -12,8 +12,10 @@
 // moment it is; a tab in the background, a window minimized, a pause close
 // the stream; opened again, it brings only what came meanwhile.
 //
-// A row clicked is picked, and holds its place; right-clicked, it opens a
-// menu that sends its site, address or program to one of the lists.
+// A row clicked is picked, and holds its place; Ctrl and Shift pick more
+// (see pickRows). Right-clicked, a row opens a menu that sends its site,
+// address or program -- of every row picked, when it is one of them -- to
+// one of the lists; its ✕ closes them all the same way.
 'use strict';
 pageInit.live = function (sec) {
   const root = sec.querySelector('#live');
@@ -36,8 +38,9 @@ pageInit.live = function (sec) {
   let es = null, paused = false, dropped = false;
   // the server's history this page holds, and the last of it seen
   let sess = '', lastSeq = 0;
-  // the row picked, and where it was picked (see below)
-  let sel = null, selAt = 0;
+  // the rows picked, each with the place it was picked at (see below), and
+  // the row a Shift range starts from
+  let sel = new Set(), pins = new Map(), anchor = null;
   const seen = q => { if (q > lastSeq) lastSeq = q; };
   // the row's menu, shared with the verdicts page (see rowmenu.js)
   const menu = rowMenu(W), closeMenu = () => menu.close();
@@ -111,7 +114,8 @@ pageInit.live = function (sec) {
     if (m.kind === 'full') {
       // the state as it stands. Of the history the page holds it takes what
       // came since; of another -- the core ran anew -- it drops what it held.
-      const picked = sel && sel.id;
+      const picked = new Map(Array.from(pins, ([r, at]) => [r.id, at]));
+      const from = anchor && anchor.id;
       drop(open);
       if (!(m.part && m.sess === sess)) {
         drop(closed); drop(failed); drop(blocked);
@@ -124,17 +128,28 @@ pageInit.live = function (sec) {
         if (!closed.has(r.id)) closed.set(r.id, r);
       }
       for (const r of m.failed || []) fail(r);
-      // the row picked is the same one drawn anew, or gone
-      if (picked) {
-        sel = open.get(picked) || closed.get(picked) || failed.get(picked) || blocked.get(picked) || null;
-        if (!sel) closeMenu();
+      // the rows picked are the same ones drawn anew, or gone
+      if (picked.size) {
+        const find = id => open.get(id) || closed.get(id) || failed.get(id) || blocked.get(id);
+        sel = new Set();
+        pins = new Map();
+        for (const [id, at] of picked) {
+          const r = find(id);
+          if (r) { sel.add(r); pins.set(r, at); }
+        }
+        anchor = from && find(from) || null;
+        if (!sel.size) closeMenu();
       }
     } else {
       for (const r of m.add || []) {
         // sent again when the core told more of it: drawn anew
         const o = open.get(r.id);
         if (o && o._tr) o._tr.remove();
-        if (o && o === sel) sel = r;
+        if (o && sel.has(o)) {
+          sel.delete(o); sel.add(r);
+          pins.set(r, pins.get(o)); pins.delete(o);
+        }
+        if (o && o === anchor) anchor = r;
         open.set(r.id, r);
       }
       for (const u of m.upd || []) {
@@ -180,7 +195,11 @@ pageInit.live = function (sec) {
       if (n-- <= 0) break;
       map.delete(r.id);
       if (r._tr) r._tr.remove();
-      if (r === sel) unpick();
+      if (sel.has(r)) {
+        sel.delete(r); pins.delete(r);
+        if (!sel.size) unpick();
+      }
+      if (r === anchor) anchor = null;
     }
   }
 
@@ -231,6 +250,21 @@ pageInit.live = function (sec) {
     r._last = [];
     r._tr = tr;
     tr._r = r;
+  }
+
+  // the blank rows that keep a row picked in its place (see draw), made once
+  // and used again: nothing to pick in them
+  const fillers = [];
+  function filler(i) {
+    if (!fillers[i]) {
+      const tr = document.createElement('tr');
+      tr.className = 'fill';
+      const td = tr.insertCell();
+      td.colSpan = root.querySelector('table thead tr').cells.length;
+      td.textContent = ' ';
+      fillers[i] = tr;
+    }
+    return fillers[i];
   }
 
   function paint(r) {
@@ -322,19 +356,33 @@ pageInit.live = function (sec) {
     }
     const found = list.length;
     const rows = firstSorted(list, MAX);
-    // the row picked stays where it was picked, whatever became of it since
-    if (sel) {
-      const i = rows.indexOf(sel);
-      if (i >= 0) rows.splice(i, 1);
-      rows.splice(Math.min(selAt, rows.length, MAX - 1), 0, sel);
+    // the rows picked stay where they were picked, whatever became of them
+    // since: taken out, and put back at their places, the nearest first.
+    // With fewer rows above a place than there were, blank ones keep it:
+    // the last row picked jumped up the table as the rows above it went
+    if (pins.size) {
+      const rest = rows.filter(r => !pins.has(r));
+      rows.length = 0;
+      rows.push(...rest);
+      for (const [r, at] of [...pins].sort((a, b) => a[1] - b[1])) {
+        const i = Math.min(at, MAX - 1);
+        while (rows.length < i) rows.push(null);
+        rows.splice(i, 0, r);
+      }
     }
     const n = Math.min(rows.length, MAX);
-    for (let i = 0; i < n; i++) {
+    for (let i = 0, blank = 0; i < n; i++) {
       const r = rows[i];
-      paint(r);
-      r._tr.classList.toggle('sel', r === sel);
+      let tr;
+      if (r) {
+        paint(r);
+        r._tr.classList.toggle('sel', sel.has(r));
+        tr = r._tr;
+      } else {
+        tr = filler(blank++);
+      }
       const at = tbody.children[i];
-      if (at !== r._tr) tbody.insertBefore(r._tr, at || null);
+      if (at !== tr) tbody.insertBefore(tr, at || null);
     }
     while (tbody.children.length > n) tbody.lastChild.remove();
 
@@ -345,7 +393,7 @@ pageInit.live = function (sec) {
     let e = '';
     if (!ready) e = W.loading;
     else if (found > MAX) e = fmt(W.shown, MAX, found);
-    else if (!found && !sel) {
+    else if (!found && !sel.size) {
       e = q || pref.route ? W.noMatch : pref.tab === 'closed' ? W.noClosed : pref.tab === 'failed' ? W.noFailed :
         pref.tab === 'blocked' ? W.noBlocked : W.noOpen;
     }
@@ -425,56 +473,92 @@ pageInit.live = function (sec) {
     state();
   });
 
+  // ✕ closes its row's connection -- or, on a row picked, the connections
+  // of every row picked that can be closed, in one request
   tbody.addEventListener('click', async e => {
     const x = e.target.closest('button.lx');
     if (!x) return;
-    x.disabled = true;
+    const r = x.closest('tr')._r;
+    const xs = r && sel.has(r) && sel.size > 1 ?
+      picked().map(q => q._x && q._x.querySelector('button.lx')).filter(Boolean) : [x];
+    const body = new URLSearchParams();
+    for (const b of xs) { b.disabled = true; body.append('id', b.dataset.id); }
     try {
-      const r = await fetch('/act/liveclose', {method: 'POST', body: new URLSearchParams({id: x.dataset.id})});
-      if (!r.ok) throw new Error((await r.text()).trim() || r.status + ' ' + r.statusText);
-      // the row turns closed with the next tick
+      const res = await fetch('/act/liveclose', {method: 'POST', body});
+      if (!res.ok) throw new Error((await res.text()).trim() || res.status + ' ' + res.statusText);
+      // the rows turn closed with the next tick
     } catch (err) {
-      x.disabled = false;
+      for (const b of xs) b.disabled = false;
       alert(W.closeFail + ' ' + err.message);
     }
   });
 
-  // --- the row picked, and its menu ---
+  // --- the rows picked, and their menu ---
   // A row picked holds its place in the table: sorted by speed the rows
-  // move every second, and the one looked at, or acted on from the menu,
-  // must not move from under the cursor. A click anywhere else lets it go;
-  // so does a change of what the table shows.
-  function pick(r) {
-    if (sel === r) return;
-    unpick();
-    sel = r;
-    selAt = Math.max(0, Array.prototype.indexOf.call(tbody.children, r._tr));
-    r._tr.classList.add('sel');
+  // move every second, and the ones looked at, or acted on from the menu,
+  // must not move from under the cursor. A click anywhere else lets them
+  // go; so does a change of what the table shows.
+  const picked = () => Array.from(tbody.children, tr => tr._r).filter(r => r && sel.has(r));
+  // the ✕ of a row picked says it closes them all
+  function xTitles(rs) {
+    for (const r of rs) {
+      const x = r._x && r._x.querySelector('button.lx');
+      if (!x) continue;
+      const t = sel.size > 1 && sel.has(r) ? fmt(W.closeMany, sel.size) : W.close;
+      if (x.title !== t) x.title = t;
+    }
+  }
+  function setSel(next, a) {
+    // a row newly picked holds the place it has now; one kept, its own
+    const at = new Map();
+    Array.prototype.forEach.call(tbody.children, (tr, i) => at.set(tr, i));
+    const was = sel;
+    pins = new Map(Array.from(next, r => [r, pins.has(r) ? pins.get(r) : at.get(r._tr) || 0]));
+    sel = next;
+    anchor = a;
+    for (const r of was) if (!sel.has(r) && r._tr) r._tr.classList.remove('sel');
+    for (const r of sel) if (r._tr) r._tr.classList.add('sel');
+    xTitles([...was, ...sel]);
   }
   function unpick() {
     closeMenu();
-    if (!sel) return;
-    if (sel._tr) sel._tr.classList.remove('sel');
-    sel = null;
+    anchor = null;
+    if (!sel.size) return;
+    const was = sel;
+    sel = new Set();
+    pins = new Map();
+    for (const r of was) if (r._tr) r._tr.classList.remove('sel');
+    xTitles(was);
   }
 
   // picked as the button goes down, not up: a click waits for the button
-  // to come back, and the frame showed some 225 ms after the press
+  // to come back, and the frame showed some 225 ms after the press. The
+  // right button and ✕ on a row picked keep the rows picked: they act on
+  // them all
   tbody.addEventListener('pointerdown', e => {
     if (e.button !== 0 && e.button !== 2) return;
     const tr = e.target.closest('tr');
-    if (tr && tr._r) pick(tr._r);
+    if (!tr || !tr._r) return;
+    const r = tr._r;
+    if ((e.button === 2 || e.target.closest('button.lx')) && sel.has(r)) return;
+    if (e.button === 2) { setSel(new Set([r]), r); return; }
+    const p = pickRows(sel, Array.from(tbody.children, t => t._r), r, e, anchor);
+    setSel(p.sel, p.anchor);
   });
+  // a Shift+click picks rows, not the text between them
+  tbody.addEventListener('mousedown', e => { if (e.shiftKey) e.preventDefault(); });
   tbody.addEventListener('contextmenu', e => {
     const tr = e.target.closest('tr');
     if (!tr || !tr._r) return;
     e.preventDefault();
     const r = tr._r;
-    pick(r);
-    menu.open(whats(r), e.clientX, e.clientY, {path: r.path, run: () => reveal(r)});
+    if (!sel.has(r)) setSel(new Set([r]), r);
+    const rs = picked();
+    if (rs.length > 1) menu.open(whatsMany(rs), e.clientX, e.clientY);
+    else menu.open(whats(r), e.clientX, e.clientY, {path: r.path, run: () => reveal(r)});
   });
   document.addEventListener('mousedown', e => {
-    if (sel && !e.target.closest('#lmenu, #lrows tr')) unpick();
+    if (sel.size && !e.target.closest('#lmenu, #lrows tr')) unpick();
   });
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape' || !shown()) return;
@@ -494,6 +578,23 @@ pageInit.live = function (sec) {
     if (r.ip && !r.host) out.push([r.ip, W.whatAddr]);
     // the detector's checks are its own: its program is not the user's
     if (r.proc && !r.probe) out.push([r.proc, W.whatProg]);
+    return out;
+  }
+  // the same for the rows picked, by kind: their whole domains, their
+  // names, the addresses of the ones with no name, their programs
+  function whatsMany(rs) {
+    const dom = new Set(), name = new Set(), addr = new Set(), prog = new Set();
+    for (const r of rs) {
+      if (r.dom) dom.add('+.' + r.dom);
+      if (r.host) name.add(r.host);
+      if (r.ip && !r.host) addr.add(r.ip);
+      if (r.proc && !r.probe) prog.add(r.proc);
+    }
+    const out = [];
+    if (dom.size) out.push([[...dom], W.whatDomain, fmt(W.whatDomains, dom.size)]);
+    if (name.size) out.push([[...name], W.whatName, fmt(W.whatNames, name.size)]);
+    if (addr.size) out.push([[...addr], W.whatAddr, fmt(W.whatAddrs, addr.size)]);
+    if (prog.size) out.push([[...prog], W.whatProg, fmt(W.whatProgs, prog.size)]);
     return out;
   }
 

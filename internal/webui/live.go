@@ -840,22 +840,40 @@ func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
 
 var liveID = regexp.MustCompile(`^[0-9a-fA-F-]{8,64}$`)
 
-// actLiveClose: the core drops one connection; the program opens a new
-// one, routed by the rules as they are now. Asked by the page's script,
-// which only wants to know whether it worked.
+// actLiveClose: the core drops a connection -- one, or the rows picked at
+// once; the program opens a new one, routed by the rules as they are now.
+// Asked by the page's script, which only wants to know whether it worked:
+// one failing, the others are closed all the same, and the first failure
+// is the answer.
 func (s *Server) actLiveClose(w http.ResponseWriter, r *http.Request) {
-	id := r.FormValue("id")
-	if !liveID.MatchString(id) {
+	_ = r.ParseForm()
+	ids := r.Form["id"]
+	if len(ids) == 0 || len(ids) > maxSend {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
+	for _, id := range ids {
+		if !liveID.MatchString(id) {
+			http.Error(w, "bad id", http.StatusBadRequest)
+			return
+		}
+	}
 	src := coreSource()
 	defer src.Release()
-	if err := src.Close(id); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+	var first error
+	for _, id := range ids {
+		if err := src.Close(id); err != nil {
+			if first == nil {
+				first = err
+			}
+			continue
+		}
+		log.Printf("ui: live: connection %s closed by hand", id)
+	}
+	if first != nil {
+		http.Error(w, first.Error(), http.StatusBadGateway)
 		return
 	}
-	log.Printf("ui: live: connection %s closed by hand", id)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -930,6 +948,11 @@ func liveWords(v *view) liveData {
 		"whatName":      v.T("this name only"),
 		"whatAddr":      v.T("the address: for connections made to it by address"),
 		"whatProg":      v.T("the program: everything it sends"),
+		"whatDomains":   v.T("Whole domains: %d"),
+		"whatNames":     v.T("Names only: %d"),
+		"whatAddrs":     v.T("Addresses: %d"),
+		"whatProgs":     v.T("Programs: %d"),
+		"closeMany":     v.T("Close the %d connections picked"),
 		"noPath":        v.T("The core did not say where the program's file is"),
 		"noPresets":     v.T("No presets"),
 		"presetOff":     v.T("switched off: routes nothing until switched on"),

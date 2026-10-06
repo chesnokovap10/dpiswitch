@@ -54,12 +54,16 @@ type liveOut struct {
 	lines []string
 }
 
-// actLiveAdd sends one line to a list or a preset, and out of the places
+// maxSend: the most lines one menu action sends -- the rows picked at once
+const maxSend = 1000
+
+// actLiveAdd sends a line to a list or a preset, and out of the places
 // that would route it otherwise -- see moveLine. The connections it moves
-// are closed, as a list's save does.
+// are closed, as a list's save does. Several lines -- the rows picked at
+// once -- go together, see moveLines, and are told as a count.
 func (s *Server) actLiveAdd(w http.ResponseWriter, r *http.Request) {
 	l := lang(r)
-	to, id, entry := r.FormValue("to"), r.FormValue("preset"), strings.TrimSpace(r.FormValue("entry"))
+	to, id := r.FormValue("to"), r.FormValue("preset")
 	var name string
 	switch {
 	case to == "preset":
@@ -75,16 +79,31 @@ func (s *Server) actLiveAdd(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown list", http.StatusBadRequest)
 		return
 	}
-	_, v, err := ctl.ParseEntry(entry)
-	if err != nil {
-		writeJSON(w, liveAnswer{false, fmt.Sprintf(tr(lang(r), "%q is neither a site, an address nor a program: nothing saved"), entry)})
+	var vs []string
+	for _, e := range r.Form["entry"] {
+		e = strings.TrimSpace(e)
+		_, v, err := ctl.ParseEntry(e)
+		if err != nil {
+			writeJSON(w, liveAnswer{false, fmt.Sprintf(tr(l, "%q is neither a site, an address nor a program: nothing saved"), e)})
+			return
+		}
+		if !slices.ContainsFunc(vs, func(x string) bool { return strings.EqualFold(x, v) }) {
+			vs = append(vs, v)
+		}
+	}
+	switch {
+	case len(vs) == 0:
+		writeJSON(w, liveAnswer{false, fmt.Sprintf(tr(l, "%q is neither a site, an address nor a program: nothing saved"), "")})
+		return
+	case len(vs) > maxSend:
+		http.Error(w, "too many lines", http.StatusBadRequest)
 		return
 	}
 	if err := paths.UserReady(); err != nil {
 		writeJSON(w, liveAnswer{false, tr(l, err.Error())})
 		return
 	}
-	mv, err := s.moveLine(to, id, v)
+	mvs, moved, closeErr, err := s.moveLines(to, id, vs)
 	if err != nil {
 		writeJSON(w, liveAnswer{false, tr(l, err.Error())})
 		return
@@ -98,14 +117,43 @@ func (s *Server) actLiveAdd(w http.ResponseWriter, r *http.Request) {
 		return strings.Join(q, ", ")
 	}
 	// where it was taken out of, and what, when it is more than the line
-	// itself: a wider line there routed it too
-	outs := make([]string, 0, len(mv.outOf))
-	for _, o := range mv.outOf {
-		out := "«" + tr(l, o.name) + "»"
-		if len(o.lines) != 1 || !strings.EqualFold(o.lines[0], v) {
-			shown := o.lines[:min(len(o.lines), 5)]
+	// itself: a wider line there routed it too. Several lines: every line
+	// taken out, by the place it was taken out of
+	outOf := map[string][]string{}
+	var order, still []string
+	off := false
+	added, had := 0, 0
+	for i, mv := range mvs {
+		if mv.had {
+			had++
+		} else {
+			added++
+		}
+		for _, o := range mv.outOf {
+			if _, ok := outOf[o.name]; !ok {
+				order = append(order, o.name)
+			}
+			if len(vs) == 1 && len(o.lines) == 1 && strings.EqualFold(o.lines[0], vs[i]) {
+				outOf[o.name] = append(outOf[o.name], "")
+				continue
+			}
+			outOf[o.name] = append(outOf[o.name], o.lines...)
+		}
+		for _, t := range mv.still {
+			if !slices.Contains(still, t) {
+				still = append(still, t)
+			}
+		}
+		off = off || mv.off
+	}
+	outs := make([]string, 0, len(order))
+	for _, n := range order {
+		out := "«" + tr(l, n) + "»"
+		lines := slices.DeleteFunc(outOf[n], func(x string) bool { return x == "" })
+		if len(lines) > 0 {
+			shown := lines[:min(len(lines), 5)]
 			out += ": " + strings.Join(shown, ", ")
-			if n := len(o.lines) - len(shown); n > 0 {
+			if n := len(lines) - len(shown); n > 0 {
 				out += fmt.Sprintf(" +%d", n)
 			}
 		}
@@ -114,37 +162,45 @@ func (s *Server) actLiveAdd(w http.ResponseWriter, r *http.Request) {
 	slices.Sort(outs)
 	var msg string
 	switch {
-	case mv.had:
-		msg = fmt.Sprintf(tr(lang(r), "“%s” has %s already"), name, v)
-		if mv.moved > 0 {
-			msg += fmt.Sprintf(tr(lang(r), "; open connections moved: %d"), mv.moved)
+	case len(vs) > 1:
+		msg = fmt.Sprintf(tr(l, "Added to “%s”: %d of %d"), name, added, len(vs))
+		if had > 0 {
+			msg += fmt.Sprintf(tr(l, "; there already: %d"), had)
 		}
-	case mv.moved > 0:
-		msg = fmt.Sprintf(tr(lang(r), "Added to “%s”: %s; open connections moved: %d"), name, v, mv.moved)
+		if moved > 0 {
+			msg += fmt.Sprintf(tr(l, "; open connections moved: %d"), moved)
+		}
+	case had > 0:
+		msg = fmt.Sprintf(tr(l, "“%s” has %s already"), name, vs[0])
+		if moved > 0 {
+			msg += fmt.Sprintf(tr(l, "; open connections moved: %d"), moved)
+		}
+	case moved > 0:
+		msg = fmt.Sprintf(tr(l, "Added to “%s”: %s; open connections moved: %d"), name, vs[0], moved)
 	default:
-		msg = fmt.Sprintf(tr(lang(r), "Added to “%s”: %s"), name, v)
+		msg = fmt.Sprintf(tr(l, "Added to “%s”: %s"), name, vs[0])
 	}
-	if len(mv.outOf) > 0 {
-		msg += fmt.Sprintf(tr(lang(r), " (taken out of %s)"), strings.Join(outs, "; "))
+	if len(outs) > 0 {
+		msg += fmt.Sprintf(tr(l, " (taken out of %s)"), strings.Join(outs, "; "))
 	}
-	if mv.off {
-		msg += tr(lang(r), ". The preset is off: it routes nothing until it is switched on")
+	if off {
+		msg += tr(l, ". The preset is off: it routes nothing until it is switched on")
 	}
 	// the auto-switch mode stands above the lists: said, not left to find
 	switch set := ctl.LoadSettings(paths.Settings()); {
 	case (to == "awg2" || to == "preset") && !ctl.Awg2Attached():
-		msg += tr(lang(r), ". The second tunnel is not loaded: this routes nothing until it is")
+		msg += tr(l, ". The second tunnel is not loaded: this routes nothing until it is")
 	case (to == "awg2" || to == "preset") && !set.Awg2Active():
-		msg += tr(lang(r), ". The second tunnel is switched off in this mode: this routes nothing until it is switched on")
+		msg += tr(l, ". The second tunnel is switched off in this mode: this routes nothing until it is switched on")
 	}
 	ok := true
-	if len(mv.still) > 0 {
+	if len(still) > 0 {
 		// a preset takes it by a wider line, which is not the menu's to cut
-		msg += fmt.Sprintf(tr(lang(r), ". But %s stands above the lists and takes it all the same while switched on"), quote(mv.still))
+		msg += fmt.Sprintf(tr(l, ". But %s stands above the lists and takes it all the same while switched on"), quote(still))
 		ok = false
 	}
-	if mv.closeErr != nil {
-		msg += ". " + tr(lang(r), "Saved, but the open connections were not moved: they keep their old route until they reconnect")
+	if closeErr != nil {
+		msg += ". " + tr(l, "Saved, but the open connections were not moved: they keep their old route until they reconnect")
 		ok = false
 	}
 	writeJSON(w, liveAnswer{ok, msg})
@@ -164,14 +220,25 @@ func (s *Server) actLiveAdd(w http.ResponseWriter, r *http.Request) {
 // the presets are read and written as one: under the lists' lock, inside
 // the presets' change, and a file failing to write puts back the ones
 // written before it.
-func (s *Server) moveLine(to, id, v string) (mv liveMove, err error) {
-	kind, _, _ := ctl.ParseEntry(v)
-	same := func(x string) bool { return strings.EqualFold(x, v) }
-	rule := ctl.PresetRules(presets.Preset{Lines: []string{v}})
-	overlap := liveOverlap(v)
-	rank := liveRank(to, kind)
-	above := liveRank("preset", kind) < rank
+func (s *Server) moveLine(to, id, v string) (liveMove, error) {
+	mvs, moved, closeErr, err := s.moveLines(to, id, []string{v})
+	if err != nil {
+		return liveMove{}, err
+	}
+	mv := mvs[0]
+	mv.moved, mv.closeErr = moved, closeErr
+	return mv, nil
+}
+
+// moveLines does moveLine for each of vs in turn -- the rows picked on Live
+// or on the verdicts page, sent at once: each line is taken out of the
+// lists and presets the lines before it left, and the lists and presets
+// are written once, and the connections moved closed once. What each line
+// came to is in its own liveMove; the connections moved, and the error
+// closing them, are the whole call's.
+func (s *Server) moveLines(to, id string, vs []string) (mvs []liveMove, movedConns int, closeErr error, err error) {
 	on := ctl.LoadSettings(paths.Settings()).Awg2Presets
+	mvs = make([]liveMove, len(vs))
 	var (
 		lists   = map[string][]string{} // the lists that change, as they will be
 		moved   []string                // the lines that route anew
@@ -181,83 +248,106 @@ func (s *Server) moveLine(to, id, v string) (mv liveMove, err error) {
 	)
 	s.listMu.Lock()
 	err = presets.Update(func(all []presets.Preset) ([]presets.Preset, error) {
-		for k, name := range listFile {
-			cur := readEntries(name)
-			if k == to {
-				if slices.ContainsFunc(cur, same) {
-					mv.had = true
-				} else {
-					lists[name], _ = normEntries(append(cur, v))
-					moved = append(moved, v)
-				}
-				continue
+		// each list as the lines before have left it
+		cur := func(name string) []string {
+			if l, ok := lists[name]; ok {
+				return l
 			}
-			before := liveRank(k, kind) < rank
-			var out []string
-			rest := slices.DeleteFunc(slices.Clone(cur), func(x string) bool {
-				over, in := overlap(x)
-				if in || before && over {
-					out = append(out, x)
-					return true
-				}
-				return false
-			})
-			if len(out) > 0 {
-				lists[name] = rest
-				mv.outOf = append(mv.outOf, liveOut{liveListNames[k], out})
-				moved = append(moved, out...)
-			}
+			return readEntries(name)
 		}
-		found, changedAny := false, false
-		for i := range all {
-			p := &all[i]
-			isOn := slices.Contains(on, p.ID)
-			was := ctl.PresetRules(*p)
-			switch {
-			case to == "preset" && p.ID == id:
-				found = true
-				mv.off = !isOn
-				if !slices.ContainsFunc(rule, func(r string) bool { return !slices.Contains(was, r) }) {
-					mv.had = true
+		changedAny := false
+		changedOn := map[string]bool{} // the presets switched on that change, by id
+		for i, v := range vs {
+			mv := &mvs[i]
+			kind, _, _ := ctl.ParseEntry(v)
+			same := func(x string) bool { return strings.EqualFold(x, v) }
+			rule := ctl.PresetRules(presets.Preset{Lines: []string{v}})
+			overlap := liveOverlap(v)
+			rank := liveRank(to, kind)
+			above := liveRank("preset", kind) < rank
+			for k, name := range listFile {
+				lines := cur(name)
+				if k == to {
+					if slices.ContainsFunc(lines, same) {
+						mv.had = true
+					} else {
+						lists[name], _ = normEntries(append(slices.Clone(lines), v))
+						moved = append(moved, v)
+					}
 					continue
 				}
-				p.Lines = append(slices.Clone(p.Lines), v)
-			case above && isOn:
-				// the same line and the narrower ones go; a wider line, or
-				// one that routes part of v, is not the menu's to cut
+				before := liveRank(k, kind) < rank
 				var out []string
-				still := false
-				lines := slices.DeleteFunc(slices.Clone(p.Lines), func(l string) bool {
-					over, in := overlap(l)
-					if in {
-						out = append(out, l)
+				rest := slices.DeleteFunc(slices.Clone(lines), func(x string) bool {
+					over, in := overlap(x)
+					if in || before && over {
+						out = append(out, x)
 						return true
 					}
-					still = still || over
 					return false
 				})
-				cut := len(out) > 0
-				if cut {
-					p.Lines = lines
-					mv.outOf = append(mv.outOf, liveOut{p.Title, out})
+				if len(out) > 0 {
+					lists[name] = rest
+					mv.outOf = append(mv.outOf, liveOut{liveListNames[k], out})
+					moved = append(moved, out...)
 				}
-				if still {
-					mv.still = append(mv.still, p.Title)
-				}
-				if !cut {
+			}
+			found := false
+			for j := range all {
+				p := &all[j]
+				isOn := slices.Contains(on, p.ID)
+				was := ctl.PresetRules(*p)
+				switch {
+				case to == "preset" && p.ID == id:
+					found = true
+					mv.off = !isOn
+					if !slices.ContainsFunc(rule, func(r string) bool { return !slices.Contains(was, r) }) {
+						mv.had = true
+						continue
+					}
+					p.Lines = append(slices.Clone(p.Lines), v)
+				case above && isOn:
+					// the same line and the narrower ones go; a wider line, or
+					// one that routes part of v, is not the menu's to cut
+					var out []string
+					still := false
+					lines := slices.DeleteFunc(slices.Clone(p.Lines), func(l string) bool {
+						over, in := overlap(l)
+						if in {
+							out = append(out, l)
+							return true
+						}
+						still = still || over
+						return false
+					})
+					cut := len(out) > 0
+					if cut {
+						p.Lines = lines
+						mv.outOf = append(mv.outOf, liveOut{p.Title, out})
+					}
+					if still {
+						mv.still = append(mv.still, p.Title)
+					}
+					if !cut {
+						continue
+					}
+				default:
 					continue
 				}
-			default:
-				continue
+				changedAny = true
+				if isOn {
+					rules = append(rules, changed(was, ctl.PresetRules(*p))...)
+					changedOn[p.ID] = true
+				}
 			}
-			changedAny = true
-			if isOn {
-				rules = append(rules, changed(was, ctl.PresetRules(*p))...)
-				written = append(written, *p)
+			if to == "preset" && !found {
+				return nil, errPresetGone
 			}
 		}
-		if to == "preset" && !found {
-			return nil, errPresetGone
+		for _, p := range all {
+			if changedOn[p.ID] {
+				written = append(written, p)
+			}
 		}
 		// the lists are written here, the presets' lock held: they go with
 		// the presets, or not at all
@@ -278,7 +368,7 @@ func (s *Server) moveLine(to, id, v string) (mv liveMove, err error) {
 	}
 	s.listMu.Unlock()
 	if err != nil {
-		return liveMove{}, err
+		return nil, 0, nil, err
 	}
 
 	var providers []string
@@ -289,10 +379,10 @@ func (s *Server) moveLine(to, id, v string) (mv liveMove, err error) {
 		providers = append(providers, ctl.PresetsProvider)
 	}
 	if len(providers) == 0 {
-		return mv, nil
+		return mvs, 0, nil, nil
 	}
 	byLine, byRule := entryMatch(moved), rulesMatch(rules)
-	mv.moved, mv.closeErr = closeMoved(providers, func(c ctl.Conn) bool { return byLine(c) || byRule(c) }, func() bool {
+	movedConns, closeErr = closeMoved(providers, func(c ctl.Conn) bool { return byLine(c) || byRule(c) }, func() bool {
 		for name := range lists {
 			if !ctl.Synced(name) {
 				return false
@@ -305,7 +395,7 @@ func (s *Server) moveLine(to, id, v string) (mv liveMove, err error) {
 		}
 		return true
 	})
-	return mv, nil
+	return mvs, movedConns, closeErr, nil
 }
 
 // liveRank: where a list's rules of a kind stand among the core's rules --

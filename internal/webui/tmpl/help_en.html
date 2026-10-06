@@ -224,7 +224,8 @@ switched on at once. A change applies at once, like a switch. Once a built-in pr
 <li>Look it up on the <a href="/verdicts#vfilter">Verdicts</a> page with the filter. If it goes direct and should not,
 add it to <a href="/lists#list-tunnel">Always via tunnel</a> (<code>+.example.com</code> for the whole domain).
 A right-click on its row sends it to a list straight away, as on Live; the ✕ in the row resets that one verdict: the
-site goes through the tunnel until the detector checks it again.</li>
+site goes through the tunnel until the detector checks it again. Rows are picked as on Live: <b>Ctrl</b> and
+<b>Shift</b> pick several, and the right-click and ✕ on a row picked act on all the rows picked at once.</li>
 <li>If many sites broke at once (a new block by the ISP), <a href="/verdicts#vreset">reset all verdicts</a>: everything
 goes through the tunnel and the detector starts over.</li>
 <li>If a site must see your real address (a bank, government services), add it to <a href="/lists#list-direct">Always direct</a>.</li>
@@ -265,14 +266,18 @@ meanwhile is there when you resume. A page in the background takes nothing, and 
 it missed.</li>
 <li><b>A row clicked</b> is picked and holds its place: sorted by speed, the others move around it, and a
 connection that closes stays where it was, closed. A click anywhere else, or a change of tab, filter or sort,
-lets it go. <b>✕ in a row</b> closes the connection in the core: the program reconnects, and the new
-connection follows the rules as they are now.</li>
+lets it go. <b>Ctrl+click</b> adds a row to the ones picked or takes it away, <b>Shift+click</b> picks the rows
+from the one clicked before to this one, <b>Ctrl+Shift+click</b> adds them to the ones picked; all the rows
+picked hold their places. <b>✕ in a row</b> closes the connection in the core: the program reconnects, and the new
+connection follows the rules as they are now. ✕ on a row picked closes the connections of all the rows picked.</li>
 <li><b>A row right-clicked</b> opens a menu. On top, what to send: the whole domain (<code>+.example.com</code>),
 the name alone, the address (of a connection with no name: a list routes only such ones by address) or the
 program. Then where: <b>Direct</b>, <b>Via the tunnel</b>, <b>Via the second
 tunnel</b> (its <a href="/awg2#list-awg2">own list</a>), <b>To a preset</b> (the <a href="/awg2#presets">presets</a>
 switched off are greyed: they route nothing), <b>Forbid</b>. <b>File location</b> opens the program's folder
-with its file picked out.</li>
+with its file picked out. On a row picked the menu is for all the rows picked: on top, in place of one name,
+groups with their count (<b>Whole domains</b>, <b>Names only</b>, <b>Addresses</b>, <b>Programs</b>, the lines
+themselves in the tooltip), and the group picked goes to the list in one action.</li>
 </ul>
 <p>A line sent from the menu goes to the list chosen, and the open connections it moves are moved at once.
 For it to take that route, the menu takes it out of wherever a rule would route it first. The core's rules

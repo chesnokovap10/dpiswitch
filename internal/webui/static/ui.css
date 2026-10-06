@@ -229,12 +229,17 @@ td small{display:block;color:var(--muted)}
 button.lx{border:0;background:none;padding:0 4px;color:var(--muted);visibility:hidden}
 .ltable tr:hover button.lx,.vtable tr:hover button.lx{visibility:visible}
 button.lx:hover{color:var(--bad)}
-/* the row picked: framed, and held where it was picked (see live.js) */
+/* the rows picked: framed, rows picked one after another in one frame, and
+   held where they were picked (see live.js) */
 .ltable tbody tr,.vtable tbody tr{cursor:default}
-.ltable tr.sel td,.vtable tr.sel td{box-shadow:inset 0 2px 0 var(--accent),inset 0 -2px 0 var(--accent)}
-.ltable tr.sel td:first-child,.vtable tr.sel td:first-child{box-shadow:inset 2px 2px 0 var(--accent),inset 0 -2px 0 var(--accent)}
-.ltable tr.sel td:last-child,.vtable tr.sel td:last-child{box-shadow:inset -2px 2px 0 var(--accent),inset 0 -2px 0 var(--accent)}
+.ltable tr.sel td,.vtable tr.sel td{--t:2px;--b:-2px;--l:0;--r:0;box-shadow:inset 0 var(--t) 0 var(--accent),inset 0 var(--b) 0 var(--accent),inset var(--l) 0 0 var(--accent),inset var(--r) 0 0 var(--accent)}
+.ltable tr.sel td:first-child,.vtable tr.sel td:first-child{--l:2px}
+.ltable tr.sel td:last-child,.vtable tr.sel td:last-child{--r:-2px}
+.ltable tr.sel+tr.sel td,.vtable tr.sel+tr.sel td{--t:0}
+.ltable tr.sel:has(+tr.sel) td,.vtable tr.sel:has(+tr.sel) td{--b:0}
 .ltable tr.sel button.lx,.vtable tr.sel button.lx{visibility:visible}
+/* the blank rows that keep a row picked in its place */
+.ltable tr.fill td{color:transparent}
 /* paused, the rows are not told a connection closed: no closing from them */
 #live.paused button.lx{visibility:hidden}
 
