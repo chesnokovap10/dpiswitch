@@ -75,6 +75,9 @@ type state struct {
 	// lookupFailed: when the ISP behind a gateway last could not be looked
 	// up, see lookupBackoff; not kept across starts
 	lookupFailed map[string]time.Time
+	// ipFailed: when the public address behind a gateway last could not be
+	// checked, see ipBackoff; not kept across starts
+	ipFailed map[string]time.Time
 }
 
 type v6Memo struct {

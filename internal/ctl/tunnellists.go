@@ -92,7 +92,12 @@ func syncRoutes(a *api) {
 		if err := json.Unmarshal(b, &g); err != nil {
 			continue
 		}
-		if slices.Contains(g.All, want) && g.Now != want {
+		// a choice the core's group does not have yet is not taken as made:
+		// it was, and once the core had it nothing ever switched to it
+		if !slices.Contains(g.All, want) {
+			continue
+		}
+		if g.Now != want {
 			body := fmt.Sprintf(`{"name":%q}`, want)
 			if _, err := a.do("PUT", "/proxies/"+url.PathEscape(group), strings.NewReader(body)); err != nil {
 				log.Printf("%s not switched to %s: %v", group, want, err)

@@ -84,17 +84,29 @@ type flight struct {
 	err  error
 }
 
+// flightKey: one fetch per question, and per network and servers -- a
+// question asked again after they changed is a fetch of its own
+type flightKey struct {
+	gen uint64
+	q   string
+}
+
 // Server: the cache, its listeners and the servers it asks
 type Server struct {
 	file, statsFile string
 
-	mu       sync.Mutex
-	nets     map[string]map[string]*entry // by network, then by question
-	net      string
-	list     []string // the servers as the settings write them: the answers kept are theirs
-	ups      []*upstream
-	dialer   probe.Dialer
-	flights  map[string]*flight
+	mu      sync.Mutex
+	nets    map[string]map[string]*entry // by network, then by question
+	net     string
+	list    []string // the servers as the settings write them: the answers kept are theirs
+	ups     []*upstream
+	dialer  probe.Dialer
+	flights map[flightKey]*flight
+	// gen: counted up when the network or the servers change. A fetch begun
+	// under another one is no answer for now: it is given to those who
+	// asked for it, and not kept -- it was asked in another network, or of
+	// other servers, and their answers differ (a CDN's, by the network)
+	gen      uint64
 	dirty    bool
 	lastRace time.Time
 	counts   Counts
@@ -119,7 +131,7 @@ type Counts struct {
 
 // New: the cache, with what its file kept
 func New(file, statsFile string) *Server {
-	s := &Server{file: file, statsFile: statsFile, nets: map[string]map[string]*entry{}, flights: map[string]*flight{}}
+	s := &Server{file: file, statsFile: statsFile, nets: map[string]map[string]*entry{}, flights: map[flightKey]*flight{}}
 	s.load()
 	return s
 }
@@ -156,6 +168,7 @@ func (s *Server) Configure(list []string, d probe.Dialer) {
 		}
 		s.nets = map[string]map[string]*entry{}
 		s.dirty = true
+		s.gen++
 	}
 	s.list = slices.Clone(list)
 	s.ups = []*upstream{}
@@ -174,6 +187,9 @@ func (s *Server) SetNetwork(id string) {
 	defer s.mu.Unlock()
 	if s.net != id && s.net != "" {
 		log.Printf("DNS cache: network %s, %d answers kept for it", id, len(s.nets[id]))
+	}
+	if s.net != id {
+		s.gen++
 	}
 	s.net = id
 }
@@ -236,13 +252,14 @@ func (s *Server) Exchange(q []byte) ([]byte, error) {
 // time, and keeps the answer
 func (s *Server) fetch(key string, q []byte) ([]byte, error) {
 	s.mu.Lock()
-	if f, ok := s.flights[key]; ok {
+	fk := flightKey{s.gen, key}
+	if f, ok := s.flights[fk]; ok {
 		s.mu.Unlock()
 		<-f.done
 		return f.msg, f.err
 	}
 	f := &flight{done: make(chan struct{})}
-	s.flights[key] = f
+	s.flights[fk] = f
 	netID := s.net
 	s.mu.Unlock()
 
@@ -250,13 +267,15 @@ func (s *Server) fetch(key string, q []byte) ([]byte, error) {
 	f.msg, hole, f.err = s.ask(q)
 	s.mu.Lock()
 	// a sinkhole every server gave is passed on, not kept: the name is
-	// asked again next time, and a server that has it right by then wins
-	if f.err == nil && !hole {
+	// asked again next time, and a server that has it right by then wins.
+	// Nor is an answer kept that came after the network or the servers
+	// changed: see gen
+	if f.err == nil && !hole && s.gen == fk.gen {
 		if ttl, ok := keepable(f.msg); ok {
 			s.keepLocked(netID, key, f.msg, ttl)
 		}
 	}
-	delete(s.flights, key)
+	delete(s.flights, fk)
 	s.mu.Unlock()
 	close(f.done)
 	return f.msg, f.err

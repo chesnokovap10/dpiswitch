@@ -55,6 +55,60 @@ func TestResolveNetworkUplinkChange(t *testing.T) {
 	}
 }
 
+// The public address could not be checked: it is not asked again at the
+// next tick, but after ipBackoff -- it was, every ten seconds, with RIPE
+// out of reach
+func TestResolveNetworkIPBackoff(t *testing.T) {
+	netIDMu.Lock()
+	netIDVal, netIDWhen = "gw1", time.Now().Add(time.Hour)
+	netIDMu.Unlock()
+	checks := 0
+	fail := true
+	oldLookup, oldIP, oldRetry := lookupASNFn, publicIPFn, lookupRetry
+	lookupASNFn = func(string) (string, string, error) { return "AS1", "203.0.113.1", nil }
+	publicIPFn = func(string) (string, error) {
+		checks++
+		if fail {
+			return "", errors.New("RIPE down")
+		}
+		return "203.0.113.1", nil
+	}
+	lookupRetry = 0
+	t.Cleanup(func() {
+		lookupASNFn, publicIPFn, lookupRetry = oldLookup, oldIP, oldRetry
+		netIDMu.Lock()
+		netIDVal, netIDWhen = "", time.Time{}
+		netIDMu.Unlock()
+	})
+	st := loadState(filepath.Join(t.TempDir(), "state.json"))
+	resolveNetwork(Config{}, st)
+	age := func() {
+		st.mu.Lock()
+		a := st.Attach["gw1"]
+		a.IPChecked = time.Now().Add(-2 * ipRecheck)
+		st.Attach["gw1"] = a
+		st.mu.Unlock()
+	}
+	age()
+	for range 3 {
+		if got := resolveNetwork(Config{}, st); got != "AS1" {
+			t.Fatalf("got %s", got)
+		}
+	}
+	if checks != 1 {
+		t.Fatalf("the failing check asked %d times in a row", checks)
+	}
+	// the backoff over: asked again, and it answers
+	st.mu.Lock()
+	st.ipFailed["gw1"] = time.Now().Add(-2 * ipBackoff)
+	st.mu.Unlock()
+	fail = false
+	resolveNetwork(Config{}, st)
+	if checks != 2 || st.ipHeld("gw1") {
+		t.Fatalf("after the backoff: %d checks, held %v", checks, st.ipHeld("gw1"))
+	}
+}
+
 // The public address changed and the ISP lookup failed: the old ISP's
 // verdicts are not borrowed -- the gateway's memory until the lookup works.
 func TestResolveNetworkMovedLookupFails(t *testing.T) {

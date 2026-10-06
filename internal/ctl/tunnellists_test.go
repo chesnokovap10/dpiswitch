@@ -80,4 +80,11 @@ func TestSyncRoutes(t *testing.T) {
 	routesSet = map[string]string{}
 	set(ModeTunnel, false)
 	check(map[string]string{TunnelListsGroup: TunnelOneGroup}, 5)
+	// the member comes -- a core rebuilt with it: the choice goes now. It
+	// was taken as made while missing, and never sent
+	mu.Lock()
+	all[TunnelRestGroup] = `["tunnel","tunnel-soft-any","tunnel-one","tunnel-any"]`
+	now[TunnelRestGroup] = "tunnel"
+	mu.Unlock()
+	check(map[string]string{TunnelRestGroup: TunnelOneGroup}, 6)
 }

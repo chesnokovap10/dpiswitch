@@ -113,6 +113,34 @@ var lookupRetry = 5 * time.Second
 // cycles held up -- and the next tick started it all over again.
 var lookupBackoff = 10 * time.Minute
 
+// ipBackoff: how long after the public address could not be checked behind
+// a gateway the check is left alone. Failing, it was asked again at every
+// tick -- up to eight seconds each, every ten seconds, the cycles held up
+// while RIPE was out of reach.
+var ipBackoff = time.Minute
+
+// ipHeld: whether the address check behind att failed within ipBackoff
+func (s *state) ipHeld(att string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	at, ok := s.ipFailed[att]
+	return ok && time.Since(at) < ipBackoff
+}
+
+// ipDone notes how the address check behind att went
+func (s *state) ipDone(att string, failed bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !failed {
+		delete(s.ipFailed, att)
+		return
+	}
+	if s.ipFailed == nil {
+		s.ipFailed = map[string]time.Time{}
+	}
+	s.ipFailed[att] = time.Now()
+}
+
 // lookupHeld: whether the lookup behind att failed within lookupBackoff
 func (s *state) lookupHeld(att string) bool {
 	s.mu.Lock()
@@ -163,13 +191,14 @@ func resolveNetwork(cfg Config, st *state) string {
 	// to be the one behind it any more
 	moved := false
 	if ok && time.Since(cached.Checked) < asnCacheTTL {
-		if cached.IP != "" && time.Since(cached.IPChecked) < ipRecheck {
+		if cached.IP != "" && time.Since(cached.IPChecked) < ipRecheck || st.ipHeld(att) {
 			return cached.Net
 		}
 		ip, err := publicIPFn(cfg.DirectAddr)
+		st.ipDone(att, err != nil)
 		switch {
 		case err != nil:
-			// not known to have changed: the next tick asks again
+			// not known to have changed: asked again after ipBackoff
 			return cached.Net
 		case ip == cached.IP:
 			st.sawIP(att)
