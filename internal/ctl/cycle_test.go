@@ -1001,3 +1001,25 @@ func TestRequestsFollowSettings(t *testing.T) {
 		t.Fatalf("the list after the drop, families off: %v", got)
 	}
 }
+
+// A cycle begun in observe only that ends after the switch to On: its copy
+// of the config still says observe, the mode shared with the switch says
+// On. The direct list the switch wrote stays -- it was emptied for a moment
+// (06.10 19:22:36) and the next write put it back.
+func TestCycleSwitchedToOnMidCycle(t *testing.T) {
+	s := newScenario(t)
+	s.cfg.mode = new(atomic.Value)
+	s.cfg.setMode(ModeOn)
+	s.see(tunnelled("a.example.org", 443))
+	s.script("a.example.org tcp/443", clean("192.0.2.80"))
+	s.cycle()
+	if got := listRules(s.cfg.ListPath); !slices.Equal(got, []string{"a.example.org"}) {
+		t.Fatalf("On: list %v", got)
+	}
+	stale := s.cfg
+	stale.Apply = false // as the cycle's copy had it, before the switch
+	syncList(stale, s.api, s.st, "n", true)
+	if got := listRules(s.cfg.ListPath); !slices.Equal(got, []string{"a.example.org"}) {
+		t.Fatalf("a stale copy emptied the list: %v", got)
+	}
+}

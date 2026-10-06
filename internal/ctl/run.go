@@ -685,7 +685,14 @@ func directLists(cfg Config) bool {
 	if cfg.modeNow() == ModeObserve && cfg.Split {
 		return true
 	}
-	return cfg.Apply && !cfg.off()
+	// the mode as it is now, not as this copy of the config had it: a cycle
+	// begun in observe only and ending after the switch to On emptied the
+	// lists the switch had just written (06.10 19:22:36)
+	on := cfg.Apply
+	if cfg.mode != nil {
+		on = cfg.modeNow() == ModeOn
+	}
+	return on && !cfg.off()
 }
 
 // splitNames: what the ClientHello cut's list holds -- its names, while the
@@ -780,7 +787,7 @@ func syncList(cfg Config, a *api, st *state, netID string, force bool) {
 				}
 			}
 		}
-		if force {
+		if force && cfg.modeNow() == ModeObserve {
 			log.Printf("observe mode: %d domains would go DIRECT (%s)", len(doms), preview(doms))
 		}
 		return
