@@ -382,6 +382,16 @@ func TestRenderQUICFake(t *testing.T) {
 		if got := strings.Contains(out, reject); got == on {
 			t.Errorf("on=%v: QUIC to the cut's names refused %v", on, got)
 		}
+		noQUIC := "  - AND,((NETWORK,UDP),(DST-PORT,443),(RULE-SET," + ctl.NoQUICProvider + ")),REJECT\n"
+		if got := strings.Contains(out, noQUIC); got != on {
+			t.Errorf("on=%v: QUIC refused to the decoy's failures %v", on, got)
+		}
+		if i, j := strings.Index(out, noQUIC), strings.Index(out, "  - RULE-SET,"+ctl.SplitProvider+","); on && i > j {
+			t.Errorf("the refusal comes after the cut's rule")
+		}
+		if !strings.Contains(out, "  "+ctl.NoQUICProvider+":\n    type: file\n") {
+			t.Errorf("on=%v: no %s provider", on, ctl.NoQUICProvider)
+		}
 		if !strings.Contains(out, "  - RULE-SET,"+ctl.SplitProvider+","+ctl.SplitOutbound+"\n") {
 			t.Errorf("on=%v: the cut's names do not go through %s", on, ctl.SplitOutbound)
 		}

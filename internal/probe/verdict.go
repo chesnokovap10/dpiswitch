@@ -117,7 +117,20 @@ func CheckProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool,
 // listener, and the core writes them on to the site in segments of its own.
 // So the cut is the core's, the same one the traffic will get.
 func CheckSplit(split, tunnel Dialer, plain Report, attempts int, prev Verdict) Report {
-	rep := checkSplit(split, tunnel, plain, attempts, prev)
+	return checkSplitAlive(split, tunnel, plain, attempts, prev, false)
+}
+
+// CheckSplitQUIC: a name whose QUIC the plain direct path found blocked
+// (BLOCKED_QUIC), tried again over QUIC through the same outbound -- which,
+// with the QUIC decoy on, sends a decoy Initial for www.google.com ahead of
+// the client's first one (quic-fake in awgconf). As strict as CheckSplit:
+// CLEAN_SPLIT only if every pass is clean and not slower.
+func CheckSplitQUIC(split, tunnel Dialer, plain Report, attempts int, prev Verdict) Report {
+	return checkSplitAlive(split, tunnel, plain, attempts, prev, true)
+}
+
+func checkSplitAlive(split, tunnel Dialer, plain Report, attempts int, prev Verdict, udp bool) Report {
+	rep := checkSplit(split, tunnel, plain, attempts, prev, udp)
 	if rep.Verdict != CleanSplit && (!split.Alive() || !tunnel.Alive()) {
 		rep.Verdict, rep.Aborted = Inconcl, true
 		rep.Reason = "core unavailable (restarting?), check discarded"
@@ -125,10 +138,15 @@ func CheckSplit(split, tunnel Dialer, plain Report, attempts int, prev Verdict) 
 	return rep
 }
 
-func checkSplit(split, tunnel Dialer, plain Report, attempts int, prev Verdict) Report {
-	rep := Report{Domain: plain.Domain, Port: plain.Port, Proto: "tcp", Time: time.Now().Format(time.RFC3339),
+func checkSplit(split, tunnel Dialer, plain Report, attempts int, prev Verdict, udp bool) Report {
+	proto, note, run := "tcp", "ClientHello cut", func(d Dialer) PathResult { return Run(d, plain.TestedIP, plain.Domain) }
+	if udp {
+		proto, note = "quic", "QUIC decoy"
+		run = func(d Dialer) PathResult { return RunQUIC(d, plain.TestedIP, plain.Port, plain.Domain) }
+	}
+	rep := Report{Domain: plain.Domain, Port: plain.Port, Proto: proto, Time: time.Now().Format(time.RFC3339),
 		Attempts: attempts, TestedIP: plain.TestedIP, DNSDirect: plain.DNSDirect, DNSTunnel: plain.DNSTunnel,
-		Note: "ClientHello cut"}
+		Note: note}
 	// the band around the latency threshold holds for a name going direct
 	// either way
 	if prev == CleanSplit {
@@ -137,9 +155,14 @@ func checkSplit(split, tunnel Dialer, plain Report, attempts int, prev Verdict) 
 	var bestDirect, bestTunnel time.Duration
 	measured := false
 	for i := 0; i < attempts; i++ {
-		d, t := Run(split, plain.TestedIP, plain.Domain), Run(tunnel, plain.TestedIP, plain.Domain)
+		d, t := run(split), run(tunnel)
 		rep.Direct, rep.Tunnel = d, t
 		v, reason := Judge(d, t)
+		// as in checkProto: QUIC's handshake is one step, and what fails in
+		// it is QUIC's alone
+		if udp && (v == BlockedTCP || v == BlockedTLS || v == ContentDiff) {
+			v = BlockedQUIC
+		}
 		rep.Unmeasured = v == Inconcl && strings.HasPrefix(reason, tunnelDown)
 		rep.Verdict, rep.Reason = v, reason
 		if v != Clean {
@@ -166,8 +189,8 @@ func checkSplit(split, tunnel Dialer, plain Report, attempts int, prev Verdict) 
 	rep.TunnelMs = bestTunnel.Milliseconds()
 	if slower(bestDirect, bestTunnel, prev) {
 		rep.Verdict = Slower
-		rep.Reason = fmt.Sprintf("direct path with the ClientHello cut is slower: %d ms vs %d via tunnel",
-			bestDirect.Milliseconds(), bestTunnel.Milliseconds())
+		rep.Reason = fmt.Sprintf("direct path with the %s is slower: %d ms vs %d via tunnel",
+			map[bool]string{false: "ClientHello cut", true: "QUIC decoy"}[udp], bestDirect.Milliseconds(), bestTunnel.Milliseconds())
 	}
 	return rep
 }

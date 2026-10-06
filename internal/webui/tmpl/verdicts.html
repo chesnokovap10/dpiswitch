@@ -36,7 +36,7 @@
   <thead><tr><th>{{.T "Name"}}</th><th>{{.T "Decided"}}</th><th>{{.T "Checked again in"}}</th><th>{{.T "Node probed"}}</th><th class="c-x"></th></tr></thead>
   <tbody>{{range $d.Rows}}
     {{if .Fam}}<tr {{template "vkey" .}}><td><b>{{.Domain}}</b>{{template "uni" .}}</td><td colspan="3" class="muted">{{$v.Tf "whole domain: %d clean subdomains, none blocked" .Fam}}</td>{{template "vx" $v}}</tr>
-    {{else}}<tr {{template "vkey" .}}><td>{{.Domain}}{{template "uni" .}}{{if .Addr}} <span class="muted">({{$v.T "address, no name"}})</span>{{end}}{{if eq .Verdict "CLEAN_SPLIT"}} <span class="pill">{{$v.T "with the ClientHello cut"}}</span>{{end}}</td><td class="nw">{{$v.Time .Decided}}</td><td class="nw">{{template "left" (row $v .)}}</td><td class="muted nw">{{.Node}}</td>{{template "vx" $v}}</tr>{{end}}
+    {{else}}<tr {{template "vkey" .}}><td>{{.Domain}}{{template "uni" .}}{{if .Addr}} <span class="muted">({{$v.T "address, no name"}})</span>{{end}}{{if eq .Verdict "CLEAN_SPLIT"}} <span class="pill">{{$v.T "with the ClientHello cut"}}</span>{{if .NoQUIC}} <span class="pill">{{$v.T "QUIC refused"}}</span>{{end}}{{end}}</td><td class="nw">{{$v.Time .Decided}}</td><td class="nw">{{template "left" (row $v .)}}</td><td class="muted nw">{{.Node}}</td>{{template "vx" $v}}</tr>{{end}}
   {{end}}</tbody>
 </table>
 {{else}}

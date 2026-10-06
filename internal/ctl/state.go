@@ -51,6 +51,10 @@ type entry struct {
 	// tunnel everything goes direct anyway, and once there is one it is
 	// checked first, against it.
 	Alone bool `json:"alone,omitempty"`
+	// NoQUIC: a CLEAN_SPLIT whose QUIC on 443 was blocked and the decoy did
+	// not get it through (or was not tried): its QUIC is refused, see
+	// splitNoQUIC
+	NoQUIC bool `json:"no_quic,omitempty"`
 }
 
 // state is split per network: the key is the ISP (AS...), see asn.go;
@@ -273,6 +277,25 @@ func (s *state) verifiedSplit(id string) []string {
 			continue
 		}
 		if e.Verdict == probe.CleanSplit && now.Before(e.ExpiresAt) {
+			out = append(out, dom)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// verifiedSplitNoQUIC: of the cut's names, the ones whose QUIC is refused,
+// see entry.NoQUIC
+func (s *state) verifiedSplitNoQUIC(id string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	now := time.Now()
+	for dom, e := range s.Networks[id] {
+		if _, addr := probe.AddrKey(dom); addr {
+			continue
+		}
+		if e.Verdict == probe.CleanSplit && e.NoQUIC && now.Before(e.ExpiresAt) {
 			out = append(out, dom)
 		}
 	}

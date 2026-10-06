@@ -32,6 +32,10 @@ const aloneNote = "no first tunnel's config loaded: only the ClientHello cut is 
 // rule-provider and, in awgconf, its rules
 const SplitProvider = "direct-split-verified"
 
+// NoQUICProvider: the cut's names whose QUIC is refused -- the rule-provider
+// and, in awgconf, its rule
+const NoQUICProvider = "direct-split-noquic"
+
 // SplitOutbound: the core's direct outbound that cuts the ClientHello
 const SplitOutbound = "direct-split"
 
@@ -42,21 +46,23 @@ func SavedNetwork(statePath string) string { return loadState(statePath).Current
 // Defaults: default settings derived from the data directory.
 func Defaults() Config {
 	return Config{
-		DirectAddr:    DirectListener,
-		TunnelAddr:    "127.0.0.1:7891", // listener bound directly to awg1
-		Tunnel2Addr:   "127.0.0.1:7893", // bound to awg2: the DNS test of the settings
-		APIAddr:       "127.0.0.1:9090",
-		CfgPath:       paths.Config(),
-		ProxyName:     "awg1",
-		Provider:      "direct-verified",
-		ListPath:      paths.Verified(),
-		AddrProvider:  "direct-verified-addr",
-		AddrListPath:  paths.VerifiedAddr(),
-		SplitProvider: SplitProvider,
-		SplitListPath: paths.VerifiedSplit(),
-		SplitAddr:     "127.0.0.1:7894", // goes out through direct-split
-		StatePath:     paths.State(),
-		JSONLPath:     paths.Reports(),
+		DirectAddr:     DirectListener,
+		TunnelAddr:     "127.0.0.1:7891", // listener bound directly to awg1
+		Tunnel2Addr:    "127.0.0.1:7893", // bound to awg2: the DNS test of the settings
+		APIAddr:        "127.0.0.1:9090",
+		CfgPath:        paths.Config(),
+		ProxyName:      "awg1",
+		Provider:       "direct-verified",
+		ListPath:       paths.Verified(),
+		AddrProvider:   "direct-verified-addr",
+		AddrListPath:   paths.VerifiedAddr(),
+		SplitProvider:  SplitProvider,
+		SplitListPath:  paths.VerifiedSplit(),
+		NoQUICProvider: NoQUICProvider,
+		NoQUICListPath: paths.VerifiedSplitNoQUIC(),
+		SplitAddr:      "127.0.0.1:7894", // goes out through direct-split
+		StatePath:      paths.State(),
+		JSONLPath:      paths.Reports(),
 		// a cycle every 10 s, 8 at once: a name not checked yet goes the
 		// default way until it is -- in a minute it was not checked at all
 		Interval:      10 * time.Second,
@@ -297,6 +303,8 @@ type DirectEntry struct {
 	// term -- it is checked again when something does (see state.expired).
 	// The UI said "due now" for days.
 	Idle bool `json:"idle,omitempty"`
+	// NoQUIC: going direct with the cut, its QUIC refused, see entry.NoQUIC
+	NoQUIC bool `json:"no_quic,omitempty"`
 }
 
 // idleTerm: Config.Idle as the service runs it
@@ -304,7 +312,7 @@ const idleTerm = 24 * time.Hour
 
 func directEntry(dom string, e *entry, now time.Time) DirectEntry {
 	return DirectEntry{dom, e.DecidedAt, e.ExpiresAt, e.TestedIP, e.Reason, string(e.Verdict),
-		now.After(e.ExpiresAt) && !e.lastSeen().After(now.Add(-idleTerm))}
+		now.After(e.ExpiresAt) && !e.lastSeen().After(now.Add(-idleTerm)), e.NoQUIC}
 }
 
 // NetCount: a network memory keeps, and how many verdicts it holds there
@@ -446,8 +454,8 @@ func readSettings(cfg Config) (Settings, bool) {
 func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) Config {
 	was, old := cfg.Apply, cfg
 	cfg = s.apply(cfg)
-	log.Printf("settings: auto-switch %s, direct TTL %s, blocked TTL %s, cap %s, tolerance +%d%%, attempts %d, ClientHello cut %v",
-		s.Mode(), cfg.TTL, cfg.FailTTL, cfg.MaxBackoff, s.SlowPct, cfg.Attempts, cfg.Split)
+	log.Printf("settings: auto-switch %s, direct TTL %s, blocked TTL %s, cap %s, tolerance +%d%%, attempts %d, ClientHello cut %v, QUIC decoy %v",
+		s.Mode(), cfg.TTL, cfg.FailTTL, cfg.MaxBackoff, s.SlowPct, cfg.Attempts, cfg.Split, cfg.QUICFake)
 
 	// Terms follow the setting they come from, and only when it changed.
 	// The other verdicts' terms were left as they were -- a blocked re-check
@@ -458,12 +466,17 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 	// the cut switched on: the names blocked by their hello are tried with
 	// it now, not when their re-check comes -- a day away for some
 	splitOn := cfg.Split && !old.Split
+	// the QUIC decoy switched on, the cut on: the names whose QUIC was
+	// blocked are tried through it now
+	quicOn := cfg.Split && cfg.QUICFake && !(old.Split && old.QUICFake)
 	now := time.Now()
 	st.mu.Lock()
 	for _, m := range st.Networks {
 		for _, e := range m {
 			switch {
 			case splitOn && (e.Verdict == probe.BlockedTLS || e.Verdict == probe.BlockedDPI):
+				e.ExpiresAt = now
+			case quicOn && (e.Verdict == probe.BlockedQUIC || e.Verdict == probe.CleanSplit && e.NoQUIC):
 				e.ExpiresAt = now
 			case goesDirect(e.Verdict):
 				if cfg.TTL != old.TTL && !e.SlowOnce {

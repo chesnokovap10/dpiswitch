@@ -42,6 +42,10 @@ type Config struct {
 	// the names that go direct with the ClientHello cut, see verifiedSplit
 	SplitProvider string
 	SplitListPath string
+	// of those, the ones whose QUIC the decoy does not get through, see
+	// splitNoQUIC
+	NoQUICProvider string
+	NoQUICListPath string
 	// the core's listener whose outbound cuts the ClientHello
 	SplitAddr     string
 	StatePath     string
@@ -57,6 +61,7 @@ type Config struct {
 	SettingsPath string
 	Families     bool // extend verdicts to the whole domain, see family.go
 	Split        bool // try a BLOCKED_TLS name with the ClientHello cut (BLOCKED_DPI when it fails too), see Settings.SplitHello
+	QUICFake     bool // with Split: try a BLOCKED_QUIC name through the core's QUIC decoy, see Settings.QUICFake
 	// alone: no first tunnel's config is loaded -- nothing to measure
 	// against. With the cut switched on the detector still checks it, see
 	// probe.CheckAlone; without, it checks nothing.
@@ -106,6 +111,10 @@ var checkProto = probe.CheckProto
 
 // checkSplit: the probe with the ClientHello cut, see probe.CheckSplit
 var checkSplit = probe.CheckSplit
+
+// checkSplitQUIC: QUIC through the cut's outbound and its decoy, see
+// probe.CheckSplitQUIC
+var checkSplitQUIC = probe.CheckSplitQUIC
 
 // checkAlone: the probe with no tunnel, see probe.CheckAlone
 var checkAlone = probe.CheckAlone
@@ -331,6 +340,19 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 						}
 					}
 				}
+				if !cfg.alone && !r.Aborted && cfg.Split && cfg.QUICFake && ep.udp && ep.port == 443 && r.Verdict == probe.BlockedQUIC {
+					// QUIC blocked: once more through the cut's outbound,
+					// which sends the decoy Initial ahead -- the way the
+					// browser's QUIC will go
+					s := checkSplitQUIC(split, tunnel, r, cfg.Attempts, was)
+					appendJSONL(cfg.JSONLPath, s)
+					switch {
+					case s.Aborted, s.Verdict == probe.CleanSplit, s.Verdict == probe.Slower:
+						r = s
+					default:
+						r.Note = "QUIC decoy: " + string(s.Verdict) + " " + s.Reason
+					}
+				}
 				if r.Aborted {
 					// leave memory alone: the name goes back to the
 					// watcher and is checked once the core is back
@@ -349,6 +371,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 				reps = append(reps, r)
 			}
 			rep = worstPort(eps, reps)
+			noQUIC := splitNoQUIC(eps, reps)
 			// A port whose direct side failed while the tunnel failed too is
 			// INCONCLUSIVE, and that must not override a definite verdict --
 			// but CLEAN is a promise that the name works direct on every port
@@ -368,7 +391,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 			mu.Unlock()
 
 			mu.Lock()
-			results = append(results, checked{dom, rep, eps, checkFacts{directDown, noV6, unprobed}})
+			results = append(results, checked{dom, rep, eps, checkFacts{directDown, noV6, unprobed, noQUIC}})
 			mu.Unlock()
 		}(dom)
 	}
@@ -440,6 +463,7 @@ type checkFacts struct {
 	directDown bool // the direct side failed on a TCP port, see entry.DirectDown
 	noV6       bool // see probe.Report.DirectNoV6
 	unprobed   int  // ports the name was seen on beyond maxEndpoints
+	noQUIC     bool // see entry.NoQUIC
 }
 
 // record files one name's check in memory and reports whether its verdict
@@ -522,6 +546,7 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 		Endpoints:  endpointStrings(eps),
 		DirectDown: rep.Verdict == probe.Inconcl && directDown,
 		Alone:      cfg.alone,
+		NoQUIC:     rep.Verdict == probe.CleanSplit && f.noQUIC,
 	}
 	// A new name was just seen by the watcher. A known one keeps its
 	// own mark: the probe is not a use. It used to count as one, and
@@ -674,9 +699,41 @@ func splitNames(cfg Config, st *state, netID string) []string {
 	return st.verifiedSplit(netID)
 }
 
-// writeSplit writes the cut's list when it differs from what is on disk,
+// noQUICNames: of the cut's names, the ones whose QUIC is refused (see
+// entry.NoQUIC) -- with the decoy on; off, the core refuses QUIC to all of
+// them anyway
+func noQUICNames(cfg Config, st *state, netID string, splits []string) []string {
+	if !cfg.QUICFake || len(splits) == 0 {
+		return nil
+	}
+	return slices.DeleteFunc(st.verifiedSplitNoQUIC(netID), func(d string) bool {
+		_, ok := slices.BinarySearch(splits, d)
+		return !ok
+	})
+}
+
+// splitSame: the cut's lists on disk are what memory makes them
+func splitSame(cfg Config, splits, noQUIC []string) bool {
+	return (cfg.SplitListPath == "" || slices.Equal(listRules(cfg.SplitListPath), splits)) &&
+		(cfg.NoQUICListPath == "" || slices.Equal(listRules(cfg.NoQUICListPath), noQUIC))
+}
+
+// writeSplit writes the cut's lists when they differ from what is on disk,
 // or always when forced; listMu held.
-func writeSplit(cfg Config, a *api, netID string, splits []string, force bool) error {
+func writeSplit(cfg Config, a *api, st *state, netID string, splits []string, force bool) error {
+	noQUIC := noQUICNames(cfg, st, netID, splits)
+	if cfg.NoQUICListPath != "" && (force || !slices.Equal(listRules(cfg.NoQUICListPath), noQUIC)) {
+		var b strings.Builder
+		b.WriteString("# generated by the controller, do not edit\n")
+		fmt.Fprintf(&b, "# network %s, updated %s\n", netID, time.Now().Format(time.RFC3339))
+		b.WriteString("# going direct with the ClientHello cut, QUIC not getting through even with the decoy: refused\n")
+		for _, d := range noQUIC {
+			b.WriteString(d + "\n")
+		}
+		if err := replaceList(a, cfg.NoQUICListPath, cfg.NoQUICProvider, b.String()); err != nil {
+			return err
+		}
+	}
 	if cfg.SplitListPath == "" || !force && slices.Equal(listRules(cfg.SplitListPath), splits) {
 		return nil
 	}
@@ -712,7 +769,7 @@ func syncList(cfg Config, a *api, st *state, netID string, force bool) {
 	if !directLists(cfg) {
 		// observe only sends everything direct already, and the cut's names
 		// with the cut; tunnel only, nothing direct, the cut's included
-		if err := writeSplit(cfg, a, netID, splits, force); err != nil {
+		if err := writeSplit(cfg, a, st, netID, splits, force); err != nil {
 			log.Print(err)
 		}
 		// left from observe only with the cut on, or from a cycle begun in On
@@ -732,12 +789,11 @@ func syncList(cfg Config, a *api, st *state, netID string, force bool) {
 	if cfg.AddrListPath != "" {
 		addrs = st.verifiedAddrs(netID)
 	}
-	splitSame := cfg.SplitListPath == "" || slices.Equal(listRules(cfg.SplitListPath), splits)
-	if !force && splitSame && slices.Equal(listRules(cfg.ListPath), doms) &&
+	if !force && splitSame(cfg, splits, noQUICNames(cfg, st, netID, splits)) && slices.Equal(listRules(cfg.ListPath), doms) &&
 		(cfg.AddrListPath == "" || slices.Equal(listRules(cfg.AddrListPath), addrs)) {
 		return
 	}
-	if err := writeSplit(cfg, a, netID, splits, force); err != nil {
+	if err := writeSplit(cfg, a, st, netID, splits, force); err != nil {
 		log.Print(err)
 	}
 	var b strings.Builder
@@ -1284,6 +1340,26 @@ func worstPort(eps []endpoint, reps []probe.Report) probe.Report {
 		}
 	}
 	return rep
+}
+
+// splitNoQUIC: a name going direct with its hello cut whose QUIC on 443,
+// seen and probed, was not clean -- plain, or through the decoy when it is
+// on. Its QUIC is refused (see awgconf): the browser takes TCP at once
+// rather than waiting on a QUIC that goes nowhere.
+func splitNoQUIC(eps []endpoint, reps []probe.Report) bool {
+	split, bad := false, false
+	for i, r := range reps {
+		if eps[i].port != 443 {
+			continue
+		}
+		if !eps[i].udp && r.Verdict == probe.CleanSplit {
+			split = true
+		}
+		if eps[i].udp && r.Verdict != probe.Clean && r.Verdict != probe.CleanSplit {
+			bad = true
+		}
+	}
+	return split && bad
 }
 
 // goesDirect: a verdict that sends the name direct, with its hello cut or not

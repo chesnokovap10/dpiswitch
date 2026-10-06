@@ -399,6 +399,7 @@ func (s Settings) apply(cfg Config) Config {
 	cfg.Attempts = s.Attempts
 	cfg.Families = s.Families
 	cfg.Split = s.SplitHello
+	cfg.QUICFake = s.QUICFake
 	cfg.DNSCache = s.DNSCache
 	cfg.DirectDNS = nil
 	for _, d := range s.DirectDNS {

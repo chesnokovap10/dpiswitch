@@ -61,7 +61,7 @@ func disableAuto(cfg Config, a *api, st *state, closeDirect bool) {
 		}
 	}
 	if err == nil && cfg.SplitListPath != "" {
-		err = writeSplit(cfg, a, st.current(), splitNames(cfg, st, st.current()), true)
+		err = writeSplit(cfg, a, st, st.current(), splitNames(cfg, st, st.current()), true)
 	}
 	if err != nil && cfg.autoOff != nil {
 		// the next look tries again

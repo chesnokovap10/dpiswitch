@@ -283,3 +283,104 @@ func TestSplitAlone(t *testing.T) {
 		t.Fatalf("c: %s, alone %v", e.Verdict, e.Alone)
 	}
 }
+
+// quicScenario: the cut and the QUIC decoy switched on, the decoy's probe
+// scripted -- by name, what QUIC through it shows.
+func quicScenario(t *testing.T, cut, decoy map[string]probe.Verdict) (*scenario, *[]string) {
+	s, _ := splitScenario(t, cut)
+	s.cfg.QUICFake = true
+	s.cfg.NoQUICProvider = NoQUICProvider
+	s.cfg.NoQUICListPath = filepath.Join(filepath.Dir(s.cfg.ListPath), "direct-split-noquic.txt")
+	var tried []string
+	old := checkSplitQUIC
+	checkSplitQUIC = func(_, _ probe.Dialer, plain probe.Report, _ int, _ probe.Verdict) probe.Report {
+		s.mu.Lock()
+		tried = append(tried, plain.Domain)
+		s.mu.Unlock()
+		r := probe.Report{Domain: plain.Domain, Port: plain.Port, Proto: "quic", TestedIP: plain.TestedIP,
+			Verdict: decoy[plain.Domain], Direct: pathOK, Tunnel: pathOK, Note: "QUIC decoy"}
+		if r.Verdict != probe.CleanSplit {
+			r.Direct, r.Reason = tcpFails, "timeout"
+		}
+		return r
+	}
+	t.Cleanup(func() { checkSplitQUIC = old })
+	return s, &tried
+}
+
+func blockedQUIC(ip string) probe.Report {
+	return probe.Report{Verdict: probe.BlockedQUIC, TestedIP: ip, Direct: tcpFails, Tunnel: pathOK}
+}
+
+// With the decoy on, a name going direct with the cut has its blocked QUIC
+// tried through the decoy: getting through, its QUIC goes the same way;
+// not, it is refused -- the name stays direct with the cut over TCP.
+func TestCycleQUICDecoy(t *testing.T) {
+	s, tried := quicScenario(t,
+		map[string]probe.Verdict{"yt.example.org": probe.CleanSplit, "mu.example.org": probe.CleanSplit},
+		map[string]probe.Verdict{"yt.example.org": probe.CleanSplit, "mu.example.org": probe.BlockedQUIC})
+	for _, d := range []string{"yt.example.org", "mu.example.org"} {
+		s.see(tunnelled(d, 443), quic(d))
+		s.script(d+" tcp/443", blockedTLS("192.0.2.20"))
+		s.script(d+" quic/443", blockedQUIC("192.0.2.20"))
+	}
+	s.cycle()
+	slices.Sort(*tried)
+	if !slices.Equal(*tried, []string{"mu.example.org", "yt.example.org"}) {
+		t.Errorf("decoy tried for %v", *tried)
+	}
+	for d, noQUIC := range map[string]bool{"yt.example.org": false, "mu.example.org": true} {
+		e := s.entry(d)
+		if e == nil || e.Verdict != probe.CleanSplit || e.NoQUIC != noQUIC {
+			t.Errorf("%s: %+v, want CLEAN_SPLIT with no QUIC %v", d, e, noQUIC)
+		}
+	}
+	if got := listRules(s.cfg.SplitListPath); !slices.Equal(got, []string{"mu.example.org", "yt.example.org"}) {
+		t.Errorf("cut list %v", got)
+	}
+	if got := listRules(s.cfg.NoQUICListPath); !slices.Equal(got, []string{"mu.example.org"}) {
+		t.Errorf("QUIC refused for %v", got)
+	}
+}
+
+// A name clean over TCP whose QUIC alone is blocked: through the decoy it
+// gets through, and the name goes direct through the cut's outbound
+// instead of to the tunnel. Not getting through, it stays BLOCKED_QUIC.
+func TestCycleQUICDecoyAlone(t *testing.T) {
+	s, _ := quicScenario(t, nil,
+		map[string]probe.Verdict{"q.example.org": probe.CleanSplit, "b.example.org": probe.BlockedQUIC})
+	for _, d := range []string{"q.example.org", "b.example.org"} {
+		s.see(tunnelled(d, 443), quic(d))
+		s.script(d+" tcp/443", probe.Report{Verdict: probe.Clean, TestedIP: "192.0.2.21", Direct: pathOK, Tunnel: pathOK})
+		s.script(d+" quic/443", blockedQUIC("192.0.2.21"))
+	}
+	s.cycle()
+	if e := s.entry("q.example.org"); e == nil || e.Verdict != probe.CleanSplit || e.NoQUIC {
+		t.Errorf("q.example.org: %+v", e)
+	}
+	if e := s.entry("b.example.org"); e == nil || e.Verdict != probe.BlockedQUIC {
+		t.Errorf("b.example.org: %+v", e)
+	}
+}
+
+// The decoy switched off: QUIC is not tried through it, and the list of
+// names whose QUIC is refused stays empty -- the core refuses QUIC to all
+// the cut's names then.
+func TestCycleQUICDecoyOff(t *testing.T) {
+	s, tried := quicScenario(t, map[string]probe.Verdict{"yt.example.org": probe.CleanSplit},
+		map[string]probe.Verdict{"yt.example.org": probe.CleanSplit})
+	s.cfg.QUICFake = false
+	s.see(tunnelled("yt.example.org", 443), quic("yt.example.org"))
+	s.script("yt.example.org tcp/443", blockedTLS("192.0.2.22"))
+	s.script("yt.example.org quic/443", blockedQUIC("192.0.2.22"))
+	s.cycle()
+	if len(*tried) != 0 {
+		t.Errorf("decoy tried for %v", *tried)
+	}
+	if e := s.entry("yt.example.org"); e == nil || e.Verdict != probe.CleanSplit {
+		t.Fatalf("verdict %+v", e)
+	}
+	if got := listRules(s.cfg.NoQUICListPath); len(got) != 0 {
+		t.Errorf("QUIC refused list %v", got)
+	}
+}

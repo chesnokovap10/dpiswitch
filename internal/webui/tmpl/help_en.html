@@ -137,8 +137,9 @@ node, the handshake, a request and its answer, and the speed against the tunnel.
 clean one. QUIC (UDP 443) to it is refused, and the browser takes TCP at once. With the <a
 href="/settings#quic_fake">QUIC decoy</a> on, QUIC goes the same way: ahead of a connection's first packet the core
 sends a decoy one with the name www.google.com, the ISP judges the connection by it and lets the real one
-through. The detector does not check QUIC this way: where the decoy does not help, the browser takes TCP after
-a short pause.</li>
+through. The detector checks QUIC this way too: QUIC blocked direct is tried again with the decoy. Where it
+does not help, QUIC to the site is refused ("QUIC refused" in the verdicts), and the browser takes TCP at once.
+A site clean over TCP with only its QUIC blocked goes direct with the decoy rather than to the tunnel.</li>
 <li>It fails: BLOCKED_DPI ("DPI bypass failed"), and the tunnel. It is re-checked on the same schedule as other
 blocks, with the cut each time. Only slower than the tunnel: SLOWER.</li>
 <li>Only the first message is cut; the rest of the traffic goes as it is. Encryption is not touched: the

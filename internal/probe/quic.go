@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -75,10 +76,23 @@ func RunQUIC(d Dialer, ip string, port int, host string) PathResult {
 	return r
 }
 
+// StatusUnreadableH3: the status of an HTTP/3 answer quic-go would not
+// read, see h3Get. Not a real status: alike on both paths, it compares equal.
+const StatusUnreadableH3 = 1
+
 // h3Get sends GET / over an established QUIC connection that chose h3.
 func h3Get(ctx context.Context, r *PathResult, conn *quic.Conn, host string) {
 	t2 := time.Now()
 	resp, err := (&http3.Transport{}).NewClientConn(conn).RoundTrip(probeRequest(host).WithContext(ctx))
+	if err != nil && strings.HasPrefix(err.Error(), "http3: invalid response:") {
+		// the server's HEADERS frame came whole, and quic-go turned it down:
+		// googlevideo.com answers with a "connection" field, which HTTP/3
+		// forbids. An answer all the same -- what the request is there to
+		// show is that the path carries one past the handshake
+		r.TTFB = time.Since(t2)
+		r.HTTPStatus = StatusUnreadableH3
+		return
+	}
 	if err != nil {
 		r.Err, r.ErrStage = err.Error(), "http_read"
 		return
