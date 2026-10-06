@@ -62,6 +62,7 @@ type vrow struct {
 	Expires time.Time
 	Idle    bool // see ctl.DirectEntry.Idle
 	Node    string
+	NoQUIC  bool // see ctl.DirectEntry.NoQUIC
 }
 
 type verdicts struct {
@@ -158,7 +159,7 @@ func verdictsData(r *http.Request) verdicts {
 	}
 	row := func(e ctl.DirectEntry) vrow {
 		r := vrow{Key: e.Domain, Domain: e.Domain, Verdict: e.Verdict, Reason: e.Reason,
-			Decided: e.DecidedAt, Expires: e.ExpiresAt, Idle: e.Idle, Node: e.TestedIP}
+			Decided: e.DecidedAt, Expires: e.ExpiresAt, Idle: e.Idle, Node: e.TestedIP, NoQUIC: e.NoQUIC}
 		if strings.HasPrefix(r.Domain, "@") {
 			r.Domain, r.Addr = r.Domain[1:], true
 		} else {

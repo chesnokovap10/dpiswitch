@@ -421,9 +421,18 @@ func TestVerdictsPage(t *testing.T) {
 		"c.xn--e1afmkfd.xn--p1ai": e("CLEAN", day, 0),
 		"idle.test":               e("BLOCKED_TLS", -time.Hour, -3*day),
 		"busy.test":               e("BLOCKED_TCP", -time.Hour, -time.Minute),
+		"cut.test":                e("CLEAN_SPLIT", day, 0),
+		"noquic.test":             map[string]any{"verdict": "CLEAN_SPLIT", "decided_at": now.Add(-time.Hour), "expires_at": now.Add(day), "last_seen": now, "no_quic": true},
 	}}}
 	b, _ := json.Marshal(st)
 	if err := os.WriteFile(paths.State(), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// the cut on: its rows are in the direct table, with their marks
+	if _, err := ctl.UpdateSettings(paths.Settings(), func(s *ctl.Settings) error {
+		s.SplitHello = true
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
 	get := func(target string) string {
@@ -447,6 +456,13 @@ func TestVerdictsPage(t *testing.T) {
 	if !regexp.MustCompile(`(?s)idle\.test.*when next used`).MatchString(body) || strings.Count(body, "when next used") != 1 ||
 		!regexp.MustCompile(`(?s)busy\.test.*due now`).MatchString(body) {
 		t.Fatalf("idle and due verdicts:\n%s", body)
+	}
+	// a CLEAN_SPLIT row whole, its QUIC refused or not -- the template once
+	// stopped at the row's QUIC mark, the rest of the row and table gone
+	body = get("/frag/verdicts/table?cat=direct") + get("/frag/verdicts/table?cat=blocked")
+	if strings.Contains(body, "template:") || strings.Count(body, "with the ClientHello cut") != 2 ||
+		!regexp.MustCompile(`(?s)noquic\.test.{0,200}QUIC refused`).MatchString(body) || strings.Count(body, "QUIC refused") != 1 {
+		t.Fatalf("the cut's rows:\n%s", body)
 	}
 	// the parts refresh with the filter as typed
 	body = get("/verdicts?cat=blocked&q=" + url.QueryEscape("c++ 50%"))
