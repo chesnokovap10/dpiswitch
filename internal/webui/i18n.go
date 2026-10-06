@@ -153,6 +153,7 @@ var ru = map[string]string{
 	"open connections not closed:": "открытые соединения не закрыты:",
 	"Not reset:":                   "Не сброшено:",
 	"connection cut":               "соединение обрывается",
+	"Blocked by DPI":               "Заблокировано DPI",
 	"TLS cut by site name":         "TLS обрывается по имени сайта",
 	"QUIC blocked":                 "QUIC заблокирован",
 	"certificate spoofed":          "сертификат подменён",

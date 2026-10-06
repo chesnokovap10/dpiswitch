@@ -85,9 +85,10 @@ func TestCycleSplitOff(t *testing.T) {
 	}
 }
 
-// The cut does not get through either: the block the plain path found
-// stands, with what the cut showed beside it. Other verdicts are not tried
-// with the cut: it hides the name, and nothing else.
+// The cut does not get through either: BLOCKED_DPI, with what the cut
+// showed beside it, routed and re-checked like the block the plain path
+// found. Other verdicts are not tried with the cut: it hides the name, and
+// nothing else.
 func TestCycleSplitFails(t *testing.T) {
 	s, tried := splitScenario(t, map[string]probe.Verdict{"wa.example.org": probe.BlockedTLS})
 	s.see(tunnelled("wa.example.org", 443), tunnelled("tcp.example.org", 443))
@@ -95,8 +96,15 @@ func TestCycleSplitFails(t *testing.T) {
 	s.script("tcp.example.org tcp/443", probe.Report{Verdict: probe.BlockedTCP, TestedIP: "192.0.2.12",
 		Direct: tcpFails, Tunnel: pathOK})
 	s.cycle()
-	if e := s.entry("wa.example.org"); e.Verdict != probe.BlockedTLS {
+	e := s.entry("wa.example.org")
+	if e.Verdict != probe.BlockedDPI {
 		t.Fatalf("verdict %s", e.Verdict)
+	}
+	if !e.ExpiresAt.Before(time.Now().Add(s.cfg.FailTTL + time.Minute)) {
+		t.Errorf("re-checked at %s: not on a block's schedule", e.ExpiresAt)
+	}
+	if got := s.entry("tcp.example.org").Verdict; got != probe.BlockedTCP {
+		t.Errorf("tcp.example.org: %s", got)
 	}
 	if !slices.Equal(*tried, []string{"wa.example.org"}) {
 		t.Errorf("cut tried for %v", *tried)

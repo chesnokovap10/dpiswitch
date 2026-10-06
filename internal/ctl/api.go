@@ -278,7 +278,7 @@ func (s Snapshot) Blocked() int {
 	n := 0
 	for v, c := range s.Counts {
 		switch probe.Verdict(v) {
-		case probe.BlockedTCP, probe.BlockedTLS, probe.BlockedQUIC, probe.MITM, probe.ContentDiff:
+		case probe.BlockedTCP, probe.BlockedTLS, probe.BlockedDPI, probe.BlockedQUIC, probe.MITM, probe.ContentDiff:
 			n += c
 		}
 	}
@@ -463,7 +463,7 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 	for _, m := range st.Networks {
 		for _, e := range m {
 			switch {
-			case splitOn && e.Verdict == probe.BlockedTLS:
+			case splitOn && (e.Verdict == probe.BlockedTLS || e.Verdict == probe.BlockedDPI):
 				e.ExpiresAt = now
 			case goesDirect(e.Verdict):
 				if cfg.TTL != old.TTL && !e.SlowOnce {

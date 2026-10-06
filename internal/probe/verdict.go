@@ -15,6 +15,7 @@ const (
 	CleanSplit  Verdict = "CLEAN_SPLIT"  // blocked by name, clean with the ClientHello cut -- see CheckSplit
 	BlockedTCP  Verdict = "BLOCKED_TCP"  // cut at the connection level
 	BlockedTLS  Verdict = "BLOCKED_TLS"  // cut on ClientHello -- SNI filter
+	BlockedDPI  Verdict = "BLOCKED_DPI"  // BLOCKED_TLS, and the ClientHello cut does not get through either
 	MITM        Verdict = "MITM"         // certificate substitution
 	ContentDiff Verdict = "CONTENT_DIFF" // the response differs -- possibly a block page
 	BlockedQUIC Verdict = "BLOCKED_QUIC" // QUIC is blocked (TCP may still be clean)

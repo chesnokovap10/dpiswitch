@@ -99,6 +99,7 @@ moment than about the path.</p>
 <tr><td><span class="pill ok">CLEAN_SPLIT</span></td><td>Blocked direct by name (BLOCKED_TLS), but with the ClientHello cut every attempt went as well as through the tunnel, and no slower. Only with the <a href="/settings#split_hello">cut</a> on</td><td>direct with the cut; cut off: tunnel</td></tr>
 <tr><td><span class="pill bad">BLOCKED_TCP</span></td><td>The connection is refused, reset or times out directly, and works through the tunnel</td><td>tunnel</td></tr>
 <tr><td><span class="pill bad">BLOCKED_TLS</span></td><td>TCP connects, but the TLS handshake is cut once the site's name is seen: the typical DPI block</td><td>tunnel</td></tr>
+<tr><td><span class="pill bad">BLOCKED_DPI</span></td><td>"Blocked by DPI": blocked by name (BLOCKED_TLS), and the ClientHello cut does not get through either. Only with the <a href="/settings#split_hello">cut</a> on; each re-check tries the cut again</td><td>tunnel</td></tr>
 <tr><td><span class="pill bad">BLOCKED_QUIC</span></td><td>QUIC (UDP 443) is blocked directly. TCP may work, but a name goes one way as a whole</td><td>tunnel</td></tr>
 <tr><td><span class="pill bad">MITM</span></td><td>The certificate on the direct path is not the site's, or does not verify: someone answers in the site's place</td><td>tunnel</td></tr>
 <tr><td><span class="pill bad">CONTENT_DIFF</span></td><td>The answer on the direct path differs from the tunnel's: most likely a block page</td><td>tunnel</td></tr>
@@ -138,7 +139,8 @@ href="/settings#quic_fake">QUIC decoy</a> on, QUIC goes the same way: ahead of a
 sends a decoy one with the name www.google.com, the ISP judges the connection by it and lets the real one
 through. The detector does not check QUIC this way: where the decoy does not help, the browser takes TCP after
 a short pause.</li>
-<li>It fails: BLOCKED_TLS stays, and the tunnel. Only slower than the tunnel: SLOWER.</li>
+<li>It fails: BLOCKED_DPI ("Blocked by DPI"), and the tunnel. It is re-checked on the same schedule as other
+blocks, with the cut each time. Only slower than the tunnel: SLOWER.</li>
 <li>Only the first message is cut; the rest of the traffic goes as it is. Encryption is not touched: the
 browser checks the certificate itself.</li>
 <li>Every network keeps its own verdicts: measured on 03.10.2026, one ISP let the cut through almost

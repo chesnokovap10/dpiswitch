@@ -56,7 +56,7 @@ type Config struct {
 	Idle         time.Duration
 	SettingsPath string
 	Families     bool // extend verdicts to the whole domain, see family.go
-	Split        bool // try a BLOCKED_TLS name with the ClientHello cut, see Settings.SplitHello
+	Split        bool // try a BLOCKED_TLS name with the ClientHello cut (BLOCKED_DPI when it fails too), see Settings.SplitHello
 	// alone: no first tunnel's config is loaded -- nothing to measure
 	// against. With the cut switched on the detector still checks it, see
 	// probe.CheckAlone; without, it checks nothing.
@@ -324,6 +324,11 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 						r = s
 					default:
 						r.Note = "ClientHello cut: " + string(s.Verdict) + " " + s.Reason
+						// blocked with the cut too: the DPI box beats it here.
+						// Re-checked like any block, the cut tried again each time
+						if isBlocked(s.Verdict) || s.Verdict == probe.MITM || s.Verdict == probe.ContentDiff {
+							r.Verdict = probe.BlockedDPI
+						}
 					}
 				}
 				if r.Aborted {
@@ -1252,6 +1257,7 @@ var verdictRank = map[probe.Verdict]int{
 	probe.ContentDiff: 5,
 	probe.BlockedTCP:  6,
 	probe.BlockedTLS:  6,
+	probe.BlockedDPI:  6,
 	probe.MITM:        7,
 }
 
@@ -1284,7 +1290,7 @@ func worstPort(eps []endpoint, reps []probe.Report) probe.Report {
 func goesDirect(v probe.Verdict) bool { return v == probe.Clean || v == probe.CleanSplit }
 
 func isBlocked(v probe.Verdict) bool {
-	return v == probe.BlockedTCP || v == probe.BlockedTLS || v == probe.BlockedQUIC
+	return v == probe.BlockedTCP || v == probe.BlockedTLS || v == probe.BlockedDPI || v == probe.BlockedQUIC
 }
 
 // directReachedV6: the direct side of a probe got through to an IPv6 node --
