@@ -814,13 +814,6 @@ func render(c *Conf) (string, error) {
 	w("")
 	w("  # 11. everything else: the tunnels as the mode says -- in tunnel only")
 	w("  #     never direct")
-	w("  #     QUIC is refused first: the tunnel's MTU is 1376, a UDP datagram")
-	w("  #     past 1348 bytes does not go through it, and Chrome's QUIC packets")
-	w("  #     are 1350 -- its handshake hung until the browser gave up on it")
-	w("  #     (a new googlevideo shard stalled the track ~30 s, until the")
-	w("  #     detector's verdict moved it direct). A refused one is on TCP in")
-	w("  #     milliseconds, as with the names above whose QUIC does not pass")
-	w("  - AND,((NETWORK,UDP),(DST-PORT,443)),REJECT")
 	w("  - MATCH,%s", ctl.TunnelRestGroup)
 	return b.String(), nil
 }
