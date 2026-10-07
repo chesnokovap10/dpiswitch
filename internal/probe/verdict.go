@@ -142,6 +142,20 @@ func checkSplitAlive(split, tunnel Dialer, plain Report, attempts int, prev Verd
 // the server's own, see checkSplit
 const serverOwn = "; the answer differs from the tunnel's, the server's own"
 
+// tunnelSilent: the note of a pass the tunnel did not answer while the cut
+// got the site's own answer, see checkSplit
+const tunnelSilent = "; the tunnel did not answer, speed not compared"
+
+// answered: the path got the site's own answer -- a certificate of the name
+// that passes the chain check, and an HTTP answer
+func answered(r PathResult) bool {
+	return r.TLSOk && r.CertValid && r.HTTPStatus != 0 && !r.HTTPFailed()
+}
+
+// TunnelDown: whether an INCONCLUSIVE's reason is the tunnel's side failing
+// -- the direct one did not
+func TunnelDown(reason string) bool { return strings.HasPrefix(reason, tunnelDown) }
+
 func checkSplit(split, tunnel Dialer, plain Report, attempts int, prev Verdict, udp bool) Report {
 	proto, note, run := "tcp", "ClientHello cut", func(d Dialer) PathResult { return Run(d, plain.TestedIP, plain.Domain) }
 	if udp {
@@ -173,6 +187,19 @@ func checkSplit(split, tunnel Dialer, plain Report, attempts int, prev Verdict, 
 			// once, not per pass: it read the same thing three times over
 			if !strings.Contains(rep.Note, serverOwn) {
 				rep.Note += serverOwn
+			}
+		}
+		// The cut got the site's own answer and only the tunnel failed: the
+		// tunnel is the yardstick for speed, not for whether the cut works.
+		// The pass used to end INCONCLUSIVE, and the name kept the plain
+		// path's BLOCKED_TLS -- held in the tunnel, though the cut carried it
+		// (rr16---sn-n8v7znse.googlevideo.com, 07.10: 526 KB through the cut
+		// a moment before the tunnel timed out on its node). Clean, with no
+		// latency to compare.
+		if v == Inconcl && strings.HasPrefix(reason, tunnelDown) && answered(d) {
+			v, reason = Clean, ""
+			if !strings.Contains(rep.Note, tunnelSilent) {
+				rep.Note += tunnelSilent
 			}
 		}
 		// as in checkProto: QUIC's handshake is one step, and what fails in

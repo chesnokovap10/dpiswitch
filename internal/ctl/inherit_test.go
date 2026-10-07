@@ -75,6 +75,10 @@ func TestInheritCounts(t *testing.T) {
 	s.put("d.cut.org", probe.Inconcl, "")
 	s.st.put("n", "e.cut.org", &entry{Verdict: probe.Inconcl, DirectDown: true, ExpiresAt: time.Now().Add(time.Hour)})
 	s.st.put("n", "old.cut.org", &entry{Verdict: probe.CleanSplit, ExpiresAt: time.Now().Add(-time.Minute)})
+	// the tunnel did not answer, the direct side did: nothing against the
+	// direct way, so it is not held
+	s.st.put("n", "f.cut.org", &entry{Verdict: probe.Inconcl, ExpiresAt: time.Now().Add(time.Hour),
+		Reason: "tunnel path unavailable: silent drop (no reply) on the ClientHello (carries the name/SNI)"})
 	syncList(s.cfg, s.api, s.st, "n", false)
 	if got := listRules(s.cfg.InheritPath); !slices.Equal(got, []string{"+.cut.org"}) {
 		t.Fatalf("inherit list %v: ex.com is a family already", got)

@@ -140,10 +140,13 @@ func (s *state) inheritance(id string, book *asnBook, fams []family) inheritance
 			continue
 		}
 		d, a := lean(e, now)
-		if !d {
-			// a CLEAN or CLEAN_SPLIT that does not go direct is past its
-			// term: held out like any other, it waits for its re-check in
-			// the tunnel as before
+		// A CLEAN or CLEAN_SPLIT that does not go direct is past its term:
+		// held out like any other, it waits for its re-check in the tunnel
+		// as before. An INCONCLUSIVE whose direct side worked and whose
+		// tunnel did not answer is not: the check said nothing against the
+		// direct way, and the name goes its relatives' way like one with no
+		// verdict.
+		if !d && !(e.Verdict == probe.Inconcl && probe.TunnelDown(e.Reason)) {
 			hold = append(hold, dom)
 		}
 		add(byFam, familyOf(dom), d, a)

@@ -158,3 +158,32 @@ func TestCheckSplitServerDiffers(t *testing.T) {
 		t.Errorf("unverified answer, differing from the tunnel's: %s (%s)", r.Verdict, r.Reason)
 	}
 }
+
+// The cut gets the site's own answer and the tunnel none: the cut works,
+// only the speed is not compared -- CLEAN_SPLIT, not the plain path's
+// block. Without a verified answer the tunnel's silence decides nothing.
+func TestCheckSplitTunnelSilent(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	pool := x509.NewCertPool()
+	pool.AddCert(srv.Certificate())
+	chainRoots = pool
+	defer func() { chainRoots = nil }()
+	target := srv.Listener.Addr().String()
+	split := Dialer{Addr: forwardStub(t, target, false), Timeout: 2 * time.Second}
+	silent := Dialer{Addr: forwardStub(t, target, true), Timeout: 2 * time.Second}
+	plain := Report{Domain: "example.com", Port: 443, Verdict: BlockedTLS, TestedIP: "192.0.2.10"}
+	r := CheckSplit(split, silent, plain, 2, BlockedTLS)
+	if r.Verdict != CleanSplit || strings.Count(r.Note, tunnelSilent) != 1 || r.Unmeasured {
+		t.Fatalf("cut answers, tunnel silent: %s (%s), note %q", r.Verdict, r.Reason, r.Note)
+	}
+	if r.DirectMs != 0 || r.TunnelMs != 0 {
+		t.Errorf("speed reported with nothing to compare: %d vs %d", r.DirectMs, r.TunnelMs)
+	}
+	chainRoots = x509.NewCertPool()
+	if r := CheckSplit(split, silent, plain, 2, BlockedTLS); r.Verdict == CleanSplit {
+		t.Errorf("an unverified answer with the tunnel silent: %s (%s)", r.Verdict, r.Reason)
+	}
+}
