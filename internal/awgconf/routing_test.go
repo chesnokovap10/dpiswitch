@@ -575,7 +575,8 @@ func TestRenderRuleOrder(t *testing.T) {
 		"RULE-SET,force-direct-apps,DIRECT", "RULE-SET,force-direct-ip,DIRECT,no-resolve",
 		"RULE-SET,presets,tunnel2", "RULE-SET,awg2-hosts-ip,tunnel2,no-resolve",
 		"RULE-SET,direct-split-verified,direct-split", "RULE-SET,direct-verified,DIRECT",
-		"RULE-SET,observe-split,direct-split", "RULE-SET,observe-all,DIRECT", "MATCH,tunnel-rest"}
+		"RULE-SET,observe-split,direct-split", "RULE-SET,observe-all,DIRECT",
+		"AND,((NETWORK,UDP),(DST-PORT,443)),REJECT", "MATCH,tunnel-rest"}
 	for k := 1; k < len(order); k++ {
 		if at(order[k-1]) > at(order[k]) {
 			t.Errorf("%s below %s", order[k-1], order[k])
