@@ -11,11 +11,13 @@ import (
 
 // adapter: what the network checks need to know of one interface.
 type adapter struct {
-	index uint32 // the IPv4 interface index routes refer to
-	name  string // "Wi-Fi", "Meta"
-	desc  string // the driver's description: "WireGuard Tunnel", "Meta Tunnel"
-	up    bool
-	v4    []net.IP
+	index  uint32 // the IPv4 interface index routes refer to
+	index6 uint32 // the IPv6 one
+	name   string // "Wi-Fi", "Meta"
+	desc   string // the driver's description: "WireGuard Tunnel", "Meta Tunnel"
+	up     bool
+	v4     []net.IP
+	v6     []net.IP // the global ones
 }
 
 func adapters() ([]adapter, error) {
@@ -35,14 +37,18 @@ func adapters() ([]adapter, error) {
 		var out []adapter
 		for a := first; a != nil; a = a.Next {
 			ad := adapter{
-				index: a.IfIndex,
-				name:  windows.UTF16PtrToString(a.FriendlyName),
-				desc:  windows.UTF16PtrToString(a.Description),
-				up:    a.OperStatus == windows.IfOperStatusUp,
+				index:  a.IfIndex,
+				index6: a.Ipv6IfIndex,
+				name:   windows.UTF16PtrToString(a.FriendlyName),
+				desc:   windows.UTF16PtrToString(a.Description),
+				up:     a.OperStatus == windows.IfOperStatusUp,
 			}
 			for u := a.FirstUnicastAddress; u != nil; u = u.Next {
-				if v4 := u.Address.IP().To4(); v4 != nil {
+				ip := u.Address.IP()
+				if v4 := ip.To4(); v4 != nil {
 					ad.v4 = append(ad.v4, v4)
+				} else if ip.IsGlobalUnicast() && !isULA(ip) {
+					ad.v6 = append(ad.v6, ip)
 				}
 			}
 			out = append(out, ad)
@@ -51,6 +57,38 @@ func adapters() ([]adapter, error) {
 		return out, nil
 	}
 	return nil, windows.ERROR_BUFFER_OVERFLOW
+}
+
+// isULA: a unique local IPv6 address (fc00::/7) -- the TUN's own among
+// them: not one a network outside gave
+func isULA(ip net.IP) bool { return len(ip) == net.IPv6len && ip[0]&0xfe == 0xfc }
+
+// defaultRoutes6: the interfaces an IPv6 default route leaves by, by their
+// IPv6 index
+func defaultRoutes6() (map[uint32]bool, error) {
+	var t *windows.MibIpForwardTable2
+	if err := windows.GetIpForwardTable2(windows.AF_INET6, &t); err != nil {
+		return nil, err
+	}
+	defer windows.FreeMibTable(unsafe.Pointer(t))
+	out := map[uint32]bool{}
+	for _, r := range t.Rows() {
+		if r.DestinationPrefix.PrefixLength == 0 {
+			out[r.InterfaceIndex] = true
+		}
+	}
+	return out, nil
+}
+
+// hasUplink6: hasUplink for IPv6 -- up, a global address, and an IPv6
+// default route through it
+func hasUplink6(ads []adapter, routes map[uint32]bool) bool {
+	for _, a := range ads {
+		if a.up && !a.ours() && routes[a.index6] && len(a.v6) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // defaultRoutes4: the interfaces an IPv4 default route leaves by.

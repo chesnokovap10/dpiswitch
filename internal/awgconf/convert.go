@@ -120,8 +120,13 @@ func (c *Conf) check() error {
 	if net.ParseIP(host) == nil && !hostRe.MatchString(host) {
 		return fmt.Errorf("Endpoint %q: not an address or a host name", host)
 	}
-	nums := map[string]string{"Endpoint port": port, "MTU": c.Interface["MTU"],
-		"PersistentKeepalive": c.Peer["PersistentKeepalive"]}
+	nums := map[string]string{"Endpoint port": port, "MTU": c.Interface["MTU"]}
+	// AWG 3.x writes it as a range too ("25-35"), see keepalive
+	if v := c.Peer["PersistentKeepalive"]; v != "" {
+		if _, ok := keepalive(v); !ok {
+			return fmt.Errorf("PersistentKeepalive = %q: not a number or a range of them", v)
+		}
+	}
 	for _, k := range []string{"Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4"} {
 		nums[k] = c.Interface[k]
 	}
@@ -131,6 +136,44 @@ func (c *Conf) check() error {
 		}
 		if n, err := strconv.Atoi(v); err != nil || n < 0 {
 			return fmt.Errorf("%s = %q: not a number", k, v)
+		}
+	}
+	return nil
+}
+
+// keepalive: the core's keepalive for the .conf's PersistentKeepalive -- a
+// number, or a range of them ("25-35"), which AmneziaWG 3.x picks from at
+// random. The core takes a number only: the low end, the most often the
+// range would send one, so a NAT on the way keeps the tunnel's mapping.
+func keepalive(v string) (int, bool) {
+	lo, hi, isRange := strings.Cut(v, "-")
+	a, err := strconv.Atoi(strings.TrimSpace(lo))
+	if err != nil || a < 0 {
+		return 0, false
+	}
+	if isRange {
+		b, err := strconv.Atoi(strings.TrimSpace(hi))
+		if err != nil || b < a {
+			return 0, false
+		}
+	}
+	return a, true
+}
+
+// CheckKeys: the .conf's keys are WireGuard keys -- base64 of 32 bytes, as
+// the core takes them. A key mistyped went into the config, the UI said it
+// was applied, and the tunnel never came up.
+func (c *Conf) CheckKeys() error {
+	for _, k := range []struct{ name, v string }{
+		{"PrivateKey", c.Interface["PrivateKey"]},
+		{"PublicKey", c.Peer["PublicKey"]},
+		{"PresharedKey", c.Peer["PresharedKey"]},
+	} {
+		if k.v == "" && k.name == "PresharedKey" {
+			continue
+		}
+		if b, err := base64.StdEncoding.DecodeString(k.v); err != nil || len(b) != 32 {
+			return fmt.Errorf("%s is not a WireGuard key (base64 of 32 bytes)", k.name)
 		}
 	}
 	return nil
@@ -883,10 +926,7 @@ func (c *Conf) writeProxy(w func(string, ...any), name string, tunDNS []string, 
 	if mtu == "" {
 		mtu = "1420"
 	}
-	keepalive := c.Peer["PersistentKeepalive"]
-	if keepalive == "" {
-		keepalive = "0"
-	}
+	ka, _ := keepalive(c.Peer["PersistentKeepalive"])
 	w("  - name: %s", name)
 	w("    type: wireguard")
 	w("    server: %s", yq(host))
@@ -915,7 +955,7 @@ func (c *Conf) writeProxy(w func(string, ...any), name string, tunDNS []string, 
 	w("    ip-stack:")
 	w("      mode: mips")
 	w("      congestion-controller: bbr")
-	w("    persistent-keepalive: %s", keepalive)
+	w("    persistent-keepalive: %d", ka)
 	w("    udp: true")
 	w("    remote-dns-resolve: true")
 	if ipv6 && !v6Dead {

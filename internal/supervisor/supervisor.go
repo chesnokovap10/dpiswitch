@@ -214,7 +214,8 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 	// back. The adapter's own answers are kept, and a tunnel's for a while
 	// (see startIPv6State).
 	s.v6mu.Lock()
-	start := startIPv6State(ctl.LoadTunnelIPv6(paths.TunnelIPv6()), loadV6Held(paths.TunnelIPv6Held()), time.Now())
+	held := loadV6Held(paths.TunnelIPv6Held()).samePeers(loadPrints(paths.TunnelIPv6Peers()), peerPrints())
+	start := startIPv6State(ctl.LoadTunnelIPv6(paths.TunnelIPv6()), held, time.Now())
 	if err := start.Save(paths.TunnelIPv6()); err != nil {
 		log.Printf("IPv6 state not reset: %v", err)
 	}
@@ -552,11 +553,16 @@ func (s *Supervisor) keepHealthy(ctx context.Context) {
 
 // watched: the tunnel keepHealthy restarts the core for, "" for none; a var
 // for tests
-var watched = func() string {
-	if t := awgconf.Tunnels(); len(t) > 0 {
-		return t[0]
+var watched = func() string { return watchedOf(awgconf.Tunnels(), ctl.LoadSettings(paths.Settings())) }
+
+// watchedOf: the first tunnel; with none, the second -- only while it is
+// switched on. Switched off, nothing goes through it: a server of its down,
+// the reason it was switched off, restarted the core every minute.
+func watchedOf(tunnels []string, set ctl.Settings) string {
+	if len(tunnels) == 0 || tunnels[0] == "awg2" && !set.Awg2Active() {
+		return ""
 	}
-	return ""
+	return tunnels[0]
 }
 
 // readCheck: whether a reading of the core's last tunnel check is news, and

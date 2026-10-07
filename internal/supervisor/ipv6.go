@@ -2,7 +2,11 @@ package supervisor
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"log"
+	"os"
 	"time"
 
 	"dpiswitch/internal/awgconf"
@@ -139,6 +143,11 @@ func (s *Supervisor) checkIPv6(ctx context.Context) {
 			log.Printf("IPv6 state not saved, the core keeps its config until its next start: %v", err)
 			return
 		}
+		// the peers the answers were found for: another .conf under the
+		// same name is not held to them (see samePeers)
+		if err := savePrints(paths.TunnelIPv6Peers(), peerPrints()); err != nil {
+			log.Printf("IPv6 state's peers not saved: %v", err)
+		}
 		changed, err := awgconf.Regenerate()
 		if err != nil {
 			log.Printf("config not rebuilt after the IPv6 check: %v", err)
@@ -152,6 +161,55 @@ func (s *Supervisor) checkIPv6(ctx context.Context) {
 		log.Println("restarting the core: the IPv6 check changed its config")
 		s.restartCore()
 	})
+}
+
+// peerPrints: each tunnel's peer as its .conf has it now -- the server's
+// address and key, hashed: a tunnel is its name, and another .conf loaded
+// under the same name is another server
+func peerPrints() map[string]string {
+	out := map[string]string{}
+	for name, p := range map[string]string{"awg1": paths.SourceConf(), "awg2": paths.SourceConf2()} {
+		c, err := awgconf.ParseFile(p)
+		if err != nil {
+			continue
+		}
+		sum := sha256.Sum256([]byte(c.Peer["Endpoint"] + "|" + c.Peer["PublicKey"]))
+		out[name] = hex.EncodeToString(sum[:8])
+	}
+	return out
+}
+
+func loadPrints(path string) map[string]string {
+	m := map[string]string{}
+	if b, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(b, &m)
+	}
+	if m == nil {
+		m = map[string]string{}
+	}
+	return m
+}
+
+func savePrints(path string, m map[string]string) error {
+	b, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	return paths.ReplaceFile(path, append(b, '\n'))
+}
+
+// samePeers: the answers held for the peer each tunnel has now. One found
+// for another -- a .conf loaded since, under the same name -- went on: the
+// new server ran on IPv4 alone for up to a day, never checked, its IPv6
+// working. A hold with no peer known is dropped too: checked once more.
+func (h v6Held) samePeers(saved, now map[string]string) v6Held {
+	out := v6Held{}
+	for name, at := range h {
+		if p, ok := saved[name]; ok && p == now[name] {
+			out[name] = at
+		}
+	}
+	return out
 }
 
 // only: the entries of the tunnels the config has, the rest dropped

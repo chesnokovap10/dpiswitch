@@ -494,14 +494,15 @@ func TestResetStopped(t *testing.T) {
 	if w := do(t, h, "POST", "/act/reset", url.Values{}, map[string]string{"Referer": "http://127.0.0.1:8080/verdicts"}); w.Code != http.StatusSeeOther {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
-	if _, err := os.Stat(paths.ResetRequest()); err != nil {
-		t.Fatalf("no request left: %v", err)
+	reqs, _ := filepath.Glob(paths.ResetRequests())
+	if len(reqs) != 1 {
+		t.Fatalf("requests left: %v", reqs)
 	}
 	if b := do(t, h, "GET", "/verdicts", nil, nil).Body.String(); !strings.Contains(b, "the service takes it when it starts") {
 		t.Fatalf("the page does not say the reset waits:\n%s", b)
 	}
 	// the current network's: the request names none, as the tray's
-	if b, _ := os.ReadFile(paths.ResetRequest()); strings.Contains(string(b), "network") {
+	if b, _ := os.ReadFile(reqs[0]); strings.Contains(string(b), "network") {
 		t.Fatalf("the current network's reset names one: %q", b)
 	}
 	// another network's, from its page: the request names it
@@ -509,8 +510,19 @@ func TestResetStopped(t *testing.T) {
 		t.Fatal(err)
 	}
 	do(t, h, "POST", "/act/reset", url.Values{"net": {"AS2"}}, map[string]string{"Referer": "http://127.0.0.1:8080/verdicts?net=AS2"})
-	if b, _ := os.ReadFile(paths.ResetRequest()); !strings.HasSuffix(string(b), ctl.NetworkLine("AS2")) {
-		t.Fatalf("another network's reset: %q", b)
+	// a request of its own: the first is still there, not overwritten
+	all, _ := filepath.Glob(paths.ResetRequests())
+	if len(all) != 2 {
+		t.Fatalf("two resets asked, requests: %v", all)
+	}
+	var other []byte
+	for _, r := range all {
+		if r != reqs[0] {
+			other, _ = os.ReadFile(r)
+		}
+	}
+	if !strings.HasSuffix(string(other), ctl.NetworkLine("AS2")) {
+		t.Fatalf("another network's reset: %q", other)
 	}
 }
 
@@ -525,7 +537,7 @@ func TestOverview(t *testing.T) {
 		t.Fatal("a config loaded with none there")
 	}
 	conf := "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.8.1.3/32\nDNS = 10.8.1.1\n" +
-		"[Peer]\nPublicKey = cA==\nEndpoint = vpn.example.org:51820\n"
+		"[Peer]\nPublicKey = AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nEndpoint = vpn.example.org:51820\n"
 	if err := os.WriteFile(paths.SourceConf(), []byte(conf), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -896,7 +908,7 @@ func TestFavicon(t *testing.T) {
 func TestSameConfBothTunnels(t *testing.T) {
 	testServer(t)
 	conf := func(key, host string) string {
-		return "[Interface]\nPrivateKey = " + key + "\nAddress = 10.8.1.3/32\n[Peer]\nPublicKey = cA==\nEndpoint = " + host + ":51820\n"
+		return "[Interface]\nPrivateKey = " + key + "\nAddress = 10.8.1.3/32\n[Peer]\nPublicKey = AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nEndpoint = " + host + ":51820\n"
 	}
 	k1 := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 	k2 := "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
@@ -929,7 +941,7 @@ func TestSecondConfUsable(t *testing.T) {
 	s, _ := testServer(t)
 	conf := func(iface, peer string) string {
 		return "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n" + iface +
-			"[Peer]\nPublicKey = cA==\n" + peer
+			"[Peer]\nPublicKey = AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n" + peer
 	}
 	for name, text := range map[string]string{
 		"no IPv4 address": conf("Address = fd00::2/128\n", "Endpoint = 198.51.100.8:51820\n"),

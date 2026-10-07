@@ -161,6 +161,10 @@ func MihomoLog() string     { return filepath.Join(LogDir(), "mihomo.log") }
 // supervisor.tunnelV6Hold
 func TunnelIPv6Held() string { return Data("tunnel-ipv6-held.json") }
 
+// TunnelIPv6Peers: the peer each held answer was found for, see
+// supervisor.peerPrints
+func TunnelIPv6Peers() string { return Data("tunnel-ipv6-peers.json") }
+
 // TrayLog: the tray runs as the user and logs in the user's own profile --
 // the service's log directory is not the user's to write in
 func TrayLog() string {
@@ -176,7 +180,15 @@ func TrayLog() string {
 func UILang() string { return filepath.Join(filepath.Dir(TrayLog()), "lang") }
 
 // ResetRequest: left by the tray to have the service drop every verdict
-func ResetRequest() string { return User("reset-verdicts.request") }
+func ResetRequest() string {
+	return User("reset-" + strconv.FormatInt(time.Now().UnixNano(), 10) + ".request")
+}
+
+// ResetRequests: every reset request waiting -- a file each, so two asked
+// at once are both taken: one file was overwritten by the second, and the
+// first asker was told its reset was done. The name of before
+// (reset-verdicts.request) is among them.
+func ResetRequests() string { return User("reset-*.request") }
 
 // ForgetRequests: what the UI leaves to have the service drop single
 // verdicts, a file a request -- the pattern the service looks for

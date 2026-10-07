@@ -884,13 +884,29 @@ func takeReset(cfg Config, a *api, st *state) bool {
 	if cfg.ResetPath == "" {
 		return false
 	}
+	// every request waiting, the oldest first; one not taken yet holds the
+	// ones after it to the next second
+	reqs, _ := filepath.Glob(cfg.ResetPath)
+	sort.Strings(reqs)
+	took := false
+	for _, r := range reqs {
+		if !takeResetOne(cfg, a, st, r) {
+			break
+		}
+		took = true
+	}
+	return took
+}
+
+// takeResetOne carries out the reset request in the file req
+func takeResetOne(cfg Config, a *api, st *state, req string) bool {
 	// the user's file, read as SYSTEM: not through a link, see takeForget
-	b, err := paths.ReadUserFile(cfg.ResetPath, forgetMax)
+	b, err := paths.ReadUserFile(req, forgetMax)
 	switch {
 	case errors.Is(err, paths.ErrRefused):
-		log.Printf("request %s not taken: %v", cfg.ResetPath, err)
-		if err := os.Remove(cfg.ResetPath); err != nil {
-			log.Printf("request %s not removed: %v", cfg.ResetPath, err)
+		log.Printf("request %s not taken: %v", req, err)
+		if err := os.Remove(req); err != nil {
+			log.Printf("request %s not removed: %v", req, err)
 		}
 		return false
 	case err != nil:
@@ -942,7 +958,7 @@ func takeReset(cfg Config, a *api, st *state) bool {
 	resetFailed, resetDropped = "", 0
 	listMu.Unlock()
 	// the tray waits for the request to go: it goes last
-	if err := os.Remove(cfg.ResetPath); err != nil {
+	if err := os.Remove(req); err != nil {
 		log.Printf("reset request not removed: %v", err)
 	}
 	if id == cur {

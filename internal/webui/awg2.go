@@ -20,6 +20,9 @@ func saveConf2(text string) error {
 	if err := c.Usable(); err != nil {
 		return err
 	}
+	if err := c.CheckKeys(); err != nil {
+		return err
+	}
 	if c1, err := awgconf.ParseFile(paths.SourceConf()); err == nil && awgconf.SameKey(c1, c) {
 		return awgconf.ErrSameKey
 	}

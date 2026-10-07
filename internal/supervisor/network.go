@@ -15,6 +15,9 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"dpiswitch/internal/awgconf"
+	"dpiswitch/internal/paths"
 )
 
 // --- physical network presence ---
@@ -35,12 +38,13 @@ func mustCIDR(s string) *net.IPNet {
 // our TUN. After a reboot Wi-Fi comes up later than the service, and starting
 // the core into the void is pointless -- it would only burn retries.
 //
-// IPv4 only, on purpose: the question is whether the tunnels can come up,
-// and their servers are reached over IPv4. On a network with IPv6 alone
-// they cannot, and "no network, waiting" is the right answer there --
-// counting a global IPv6 address instead would restart the core every
-// minute and a half for a tunnel that has no way through. Should a .conf
-// give an IPv6 endpoint, this is the place to follow the endpoints' family.
+// IPv4, unless a tunnel's server is an IPv6 address: the question is
+// whether the tunnels can come up. On a network with IPv6 alone a server
+// reached over IPv4 cannot be, and "no network, waiting" is the right
+// answer there -- counting a global IPv6 address instead would restart the
+// core every minute and a half for a tunnel that has no way through. A
+// server given by its IPv6 address can, and an IPv6 uplink counts then:
+// with IPv6 alone the core never started.
 //
 // An interface counts only with a default route out through it: see
 // hasUplink.
@@ -49,11 +53,43 @@ func physicalNetwork() bool {
 	if err == nil {
 		var routes map[uint32]bool
 		if routes, err = defaultRoutes4(); err == nil {
-			return hasUplink(ads, routes)
+			if hasUplink(ads, routes) {
+				return true
+			}
+			if endpointsV6() {
+				if routes6, err := defaultRoutes6(); err == nil {
+					return hasUplink6(ads, routes6)
+				}
+			}
+			return false
 		}
 	}
 	// the tables not read: an address, as before, rather than no core
 	return anyAddress4()
+}
+
+// endpointsV6: whether a tunnel's server is given by an IPv6 address
+var endpointsV6 = func() bool {
+	for _, p := range []string{paths.SourceConf(), paths.SourceConf2()} {
+		c, err := awgconf.ParseFile(p)
+		if err != nil {
+			continue
+		}
+		if endpointV6(c.Peer["Endpoint"]) {
+			return true
+		}
+	}
+	return false
+}
+
+// endpointV6: an Endpoint whose host is an IPv6 address
+func endpointV6(ep string) bool {
+	host, _, err := net.SplitHostPort(ep)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.To4() == nil
 }
 
 // anyAddress4: an IPv4 address besides the TUN's and link-local ones.

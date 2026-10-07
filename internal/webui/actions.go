@@ -189,6 +189,9 @@ func saveConf1(text string) error {
 	if err != nil {
 		return err
 	}
+	if err := conf.CheckKeys(); err != nil {
+		return err
+	}
 	// rendered here only to refuse a .conf the service could not use: the
 	// service renders config.yaml itself -- the user may not write it
 	if _, err := conf.Render(); err != nil {

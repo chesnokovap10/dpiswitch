@@ -86,7 +86,7 @@ func Defaults() Config {
 		// CLEAN, every ECH connection to Cloudflare went direct.
 		SkipSuffix:  []string{"in-addr.arpa", "local", "lan", "cloudflare-ech.com"},
 		PinnedLists: pinnedLists(),
-		ResetPath:   paths.ResetRequest(),
+		ResetPath:   paths.ResetRequests(),
 		ForgetPath:  paths.ForgetRequests(),
 	}
 }
