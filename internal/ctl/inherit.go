@@ -279,9 +279,13 @@ const (
 	asnRangesTerm = 24 * time.Hour
 	// a lookup that failed waits this long
 	asnRetry = 10 * time.Minute
-	// lookups per round: RIPE answers in a fraction of a second, a round
-	// runs beside the cycle
+	// networks whose ranges are looked up per round
 	asnPerRound = 20
+	// nodes looked up per round, and at once: RIPE answers one in a
+	// fraction of a second
+	asnNodesPerRound = 1000
+	asnWorkers       = 8
+	asnRangeWorkers  = 4
 	// a network announcing more than this is a cloud of unrelated tenants
 	// rather than one service's: AS15169 announces ~1,400
 	maxASNRanges = 5000
@@ -440,75 +444,101 @@ func ripePrefixesGet(cl *http.Client, asn string) ([]string, error) {
 
 // round: one round of lookups -- the wanted networks' ranges first, then
 // nodes -- in the background, one round at a time. done is called after a
-// round that learnt anything, to rewrite the lists by it.
+// round that learnt anything, to rewrite the lists by it; a round it starts
+// then takes the ranges those lists found wanting.
 func (b *asnBook) round(directAddr string, nodes []string, done func()) {
 	if b == nil || !b.busy.CompareAndSwap(false, true) {
 		return
 	}
 	go func() {
-		defer b.busy.Store(false)
-		cl := directClient(directAddr)
 		learnt := false
+		// done runs once the round is over: it may start the next one --
+		// the networks the nodes just showed lending want their ranges
+		defer func() {
+			b.busy.Store(false)
+			if learnt {
+				done()
+			}
+		}()
+		cl := directClient(directAddr)
 		b.mu.Lock()
 		wanted := keys(b.wanted)
 		b.mu.Unlock()
 		sort.Strings(wanted)
-		n := 0
-		for _, asn := range wanted {
-			if n >= asnPerRound {
+		// the networks at once too, a few at a time: each answer is a few
+		// hundred kilobytes
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, asnRangeWorkers)
+		for i, asn := range wanted {
+			if i >= asnPerRound {
 				break
 			}
-			n++
 			if _, ok := b.ranges(asn); ok {
 				b.mu.Lock()
 				delete(b.wanted, asn)
 				b.mu.Unlock()
 				continue
 			}
-			p, err := ripePrefixes(cl, asn)
-			b.mu.Lock()
-			switch {
-			case err != nil:
-				log.Printf("network %s: ranges not learnt, trying again in %s: %v", asn, asnRetry, err)
-				b.ASNs[asn] = &asnRanges{At: time.Now(), Failed: true}
-			case len(p) > maxASNRanges:
-				// kept for its term with no ranges: it lends nothing
-				log.Printf("network %s announces %d ranges, more than %d: too wide to lend one service's way",
-					asn, len(p), maxASNRanges)
-				b.ASNs[asn] = &asnRanges{At: time.Now()}
-				delete(b.wanted, asn)
-			default:
-				b.ASNs[asn] = &asnRanges{Prefixes: p, At: time.Now()}
-				delete(b.wanted, asn)
-				learnt = true
-			}
-			b.mu.Unlock()
+			sem <- struct{}{}
+			wg.Add(1)
+			go func(asn string) {
+				defer func() { <-sem; wg.Done() }()
+				p, err := ripePrefixes(cl, asn)
+				b.mu.Lock()
+				defer b.mu.Unlock()
+				switch {
+				case err != nil:
+					log.Printf("network %s: ranges not learnt, trying again in %s: %v", asn, asnRetry, err)
+					b.ASNs[asn] = &asnRanges{At: time.Now(), Failed: true}
+				case len(p) > maxASNRanges:
+					// kept for its term with no ranges: it lends nothing
+					log.Printf("network %s announces %d ranges, more than %d: too wide to lend one service's way",
+						asn, len(p), maxASNRanges)
+					b.ASNs[asn] = &asnRanges{At: time.Now()}
+					delete(b.wanted, asn)
+				default:
+					b.ASNs[asn] = &asnRanges{Prefixes: p, At: time.Now()}
+					delete(b.wanted, asn)
+					learnt = true
+				}
+			}(asn)
 		}
-		for _, ip := range nodes {
-			if n >= asnPerRound {
+		wg.Wait()
+		// every node not known yet, asnWorkers at a time: memory made
+		// before inheritance holds hundreds, and a few a cycle kept the
+		// first minutes after an update on the old way
+		sem = make(chan struct{}, asnWorkers)
+		for i, ip := range nodes {
+			if i >= asnNodesPerRound {
 				break
 			}
+			sem <- struct{}{}
+			// one in a prefix a lookup just learnt is not asked again
 			if b.asnOf(ip) != "" || b.held(ip) {
+				<-sem
 				continue
 			}
-			n++
-			asn, prefix, err := ripeNetInfo(cl, ip)
-			b.mu.Lock()
-			if err != nil {
-				b.fail(ip)
-			} else if p, perr := netip.ParsePrefix(prefix); perr == nil {
-				b.Nets = append(b.Nets, asnNet{Prefix: p.Masked().String(), ASN: asn, At: time.Now()})
-				learnt = true
-			}
-			b.mu.Unlock()
+			wg.Add(1)
+			go func(ip string) {
+				defer func() { <-sem; wg.Done() }()
+				asn, prefix, err := ripeNetInfo(cl, ip)
+				b.mu.Lock()
+				defer b.mu.Unlock()
+				if err != nil {
+					b.fail(ip)
+				} else if p, perr := netip.ParsePrefix(prefix); perr == nil {
+					b.Nets = append(b.Nets, asnNet{Prefix: p.Masked().String(), ASN: asn, At: time.Now()})
+					learnt = true
+				}
+			}(ip)
 		}
+		wg.Wait()
 		if !learnt {
 			return
 		}
 		if err := b.save(); err != nil {
 			log.Printf("network book not saved: %v", err)
 		}
-		done()
 	}()
 }
 

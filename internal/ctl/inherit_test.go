@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -88,11 +89,14 @@ func TestInheritCounts(t *testing.T) {
 // names -- by the address ranges it announces, looked up at RIPE.
 func TestInheritByNetwork(t *testing.T) {
 	s := inheritScenario(t)
+	var mu sync.Mutex
 	var asked []string
 	oldInfo, oldPfx := ripeNetInfo, ripePrefixes
 	t.Cleanup(func() { ripeNetInfo, ripePrefixes = oldInfo, oldPfx })
 	ripeNetInfo = func(_ *http.Client, ip string) (string, string, error) {
+		mu.Lock()
 		asked = append(asked, ip)
+		mu.Unlock()
 		switch ip {
 		case "74.125.1.1", "74.125.1.2":
 			return "AS15169", "74.125.0.0/16", nil
@@ -106,11 +110,14 @@ func TestInheritByNetwork(t *testing.T) {
 	}
 	s.put("music.youtube.com", probe.CleanSplit, "172.253.1.1")
 	s.put("rr1---a.googlevideo.com", probe.CleanSplit, "74.125.1.1")
-	s.put("fonts.gstatic.com", probe.Clean, "74.125.1.2")
 	s.put("rr7---c.googlevideo.com", probe.BlockedDPI, "74.125.1.1")
 
-	// the nodes' networks, then the ranges of the one that lends its way
-	for i := 0; i < 2; i++ {
+	// the nodes' networks, then the ranges of the one that lends its way;
+	// a node turning up later in a prefix known by then is not asked about
+	for i := 0; i < 3; i++ {
+		if i == 1 {
+			s.put("fonts.gstatic.com", probe.Clean, "74.125.1.2")
+		}
 		s.cfg.book.round(s.cfg.DirectAddr, s.st.unownedNodes("n", s.cfg.book), func() {})
 		for s.cfg.book.busy.Load() {
 			time.Sleep(time.Millisecond)

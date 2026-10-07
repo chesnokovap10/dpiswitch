@@ -179,7 +179,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	// the networks owning the probed nodes, learnt beside the cycle: the
 	// lists follow once a round learnt any
 	if inheritOn(cfg) {
-		cfg.book.round(cfg.DirectAddr, st.unownedNodes(netID, cfg.book), func() { syncList(cfg, a, st, netID, false) })
+		learn(cfg, a, st, netID)
 	}
 
 	// order matters: suspicious first, then expired,
@@ -223,6 +223,17 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 		}
 	}
 	probeBatch(cfg, a, st, netID, w, queue, ports)
+}
+
+// learn runs a round of the network book's lookups, and after one that
+// learnt anything writes the lists by it and runs the next: the networks the
+// nodes just showed lending have their ranges looked up at once, not a
+// cycle later
+func learn(cfg Config, a *api, st *state, netID string) {
+	cfg.book.round(cfg.DirectAddr, st.unownedNodes(netID, cfg.book), func() {
+		syncList(cfg, a, st, netID, false)
+		learn(cfg, a, st, netID)
+	})
 }
 
 // probeBatch probes queue's names and files what they showed: a cycle's
