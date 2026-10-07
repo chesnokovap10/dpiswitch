@@ -3,6 +3,7 @@ package awgconf
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -350,8 +351,10 @@ func TestRenderIPv6Blocked(t *testing.T) {
 	}
 }
 
-// With the QUIC decoy on, direct-split sends it, and QUIC to the cut's
-// names goes there instead of being refused
+// direct-split always sends the decoy, and QUIC to the cut's names goes
+// there, refused only for the names the decoy does not get through: the
+// decoy goes with the bypass's switch, and only the bypass's names take
+// direct-split -- switching it needs no core restart
 func TestRenderQUICFake(t *testing.T) {
 	t.Setenv("ProgramData", t.TempDir())
 	if err := paths.EnsureDataDir(); err != nil {
@@ -362,9 +365,11 @@ func TestRenderQUICFake(t *testing.T) {
 		t.Fatal(err)
 	}
 	reject := "  - AND,((NETWORK,UDP),(DST-PORT,443),(RULE-SET," + ctl.SplitProvider + ")),REJECT\n"
+	noQUIC := "  - AND,((NETWORK,UDP),(DST-PORT,443),(RULE-SET," + ctl.NoQUICProvider + ")),REJECT\n"
+	var outs []string
 	for _, on := range []bool{false, true} {
 		if _, err := ctl.UpdateSettings(paths.Settings(), func(s *ctl.Settings) error {
-			s.SplitHello, s.QUICFake = true, on
+			s.SplitHello = on
 			return nil
 		}); err != nil {
 			t.Fatal(err)
@@ -373,20 +378,17 @@ func TestRenderQUICFake(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := strings.Contains(out, "    tls-split: true\n    # and a decoy QUIC Initial"); got != on {
-			t.Errorf("on=%v: decoy in direct-split %v", on, got)
+		outs = append(outs, out)
+		if !strings.Contains(out, "    tls-split: true\n    # and a decoy QUIC Initial") || !strings.Contains(out, "\n    quic-fake: true\n") {
+			t.Errorf("on=%v: no decoy in direct-split", on)
 		}
-		if got := strings.Contains(out, "\n    quic-fake: true\n"); got != on {
-			t.Errorf("on=%v: quic-fake %v", on, got)
+		if strings.Contains(out, reject) {
+			t.Errorf("on=%v: QUIC to all the cut's names refused", on)
 		}
-		if got := strings.Contains(out, reject); got == on {
-			t.Errorf("on=%v: QUIC to the cut's names refused %v", on, got)
+		if !strings.Contains(out, noQUIC) {
+			t.Errorf("on=%v: QUIC not refused to the decoy's failures", on)
 		}
-		noQUIC := "  - AND,((NETWORK,UDP),(DST-PORT,443),(RULE-SET," + ctl.NoQUICProvider + ")),REJECT\n"
-		if got := strings.Contains(out, noQUIC); got != on {
-			t.Errorf("on=%v: QUIC refused to the decoy's failures %v", on, got)
-		}
-		if i, j := strings.Index(out, noQUIC), strings.Index(out, "  - RULE-SET,"+ctl.SplitProvider+","); on && i > j {
+		if i, j := strings.Index(out, noQUIC), strings.Index(out, "  - RULE-SET,"+ctl.SplitProvider+","); i > j {
 			t.Errorf("the refusal comes after the cut's rule")
 		}
 		if !strings.Contains(out, "  "+ctl.NoQUICProvider+":\n    type: file\n") {
@@ -396,8 +398,15 @@ func TestRenderQUICFake(t *testing.T) {
 			t.Errorf("on=%v: the cut's names do not go through %s", on, ctl.SplitOutbound)
 		}
 	}
-	// a different core config: switching it restarts the core
-	if (ctl.Settings{QUICFake: true}).SameCore(ctl.Settings{}) {
-		t.Error("the decoy is not part of the core's config")
+	// the core's config is the same either way: no restart for the switch.
+	// Each render here makes a secret of its own: that is left out
+	same := func(s string) string {
+		return regexp.MustCompile(`(?m)^.*(secret|password): .*$`).ReplaceAllString(s, "")
+	}
+	if same(outs[0]) != same(outs[1]) {
+		t.Error("the bypass's switch changes the core's config")
+	}
+	if !(ctl.Settings{SplitHello: true}).SameCore(ctl.Settings{}) {
+		t.Error("the bypass's switch counts as a core setting")
 	}
 }

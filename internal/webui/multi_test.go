@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/paths"
 )
 
@@ -94,5 +95,24 @@ func TestLiveAddMany(t *testing.T) {
 	before := list(paths.BlockList)
 	if a := add("block", "e.example", "no such thing!"); a.OK || list(paths.BlockList) != before {
 		t.Fatalf("a bad line among them: %+v, %s", a, list(paths.BlockList))
+	}
+}
+
+// Live's route filters: one for both tunnels, and the bypass's only while
+// the bypass is on
+func TestLiveRouteFilters(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	for _, on := range []bool{false, true} {
+		if _, err := ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error { set.SplitHello = on; return nil }); err != nil {
+			t.Fatal(err)
+		}
+		body := do(t, h, "GET", "/live", nil, nil).Body.String()
+		if got := strings.Contains(body, `data-route="split"`); got != on {
+			t.Errorf("bypass %v: its filter shown %v", on, got)
+		}
+		if !strings.Contains(body, `data-route="tunnel"`) || strings.Contains(body, `data-route="awg1"`) || strings.Contains(body, `data-route="awg2"`) {
+			t.Errorf("bypass %v: the tunnels' filters are not one", on)
+		}
 	}
 }

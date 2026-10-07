@@ -880,10 +880,20 @@ func (s *Server) actLiveClose(w http.ResponseWriter, r *http.Request) {
 // liveData: the words the page's script puts together itself
 type liveData struct {
 	Words map[string]string
+	// Split: the DPI bypass is on -- its filter is shown, and its rows are
+	// its own; off, the rows left of it are direct ones
+	Split bool
 }
 
 func liveWords(v *view) liveData {
-	return liveData{Words: map[string]string{
+	split := ctl.LoadSettings(paths.Settings()).SplitHello
+	on := ""
+	if split {
+		on = "1"
+	}
+	return liveData{Split: split, Words: map[string]string{
+		"splitOn":       on,
+		"tunnel":        v.T("Tunnels"),
 		"direct":        v.T("Direct"),
 		"split":         v.T("DPI bypass"),
 		"awg1":          v.T("Tunnel"),

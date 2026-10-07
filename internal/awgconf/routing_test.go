@@ -150,8 +150,8 @@ func TestRouting(t *testing.T) {
 // TestRoutingSplit: a name the detector sends direct with its ClientHello
 // cut takes direct-split in On and Observe only, whatever is loaded -- with
 // no first tunnel too; Tunnel only, whose cut list the controller writes
-// empty, sends it where it sends what no list names. QUIC to it is refused,
-// and the user's lists stand above it.
+// empty, sends it where it sends what no list names. QUIC to it goes too,
+// refused only where the decoy failed, and the user's lists stand above it.
 func TestRoutingSplit(t *testing.T) {
 	split := route(ctl.SplitOutbound)
 	for _, mode := range []string{ctl.ModeOn, ctl.ModeObserve, ctl.ModeTunnel} {
@@ -174,8 +174,10 @@ func TestRoutingSplit(t *testing.T) {
 					return -1
 				}
 				cut := at("RULE-SET," + ctl.SplitProvider + "," + ctl.SplitOutbound)
-				if quic := at("AND,((NETWORK,UDP),(DST-PORT,443),(RULE-SET," + ctl.SplitProvider + ")),REJECT"); quic > cut {
-					t.Error("QUIC to the cut's names is refused after they are sent direct")
+				// QUIC to them goes the same way, the decoy ahead of it: refused
+				// only for the names the decoy did not get through, before
+				if quic := at("AND,((NETWORK,UDP),(DST-PORT,443),(RULE-SET," + ctl.NoQUICProvider + ")),REJECT"); quic > cut {
+					t.Error("QUIC refused to the decoy's failures after they are sent direct")
 				}
 				if at("RULE-SET,force-tunnel,"+ctl.TunnelListsGroup) > cut || at("RULE-SET,force-block,REJECT") > cut {
 					t.Error("the user's lists below the cut's")

@@ -184,8 +184,8 @@ func Run(ctx context.Context, cfg Config) {
 			return
 		}
 		if coreChanged(ns, set, haveSet) && cfg.OnCoreChange != nil {
-			log.Printf("core settings changed (DNS: direct %v, tunnel %v, second tunnel %v; IPv6 %v; DNS cache %v; QUIC decoy %v) -- restarting the core",
-				ns.DirectDNS, ns.TunnelDNS, ns.TunnelDNS2, ns.IPv6, ns.DNSCache, ns.QUICFake)
+			log.Printf("core settings changed (DNS: direct %v, tunnel %v, second tunnel %v; IPv6 %v; DNS cache %v) -- restarting the core",
+				ns.DirectDNS, ns.TunnelDNS, ns.TunnelDNS2, ns.IPv6, ns.DNSCache)
 			cfg.OnCoreChange()
 		}
 		cfg = onSettingsChanged(cfg, ns, a, st, netID)

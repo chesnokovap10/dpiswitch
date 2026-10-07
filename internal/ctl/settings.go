@@ -45,11 +45,6 @@ type Settings struct {
 	// core's direct-split outbound if that is clean. Off by default: the
 	// cut can break a site the check did not exercise.
 	SplitHello bool `json:"split_hello"`
-	// QUICFake: direct-split sends a decoy QUIC Initial for www.google.com
-	// ahead of the client's first one, and QUIC to the cut's names goes
-	// through it instead of being refused. Measured at home (06.10): the box
-	// judges a QUIC flow by the first Initial it decrypts.
-	QUICFake bool `json:"quic_fake"`
 	// second tunnel (awg2): the IDs of the presets switched on
 	Awg2Presets []string `json:"awg2_presets"`
 	// second tunnel switched on or off by hand, by auto-switch mode: each
@@ -96,7 +91,7 @@ var defaultDirectDNS = []string{"tls://8.8.8.8", "tls://8.8.4.4"}
 func (s Settings) SameCore(o Settings) bool {
 	return reflect.DeepEqual(s.DirectDNS, o.DirectDNS) &&
 		reflect.DeepEqual(s.TunnelDNS, o.TunnelDNS) && reflect.DeepEqual(s.TunnelDNS2, o.TunnelDNS2) &&
-		s.IPv6 == o.IPv6 && s.DNSCache == o.DNSCache && s.QUICFake == o.QUICFake
+		s.IPv6 == o.IPv6 && s.DNSCache == o.DNSCache
 }
 
 func (s Settings) Equal(o Settings) bool { return reflect.DeepEqual(s, o) }
@@ -406,7 +401,9 @@ func (s Settings) apply(cfg Config) Config {
 	cfg.Attempts = s.Attempts
 	cfg.Families = s.Families
 	cfg.Split = s.SplitHello
-	cfg.QUICFake = s.QUICFake
+	// the QUIC decoy goes with the cut: one switch for both (07.10). The
+	// decoy alone sent nothing anywhere -- only the cut's names take it
+	cfg.QUICFake = s.SplitHello
 	cfg.DNSCache = s.DNSCache
 	cfg.DirectDNS = nil
 	for _, d := range s.DirectDNS {

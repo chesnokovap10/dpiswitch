@@ -48,6 +48,10 @@ pageInit.live = function (sec) {
   // what the page is looking at: kept per browser, a viewing preference
   const pref = {tab: 'open', route: '', sort: 'start', desc: true};
   try { Object.assign(pref, JSON.parse(localStorage.getItem('live') || '{}')); } catch (e) {}
+  // a filter kept from before: the two tunnels are one now, and the
+  // bypass's is gone with the bypass off
+  if (pref.route === 'awg1' || pref.route === 'awg2') pref.route = 'tunnel';
+  if (pref.route === 'split' && !W.splitOn) pref.route = '';
   const save = () => { try { localStorage.setItem('live', JSON.stringify(pref)); } catch (e) {} };
 
   // --- words and numbers ---
@@ -74,7 +78,12 @@ pageInit.live = function (sec) {
     if (s < 2 * 86400) return fmt(W.hour, Math.floor(s / 3600), Math.floor(s % 3600 / 60));
     return fmt(W.day, Math.floor(s / 86400), Math.floor(s % 86400 / 3600));
   }
-  const label = r => W[r.route] || r.route;
+  // a row's route as the page shows it: with the DPI bypass off, what is
+  // left of its rows -- closed as it went off -- went direct
+  const routeOf = r => r.route === 'split' && !W.splitOn ? 'direct' : r.route;
+  const label = r => W[routeOf(r)] || r.route;
+  // the route filter: one for both tunnels
+  const inRoute = (r, want) => want === 'tunnel' ? r.route === 'awg1' || r.route === 'awg2' : routeOf(r) === want;
   const clock = ms => new Date(ms).toLocaleTimeString(locale);
   const why = r => W['why.' + r.why] || r.why;
 
@@ -206,7 +215,7 @@ pageInit.live = function (sec) {
   // --- drawing ---
   function mk(r) {
     const tr = document.createElement('tr');
-    tr.className = 'r-' + (r.probe ? 'probe' : r.route);
+    tr.className = 'r-' + (r.probe ? 'probe' : routeOf(r));
     const td = cls => { const c = tr.insertCell(); if (cls) c.className = cls; return c; };
     r._st = document.createElement('span');
     td('c-st').append(r._st);
@@ -350,7 +359,7 @@ pageInit.live = function (sec) {
     for (const m of all) {
       for (const r of m.values()) {
         count.set(m, count.get(m) + 1);
-        if (!maps.includes(m) || pref.route && r.route !== pref.route || q && !hay(r).includes(q)) continue;
+        if (!maps.includes(m) || pref.route && !inRoute(r, pref.route) || q && !hay(r).includes(q)) continue;
         list.push(r);
       }
     }
