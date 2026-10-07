@@ -147,6 +147,9 @@ func Presets() string     { return Data("presets.txt") }
 func ForceTunnel() string { return Data(TunnelList) }
 func TunnelIPv6() string  { return Data("tunnel-ipv6.json") }
 
+// UDPGuard: what the UDP guard is doing (see udpguard), for the UI
+func UDPGuard() string { return Data("udp-guard.json") }
+
 // DNSCache: the answers the program's DNS cache keeps (see dnscache), and
 // what the UI shows of it
 func DNSCache() string      { return Data("dns-cache.json") }

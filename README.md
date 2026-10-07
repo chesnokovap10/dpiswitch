@@ -58,6 +58,7 @@
 - [Сети](#сети)
 - [DNS](#dns)
 - [IPv6](#ipv6)
+- [Защита от утечки UDP](#защита-от-утечки-udp)
 - [Второй туннель](#второй-туннель)
 - [Live](#live)
 - [Если сайт не открывается](#если-сайт-не-открывается)
@@ -134,6 +135,7 @@
 | DNS для прямых сайтов | `tls://8.8.8.8`, `tls://8.8.4.4` | DoT Google, мимо туннеля |
 | DNS внутри туннеля | из `.conf` | Для сайтов, идущих через туннель |
 | Локальный DNS-кэш | Выкл | Имена прямых сайтов отвечаются из памяти компьютера, 7 дней, и после перезапусков; новое имя спрашивается у самого быстрого DNS для прямых сайтов |
+| Защита от утечки UDP | Выкл | Блокирует UDP, который ушёл бы через адаптер Wi-Fi, Ethernet или мобильной сети мимо туннеля (настоящий адрес в WebRTC, звонки, игры); пакеты ядра и локальной сети не трогает. Фильтры платформы фильтрации Windows, от брандмауэра не зависят |
 | Открывать интерфейс | В отдельном окне | Окно браузера без вкладок или вкладка браузера |
 
 ### Куда идёт соединение
@@ -281,6 +283,34 @@ CDN, спидтестам, обновлениям.
 резолвит для него только IPv4: ядро один раз перезапускается, и этот вывод держится сутки, потом
 проверяется снова. Переключение перезапускает ядро.
 
+### Защита от утечки UDP
+
+Программа, которая привязывает свой UDP-сокет к адресу адаптера Wi-Fi или Ethernet, уходит через этот
+адаптер, что бы ни говорили маршруты: мимо туннеля и с настоящим адресом в пакете. Так делает WebRTC в
+браузере, чтобы показать сайту, кто вы; так делают звонки Discord и Telegram, игры и торрент-клиенты.
+**Защита от утечки UDP** (в настройках, по умолчанию выключена) блокирует каждый UDP-пакет через адаптер
+кабеля, Wi-Fi или мобильной сети, кроме пакетов самого ядра, пока ядро работает и его адаптер принимает
+трафик. Не трогает: всё, что идёт в адаптер DPI Switch; локальную сеть (частные, link-local и
+multicast-адреса: роутер, телевизор, на который вы транслируете, принтеры, обнаружение устройств);
+DHCP. Чего требует: отключается то, что шлёт собственный UDP мимо туннеля, — чужой VPN (WireGuard,
+OpenVPN, IKEv2), звонок или игра, которым привязка к адаптеру нужна и другого пути нет; устройство в
+локальной сети с публичным адресом отрезано; обычный DNS на публичный сервер через адаптер блокируется.
+
+Фильтры ставятся в платформу фильтрации Windows (WFP) — слой, на котором построены и брандмауэр Windows,
+и сторонние, — а не правилами брандмауэра: они держатся при выключенном брандмауэре и при стороннем.
+Нужна только служба «Служба базовой фильтрации» (Base Filtering Engine). Если она остановлена, страница
+настроек так и говорит, ничего не блокируется, а защита включится сама через несколько секунд после её
+запуска. Служба держит фильтры в динамической сессии: они снимаются сразу, когда ядро останавливается,
+перезапускается или адаптер исчезает, когда настройку выключают, и вместе со службой, если она погибла, —
+без ядра и без адаптера блокировка UDP отрезала бы его у всех. Не ставятся они и тогда, когда Windows не
+пускает трафик программ в адаптер (его забирает сторонний сетевой фильтр, см. выше). Поставив фильтры,
+служба отправляет по тестовому пакету с каждого адаптера, ведущего наружу, с его же адреса на адрес из
+документационного диапазона (`192.0.2.1`), который никуда не маршрутизируется. Блокировка не даёт
+отправителю ошибки — пакет просто пропадает, — поэтому доказательство одно: журнал самого движка. Если в нём
+записан сброс каждого тестового пакета, страница пишет, что проверено. Нет записи — это не слово против
+защиты: пакет могли не отправить или сброс не записать.
+Состояние служба пишет в `%ProgramData%\dpiswitch\udp-guard.json`.
+
 ### Второй туннель
 
 Второй сервер AmneziaWG только для выбранных сервисов: YouTube, Telegram, ИИ-сервисов (ChatGPT,
@@ -377,7 +407,7 @@ Claude, Gemini, Grok, Copilot, DeepL и др.), Instagram, Facebook, X и ваш
   программой, а не в папке данных: там ядро само создаёт файлы, которые называет его конфиг.
 - `%ProgramData%\dpiswitch` — данные службы: конфиг ядра, вердикты (`controller-state.json`), каждая
   проба (`reports.jsonl`), логи (`logs\service.log`, `logs\mihomo.log`), метка запуска ядра, по
-  которой Live узнаёт новый запуск (`core-run.txt`), DNS-кэш (`dns-cache.json`). Писать туда могут только SYSTEM и администраторы,
+  которой Live узнаёт новый запуск (`core-run.txt`), DNS-кэш (`dns-cache.json`), состояние защиты от утечки UDP (`udp-guard.json`). Писать туда могут только SYSTEM и администраторы,
   читать — ещё вы: лог ядра и пробы называют каждый сайт, куда ходит компьютер, и другим учётным
   записям их видеть незачем.
 - `%ProgramData%\dpiswitch\user` — то, что вы меняете в интерфейсе: `.conf`, списки, настройки.
@@ -426,6 +456,12 @@ dpiswitch version    показать версию
   есть путь назад. Один раз просит права администратора: файл службы лежит в Program Files. Служба,
   зарегистрированная где-то ещё (старая установка), переустанавливается из сборки и тем самым
   переезжает туда.
+- `.\tools\udpguard-live.ps1` проверяет защиту от утечки UDP на настоящей платформе фильтрации Windows:
+  собирает проверки (`TestLive` в `internal\udpguard`, `TestLiveGuardHolds` в `internal\supervisor`) и
+  запускает их с правами администратора — один запрос UAC. Они на несколько секунд ставят фильтры в
+  собственную сессию, шлют по байту UDP с адреса адаптера Wi-Fi или кабеля на адреса-пустышки и сверяют то,
+  что движок записал сброшенным, с тем, что должно сбрасываться; ядро службы пропускается, туннель идёт.
+  Без прав и без `DPISWITCH_LIVE_WFP=1` эти тесты пропускаются, так что обычный `go test` их не трогает.
 - `go run ./tools/uidev [-addr 127.0.0.1:8766]` — веб-интерфейс без трея, для работы над страницами
   (шаблоны и статика встроены через embed, после правки нужна пересборка). Укажите `ProgramData` на
   копию папки данных, чтобы не трогать настоящие настройки; служба и её ядро при этом настоящие.
@@ -479,6 +515,7 @@ your real ISP. Everything else stays in the tunnel.
 - [Networks](#networks)
 - [DNS](#dns-1)
 - [IPv6](#ipv6-1)
+- [UDP leak guard](#udp-leak-guard)
 - [The second tunnel](#the-second-tunnel)
 - [Live](#live-1)
 - [When a site does not open](#when-a-site-does-not-open)
@@ -555,6 +592,7 @@ many are blocked.
 | DNS for direct sites | `tls://8.8.8.8`, `tls://8.8.4.4` | Google DoT, outside the tunnel |
 | DNS inside the tunnel | from the `.conf` | For the sites that go through the tunnel |
 | Local DNS cache | Off | Direct sites' names answered from the computer's memory, for 7 days and across restarts; a new name is asked of the fastest resolver for direct sites |
+| UDP leak guard | Off | Blocks UDP that would leave a cable, Wi-Fi or mobile adapter around the tunnel (the real address in WebRTC, calls, games); the core's packets and the local network are left alone. Windows Filtering Platform filters, independent of Windows Firewall |
 | Open the UI | In its own window | A browser window with no tabs, or a browser tab |
 
 ### Where a connection goes
@@ -703,6 +741,35 @@ going direct use IPv4. If the tunnel's server has no working IPv6, the program f
 resolves IPv4 only for it: the core restarts once, and that finding holds for a day before it is
 checked again. Changing it restarts the core.
 
+### UDP leak guard
+
+A program that binds its UDP socket to the Wi-Fi or Ethernet adapter's own address leaves by that
+adapter whatever the routes say: around the tunnel, with the real address in the packet. A browser's
+WebRTC does it to show a site who you are; so do the calls of Discord and Telegram, games and torrent
+clients. **UDP leak guard** (in the settings, off by default) blocks every UDP packet out of a cable,
+Wi-Fi or mobile adapter that is not the core's own, while the core runs and its adapter takes the
+traffic. Not touched: everything that goes into the DPI Switch adapter; the local network (private,
+link-local and multicast addresses: the router, a TV you cast to, printers, devices' discovery); DHCP.
+What it costs: what sends UDP of its own around the tunnel stops -- another VPN (WireGuard, OpenVPN,
+IKEv2), a call or a game that needs the binding and has no other way; a device on the local network
+with a public address is cut off; plain DNS to a public server out of the adapter is blocked.
+
+The filters are put into the Windows Filtering Platform (WFP), the layer Windows Firewall and the
+third-party ones are built on, and not into Windows Firewall's rules: they hold with the firewall off
+and with another one in charge. All they need is the Base Filtering Engine service. If it is
+stopped, the settings page says so and nothing is blocked; the guard goes in by itself a few seconds
+after the service starts. The service keeps the filters in a dynamic session: they go at once when
+the core stops, restarts or its adapter goes, when the setting is switched off, and with the service
+should it die -- with no core and no adapter, blocking UDP would cut it off for every program. They
+are not put in either while Windows keeps the programs' traffic from the adapter (a third-party
+network filter takes it first, see above). Once they are in, the service sends a test packet out of
+each adapter that leads out, from its own address, to an address of the documentation range
+(`192.0.2.1`) that no network routes. A block gives the sender no error -- the packet just goes
+missing -- so the proof is the engine's own record: if it has every test packet dropped, the page says it
+was checked. No such record is no word against the guard: the packet may not have been sent, or its drop
+not recorded. The state is written to
+`%ProgramData%\dpiswitch\udp-guard.json`.
+
 ### The second tunnel
 
 A second AmneziaWG server for chosen services only: YouTube, Telegram, AI services (ChatGPT, Claude,
@@ -797,7 +864,7 @@ state.
   beside the program, not in the data directory: there the core makes the files its config names.
 - `%ProgramData%\dpiswitch` — the service's own data: the core's config, the verdicts
   (`controller-state.json`), every probe (`reports.jsonl`), the logs (`logs\service.log`,
-  `logs\mihomo.log`), the name of the core's run Live tells a new run by (`core-run.txt`), the DNS cache (`dns-cache.json`). Writable by
+  `logs\mihomo.log`), the name of the core's run Live tells a new run by (`core-run.txt`), the DNS cache (`dns-cache.json`), the state of the UDP leak guard (`udp-guard.json`). Writable by
   SYSTEM and Administrators only, readable by you as well: the core's log and the probes name every
   site the computer goes to, and other accounts have no business seeing them.
 - `%ProgramData%\dpiswitch\user` — what you change in the UI: the `.conf` files, lists, settings.
@@ -850,6 +917,13 @@ the debug symbols are left out: ~30 MB instead of ~80 MB. The TUN runs on the Wi
   `dpiswitch.last.exe` — `-Path` with it is the way back. It asks for administrator rights once: the
   service's binary is in Program Files. A service still registered elsewhere (an older installation)
   is reinstalled from the build, which moves it there.
+- `.\tools\udpguard-live.ps1` checks the UDP leak guard against the real Windows Filtering Platform: it
+  builds the checks (`TestLive` in `internal\udpguard`, `TestLiveGuardHolds` in `internal\supervisor`) and
+  runs them elevated -- one administrator prompt. They put the guard's filters into a session of their
+  own for a few seconds, send a byte of UDP out of the Wi-Fi or cable adapter by its own address to
+  documentation-range addresses nothing answers, and compare what the engine records as dropped with
+  what should be; the service's core is let through, so the tunnel goes on. Without the rights and
+  `DPISWITCH_LIVE_WFP=1` these tests skip, so a plain `go test` leaves them alone.
 - `go run ./tools/uidev [-addr 127.0.0.1:8766]` serves the web UI without the tray, for working on
   the pages (the templates and static files are embedded, so a change needs a rebuild). Point
   `ProgramData` at a copy of the data directory to leave the real settings alone; the service and

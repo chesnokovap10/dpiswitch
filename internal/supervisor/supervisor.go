@@ -22,6 +22,7 @@ import (
 	"dpiswitch/internal/dnscache"
 	"dpiswitch/internal/paths"
 	"dpiswitch/internal/probe"
+	"dpiswitch/internal/udpguard"
 	"dpiswitch/internal/winexec"
 )
 
@@ -47,12 +48,19 @@ type Supervisor struct {
 	// dns: the program's DNS cache, answering the core for the direct path
 	// when the settings have it (see dnsCache)
 	dns *dnscache.Server
+	// guard: the UDP guard's filters, kept by holdGuard while a core runs (see
+	// guard.go); guardStop and guardDone are the run of that for the core now
+	guard     udpGuard
+	guardStop context.CancelFunc
+	guardDone chan struct{}
 }
 
 // apiAddr: the core's external controller, as awgconf writes it
 const apiAddr = "127.0.0.1:9090"
 
-func New() *Supervisor { return &Supervisor{recheck: make(chan struct{}, 1)} }
+func New() *Supervisor {
+	return &Supervisor{recheck: make(chan struct{}, 1), guard: udpguard.New()}
+}
 
 // Run keeps the core alive until the context is cancelled and runs
 // the controller alongside. Returning means a final stop.
@@ -69,6 +77,10 @@ func (s *Supervisor) Run(ctx context.Context, apply bool) {
 	}
 	awgconf.EnsureLists()
 	ctl.SyncUserFiles()
+	// whatever the UDP guard's file says is of a service before this one; and
+	// a guard that is still in place when this one ends is taken out
+	resetGuardStatus()
+	defer s.guard.Lift()
 
 	// cores from a previous run (hard power-off, service crash)
 	// hold TUN and routes -- kill them before bringing up our own
@@ -284,6 +296,10 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 	defer coreDone()
 	go s.checkIPv6(coreCtx)
 	go warmTunnels(coreCtx, newHealthChecker(apiAddr, ctl.SecretFromConfig(paths.Config())), awgconf.Tunnels())
+	// the UDP guard, when the settings have it, once the adapter is up; taken
+	// out when this core ends or is stopped (see stopCore)
+	s.startGuard(coreCtx)
+	defer s.stopGuard()
 
 	go func() { waitErr = cmd.Wait(); close(done) }()
 
@@ -319,6 +335,9 @@ func (s *Supervisor) stopCore(cmd *exec.Cmd, done <-chan struct{}) {
 		return // already gone: a stop before this one got there
 	default:
 	}
+	// the UDP guard first: the adapter goes next, and filters left through
+	// that would cut every program's UDP off for the seconds it takes
+	s.stopGuard()
 	if err := tunOff(); err != nil {
 		log.Printf("TUN not disabled via the API (%v) -- routes may need manual cleanup", err)
 	} else {

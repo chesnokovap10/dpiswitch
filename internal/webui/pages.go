@@ -18,6 +18,7 @@ import (
 	"dpiswitch/internal/paths"
 	"dpiswitch/internal/presets"
 	"dpiswitch/internal/probe"
+	"dpiswitch/internal/udpguard"
 )
 
 // --- overview ---
@@ -338,6 +339,9 @@ type settings struct {
 	// last said of itself
 	CacheUsable bool
 	Cache       *dnscache.Stats
+	// the UDP guard switched on: what the service last said of it, nil when
+	// it has said nothing (see udpguard)
+	Guard *udpguard.Status
 }
 
 // MsgFor: the result to show in a setting's row, if it was the one changed
@@ -364,6 +368,11 @@ func settingsData() settings {
 		d.CacheUsable = len(dnscache.Usable(d.S.DirectDNS)) > 0
 		if st, ok := dnscache.LoadStats(paths.DNSCacheStats()); ok {
 			d.Cache = &st
+		}
+	}
+	if d.S.UDPGuard {
+		if st, ok := udpguard.Load(paths.UDPGuard()); ok {
+			d.Guard = &st
 		}
 	}
 	return d

@@ -85,7 +85,7 @@ func TestPagesRender(t *testing.T) {
 		"verdicts": {"tabs", "table", "vnote"},
 		"lists":    {"list-direct", "list-tunnel", "list-block"},
 		"awg2":     {"awg2state", "presets", "list-awg2"},
-		"settings": {"form", "dns"},
+		"settings": {"form", "dns", "guard"},
 		"logs":     {"log"},
 	}
 	for _, lang := range []string{"en", "ru"} {

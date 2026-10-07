@@ -207,6 +207,24 @@ detector asks the same cache. Resolvers given by name, not by address, are not a
 going direct use IPv4. If the tunnel's server has no working IPv6, the program finds out and resolves
 IPv4 only for it: the core restarts once, and that finding holds for a day before it is checked again.</p>
 
+<h4>UDP leak guard</h4>
+<p>A program that binds its UDP socket to the Wi-Fi or Ethernet adapter's own address leaves by that adapter
+whatever the routes say: around the tunnel, with your real address in the packet. A browser's WebRTC does it to
+show a site who you are; so do the calls of Discord and Telegram, games and torrent clients.
+<a href="/settings#udp_guard"><b>UDP leak guard</b></a> (off by default) blocks every UDP packet out of a cable,
+Wi-Fi or mobile adapter that is not the core's own, while the core runs and its adapter takes the traffic.
+What goes into the DPI Switch adapter is not touched, nor is the local network -- private, link-local and
+multicast addresses: the router, a TV you cast to, printers, devices' discovery -- or DHCP.</p>
+<p>It is put into the Windows Filtering Platform, the layer Windows Firewall and third-party firewalls are built
+on, not into Windows Firewall's rules: it holds with the firewall off or another one in charge. All it needs is
+the Base Filtering Engine service; with that stopped the settings page says so and nothing is blocked. Once the
+filters are in, the service sends a test packet out of each adapter by its own address and reads the
+engine's record of the packets it dropped: if it has them all, the page says it was checked.</p>
+<p>It can break what needs UDP out of the adapter itself: another VPN's (WireGuard, OpenVPN, IKEv2), a call or a
+game that binds to the adapter and has no other way. A device on the local network with a public address is
+cut off. The filters live in the service's own session: they go out when the core stops or restarts, when the
+setting is switched off, and with the service should it die.</p>
+
 <h4>The second tunnel</h4>
 <p>A second AmneziaWG server for chosen services only: YouTube, Telegram, AI services, social networks
 and your own list. It stands below Forbidden, Always via tunnel and Always direct and above the detector,

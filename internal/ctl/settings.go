@@ -67,6 +67,13 @@ type Settings struct {
 	// path, from what it kept for up to a week, and asks the fastest of
 	// DirectDNS what it has not (see dnscache)
 	DNSCache bool `json:"dns_cache"`
+	// UDPGuard: UDP out of the physical adapters is blocked, the core's own and
+	// the local network's aside, while the core runs and its TUN adapter takes
+	// the programs' traffic (see udpguard). It closes what goes around the
+	// tunnel by binding to the adapter -- WebRTC's real address, a messenger's
+	// calls -- and cuts off what needs that UDP: off by default. Not a core
+	// setting: the service puts the filters in and takes them out within seconds.
+	UDPGuard bool `json:"udp_guard"`
 	// UIOpen: how the tray opens the UI -- UIWindow, an app window of the
 	// default browser, or UITab, a tab of the browser
 	UIOpen string `json:"ui_open"`

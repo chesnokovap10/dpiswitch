@@ -654,7 +654,7 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 		return n, nil
 	}
 	switch field {
-	case "auto_switch", "families", "split_hello", "quic_fake", "ipv6", "dns_cache", "ui_open", "clean_ttl_min", "fail_ttl_min", "max_backoff_min", "slow_pct", "attempts":
+	case "auto_switch", "families", "split_hello", "quic_fake", "ipv6", "dns_cache", "udp_guard", "ui_open", "clean_ttl_min", "fail_ttl_min", "max_backoff_min", "slow_pct", "attempts":
 	default:
 		http.Error(w, "unknown setting", http.StatusBadRequest)
 		return
@@ -681,6 +681,10 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 			case "dns_cache":
 				set.DNSCache = val == "1"
 				restart = !set.SameCore(was)
+			case "udp_guard":
+				// not the core's: the service puts the filters in and takes them
+				// out within a couple of seconds, with no restart
+				set.UDPGuard = val == "1"
 			case "ui_open":
 				if val != ctl.UIWindow && val != ctl.UITab {
 					return errors.New("unknown way to open the UI")
