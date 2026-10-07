@@ -60,6 +60,9 @@ func Defaults() Config {
 		SplitListPath:  paths.VerifiedSplit(),
 		NoQUICProvider: NoQUICProvider,
 		NoQUICListPath: paths.VerifiedSplitNoQUIC(),
+		InheritPath:    paths.Inherit(),
+		InheritIPPath:  paths.InheritIP(),
+		HoldPath:       paths.Hold(),
 		SplitAddr:      "127.0.0.1:7894", // goes out through direct-split
 		StatePath:      paths.State(),
 		JSONLPath:      paths.Reports(),
@@ -112,6 +115,9 @@ func Run(ctx context.Context, cfg Config) {
 	cfg.autoOff = new(atomic.Bool)
 	cfg.mode = new(atomic.Value)
 	cfg.stop = ctx.Done()
+	if cfg.InheritPath != "" {
+		cfg.book = loadASNBook(paths.ASNBook())
+	}
 	st := loadState(cfg.StatePath)
 	netID := resolveNetwork(cfg, st)
 	// No network yet -- a start before Wi-Fi is up. Nothing is filed or
@@ -207,7 +213,12 @@ func Run(ctx context.Context, cfg Config) {
 		}
 		return a.tunnelHealth(cfg.ProxyName)
 	}
+	// whether the gate let the last tick probe: the fast lane probes only
+	// then, see fastLane
+	var allowed atomic.Bool
+	go fastLane(ctx, func() Config { return *now.Load() }, a, st, &allowed, w)
 	if !offline && g.allow(time.Now().Round(0), health) {
+		allowed.Store(true)
 		cfg.alone = noFirstTunnel()
 		cycle(cfg, a, st, netID, w)
 	}
@@ -230,6 +241,7 @@ func Run(ctx context.Context, cfg Config) {
 					log.Printf("no network, keeping memory of %s and pausing probes", netID)
 					offline = true
 				}
+				allowed.Store(false)
 				continue
 			}
 			if offline {
@@ -247,10 +259,12 @@ func Run(ctx context.Context, cfg Config) {
 				}
 			}
 			if !g.allow(time.Now().Round(0), health) {
+				allowed.Store(false)
 				// the list still follows memory: verdicts expire all the same
 				syncList(cfg, a, st, netID, false)
 				continue
 			}
+			allowed.Store(true)
 			cfg.alone = noFirstTunnel()
 			cycle(cfg, a, st, netID, w)
 		case <-ctx.Done():

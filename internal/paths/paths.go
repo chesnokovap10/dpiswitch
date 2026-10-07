@@ -121,6 +121,17 @@ func VerifiedSplit() string { return Data("direct-split-verified.txt") }
 // VerifiedSplitNoQUIC: the cut's names whose QUIC the decoy does not get
 // through -- refused, so the browser takes TCP at once
 func VerifiedSplitNoQUIC() string { return Data("direct-split-noquic.txt") }
+
+// Inherit, InheritIP: the names and the address ranges a name with no verdict
+// of its own takes its relatives' way by, see ctl/inherit.go; Hold: the
+// names with a verdict that does not go direct, kept out of those
+func Inherit() string   { return Data("inherit.txt") }
+func InheritIP() string { return Data("inherit-ip.txt") }
+func Hold() string      { return Data("detector-hold.txt") }
+
+// ASNBook: which network owns the nodes the detector probed, and the address
+// ranges of the networks inheritance spans
+func ASNBook() string { return Data("asn-book.json") }
 func ForceDirect() string         { return Data(DirectList) }
 func ForceDirectApps() string     { return Data(AppList(DirectList)) }
 func ForceBlock() string          { return Data(BlockList) }

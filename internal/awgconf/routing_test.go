@@ -506,6 +506,12 @@ func (c *simCore) fits(r []string, host string) bool {
 		if strings.HasPrefix(strings.Join(r, ","), "AND,((NETWORK,UDP),") {
 			return false
 		}
+		// inheritance by the network owning the name's address: the checks
+		// resolve no name, and the inheritance lists are empty here anyway
+		// -- the controller writes them in On alone
+		if strings.HasPrefix(strings.Join(r, ","), "AND,((DOMAIN-REGEX,.+),(RULE-SET,"+ctl.InheritIPProvider+"))") {
+			return false
+		}
 	}
 	panic(fmt.Sprintf("a rule the checks do not know: %v", r))
 }

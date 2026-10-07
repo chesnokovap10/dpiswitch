@@ -35,6 +35,9 @@ type watcher struct {
 	// how many cycles each was seen -- see addrCandidates
 	addrPorts  map[string]map[endpoint]bool
 	addrCycles map[string]int
+	// fresh: the names first seen since the fast lane last looked, see
+	// takeFresh
+	fresh []string
 }
 
 func newWatcher(ctx context.Context, cfg Config, a *api) *watcher {
@@ -140,13 +143,16 @@ func (w *watcher) observe(cfg Config, conns []connection) {
 		// then (see Config.alone).
 		if dom == "" || !c.probeable() ||
 			!(c.viaTunnel(cfg.ProxyName) || c.byProvider(cfg.Provider) || c.byProvider(ObserveProvider) ||
-				c.byProvider(ObserveSplitProvider) ||
+				c.byProvider(ObserveSplitProvider) || c.inherited() ||
 				c.Rule == "Match" && c.viaDirect()) {
 			continue
 		}
 		if w.seen[dom] == nil {
 			w.seen[dom] = map[endpoint]bool{}
 			w.order = append(w.order, dom)
+			if len(w.fresh) < maxBacklog {
+				w.fresh = append(w.fresh, dom)
+			}
 		}
 		w.seen[dom][endpoint{udp: c.isUDP(), port: c.port()}] = true
 	}
@@ -220,6 +226,22 @@ func endpointStrings(eps []endpoint) []string {
 		out[i] = e.String()
 	}
 	return out
+}
+
+// takeFresh: the names first seen since the last call, with the ports seen
+// so far. They stay in seen: the cycle takes whichever the fast lane had no
+// room for, and the one it is probing is left to it (see claim).
+func (w *watcher) takeFresh() (doms []string, ports map[string][]endpoint) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	doms, w.fresh = w.fresh, nil
+	ports = make(map[string][]endpoint, len(doms))
+	for _, d := range doms {
+		for e := range w.seen[d] {
+			ports[d] = append(ports[d], e)
+		}
+	}
+	return doms, ports
 }
 
 // drainBare: the bare addresses accumulated since the last call.

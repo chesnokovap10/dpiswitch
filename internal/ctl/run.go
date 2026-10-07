@@ -46,6 +46,13 @@ type Config struct {
 	// splitNoQUIC
 	NoQUICProvider string
 	NoQUICListPath string
+	// the inheritance lists, see inherit.go; empty, none is written
+	InheritPath   string
+	InheritIPPath string
+	HoldPath      string
+	// which network owns each probed node, see asnBook; nil, inheritance
+	// goes by the domain alone
+	book *asnBook
 	// the core's listener whose outbound cuts the ClientHello
 	SplitAddr     string
 	StatePath     string
@@ -169,6 +176,11 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	if n := st.drop(netID, leaveAlone); n > 0 {
 		log.Printf("dropped %d verdicts for names that are skipped or pinned by a list", n)
 	}
+	// the networks owning the probed nodes, learnt beside the cycle: the
+	// lists follow once a round learnt any
+	if inheritOn(cfg) {
+		cfg.book.round(cfg.DirectAddr, st.unownedNodes(netID, cfg.book), func() { syncList(cfg, a, st, netID, false) })
+	}
 
 	// order matters: suspicious first, then expired,
 	// and only then new candidates -- rolling back is more urgent than expanding
@@ -209,6 +221,18 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 		if dropped > 0 {
 			log.Printf("  candidate backlog full (%d): the %d oldest dropped", maxBacklog, dropped)
 		}
+	}
+	probeBatch(cfg, a, st, netID, w, queue, ports)
+}
+
+// probeBatch probes queue's names and files what they showed: a cycle's
+// names, or one the fast lane took the moment it turned up (see fastLane).
+// A name another batch is probing is left to it.
+func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue []string, ports map[string][]endpoint) {
+	queue = claim(queue)
+	defer release(queue)
+	if len(queue) == 0 {
+		return
 	}
 
 	// the listeners' password is the API's secret (see awgconf)
@@ -450,6 +474,36 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	syncList(cfg, a, st, netID, changed && !cfg.Apply)
 }
 
+// probing: the names a batch is probing now, so a cycle and the fast lane
+// never probe one name at once
+var probing = struct {
+	sync.Mutex
+	names map[string]bool
+}{names: map[string]bool{}}
+
+// claim marks the names of queue no batch is probing as this one's, and
+// gives them back in their order
+func claim(queue []string) []string {
+	probing.Lock()
+	defer probing.Unlock()
+	var out []string
+	for _, d := range queue {
+		if !probing.names[d] {
+			probing.names[d] = true
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+func release(queue []string) {
+	probing.Lock()
+	defer probing.Unlock()
+	for _, d := range queue {
+		delete(probing.names, d)
+	}
+}
+
 // checked: one name's probes, waiting to be filed.
 type checked struct {
 	dom   string
@@ -658,8 +712,9 @@ func suspectDirect(cfg Config, st *state, netID string, conns []connection) []st
 		e, had := st.get(netID, dom)
 		switch {
 		case had && goesDirect(e.Verdict):
-		case !had && fams[familyOf(dom)]:
-			// sent direct by a family, never checked on its own
+		case !had && (fams[familyOf(dom)] || c.inherited()):
+			// sent direct by a family or by inheritance, never checked on
+			// its own
 		case had && e.Verdict == probe.Inconcl && fams[familyOf(dom)]:
 			// a family keeps sending it direct while its own check never
 			// concluded. Without this it would never be picked again: the
@@ -779,6 +834,9 @@ func syncList(cfg Config, a *api, st *state, netID string, force bool) {
 		if err := writeSplit(cfg, a, st, netID, splits, force); err != nil {
 			log.Print(err)
 		}
+		if err := writeInherit(cfg, a, st, netID, fams, force); err != nil {
+			log.Print(err)
+		}
 		// left from observe only with the cut on, or from a cycle begun in On
 		for _, l := range [][2]string{{cfg.ListPath, cfg.Provider}, {cfg.AddrListPath, cfg.AddrProvider}} {
 			if l[0] != "" && len(listRules(l[0])) > 0 {
@@ -795,6 +853,11 @@ func syncList(cfg Config, a *api, st *state, netID string, force bool) {
 	var addrs []string
 	if cfg.AddrListPath != "" {
 		addrs = st.verifiedAddrs(netID)
+	}
+	// the held names first: a name just blocked leaves inheritance before
+	// the direct lists change
+	if err := writeInherit(cfg, a, st, netID, fams, force); err != nil {
+		log.Print(err)
 	}
 	if !force && splitSame(cfg, splits, noQUICNames(cfg, st, netID, splits)) && slices.Equal(listRules(cfg.ListPath), doms) &&
 		(cfg.AddrListPath == "" || slices.Equal(listRules(cfg.AddrListPath), addrs)) {
@@ -927,7 +990,8 @@ func takeResetOne(cfg Config, a *api, st *state, req string) bool {
 		err = fmt.Errorf("state not saved: %w", err)
 	}
 	body := []byte("# verdicts reset -- everything goes through the tunnel\n")
-	for _, l := range [][2]string{{cfg.ListPath, cfg.Provider}, {cfg.AddrListPath, cfg.AddrProvider}, {cfg.SplitListPath, cfg.SplitProvider}} {
+	for _, l := range [][2]string{{cfg.ListPath, cfg.Provider}, {cfg.AddrListPath, cfg.AddrProvider}, {cfg.SplitListPath, cfg.SplitProvider},
+		{cfg.InheritPath, InheritProvider}, {cfg.InheritIPPath, InheritIPProvider}, {cfg.HoldPath, HoldProvider}} {
 		path, provider := l[0], l[1]
 		if path == "" || id != cur {
 			continue

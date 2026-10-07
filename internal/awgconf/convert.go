@@ -678,6 +678,19 @@ func render(c *Conf) (string, error) {
 	w("    behavior: domain")
 	w("    format: text")
 	w("    path: ./%s", filepath.Base(paths.VerifiedSplitNoQUIC()))
+	w("  # names with a verdict that does not go direct, and the way a name with")
+	w("  # no verdict takes after its relatives -- see ctl/inherit.go")
+	for _, p := range []struct{ name, behavior, file string }{
+		{ctl.HoldProvider, "domain", paths.Hold()},
+		{ctl.InheritProvider, "domain", paths.Inherit()},
+		{ctl.InheritIPProvider, "ipcidr", paths.InheritIP()},
+	} {
+		w("  %s:", p.name)
+		w("    type: file")
+		w("    behavior: %s", p.behavior)
+		w("    format: text")
+		w("    path: ./%s", filepath.Base(p.file))
+	}
 	w("  direct-verified:")
 	w("    type: file")
 	w("    behavior: domain")
@@ -812,7 +825,18 @@ func render(c *Conf) (string, error) {
 	w("  - RULE-SET,%s,%s", ctl.ObserveSplitProvider, ctl.SplitOutbound)
 	w("  - RULE-SET,observe-all,DIRECT")
 	w("")
-	w("  # 11. everything else: the tunnels as the mode says -- in tunnel only")
+	w("  # 11. a name with no verdict of its own goes the way its relatives do:")
+	w("  #     a service's page and its media hosts must reach it from one")
+	w("  #     address -- a media URL is signed for the address the page came")
+	w("  #     from. The relatives: the same domain, or the same network owning")
+	w("  #     the node -- the latter by the name's address, so a connection")
+	w("  #     with no name never takes it. A name with a verdict that does")
+	w("  #     not go direct is held out first. Written in On only.")
+	w("  - RULE-SET,%s,%s", ctl.HoldProvider, ctl.TunnelRestGroup)
+	w("  - RULE-SET,%s,%s", ctl.InheritProvider, ctl.SplitOutbound)
+	w("  - AND,((DOMAIN-REGEX,.+),(RULE-SET,%s)),%s", ctl.InheritIPProvider, ctl.SplitOutbound)
+	w("")
+	w("  # 12. everything else: the tunnels as the mode says -- in tunnel only")
 	w("  #     never direct")
 	w("  - MATCH,%s", ctl.TunnelRestGroup)
 	return b.String(), nil
@@ -1051,7 +1075,8 @@ func Regenerate() (bool, error) {
 // EnsureLists creates missing list files: a provider without
 // its file prevents the core from starting
 func EnsureLists() {
-	files := []string{paths.Verified(), paths.VerifiedAddr(), paths.VerifiedSplit(), paths.VerifiedSplitNoQUIC(), paths.ObserveAll(), paths.ObserveSplit(), paths.Presets()}
+	files := []string{paths.Verified(), paths.VerifiedAddr(), paths.VerifiedSplit(), paths.VerifiedSplitNoQUIC(), paths.ObserveAll(), paths.ObserveSplit(), paths.Presets(),
+		paths.Inherit(), paths.InheritIP(), paths.Hold()}
 	for _, l := range paths.UserLists {
 		files = append(files, paths.Data(l), paths.Data(paths.IPList(l)), paths.Data(paths.AppList(l)))
 	}

@@ -63,6 +63,10 @@ func disableAuto(cfg Config, a *api, st *state, closeDirect bool) {
 	if err == nil && cfg.SplitListPath != "" {
 		err = writeSplit(cfg, a, st, st.current(), splitNames(cfg, st, st.current()), true)
 	}
+	// inheritance is On's alone: emptied here whatever the mode turned to
+	if err == nil {
+		err = writeInherit(cfg, a, st, st.current(), nil, true)
+	}
 	if err != nil && cfg.autoOff != nil {
 		// the next look tries again
 		cfg.autoOff.Store(false)
@@ -127,6 +131,11 @@ func closeTunnelledNowDirect(cfg Config, a *api, st *state, id string) int {
 	if cfg.SplitListPath != "" {
 		rules = append(rules, listRules(cfg.SplitListPath)...)
 	}
+	// inheritance by domain; by network it needs the name's address, and a
+	// connection it misses is routed so at its next opening
+	if cfg.InheritPath != "" {
+		rules = append(rules, listRules(cfg.InheritPath)...)
+	}
 	direct := func(c connection) bool {
 		if dom := c.domain(); dom != "" {
 			for _, r := range rules {
@@ -165,7 +174,7 @@ func closeDetectorDirect(cfg Config, a *api) int {
 	for _, c := range conns {
 		if c.ID == "" || !(c.byProvider(cfg.Provider) ||
 			cfg.AddrProvider != "" && c.byProvider(cfg.AddrProvider) ||
-			cfg.SplitProvider != "" && c.byProvider(cfg.SplitProvider)) {
+			cfg.SplitProvider != "" && c.byProvider(cfg.SplitProvider) || c.inherited()) {
 			continue
 		}
 		if err := a.closeConnection(c.ID); err != nil {
@@ -288,7 +297,7 @@ func closeRerouted(cfg Config, a *api, from, to string, awg2 func(connection) bo
 	}
 	n := 0
 	for _, c := range conns {
-		if c.ID == "" || c.fromProbe() || c.Rule != "RuleSet" && c.Rule != "Match" {
+		if c.ID == "" || c.fromProbe() || c.Rule != "RuleSet" && c.Rule != "Match" && !c.inherited() {
 			continue
 		}
 		var moved bool
