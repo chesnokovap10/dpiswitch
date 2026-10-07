@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"net/netip"
+	"strings"
 	"time"
 
 	"dpiswitch/internal/core"
@@ -246,7 +247,7 @@ func holdGuard(ctx context.Context, g udpGuard, env guardEnv) {
 				logged = text
 				log.Printf("UDP guard not put in place: %v -- trying again every %s", err, guardRetry)
 			}
-			say(udpguard.Status{State: udpguard.StateFail, Why: udpguard.Why(err), Err: err.Error()})
+			say(udpguard.Status{State: udpguard.StateFail, Why: udpguard.Why(err), Err: errText(err)})
 			return
 		}
 		logged = ""
@@ -274,6 +275,12 @@ func holdGuard(ctx context.Context, g udpGuard, env guardEnv) {
 			return
 		}
 	}
+}
+
+// errText: an error of Windows' as the page puts it in brackets -- they end in
+// a full stop, and the page's sentence has its own
+func errText(err error) string {
+	return strings.TrimRight(strings.TrimSpace(err.Error()), ".")
 }
 
 // startGuard runs holdGuard for the core that has just started, under its

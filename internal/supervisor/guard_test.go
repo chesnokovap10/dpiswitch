@@ -321,7 +321,7 @@ func TestGuardRefusedAndRetried(t *testing.T) {
 
 	waitFor(t, "the failure", func() bool { return w.last().State == udpguard.StateFail })
 	st := w.last()
-	if st.Why != udpguard.WhyEngine || st.Err != "The RPC server is unavailable." {
+	if st.Why != udpguard.WhyEngine || st.Err != "The RPC server is unavailable" {
 		t.Fatalf("%+v", st)
 	}
 	// 300 ms is five retry periods and sixty looks: the tries are the pause's
