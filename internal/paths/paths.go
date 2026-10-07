@@ -122,6 +122,10 @@ func VerifiedSplit() string { return Data("direct-split-verified.txt") }
 // through -- refused, so the browser takes TCP at once
 func VerifiedSplitNoQUIC() string { return Data("direct-split-noquic.txt") }
 
+// VerifiedSplitNoTCP: the cut's names that go direct over QUIC alone -- their
+// TCP on 443 is refused, so the browser keeps to QUIC
+func VerifiedSplitNoTCP() string { return Data("direct-split-notcp.txt") }
+
 // Inherit, InheritIP: the names and the address ranges a name with no verdict
 // of its own takes its relatives' way by, see ctl/inherit.go; Hold: the
 // names with a verdict that does not go direct, kept out of those

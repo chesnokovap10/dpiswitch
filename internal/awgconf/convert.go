@@ -673,6 +673,12 @@ func render(c *Conf) (string, error) {
 	w("    format: text")
 	w("    path: ./%s", filepath.Base(paths.VerifiedSplit()))
 	w("  # of those, the ones whose QUIC the decoy does not get through")
+	w("  # and the ones going direct over QUIC alone, their TCP on 443 refused")
+	w("  %s:", ctl.NoTCPProvider)
+	w("    type: file")
+	w("    behavior: domain")
+	w("    format: text")
+	w("    path: ./%s", filepath.Base(paths.VerifiedSplitNoTCP()))
 	w("  %s:", ctl.NoQUICProvider)
 	w("    type: file")
 	w("    behavior: domain")
@@ -809,6 +815,9 @@ func render(c *Conf) (string, error) {
 	w("  #    QUIC goes the same way, the decoy Initial ahead of it -- but for")
 	w("  #    the names whose QUIC the detector found it does not get through")
 	w("  - AND,((NETWORK,UDP),(DST-PORT,443),(RULE-SET,%s)),REJECT", ctl.NoQUICProvider)
+	w("  #    and TCP to the ones that go direct over QUIC alone: blocked even")
+	w("  #    with the cut, the browser keeps to QUIC rather than wait on it")
+	w("  - AND,((NETWORK,TCP),(DST-PORT,443),(RULE-SET,%s)),REJECT", ctl.NoTCPProvider)
 	w("  - RULE-SET,%s,%s", ctl.SplitProvider, ctl.SplitOutbound)
 	w("")
 	w("  # 9. detector verdicts: direct as it is. Written in On, and in observe")
@@ -1075,7 +1084,7 @@ func Regenerate() (bool, error) {
 // EnsureLists creates missing list files: a provider without
 // its file prevents the core from starting
 func EnsureLists() {
-	files := []string{paths.Verified(), paths.VerifiedAddr(), paths.VerifiedSplit(), paths.VerifiedSplitNoQUIC(), paths.ObserveAll(), paths.ObserveSplit(), paths.Presets(),
+	files := []string{paths.Verified(), paths.VerifiedAddr(), paths.VerifiedSplit(), paths.VerifiedSplitNoQUIC(), paths.VerifiedSplitNoTCP(), paths.ObserveAll(), paths.ObserveSplit(), paths.Presets(),
 		paths.Inherit(), paths.InheritIP(), paths.Hold()}
 	for _, l := range paths.UserLists {
 		files = append(files, paths.Data(l), paths.Data(paths.IPList(l)), paths.Data(paths.AppList(l)))

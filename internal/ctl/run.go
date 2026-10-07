@@ -46,6 +46,10 @@ type Config struct {
 	// splitNoQUIC
 	NoQUICProvider string
 	NoQUICListPath string
+	// and the ones going direct over QUIC alone, their TCP on 443 refused,
+	// see splitNoTCP
+	NoTCPProvider string
+	NoTCPListPath string
 	// the inheritance lists, see inherit.go; empty, none is written
 	InheritPath   string
 	InheritIPPath string
@@ -342,9 +346,8 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 				}
 			}
 			var rep probe.Report
-			// the direct path failed on a TCP port -- see entry.DirectDown
-			directDown := false
-			var downOn probe.Report
+			// the TCP ports whose direct side failed -- see entry.DirectDown
+			var downs []probe.Report
 			noV6 := false // see probe.Report.DirectNoV6
 			reachedV6 := false
 			reps := make([]probe.Report, 0, len(eps))
@@ -398,8 +401,8 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 				}
 				// QUIC failing direct is left out: most hosts have no QUIC at
 				// all, and fail on both paths for that reason alone
-				if !ep.udp && directDownOn(r) && !directDown {
-					directDown, downOn = true, r
+				if !ep.udp && directDownOn(r) {
+					downs = append(downs, r)
 				}
 				noV6 = noV6 || r.DirectNoV6
 				reachedV6 = reachedV6 || directReachedV6(r)
@@ -407,6 +410,21 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 			}
 			rep = worstPort(eps, reps)
 			noQUIC := splitNoQUIC(eps, reps)
+			// works over QUIC alone: the QUIC port's verdict stands for the
+			// name, its TCP on 443 is refused -- and that port's fall is the
+			// refused one, not a dead direct path
+			noTCP := splitNoTCP(cfg, eps, reps)
+			if noTCP {
+				rep = quicReport(eps, reps)
+				rep.Verdict = probe.CleanSplit
+				rep.Note = strings.TrimPrefix(rep.Note+"; TCP blocked even with the ClientHello cut: refused", "; ")
+				downs = slices.DeleteFunc(downs, func(r probe.Report) bool { return r.Port == 443 })
+			}
+			directDown := len(downs) > 0
+			var downOn probe.Report
+			if directDown {
+				downOn = downs[0]
+			}
 			// A port whose direct side failed while the tunnel failed too is
 			// INCONCLUSIVE, and that must not override a definite verdict --
 			// but CLEAN is a promise that the name works direct on every port
@@ -426,7 +444,7 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 			mu.Unlock()
 
 			mu.Lock()
-			results = append(results, checked{dom, rep, eps, checkFacts{directDown, noV6, unprobed, noQUIC}})
+			results = append(results, checked{dom, rep, eps, checkFacts{directDown, noV6, unprobed, noQUIC, noTCP}})
 			mu.Unlock()
 		}(dom)
 	}
@@ -529,6 +547,7 @@ type checkFacts struct {
 	noV6       bool // see probe.Report.DirectNoV6
 	unprobed   int  // ports the name was seen on beyond maxEndpoints
 	noQUIC     bool // see entry.NoQUIC
+	noTCP      bool // see entry.NoTCP
 }
 
 // record files one name's check in memory and reports whether its verdict
@@ -612,6 +631,7 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 		DirectDown: rep.Verdict == probe.Inconcl && directDown,
 		Alone:      cfg.alone,
 		NoQUIC:     rep.Verdict == probe.CleanSplit && f.noQUIC,
+		NoTCP:      rep.Verdict == probe.CleanSplit && f.noTCP,
 	}
 	// A new name was just seen by the watcher. A known one keeps its
 	// own mark: the probe is not a use. It used to count as one, and
@@ -769,7 +789,28 @@ func splitNames(cfg Config, st *state, netID string) []string {
 	if !cfg.Split || cfg.modeNow() == ModeTunnel || netID == "" || netID == noNetwork {
 		return nil
 	}
-	return st.verifiedSplit(netID)
+	splits := st.verifiedSplit(netID)
+	if !cfg.QUICFake {
+		// a name going direct over QUIC alone needs the decoy: without it
+		// it has no way direct at all
+		noTCP := st.verifiedSplitNoTCP(netID)
+		splits = slices.DeleteFunc(splits, func(d string) bool {
+			_, ok := slices.BinarySearch(noTCP, d)
+			return ok
+		})
+	}
+	return splits
+}
+
+// noTCPNames: of the cut's names, the ones going direct over QUIC alone
+func noTCPNames(cfg Config, st *state, netID string, splits []string) []string {
+	if len(splits) == 0 {
+		return nil
+	}
+	return slices.DeleteFunc(st.verifiedSplitNoTCP(netID), func(d string) bool {
+		_, ok := slices.BinarySearch(splits, d)
+		return !ok
+	})
 }
 
 // noQUICNames: of the cut's names, the ones whose QUIC is refused (see
@@ -786,9 +827,10 @@ func noQUICNames(cfg Config, st *state, netID string, splits []string) []string 
 }
 
 // splitSame: the cut's lists on disk are what memory makes them
-func splitSame(cfg Config, splits, noQUIC []string) bool {
+func splitSame(cfg Config, splits, noQUIC, noTCP []string) bool {
 	return (cfg.SplitListPath == "" || slices.Equal(listRules(cfg.SplitListPath), splits)) &&
-		(cfg.NoQUICListPath == "" || slices.Equal(listRules(cfg.NoQUICListPath), noQUIC))
+		(cfg.NoQUICListPath == "" || slices.Equal(listRules(cfg.NoQUICListPath), noQUIC)) &&
+		(cfg.NoTCPListPath == "" || slices.Equal(listRules(cfg.NoTCPListPath), noTCP))
 }
 
 // writeSplit writes the cut's lists when they differ from what is on disk,
@@ -804,6 +846,21 @@ func writeSplit(cfg Config, a *api, st *state, netID string, splits []string, fo
 			b.WriteString(d + "\n")
 		}
 		if err := replaceList(a, cfg.NoQUICListPath, cfg.NoQUICProvider, b.String()); err != nil {
+			return err
+		}
+	}
+	// the TCP refusals before the names: a name must not go direct on TCP
+	// for the moment between the two
+	noTCP := noTCPNames(cfg, st, netID, splits)
+	if cfg.NoTCPListPath != "" && (force || !slices.Equal(listRules(cfg.NoTCPListPath), noTCP)) {
+		var b strings.Builder
+		b.WriteString("# generated by the controller, do not edit\n")
+		fmt.Fprintf(&b, "# network %s, updated %s\n", netID, time.Now().Format(time.RFC3339))
+		b.WriteString("# going direct with the ClientHello cut over QUIC alone, TCP on 443 blocked even with the cut: refused\n")
+		for _, d := range noTCP {
+			b.WriteString(d + "\n")
+		}
+		if err := replaceList(a, cfg.NoTCPListPath, cfg.NoTCPProvider, b.String()); err != nil {
 			return err
 		}
 	}
@@ -870,7 +927,7 @@ func syncList(cfg Config, a *api, st *state, netID string, force bool) {
 	if err := writeInherit(cfg, a, st, netID, fams, force); err != nil {
 		log.Print(err)
 	}
-	if !force && splitSame(cfg, splits, noQUICNames(cfg, st, netID, splits)) && slices.Equal(listRules(cfg.ListPath), doms) &&
+	if !force && splitSame(cfg, splits, noQUICNames(cfg, st, netID, splits), noTCPNames(cfg, st, netID, splits)) && slices.Equal(listRules(cfg.ListPath), doms) &&
 		(cfg.AddrListPath == "" || slices.Equal(listRules(cfg.AddrListPath), addrs)) {
 		return
 	}
@@ -1458,6 +1515,42 @@ func splitNoQUIC(eps []endpoint, reps []probe.Report) bool {
 		}
 	}
 	return split && bad
+}
+
+// splitNoTCP: the mirror of splitNoQUIC -- a name whose QUIC on 443 goes
+// direct, plain or through the decoy, while its TCP on 443 is blocked even
+// with the hello cut, every other port going direct. The browser speaks
+// QUIC to it: rr14---sn-n8v7kn7d.googlevideo.com moved 508 KB direct over
+// QUIC through the decoy on 08.10, and was called BLOCKED_DPI by its TCP --
+// held in the tunnel, where the service refused it the address its page
+// came from. It goes direct now, its TCP on 443 refused so the browser does
+// not wait on it; only with the decoy on, which its QUIC needs.
+func splitNoTCP(cfg Config, eps []endpoint, reps []probe.Report) bool {
+	if !cfg.Split || !cfg.QUICFake {
+		return false
+	}
+	quicOK, tcpCut := false, false
+	for i, r := range reps {
+		switch {
+		case eps[i].udp && eps[i].port == 443:
+			quicOK = goesDirect(r.Verdict)
+		case !eps[i].udp && eps[i].port == 443:
+			tcpCut = r.Verdict == probe.BlockedDPI
+		case !goesDirect(r.Verdict):
+			return false
+		}
+	}
+	return quicOK && tcpCut
+}
+
+// quicReport: the report of the QUIC port on 443
+func quicReport(eps []endpoint, reps []probe.Report) probe.Report {
+	for i, r := range reps {
+		if eps[i].udp && eps[i].port == 443 {
+			return r
+		}
+	}
+	return probe.Report{}
 }
 
 // goesDirect: a verdict that sends the name direct, with its hello cut or not

@@ -55,6 +55,9 @@ type entry struct {
 	// not get it through (or was not tried): its QUIC is refused, see
 	// splitNoQUIC
 	NoQUIC bool `json:"no_quic,omitempty"`
+	// NoTCP: a CLEAN_SPLIT that goes direct over QUIC alone -- its TCP on
+	// 443 blocked even with the cut, refused; see splitNoTCP
+	NoTCP bool `json:"no_tcp,omitempty"`
 }
 
 // state is split per network: the key is the ISP (AS...), see asn.go;
@@ -280,6 +283,25 @@ func (s *state) verifiedSplit(id string) []string {
 			continue
 		}
 		if e.Verdict == probe.CleanSplit && now.Before(e.ExpiresAt) {
+			out = append(out, dom)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// verifiedSplitNoTCP: of the cut's names, the ones whose TCP on 443 is
+// refused, see entry.NoTCP
+func (s *state) verifiedSplitNoTCP(id string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	now := time.Now()
+	for dom, e := range s.Networks[id] {
+		if _, addr := probe.AddrKey(dom); addr {
+			continue
+		}
+		if e.Verdict == probe.CleanSplit && e.NoTCP && now.Before(e.ExpiresAt) {
 			out = append(out, dom)
 		}
 	}

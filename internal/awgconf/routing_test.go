@@ -506,6 +506,11 @@ func (c *simCore) fits(r []string, host string) bool {
 		if strings.HasPrefix(strings.Join(r, ","), "AND,((NETWORK,UDP),") {
 			return false
 		}
+		// TCP on 443 refused to the cut's names that go direct over QUIC
+		// alone: the connections here are TCP to 443, so it is the list
+		if p := "AND,((NETWORK,TCP),(DST-PORT,443),(RULE-SET,"; strings.HasPrefix(strings.Join(r, ","), p) {
+			return c.fits([]string{"RULE-SET", ctl.NoTCPProvider}, host)
+		}
 		// inheritance by the network owning the name's address: the checks
 		// resolve no name, and the inheritance lists are empty here anyway
 		// -- the controller writes them in On alone

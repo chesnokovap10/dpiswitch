@@ -36,6 +36,10 @@ const SplitProvider = "direct-split-verified"
 // and, in awgconf, its rule
 const NoQUICProvider = "direct-split-noquic"
 
+// NoTCPProvider: the cut's names going direct over QUIC alone -- the
+// rule-provider that refuses their TCP on 443
+const NoTCPProvider = "direct-split-notcp"
+
 // SplitOutbound: the core's direct outbound that cuts the ClientHello
 const SplitOutbound = "direct-split"
 
@@ -60,6 +64,8 @@ func Defaults() Config {
 		SplitListPath:  paths.VerifiedSplit(),
 		NoQUICProvider: NoQUICProvider,
 		NoQUICListPath: paths.VerifiedSplitNoQUIC(),
+		NoTCPProvider:  NoTCPProvider,
+		NoTCPListPath:  paths.VerifiedSplitNoTCP(),
 		InheritPath:    paths.Inherit(),
 		InheritIPPath:  paths.InheritIP(),
 		HoldPath:       paths.Hold(),
@@ -319,6 +325,8 @@ type DirectEntry struct {
 	Idle bool `json:"idle,omitempty"`
 	// NoQUIC: going direct with the cut, its QUIC refused, see entry.NoQUIC
 	NoQUIC bool `json:"no_quic,omitempty"`
+	// NoTCP: going direct with the cut over QUIC alone, see entry.NoTCP
+	NoTCP bool `json:"no_tcp,omitempty"`
 }
 
 // idleTerm: Config.Idle as the service runs it
@@ -326,7 +334,7 @@ const idleTerm = 24 * time.Hour
 
 func directEntry(dom string, e *entry, now time.Time) DirectEntry {
 	return DirectEntry{dom, e.DecidedAt, e.ExpiresAt, e.TestedIP, e.Reason, string(e.Verdict),
-		now.After(e.ExpiresAt) && !e.lastSeen().After(now.Add(-idleTerm)), e.NoQUIC}
+		now.After(e.ExpiresAt) && !e.lastSeen().After(now.Add(-idleTerm)), e.NoQUIC, e.NoTCP}
 }
 
 // NetCount: a network memory keeps, and how many verdicts it holds there
@@ -490,7 +498,7 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 			switch {
 			case splitOn && (e.Verdict == probe.BlockedTLS || e.Verdict == probe.BlockedDPI):
 				e.ExpiresAt = now
-			case quicOn && (e.Verdict == probe.BlockedQUIC || e.Verdict == probe.CleanSplit && e.NoQUIC):
+			case quicOn && (e.Verdict == probe.BlockedQUIC || e.Verdict == probe.BlockedDPI || e.Verdict == probe.CleanSplit && e.NoQUIC):
 				e.ExpiresAt = now
 			case goesDirect(e.Verdict):
 				if cfg.TTL != old.TTL && !e.SlowOnce {

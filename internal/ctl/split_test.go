@@ -384,3 +384,45 @@ func TestCycleQUICDecoyOff(t *testing.T) {
 		t.Errorf("QUIC refused list %v", got)
 	}
 }
+
+// The mirror of the case above: QUIC gets through with the decoy, TCP is
+// blocked even with the cut (rr14---sn-n8v7kn7d.googlevideo.com, 08.10). The
+// browser speaks QUIC to it: the name goes direct with the cut, its TCP on
+// 443 refused -- not BLOCKED_DPI, held in the tunnel by its TCP. That TCP's
+// fall is the refused one, not a dead direct path. Without the decoy it has
+// no way direct and leaves the cut's list.
+func TestCycleQUICOnly(t *testing.T) {
+	s, _ := quicScenario(t,
+		map[string]probe.Verdict{"rr14.example.org": probe.BlockedTLS, "dead.example.org": probe.BlockedTLS},
+		map[string]probe.Verdict{"rr14.example.org": probe.CleanSplit, "dead.example.org": probe.BlockedQUIC})
+	s.cfg.NoTCPProvider = NoTCPProvider
+	s.cfg.NoTCPListPath = filepath.Join(filepath.Dir(s.cfg.ListPath), "direct-split-notcp.txt")
+	for _, d := range []string{"rr14.example.org", "dead.example.org"} {
+		s.see(tunnelled(d, 443), quic(d))
+		s.script(d+" tcp/443", blockedTLS("192.0.2.30"))
+		s.script(d+" quic/443", blockedQUIC("192.0.2.30"))
+	}
+	s.cycle()
+	e := s.entry("rr14.example.org")
+	if e == nil || e.Verdict != probe.CleanSplit || !e.NoTCP || e.NoQUIC {
+		t.Fatalf("QUIC only: %+v", e)
+	}
+	if d := s.entry("dead.example.org"); d == nil || d.Verdict != probe.BlockedDPI || d.NoTCP {
+		t.Fatalf("neither way: %+v", d)
+	}
+	if got := listRules(s.cfg.SplitListPath); !slices.Equal(got, []string{"rr14.example.org"}) {
+		t.Fatalf("cut list %v", got)
+	}
+	if got := listRules(s.cfg.NoTCPListPath); !slices.Equal(got, []string{"rr14.example.org"}) {
+		t.Fatalf("TCP refused for %v", got)
+	}
+	if got := listRules(s.cfg.NoQUICListPath); len(got) != 0 {
+		t.Fatalf("QUIC refused for %v", got)
+	}
+
+	s.cfg.QUICFake = false
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := concat(listRules(s.cfg.SplitListPath), listRules(s.cfg.NoTCPListPath)); len(got) != 0 {
+		t.Fatalf("the decoy off, still direct: %v", got)
+	}
+}
