@@ -64,7 +64,10 @@ const (
 	cdnEnterNum, cdnEnterDen = 3, 4
 	cdnKeepNum, cdnKeepDen   = 1, 2
 	cdnTerm                  = 7 * 24 * time.Hour
-	cdnRetry                 = time.Hour
+	// a name dropped from the UI counts as not passed this long at most:
+	// one never used again would hold its family in the tunnel forever
+	pendingTerm = time.Hour
+	cdnRetry    = time.Hour
 )
 
 // cdnFamily: one CDN, the zones of its own and the pages it serves
@@ -216,6 +219,18 @@ func (s *state) familyWays(id string, book *cdnBook, wasDirect map[string]bool) 
 	}
 	now := time.Now()
 	s.mu.Lock()
+	// a CDN name dropped from the UI and not checked again has not passed:
+	// it counts against, for pendingTerm at most
+	for dom, at := range s.Pending[id] {
+		if _, had := s.Networks[id][dom]; had || now.Sub(at) >= pendingTerm {
+			continue
+		}
+		for i := range ways {
+			if cdn, _ := ways[i].f.cdnOf(dom); cdn {
+				ways[i].cdn++
+			}
+		}
+	}
 	for dom, e := range s.Networks[id] {
 		if _, addr := probe.AddrKey(dom); addr {
 			continue

@@ -459,12 +459,14 @@ var (
 //
 // confirmPasses more passes, at once -- the verdict waits one timeout, not
 // three -- each the handshake direct with the name, direct with none, and
-// through the tunnel. A filter on the name is the same every time: with it
-// direct fails every pass and without it gets through every pass -- the
-// block by name stands. Failing both ways every pass with the tunnel through
-// every pass is the address blocked (BLOCKED_TCP, the tunnel's way).
-// Anything else is a server that does not answer reliably (INCONCLUSIVE):
-// one lucky pass no longer makes a block.
+// through the tunnel. A filter on the name never lets it through: with it
+// direct fails every pass, and without it gets through most -- the block by
+// name stands. Failing both ways every pass with the tunnel through most is
+// the address blocked (BLOCKED_TCP, the tunnel's way). Anything else is a
+// server that does not answer reliably (INCONCLUSIVE): one lucky pass no
+// longer makes a block. Most, not every: Beeline's direct path loses a
+// handshake now and then, and rr17---sn-n8v7znsk, 0 with the name and 2 of
+// 3 without, came out INCONCLUSIVE and went its family's way, blocked.
 func confirmByName(direct, tunnel Dialer, ip, dom string, rep *Report) {
 	type pass struct{ name, noName, tunnel bool }
 	res := make([]pass, confirmPasses)
@@ -489,11 +491,12 @@ func confirmByName(direct, tunnel Dialer, ip, dom string, rep *Report) {
 		}
 	}
 	switch {
-	case nameOK == 0 && noNameOK == confirmPasses:
+	case nameOK == 0 && noNameOK*2 > confirmPasses:
 		return // the name is what is blocked
-	case nameOK == 0 && noNameOK == 0 && tunnelOK == confirmPasses:
+	case nameOK == 0 && noNameOK == 0 && tunnelOK*2 > confirmPasses:
 		rep.Verdict = BlockedTCP
-		rep.Reason = "the address does not answer direct, with the name or without; the tunnel did every time: " + rep.Reason
+		rep.Reason = fmt.Sprintf("the address does not answer direct, with the name or without; the tunnel did %d of %d: %s",
+			tunnelOK, confirmPasses, rep.Reason)
 		return
 	}
 	rep.Verdict = Inconcl

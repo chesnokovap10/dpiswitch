@@ -73,6 +73,12 @@ type state struct {
 	Current string `json:"current,omitempty"`
 	// V6: what probes have shown of IPv6 on each network's direct path
 	V6 map[string]*v6Memo `json:"v6,omitempty"`
+	// Pending: names whose verdict was dropped from the UI, by network, and
+	// when -- not checked yet, so a CDN family counts them as not passed
+	// (see familyWays): dropping 38 blocked shards of a family in the
+	// tunnel left 32 direct of 40, and the family went direct onto the
+	// blocked ones (09.10)
+	Pending map[string]map[string]time.Time `json:"pending,omitempty"`
 	// resets: how many times the verdicts were reset, see resetEpoch
 	resets int
 	// lookupFailed: when the ISP behind a gateway last could not be looked
@@ -235,6 +241,7 @@ func (s *state) put(id, dom string, e *entry) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	m[dom] = e
+	delete(s.Pending[id], dom)
 }
 
 // domains currently allowed to go direct
@@ -627,19 +634,29 @@ func (s *state) forgetVerdicts(id string, keys []string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := 0
+	now := time.Now()
+	drop := func(dom string) {
+		delete(s.Networks[id], dom)
+		if s.Pending == nil {
+			s.Pending = map[string]map[string]time.Time{}
+		}
+		if s.Pending[id] == nil {
+			s.Pending[id] = map[string]time.Time{}
+		}
+		s.Pending[id][dom] = now
+		n++
+	}
 	for _, k := range keys {
 		if base, ok := strings.CutPrefix(k, "+."); ok {
 			for dom := range s.Networks[id] {
 				if dom == base || strings.HasSuffix(dom, "."+base) {
-					delete(s.Networks[id], dom)
-					n++
+					drop(dom)
 				}
 			}
 			continue
 		}
 		if _, ok := s.Networks[id][k]; ok {
-			delete(s.Networks[id], k)
-			n++
+			drop(k)
 		}
 	}
 	s.resets++

@@ -251,3 +251,32 @@ func TestFamilyDirectIsLent(t *testing.T) {
 		t.Fatal("a family's direct way is a lent one")
 	}
 }
+
+// Dropping a family's blocked CDN names from the UI does not take it out
+// of the tunnel: unchecked, they have not passed (09.10, Beeline: 38
+// dropped, 32 direct of 40 left, the family went direct onto them).
+func TestFamilyDroppedNotPassed(t *testing.T) {
+	s := familyScenario(t)
+	s.put("music.youtube.com", probe.CleanSplit, "")
+	s.shards(32, probe.CleanSplit, 0)
+	s.shards(30, probe.BlockedDPI, 100)
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := listRules(s.cfg.FamilyTunnelPath); !slices.Contains(got, "+.googlevideo.com") {
+		t.Fatalf("32 of 62: the tunnel: %v", got)
+	}
+	var drop []string
+	for i := range 30 {
+		drop = append(drop, fmt.Sprintf("rr%d---sn-x.googlevideo.com", 100+i))
+	}
+	s.st.forgetVerdicts("n", drop)
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := listRules(s.cfg.FamilyTunnelPath); !slices.Contains(got, "+.googlevideo.com") {
+		t.Fatalf("dropped, not checked: still the tunnel: %v", got)
+	}
+	// checked again, clean with the cut: they passed now
+	s.shards(30, probe.CleanSplit, 100)
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := listRules(s.cfg.FamilyDirectPath); !slices.Contains(got, "+.googlevideo.com") {
+		t.Fatalf("62 of 62 checked direct: direct: %v", got)
+	}
+}

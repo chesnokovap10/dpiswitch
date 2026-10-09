@@ -7,8 +7,9 @@ import (
 )
 
 // A pass failed direct on the handshake, the tunnel got through: a block by
-// name only if direct fails with the name and gets through without it every
-// pass; the address, if both fail every pass and the tunnel never does;
+// name only if direct never gets through with the name and mostly does
+// without it; the address, if both fail every pass and the tunnel mostly
+// gets through;
 // anything else an unreliable server (e2c61.gcp.gvt2.com, 09.10: one lucky
 // pass with no name kept its BLOCKED_TLS).
 func TestConfirmByName(t *testing.T) {
@@ -22,10 +23,12 @@ func TestConfirmByName(t *testing.T) {
 	}{
 		{"by name", 0, 3, 3, BlockedTLS, "silent"},
 		{"by name, the tunnel unsteady", 0, 3, 1, BlockedTLS, "silent"},
-		{"address", 0, 0, 3, BlockedTCP, "the tunnel did every time"},
+		{"by name, a lossy direct path (rr17, Beeline)", 0, 2, 3, BlockedTLS, "silent"},
+		{"address", 0, 0, 3, BlockedTCP, "the tunnel did 3 of 3"},
+		{"address, the tunnel losing one", 0, 0, 2, BlockedTCP, "the tunnel did 2 of 3"},
 		{"unreliable, lucky without the name", 0, 1, 1, Inconcl, "0 with the name and 1 without, the tunnel 1"},
 		{"unreliable, lucky with the name", 1, 3, 3, Inconcl, "1 with the name"},
-		{"unreliable everywhere", 0, 0, 2, Inconcl, "the tunnel 2"},
+		{"unreliable everywhere", 0, 0, 1, Inconcl, "the tunnel 1"},
 	} {
 		var mu sync.Mutex
 		left := map[string]int{"name": c.withName, "none": c.noName, "tunnel": c.tunnel}
