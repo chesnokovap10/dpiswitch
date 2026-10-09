@@ -28,6 +28,7 @@ func TestConfirmByName(t *testing.T) {
 		{"address, the tunnel losing one", 0, 0, 2, BlockedTCP, "the tunnel did 2 of 3"},
 		{"unreliable, lucky without the name", 0, 1, 1, Inconcl, "0 with the name and 1 without, the tunnel 1"},
 		{"unreliable, lucky with the name", 1, 3, 3, Inconcl, "1 with the name"},
+		{"a fluke: through with the name every pass", 3, 3, 3, Inconcl, "the failed pass made again"},
 		{"unreliable everywhere", 0, 0, 1, Inconcl, "the tunnel 1"},
 	} {
 		var mu sync.Mutex

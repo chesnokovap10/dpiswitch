@@ -375,7 +375,7 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool,
 	// take the best measurement across passes, not the last one: the minimum
 	// is more robust to random spikes than the average
 	var bestDirect, bestTunnel time.Duration
-	measured := false
+	measured, redone := false, false
 	for i := 0; i < attempts; i++ {
 		var d, t PathResult
 		switch {
@@ -402,7 +402,12 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool,
 		}
 		rep.Verdict, rep.Reason = v, reason
 		if v == BlockedTLS && port == 443 && !udp {
-			confirmByName(direct, tunnel, ip, dom, &rep)
+			// a pass that failed by a fluke is made again, once
+			if confirmByName(direct, tunnel, ip, dom, &rep) && !redone {
+				redone = true
+				i--
+				continue
+			}
 		}
 		if v != Clean {
 			return rep // the first non-clean pass decides
@@ -464,10 +469,12 @@ var (
 // name stands. Failing both ways every pass with the tunnel through most is
 // the address blocked (BLOCKED_TCP, the tunnel's way). Anything else is a
 // server that does not answer reliably (INCONCLUSIVE): one lucky pass no
-// longer makes a block. Most, not every: Beeline's direct path loses a
+// longer makes a block. With the name through every pass, the failed one
+// was a fluke (rr14---sn-n8v7kn7d, Beeline, 3 of 3 every way): it says so,
+// and the check makes that pass again, once. Most, not every: Beeline's direct path loses a
 // handshake now and then, and rr17---sn-n8v7znsk, 0 with the name and 2 of
 // 3 without, came out INCONCLUSIVE and went its family's way, blocked.
-func confirmByName(direct, tunnel Dialer, ip, dom string, rep *Report) {
+func confirmByName(direct, tunnel Dialer, ip, dom string, rep *Report) (fluke bool) {
 	type pass struct{ name, noName, tunnel bool }
 	res := make([]pass, confirmPasses)
 	var wg sync.WaitGroup
@@ -491,17 +498,23 @@ func confirmByName(direct, tunnel Dialer, ip, dom string, rep *Report) {
 		}
 	}
 	switch {
+	case nameOK == confirmPasses:
+		rep.Verdict = Inconcl
+		rep.Reason = fmt.Sprintf("fails now and then: the failed pass made again, direct got through %d of %d with the name: %s",
+			nameOK, confirmPasses, rep.Reason)
+		return true
 	case nameOK == 0 && noNameOK*2 > confirmPasses:
-		return // the name is what is blocked
+		return false // the name is what is blocked
 	case nameOK == 0 && noNameOK == 0 && tunnelOK*2 > confirmPasses:
 		rep.Verdict = BlockedTCP
 		rep.Reason = fmt.Sprintf("the address does not answer direct, with the name or without; the tunnel did %d of %d: %s",
 			tunnelOK, confirmPasses, rep.Reason)
-		return
+		return false
 	}
 	rep.Verdict = Inconcl
 	rep.Reason = fmt.Sprintf("not a steady block: of %d passes direct got through %d with the name and %d without, the tunnel %d: %s",
 		confirmPasses, nameOK, noNameOK, tunnelOK, rep.Reason)
+	return false
 }
 
 // latency: how long a path took, by what the probe can time on it.
