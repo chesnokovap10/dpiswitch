@@ -205,7 +205,7 @@ func verdictWords(v *view) map[string]string {
 		"whatDomains": v.T("Whole domains: %d"),
 		"whatNames":   v.T("Names only: %d"),
 		"forgetMany":  v.T("Reset the %d verdicts picked"),
-		"noPath":      v.T("The core did not say where the program's file is"),
+		"whatAddrs":   v.T("Addresses: %d"),
 		"noPresets":   v.T("No presets"),
 		"presetOff":   v.T("switched off: routes nothing until switched on"),
 		"sending":     v.T("Saving…"),

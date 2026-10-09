@@ -359,10 +359,10 @@ Claude, Gemini, Grok, Copilot, DeepL и др.), Instagram, Facebook, X и ваш
   другом месте, смена вкладки, фильтра или сортировки снимает выделение. **✕** в строке закрывает
   соединение в ядре: программа переподключится, и новое соединение пойдёт по текущим правилам.
 - **Правый щелчок по строке** открывает меню. Сверху — что отправить: весь домен (`+.example.com`),
-  только это имя, адрес (у соединения без имени — список направляет по адресу только такие) или программу.
+  только это имя, адрес (список направляет по адресу только соединения, открытые прямо по адресу) или программу.
   Ниже — куда: **Напрямую**, **В туннель**, **Во второй туннель**
   (его свой список), **В пресет** (выключенные пресеты приглушены: пока пресет выключен, он ничего не
-  направляет), **Запретить**. **Расположение файла** открывает папку программы с выделенным файлом.
+  направляет), **Запретить**. **Расположение файла** открывает папку программы с выделенным файлом (у проверок детектора — самого DPI Switch).
 
 Строка из меню попадает в выбранный список, а открытые соединения, которых это касается, сразу
 переносятся. Чтобы она действительно пошла выбранным путём, меню убирает её оттуда, где правила
@@ -819,10 +819,10 @@ core read the site's name from the traffic itself the protocol is confirmed, and
   sort, lets it go. **✕** in a row closes the connection in the core: the program reconnects, and the
   new connection follows the rules as they are now.
 - **A row right-clicked** opens a menu. On top, what to send: the whole domain (`+.example.com`), the
-  name alone, the address (of a connection with no name: a list routes such ones only by address) or the
+  name alone, the address (a list routes by address only the connections made to it by address) or the
   program. Then where: **Direct**, **Via the tunnel**, **Via the second
   tunnel** (its own list), **To a preset** (the ones off are greyed: a preset switched off routes
-  nothing), **Forbid**. **File location** opens the program's folder with its file picked out.
+  nothing), **Forbid**. **File location** opens the program's folder with its file picked out (DPI Switch's own for the detector's checks).
 
 A line sent from the menu goes to the list chosen, and the open connections it moves are moved at once.
 For it to take that route, the menu takes it out of wherever a rule would route it first. The core's

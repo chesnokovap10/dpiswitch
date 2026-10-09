@@ -52,7 +52,7 @@
 {{end}}
 
 {{/* what a row's menu and reset need of it (see static/verdicts.js) */}}
-{{define "vkey"}}data-key="{{.Key}}"{{with .Dom}} data-dom="{{.}}"{{end}}{{if .Addr}} data-addr="{{.Domain}}"{{end}}{{end}}
+{{define "vkey"}}data-key="{{.Key}}"{{with .Dom}} data-dom="{{.}}"{{end}}{{if .Addr}} data-addr="{{.Domain}}"{{else}}{{with .Node}} data-ip="{{.}}"{{end}}{{end}}{{end}}
 {{define "vx"}}<td class="c-x"><button type="button" class="lx" title="{{.T "Reset the verdict: through the tunnel until the detector checks it again"}}">✕</button></td>{{end}}
 
 {{define "uni"}}{{with .Uni}} <span class="muted">({{.}})</span>{{end}}{{end}}

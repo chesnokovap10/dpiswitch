@@ -72,7 +72,8 @@ pageInit.verdicts = function (sec) {
   }
 
   // What goes to a list, as on Live: the whole domain first, then the name
-  // alone; an address for a verdict an address has of its own
+  // alone, then the node probed; an address for a verdict an address has
+  // of its own
   function whats(tr) {
     const k = tr.dataset.key, d = tr.dataset;
     if (k.startsWith('+.')) return [[k, W.whatDomain]];
@@ -80,19 +81,22 @@ pageInit.verdicts = function (sec) {
     const out = [];
     if (d.dom) out.push(['+.' + d.dom, W.whatDomain]);
     if (k !== d.dom) out.push([k, W.whatName]);
+    if (d.ip) out.push([d.ip, W.whatAddr]);
     return out;
   }
   // the same for the rows picked: their whole domains, and their names --
   // each row's widest line, and its own: the name, the whole domain of a
   // row that is one, the address of one with an address
   function whatsMany(trs) {
-    const doms = new Set(), names = new Set();
+    const doms = new Set(), names = new Set(), addrs = new Set();
     for (const tr of trs) {
       doms.add(whats(tr)[0][0]);
       names.add(tr.dataset.addr || tr.dataset.key);
+      if (tr.dataset.ip || tr.dataset.addr) addrs.add(tr.dataset.ip || tr.dataset.addr);
     }
     const out = [[[...doms], W.whatDomain, fmt(W.whatDomains, doms.size)]];
     if ([...names].join() !== [...doms].join()) out.push([[...names], W.whatName, fmt(W.whatNames, names.size)]);
+    if (addrs.size) out.push([[...addrs], W.whatAddr, fmt(W.whatAddrs, addrs.size)]);
     return out;
   }
 
@@ -129,7 +133,7 @@ pageInit.verdicts = function (sec) {
     e.preventDefault();
     if (!sel.has(tr.dataset.key)) setSel(new Set([tr.dataset.key]), tr.dataset.key);
     const trs = picked();
-    menu.open(trs.length > 1 ? whatsMany(trs) : whats(tr), e.clientX, e.clientY);
+    menu.open(trs.length > 1 ? whatsMany(trs) : whats(tr), e.clientX, e.clientY, {});
   });
   document.addEventListener('mousedown', e => {
     if (sel.size && !e.target.closest('#lmenu, #vtable tr[data-key]')) unpick();

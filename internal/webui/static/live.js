@@ -605,7 +605,7 @@ pageInit.live = function (sec) {
     const r = tr._r;
     if (!sel.has(r)) setSel(new Set([r]), r);
     const rs = picked();
-    if (rs.length > 1) menu.open(whatsMany(rs), e.clientX, e.clientY);
+    if (rs.length > 1) menu.open(whatsMany(rs), e.clientX, e.clientY, {});
     else menu.open(whats(r), e.clientX, e.clientY, {path: r.path, run: () => reveal(r)});
   });
   document.addEventListener('mousedown', e => {
@@ -619,26 +619,26 @@ pageInit.live = function (sec) {
   // What goes to a list: the whole domain, the name alone, the address or
   // the program -- as the lists write them. The whole domain comes first:
   // a site's own names come and go (rr3.sn-4g5e.googlevideo.com). The
-  // address only for a connection with no name: a list's address routes the
-  // connections made to it by address, and a named one would go on as it
-  // went.
+  // address is offered for every row (asked for, 09.10), though a list's
+  // address routes only the connections made to it by address -- its hint
+  // says so.
   function whats(r) {
     const out = [];
     if (r.dom) out.push(['+.' + r.dom, W.whatDomain]);
     if (r.host && r.host !== r.dom) out.push([r.host, W.whatName]);
-    if (r.ip && !r.host) out.push([r.ip, W.whatAddr]);
+    if (r.ip) out.push([r.ip, W.whatAddr]);
     // the detector's checks are its own: its program is not the user's
     if (r.proc && !r.probe) out.push([r.proc, W.whatProg]);
     return out;
   }
   // the same for the rows picked, by kind: their whole domains, their
-  // names, the addresses of the ones with no name, their programs
+  // names, their addresses, their programs
   function whatsMany(rs) {
     const dom = new Set(), name = new Set(), addr = new Set(), prog = new Set();
     for (const r of rs) {
       if (r.dom) dom.add('+.' + r.dom);
       if (r.host) name.add(r.host);
-      if (r.ip && !r.host) addr.add(r.ip);
+      if (r.ip) addr.add(r.ip);
       if (r.proc && !r.probe) prog.add(r.proc);
     }
     const out = [];

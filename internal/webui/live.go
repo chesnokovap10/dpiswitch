@@ -571,7 +571,7 @@ func (h *liveHub) failure(ctx context.Context, run string, e ctl.DialErr, chain 
 	}
 	h.failSeq++
 	r := &liveRow{ID: h.failID + fmt.Sprint(h.failSeq), Host: e.Host, Dom: liveDomain(e.Host), IP: e.IP, Port: e.Port,
-		Net: e.Network, Route: liveRoute(chain), Chain: route, Rule: rule, Probe: e.Probe, Proc: liveProc(e.Probe, e.Process),
+		Net: e.Network, Route: liveRoute(chain), Chain: route, Rule: rule, Probe: e.Probe, Proc: liveProc(e.Probe, e.Process), Path: livePath(e.Probe, ""),
 		Start: ms, Act: ms, End: ms, Err: e.Err, Why: why, N: 1, Seq: h.seq, run: run}
 	r.Proto, _ = liveProto(r.Net, e.Port, false)
 	h.failed = append(h.failed, r)
@@ -740,10 +740,19 @@ func liveProc(probe bool, proc string) string {
 	return proc
 }
 
+// livePath: the program's file -- the detector's checks are this program's,
+// the service's file and the tray's one and the same
+func livePath(probe bool, path string) string {
+	if probe && path == "" {
+		return paths.Exe()
+	}
+	return path
+}
+
 func newLiveRow(c ctl.LiveConn, now time.Time) *liveRow {
 	r := &liveRow{ID: c.ID, Host: c.Host, Dom: liveDomain(c.Host), IP: c.DstIP, Port: c.Port, Net: strings.ToLower(c.Network),
 		Route: liveRoute(c.Chains), Chain: liveChain(c.Chains), Probe: c.Probe,
-		Proc: liveProc(c.Probe, c.Process), Path: c.ProcessPath, Up: c.Upload, Down: c.Download,
+		Proc: liveProc(c.Probe, c.Process), Path: livePath(c.Probe, c.ProcessPath), Up: c.Upload, Down: c.Download,
 		// on the first sight its bytes may have moved a moment ago: it is
 		// not called idle until they have stood still for a while
 		Act: now.UnixMilli()}
@@ -966,7 +975,6 @@ func liveWords(v *view) liveData {
 		"whatAddrs":     v.T("Addresses: %d"),
 		"whatProgs":     v.T("Programs: %d"),
 		"closeMany":     v.T("Close the %d connections picked"),
-		"noPath":        v.T("The core did not say where the program's file is"),
 		"noPresets":     v.T("No presets"),
 		"presetOff":     v.T("switched off: routes nothing until switched on"),
 		"sending":       v.T("Saving…"),

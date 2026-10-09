@@ -58,11 +58,11 @@ function makeRowMenu(W) {
     what = ws.length ? w.firstChild._v : [];
     w.hidden = !ws.length;
     for (const b of menu.querySelectorAll('[data-to], #lpresetbtn')) b.disabled = !what.length;
+    // the program's file: of one row of Live's whose file the core named --
+    // greyed for several rows and for a verdict's, which has no program
     onReveal = rev && rev.path ? rev.run : null;
-    // the program's file is Live's: a verdict's row has none
-    reveal.hidden = revealHr.hidden = !rev;
     reveal.disabled = !onReveal;
-    reveal.title = rev && rev.path || W.noPath;
+    reveal.title = rev && rev.path || '';
     presets();
     menu.hidden = false;
     menu.classList.remove('left');
