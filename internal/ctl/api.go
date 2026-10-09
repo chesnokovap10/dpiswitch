@@ -50,29 +50,31 @@ func SavedNetwork(statePath string) string { return loadState(statePath).Current
 // Defaults: default settings derived from the data directory.
 func Defaults() Config {
 	return Config{
-		DirectAddr:     DirectListener,
-		TunnelAddr:     "127.0.0.1:7891", // listener bound directly to awg1
-		Tunnel2Addr:    "127.0.0.1:7893", // bound to awg2: the DNS test of the settings
-		APIAddr:        "127.0.0.1:9090",
-		CfgPath:        paths.Config(),
-		ProxyName:      "awg1",
-		Provider:       "direct-verified",
-		ListPath:       paths.Verified(),
-		AddrProvider:   "direct-verified-addr",
-		AddrListPath:   paths.VerifiedAddr(),
-		SplitProvider:  SplitProvider,
-		SplitListPath:  paths.VerifiedSplit(),
-		NoQUICProvider: NoQUICProvider,
-		NoQUICListPath: paths.VerifiedSplitNoQUIC(),
-		NoTCPProvider:  NoTCPProvider,
-		NoTCPListPath:  paths.VerifiedSplitNoTCP(),
-		InheritPath:    paths.Inherit(),
-		InheritIPPath:  paths.InheritIP(),
-		HoldPath:       paths.Hold(),
-		RefusePath:     paths.Refuse(),
-		SplitAddr:      "127.0.0.1:7894", // goes out through direct-split
-		StatePath:      paths.State(),
-		JSONLPath:      paths.Reports(),
+		DirectAddr:       DirectListener,
+		TunnelAddr:       "127.0.0.1:7891", // listener bound directly to awg1
+		Tunnel2Addr:      "127.0.0.1:7893", // bound to awg2: the DNS test of the settings
+		APIAddr:          "127.0.0.1:9090",
+		CfgPath:          paths.Config(),
+		ProxyName:        "awg1",
+		Provider:         "direct-verified",
+		ListPath:         paths.Verified(),
+		AddrProvider:     "direct-verified-addr",
+		AddrListPath:     paths.VerifiedAddr(),
+		SplitProvider:    SplitProvider,
+		SplitListPath:    paths.VerifiedSplit(),
+		NoQUICProvider:   NoQUICProvider,
+		NoQUICListPath:   paths.VerifiedSplitNoQUIC(),
+		NoTCPProvider:    NoTCPProvider,
+		NoTCPListPath:    paths.VerifiedSplitNoTCP(),
+		InheritPath:      paths.Inherit(),
+		InheritIPPath:    paths.InheritIP(),
+		HoldPath:         paths.Hold(),
+		RefusePath:       paths.Refuse(),
+		FamilyDirectPath: paths.FamilyDirect(),
+		FamilyTunnelPath: paths.FamilyTunnel(),
+		SplitAddr:        "127.0.0.1:7894", // goes out through direct-split
+		StatePath:        paths.State(),
+		JSONLPath:        paths.Reports(),
 		// a cycle every 10 s, 8 at once: a name not checked yet goes the
 		// default way until it is -- in a minute it was not checked at all
 		Interval:      10 * time.Second,
@@ -124,6 +126,7 @@ func Run(ctx context.Context, cfg Config) {
 	cfg.stop = ctx.Done()
 	if cfg.InheritPath != "" {
 		cfg.book = loadASNBook(paths.ASNBook())
+		cfg.cdns = loadCDNBook(paths.CDNBook())
 	}
 	st := loadState(cfg.StatePath)
 	netID := resolveNetwork(cfg, st)

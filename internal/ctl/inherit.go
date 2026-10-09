@@ -228,17 +228,33 @@ func writeInherit(cfg Config, a *api, st *state, netID string, fams []family, fo
 		return nil
 	}
 	var in inheritance
+	var ways []familyWay
+	var famDirect, famTunnel []string
 	on := inheritOn(cfg) && netID != "" && netID != noNetwork
 	if on {
 		in = st.inheritance(netID, cfg.book, fams)
 		cfg.book.want(in.missing)
+		was := map[string]bool{}
+		for _, r := range listRules(cfg.FamilyDirectPath) {
+			was[strings.TrimPrefix(r, "+.")] = true
+		}
+		ways = st.familyWays(netID, cfg.cdns, was)
+		for _, w := range ways {
+			if w.direct {
+				famDirect = append(famDirect, w.f.rules()...)
+			} else {
+				famTunnel = append(famTunnel, w.f.rules()...)
+			}
+		}
 	}
 	lists := []struct {
 		path, provider, what string
 		rules                []string
 	}{
+		{cfg.FamilyTunnelPath, FamilyTunnelProvider, "CDN families going the tunnel's way here, page and CDN together", famTunnel},
 		{cfg.RefusePath, RefuseProvider, "names blocked on both direct ways whose domain goes direct here: refused", in.refuse},
 		{cfg.HoldPath, HoldProvider, "names with a verdict that does not go direct: held out of inheritance", in.hold},
+		{cfg.FamilyDirectPath, FamilyDirectProvider, "CDN families going direct here, page and CDN together", famDirect},
 		{cfg.InheritPath, InheritProvider, "domains whose names go direct here: a name with no verdict goes their way", in.families},
 		{cfg.InheritIPPath, InheritIPProvider, "address ranges of networks whose names go direct here: " + strings.Join(in.asns, ", "), in.ranges},
 	}
@@ -260,6 +276,11 @@ func writeInherit(cfg Config, a *api, st *state, netID string, fams []family, fo
 		}
 		if err := replaceList(a, l.path, l.provider, b.String()); err != nil {
 			return err
+		}
+		if (l.provider == FamilyDirectProvider || l.provider == FamilyTunnelProvider) && on {
+			for _, w := range ways {
+				log.Printf("applied: CDN family %s", w)
+			}
 		}
 		if l.provider == RefuseProvider && on {
 			log.Printf("applied: %d names blocked on both direct ways, their domain direct, refused (%s)",

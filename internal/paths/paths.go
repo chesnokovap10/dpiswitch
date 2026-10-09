@@ -135,6 +135,13 @@ func InheritIP() string { return Data("inherit-ip.txt") }
 func Hold() string      { return Data("detector-hold.txt") }
 func Refuse() string    { return Data("inherit-refuse.txt") }
 
+// FamilyDirect, FamilyTunnel: the CDN families, page and CDN, going direct
+// and through the tunnel here, see ctl/cdnfam.go; CDNBook: the CDNs'
+// certificates the families are read from
+func FamilyDirect() string { return Data("family-direct.txt") }
+func FamilyTunnel() string { return Data("family-tunnel.txt") }
+func CDNBook() string      { return Data("cdn-book.json") }
+
 // ASNBook: which network owns the nodes the detector probed, and the address
 // ranges of the networks inheritance spans
 func ASNBook() string         { return Data("asn-book.json") }

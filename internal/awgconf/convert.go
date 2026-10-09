@@ -689,6 +689,8 @@ func render(c *Conf) (string, error) {
 	for _, p := range []struct{ name, behavior, file string }{
 		{ctl.HoldProvider, "domain", paths.Hold()},
 		{ctl.RefuseProvider, "domain", paths.Refuse()},
+		{ctl.FamilyDirectProvider, "domain", paths.FamilyDirect()},
+		{ctl.FamilyTunnelProvider, "domain", paths.FamilyTunnel()},
 		{ctl.InheritProvider, "domain", paths.Inherit()},
 		{ctl.InheritIPProvider, "ipcidr", paths.InheritIP()},
 	} {
@@ -809,6 +811,12 @@ func render(c *Conf) (string, error) {
 	w("  - RULE-SET,awg2-hosts,%s", ctl.Tunnel2Group)
 	w("  - RULE-SET,awg2-hosts-ip,%s,no-resolve", ctl.Tunnel2Group)
 	w("")
+	w("  # 7a. a CDN family going the tunnel's way (ctl/cdnfam.go): its page")
+	w("  #     and CDN hosts all through the tunnel, the ones the cut gets")
+	w("  #     through included -- a media URL is signed for the address the")
+	w("  #     page came from. Written in On only.")
+	w("  - RULE-SET,%s,%s", ctl.FamilyTunnelProvider, ctl.TunnelRestGroup)
+	w("")
 	w("  # 8. the detector's names blocked by name and clean with the ClientHello")
 	w("  #    cut: direct through the outbound that cuts it -- above observe only's")
 	w("  #    catch-all, which would send them direct uncut. The controller writes")
@@ -846,6 +854,10 @@ func render(c *Conf) (string, error) {
 	w("  #     tunnel the service refuses it, refused the player takes another")
 	w("  #     host at once. Written in On only.")
 	w("  - RULE-SET,%s,REJECT", ctl.RefuseProvider)
+	w("  #     A CDN family going direct (ctl/cdnfam.go): its page and CDN")
+	w("  #     hosts the cut's way, the held ones too -- through the tunnel")
+	w("  #     the service would refuse them")
+	w("  - RULE-SET,%s,%s", ctl.FamilyDirectProvider, ctl.SplitOutbound)
 	w("  - RULE-SET,%s,%s", ctl.HoldProvider, ctl.TunnelRestGroup)
 	w("  - RULE-SET,%s,%s", ctl.InheritProvider, ctl.SplitOutbound)
 	w("  - AND,((DOMAIN-REGEX,.+),(RULE-SET,%s)),%s", ctl.InheritIPProvider, ctl.SplitOutbound)
@@ -1090,7 +1102,7 @@ func Regenerate() (bool, error) {
 // its file prevents the core from starting
 func EnsureLists() {
 	files := []string{paths.Verified(), paths.VerifiedAddr(), paths.VerifiedSplit(), paths.VerifiedSplitNoQUIC(), paths.VerifiedSplitNoTCP(), paths.ObserveAll(), paths.ObserveSplit(), paths.Presets(),
-		paths.Inherit(), paths.InheritIP(), paths.Hold(), paths.Refuse()}
+		paths.Inherit(), paths.InheritIP(), paths.Hold(), paths.Refuse(), paths.FamilyDirect(), paths.FamilyTunnel()}
 	for _, l := range paths.UserLists {
 		files = append(files, paths.Data(l), paths.Data(paths.IPList(l)), paths.Data(paths.AppList(l)))
 	}

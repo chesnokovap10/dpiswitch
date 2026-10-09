@@ -55,9 +55,12 @@ type Config struct {
 	InheritIPPath string
 	HoldPath      string
 	RefusePath    string
+	// see cdnfam.go
+	FamilyDirectPath, FamilyTunnelPath string
 	// which network owns each probed node, see asnBook; nil, inheritance
 	// goes by the domain alone
 	book *asnBook
+	cdns *cdnBook
 	// the core's listener whose outbound cuts the ClientHello
 	SplitAddr     string
 	StatePath     string
@@ -239,6 +242,13 @@ func learn(cfg Config, a *api, st *state, netID string) {
 		syncList(cfg, a, st, netID, false)
 		learn(cfg, a, st, netID)
 	})
+	if cfg.cdns != nil && inheritOn(cfg) {
+		hosts := map[string][]string{}
+		for _, c := range cfg.cdns.stale(st.cdnCandidates(netID)) {
+			hosts[c] = st.cdnHosts(netID, c)
+		}
+		cfg.cdns.round(cfg.TunnelAddr, hosts, func() { syncList(cfg, a, st, netID, false) })
+	}
 }
 
 // probeBatch probes queue's names and files what they showed: a cycle's
@@ -1063,7 +1073,8 @@ func takeResetOne(cfg Config, a *api, st *state, req string) bool {
 	}
 	body := []byte("# verdicts reset -- everything goes through the tunnel\n")
 	for _, l := range [][2]string{{cfg.ListPath, cfg.Provider}, {cfg.AddrListPath, cfg.AddrProvider}, {cfg.SplitListPath, cfg.SplitProvider},
-		{cfg.InheritPath, InheritProvider}, {cfg.InheritIPPath, InheritIPProvider}, {cfg.HoldPath, HoldProvider}, {cfg.RefusePath, RefuseProvider}} {
+		{cfg.InheritPath, InheritProvider}, {cfg.InheritIPPath, InheritIPProvider}, {cfg.HoldPath, HoldProvider}, {cfg.RefusePath, RefuseProvider},
+		{cfg.FamilyDirectPath, FamilyDirectProvider}, {cfg.FamilyTunnelPath, FamilyTunnelProvider}} {
 		path, provider := l[0], l[1]
 		if path == "" || id != cur {
 			continue
