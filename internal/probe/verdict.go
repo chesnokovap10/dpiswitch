@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -400,6 +401,9 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool,
 			v = BlockedQUIC
 		}
 		rep.Verdict, rep.Reason = v, reason
+		if v == BlockedTLS && port == 443 && !udp {
+			confirmByName(direct, tunnel, ip, dom, &rep)
+		}
 		if v != Clean {
 			return rep // the first non-clean pass decides
 		}
@@ -433,6 +437,68 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool,
 	// resolvers apply EDNS Client Subnet, and from the VPS address the same google
 	// returns a different CDN node than from home. Verified on example.com.
 	return rep
+}
+
+// confirmPasses: the passes a block by name is confirmed with, see
+// confirmByName
+const confirmPasses = 3
+
+// runNoName, runTLS: RunNoName and Run, vars for the tests
+var (
+	runNoName = RunNoName
+	runTLS    = Run
+)
+
+// confirmByName: a pass that failed direct on the handshake and got through
+// the tunnel, checked before it is called a block by name. The core's SOCKS
+// listener answers before it dials, so a node that does not take the
+// connection at all fails on the handshake too, and one pass decided:
+// e2c61.gcp.gvt2.com (09.10), a server that answers on 443 one time in two
+// on every path -- 5 of 8 direct, 0 of 8 through the tunnel -- came out
+// BLOCKED_DPI and was refused.
+//
+// confirmPasses more passes, at once -- the verdict waits one timeout, not
+// three -- each the handshake direct with the name, direct with none, and
+// through the tunnel. A filter on the name is the same every time: with it
+// direct fails every pass and without it gets through every pass -- the
+// block by name stands. Failing both ways every pass with the tunnel through
+// every pass is the address blocked (BLOCKED_TCP, the tunnel's way).
+// Anything else is a server that does not answer reliably (INCONCLUSIVE):
+// one lucky pass no longer makes a block.
+func confirmByName(direct, tunnel Dialer, ip, dom string, rep *Report) {
+	type pass struct{ name, noName, tunnel bool }
+	res := make([]pass, confirmPasses)
+	var wg sync.WaitGroup
+	for i := range res {
+		wg.Add(3)
+		go func() { defer wg.Done(); res[i].name = runTLS(direct, ip, dom).TLSOk }()
+		go func() { defer wg.Done(); res[i].noName = runNoName(direct, ip).TLSOk }()
+		go func() { defer wg.Done(); res[i].tunnel = runTLS(tunnel, ip, dom).TLSOk }()
+	}
+	wg.Wait()
+	nameOK, noNameOK, tunnelOK := 0, 0, 0
+	for _, r := range res {
+		if r.name {
+			nameOK++
+		}
+		if r.noName {
+			noNameOK++
+		}
+		if r.tunnel {
+			tunnelOK++
+		}
+	}
+	switch {
+	case nameOK == 0 && noNameOK == confirmPasses:
+		return // the name is what is blocked
+	case nameOK == 0 && noNameOK == 0 && tunnelOK == confirmPasses:
+		rep.Verdict = BlockedTCP
+		rep.Reason = "the address does not answer direct, with the name or without; the tunnel did every time: " + rep.Reason
+		return
+	}
+	rep.Verdict = Inconcl
+	rep.Reason = fmt.Sprintf("not a steady block: of %d passes direct got through %d with the name and %d without, the tunnel %d: %s",
+		confirmPasses, nameOK, noNameOK, tunnelOK, rep.Reason)
 }
 
 // latency: how long a path took, by what the probe can time on it.

@@ -98,6 +98,34 @@ func Run(d Dialer, ip, host string) PathResult {
 	return r
 }
 
+// RunNoName: the TLS handshake on 443 with no name in the ClientHello --
+// the control for a block by name: a filter on the SNI has nothing to read,
+// a block of the address or a server that does not answer fails all the
+// same. Only the handshake is made; the certificate is not the point.
+func RunNoName(d Dialer, ip string) PathResult {
+	var r PathResult
+	r.IP = ip
+	t0 := time.Now()
+	conn, err := d.dial(ip, 443)
+	if err != nil {
+		r.Err, r.ErrStage = err.Error(), "tcp"
+		return r
+	}
+	defer conn.Close()
+	r.TCPOk, r.TCPTime = true, time.Since(t0)
+	t1 := time.Now()
+	r.TLSTried = true
+	// no ServerName: Go sends no SNI then
+	tc := tls.Client(conn, &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h2", "http/1.1"}})
+	_ = tc.SetDeadline(time.Now().Add(d.Timeout))
+	if err := tc.Handshake(); err != nil {
+		r.Err, r.ErrStage = err.Error(), "tls"
+		return r
+	}
+	r.TLSOk, r.TLSTime = true, time.Since(t1)
+	return r
+}
+
 // RunHTTP: plain HTTP on port 80. Blocking there works on the Host header,
 // once the connection is up -- the ISP answers with a redirect to its own
 // block page, or resets the session -- so a bare connect called such a host
