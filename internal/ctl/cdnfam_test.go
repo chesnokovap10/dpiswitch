@@ -80,8 +80,8 @@ func (s *scenario) shards(n int, v probe.Verdict, from int) {
 	}
 }
 
-// The family goes the tunnel's way until its CDN is known here, and on
-// Beeline's 10 of 31 too; direct at 3 in 4 of its CDN names direct -- home's
+// The family takes no list until its CDN is known here -- its names go by
+// their own verdicts -- and goes the tunnel's way at Beeline's 10 of 31; direct at 3 in 4 of its CDN names direct -- home's
 // 139 of 141 -- its page and CDN together; a blocked page keeps it in the
 // tunnel; once direct it keeps so down to 1 in 2.
 func TestFamilyWay(t *testing.T) {
@@ -89,8 +89,14 @@ func TestFamilyWay(t *testing.T) {
 	s.put("music.youtube.com", probe.CleanSplit, "")
 	s.shards(5, probe.CleanSplit, 0)
 	syncList(s.cfg, s.api, s.st, "n", false)
-	if got := listRules(s.cfg.FamilyTunnelPath); !slices.Contains(got, "+.googlevideo.com") || !slices.Contains(got, "+.youtube.com") {
-		t.Fatalf("five CDN names checked: the tunnel's way, page and CDN: %v", got)
+	if got := concat(listRules(s.cfg.FamilyTunnelPath), listRules(s.cfg.FamilyDirectPath)); len(got) != 0 {
+		t.Fatalf("five CDN names checked: undecided, no list: %v", got)
+	}
+	// the page goes its own way: clean with the cut, the cut's
+	s.cfg.SplitListPath = filepath.Join(filepath.Dir(s.cfg.ListPath), "direct-split-verified.txt")
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := listRules(s.cfg.SplitListPath); !slices.Contains(got, "music.youtube.com") {
+		t.Fatalf("undecided: the page by its own CLEAN_SPLIT, cut: %v", got)
 	}
 	s.shards(5, probe.CleanSplit, 5)
 	s.shards(21, probe.BlockedDPI, 100)

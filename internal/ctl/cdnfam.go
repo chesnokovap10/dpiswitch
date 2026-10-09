@@ -38,9 +38,13 @@ import (
 // that keeps google.com, many short-lived names of its own, from claiming
 // YouTube. A CDN is a domain with at least cdnMinNames names checked here.
 //
-// A family goes the tunnel's way by default. It goes direct, the cut's
-// way, when at least 3 of every 4 of its CDN names checked go direct
-// (cdnMinChecked of them at least) and none of its pages is blocked; it
+// A family goes direct, the cut's way, when at least 3 of every 4 of its CDN
+// names checked go direct (cdnMinChecked of them at least) and none of its
+// pages is blocked, and the tunnel's way when they do not. With fewer
+// checked and no page blocked it is undecided and takes no list: its names
+// go by their own verdicts and inheritance. It went the tunnel's way: on
+// 09.10 www.youtube.com, CLEAN_SPLIT, was held in a tunnel losing 9 packets
+// in 10 by a family with 6 CDN names checked, 5 of them direct. It
 // keeps direct down to 1 in 2, so it does not swing on one verdict. Direct, its CDN hosts the cut does not get through are refused
 // (RefuseProvider) -- through the tunnel the service would refuse them --
 // and the player takes another host.
@@ -188,6 +192,7 @@ func pageBlocked(v probe.Verdict) bool {
 type familyWay struct {
 	f              cdnFamily
 	direct         bool
+	undecided      bool     // too few CDN names checked, no page blocked
 	cdnDirect, cdn int      // CDN names going direct, of those leaning
 	blockedPage    string   // a page blocked here, if any
 	refuse         []string // its CDN hosts blocked on both direct ways
@@ -196,8 +201,11 @@ type familyWay struct {
 
 func (w familyWay) String() string {
 	way := "tunnel"
-	if w.direct {
+	switch {
+	case w.direct:
 		way = "direct"
+	case w.undecided:
+		way = "undecided, by its names' own verdicts"
 	}
 	s := fmt.Sprintf("%s (%s): %s, CDN %d of %d direct", w.f.CDN, strings.Join(w.f.Pages, ", "), way, w.cdnDirect, w.cdn)
 	if w.blockedPage != "" {
@@ -265,6 +273,7 @@ func (s *state) familyWays(id string, book *cdnBook, wasDirect map[string]bool) 
 			num, den = cdnKeepNum, cdnKeepDen
 		}
 		w.direct = w.blockedPage == "" && w.cdn >= cdnMinChecked && w.cdnDirect*den >= w.cdn*num
+		w.undecided = w.blockedPage == "" && w.cdn < cdnMinChecked
 		sort.Strings(w.refuse)
 	}
 	// a CDN none of whose pages was opened here is no family: its hosts

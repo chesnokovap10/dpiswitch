@@ -226,7 +226,7 @@ func writeInherit(cfg Config, a *api, st *state, netID string, fams []family, fo
 			if w.direct {
 				famDirect = append(famDirect, w.f.rules()...)
 				refuse = append(refuse, w.refuse...)
-			} else {
+			} else if !w.undecided {
 				famTunnel = append(famTunnel, w.f.rules()...)
 			}
 		}
