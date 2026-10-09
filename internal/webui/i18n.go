@@ -152,7 +152,7 @@ var ru = map[string]string{
 	"Reset the verdict: through the tunnel until the detector checks it again":          "Сбросить вердикт: через туннель, пока детектор не проверит заново",
 	"open connections not closed:": "открытые соединения не закрыты:",
 	"Not reset:":                   "Не сброшено:",
-	"blocked by address":           "блок по адресу",
+	"blocked by address":           "Заблокировано по IP-адресу",
 	"DPI bypass failed":            "Обход DPI не удался",
 	"TLS cut by site name":         "TLS обрывается по имени сайта",
 	"QUIC blocked":                 "QUIC заблокирован",
