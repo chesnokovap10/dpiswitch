@@ -24,7 +24,7 @@ pageInit.live = function (sec) {
   // the page shown: the table is drawn; away, it is drawn when shown
   const shown = () => !sec.classList.contains('away');
   let stale = false;
-  sec.addEventListener('pg:show', () => { if (stale) draw(); });
+  sec.addEventListener('pg:show', () => { if (stale) draw(true); });
   sec.addEventListener('pg:hide', () => unpick());
   const W = JSON.parse($('lwords').textContent);
   const tbody = $('lrows');
@@ -131,6 +131,7 @@ pageInit.live = function (sec) {
     now = m.t; ready = m.ready; down = m.down || ''; err = m.err || ''; tot = m.tot;
     if (m.keep) keep = m.keep;
     if (m.kind === 'full') {
+      held = false;
       // the state as it stands. Of the history the page holds it takes what
       // came since; of another -- the core ran anew -- it drops what it held.
       const picked = new Map(Array.from(pins, ([r, at]) => [r.id, at]));
@@ -370,7 +371,7 @@ pageInit.live = function (sec) {
   const hay = r => r._hay ||
     (r._hay = [r.host, r.proc, r.ip, r.port, r.proto, label(r), r.why ? why(r) : ''].join(' ').toLowerCase());
 
-  function draw() {
+  function draw(force) {
     if (!shown()) { stale = true; return; }
     stale = false;
     const q = $('lfilter').value.trim().toLowerCase();
@@ -386,12 +387,14 @@ pageInit.live = function (sec) {
       }
     }
     const found = list.length;
-    const rows = firstSorted(list, MAX);
+    // the cursor over the rows: they keep their order, see held
+    const frozen = held && !force && tbody.children.length > 0;
+    const rows = frozen ? Array.from(tbody.children, tr => tr._r || null) : firstSorted(list, MAX);
     // the rows picked stay where they were picked, whatever became of them
     // since: taken out, and put back at their places, the nearest first.
     // With fewer rows above a place than there were, blank ones keep it:
     // the last row picked jumped up the table as the rows above it went
-    if (pins.size) {
+    if (pins.size && !frozen) {
       const rest = rows.filter(r => !pins.has(r));
       rows.length = 0;
       rows.push(...rest);
@@ -470,7 +473,7 @@ pageInit.live = function (sec) {
       const b = e.target.closest('button');
       if (!b || pref[key] === b.dataset[attr]) return;
       pref[key] = b.dataset[attr];
-      unpick(); mark(); save(); draw();
+      unpick(); mark(); save(); draw(true);
     };
     g.addEventListener('pointerdown', e => { if (e.button === 0 && e.pointerType === 'mouse') pick(e); });
     g.addEventListener('click', pick);
@@ -478,10 +481,10 @@ pageInit.live = function (sec) {
   on('ltabs', 'tab', 'tab');
   on('lroutes', 'route', 'route');
 
-  $('lfilter').addEventListener('input', () => { unpick(); draw(); });
+  $('lfilter').addEventListener('input', () => { unpick(); draw(true); });
   const np = $('lnoprobe');
   np.checked = !!pref.noprobe;
-  np.addEventListener('change', () => { pref.noprobe = np.checked; unpick(); save(); draw(); });
+  np.addEventListener('change', () => { pref.noprobe = np.checked; unpick(); save(); draw(true); });
 
   const heads = root.querySelectorAll('th[data-sort]');
   function arrows() {
@@ -497,7 +500,7 @@ pageInit.live = function (sec) {
       // numbers start from the biggest, names from A
       pref.desc = k === pref.sort ? !pref.desc : !!NUM[k];
       pref.sort = k;
-      unpick(); arrows(); save(); draw();
+      unpick(); arrows(); save(); draw(true);
     });
   }
 
@@ -585,6 +588,14 @@ pageInit.live = function (sec) {
     const p = pickRows(sel, Array.from(tbody.children, t => t._r), r, e, anchor);
     setSel(p.sel, p.anchor);
   });
+  // While the cursor is over the rows they keep their order: what comes
+  // and what sorts anew waits until it leaves. A row moved from under the
+  // cursor as it was pressed -- a new connection drew in above it -- and the
+  // row picked was the next one (09.10: clients4.google.com pointed at,
+  // socket2.yummyani.me picked and held). The numbers go on changing.
+  let held = false;
+  tbody.addEventListener('pointerenter', () => { held = true; });
+  tbody.addEventListener('pointerleave', () => { held = false; draw(); });
   // a Shift+click picks rows, not the text between them
   tbody.addEventListener('mousedown', e => { if (e.shiftKey) e.preventDefault(); });
   tbody.addEventListener('contextmenu', e => {

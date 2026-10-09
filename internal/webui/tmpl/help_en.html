@@ -300,6 +300,7 @@ connection that opened and closed within a second may never show.</li>
 <li><b><a href="/live#lpause">Pause</a></b> stops the table, not the gathering: what closes and fails
 meanwhile is there when you resume. A page in the background takes nothing, and coming back takes only what
 it missed.</li>
+<li><b>While the cursor is over the rows</b> they keep their order: new connections and a new sort wait until it leaves the table, so the row pressed is the row pointed at; the numbers go on changing.</li>
 <li><b>A row clicked</b> is picked and holds its place: sorted by speed, the others move around it, and a
 connection that closes stays where it was, closed. A click anywhere else, or a change of tab, filter or sort,
 lets it go. <b>Ctrl+click</b> adds a row to the ones picked or takes it away, <b>Shift+click</b> picks the rows
