@@ -49,6 +49,17 @@ func TestClientZones(t *testing.T) {
 	if g := clientZones("google.com", sans(t, "san-google.txt")); len(g.Pages) != 0 {
 		t.Errorf("google.com's certificate is a page's: pages %v", g.Pages)
 	}
+	if r := f.rules(); slices.Contains(r, "+.gvt1.com") {
+		t.Errorf("the CDN's own domains are left out: %v", r)
+	}
+	// another host of google.com showed a zone of android.com: still a
+	// page's domain, googlevideo.com serves its zones
+	b := loadCDNBook(filepath.Join(t.TempDir(), "b.json"))
+	b.CDNs["googlevideo.com"] = &cdnEntry{cdnFamily: f}
+	b.CDNs["google.com"] = &cdnEntry{cdnFamily: cdnFamily{CDN: "google.com", Bases: []string{"partner.android.com"}, Pages: []string{"android.com"}}}
+	if got := b.families(); len(got) != 1 || got[0].CDN != "googlevideo.com" {
+		t.Errorf("families %v", got)
+	}
 }
 
 func familyScenario(t *testing.T) *scenario {

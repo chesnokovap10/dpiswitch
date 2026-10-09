@@ -69,7 +69,8 @@ const (
 type cdnFamily struct {
 	CDN string `json:"cdn"` // "googlevideo.com"
 	// Own: domains the certificate serves whole besides the CDN's --
-	// "*.gvt1.com"
+	// "*.gvt1.com" -- known, left out of the family: nothing ties them to
+	// a page
 	Own []string `json:"own,omitempty"`
 	// Bases: zones of other domains it serves -- "c.youtube.com"
 	Bases []string `json:"bases,omitempty"`
@@ -150,11 +151,6 @@ func (f cdnFamily) cdnOf(name string) (cdn, page bool) {
 	if under(name, f.CDN) {
 		return true, false
 	}
-	for _, o := range f.Own {
-		if under(name, o) {
-			return true, false
-		}
-	}
 	for _, b := range f.Bases {
 		if under(name, b) {
 			return true, false
@@ -171,7 +167,7 @@ func (f cdnFamily) cdnOf(name string) (cdn, page bool) {
 // rules: the family as a list takes it
 func (f cdnFamily) rules() []string {
 	out := []string{"+." + f.CDN}
-	for _, z := range concat(f.Own, f.Bases, f.Pages) {
+	for _, z := range concat(f.Bases, f.Pages) {
 		out = append(out, "+."+z)
 	}
 	return out
@@ -325,12 +321,19 @@ func (b *cdnBook) families() []cdnFamily {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	var out []cdnFamily
+	pageSide := map[string]bool{}
 	for _, e := range b.CDNs {
 		if !e.Failed && len(e.Pages) > 0 {
 			out = append(out, e.cdnFamily)
+			for _, p := range e.Pages {
+				pageSide[familyOf(p)] = true
+			}
 		}
 	}
-	return out
+	// a domain another CDN serves zones of is a page's, whatever its own
+	// certificate names: google.com's names a zone of android.com, and
+	// googlevideo.com serves Drive's and Mail's
+	return slices.DeleteFunc(out, func(f cdnFamily) bool { return pageSide[f.CDN] })
 }
 
 // stale: the candidates whose certificate is to be fetched (again)
