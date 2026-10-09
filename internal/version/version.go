@@ -2,4 +2,4 @@
 // override it with -ldflags "-X dpiswitch/internal/version.Version=...".
 package version
 
-var Version = "1.9.0"
+var Version = "1.9.1"
