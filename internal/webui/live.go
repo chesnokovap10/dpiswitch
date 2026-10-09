@@ -972,7 +972,7 @@ func liveWords(v *view) liveData {
 		"whatProg":      v.T("the program: everything it sends"),
 		"whatDomains":   v.T("Whole domains: %d"),
 		"whatNames":     v.T("Names only: %d"),
-		"whatAddrs":     v.T("Addresses: %d"),
+		"whatAddrs":     v.T("IP addresses: %d"),
 		"whatProgs":     v.T("Programs: %d"),
 		"closeMany":     v.T("Close the %d connections picked"),
 		"noPresets":     v.T("No presets"),

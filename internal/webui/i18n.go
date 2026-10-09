@@ -431,7 +431,7 @@ var ru = map[string]string{
 	"Added to “%s”: %d of %d":         "Добавлено в «%s»: %d из %d",
 	"Whole domains: %d":               "Домены целиком: %d",
 	"Names only: %d":                  "Только имена: %d",
-	"Addresses: %d":                   "Адреса: %d",
+	"IP addresses: %d":                "IP-адреса: %d",
 	"Programs: %d":                    "Программы: %d",
 	"Close the %d connections picked": "Закрыть выделенные соединения: %d",
 	"Reset the %d verdicts picked":    "Сбросить выделенные вердикты: %d",
