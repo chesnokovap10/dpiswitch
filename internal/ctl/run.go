@@ -54,6 +54,7 @@ type Config struct {
 	InheritPath   string
 	InheritIPPath string
 	HoldPath      string
+	RefusePath    string
 	// which network owns each probed node, see asnBook; nil, inheritance
 	// goes by the domain alone
 	book *asnBook
@@ -1062,7 +1063,7 @@ func takeResetOne(cfg Config, a *api, st *state, req string) bool {
 	}
 	body := []byte("# verdicts reset -- everything goes through the tunnel\n")
 	for _, l := range [][2]string{{cfg.ListPath, cfg.Provider}, {cfg.AddrListPath, cfg.AddrProvider}, {cfg.SplitListPath, cfg.SplitProvider},
-		{cfg.InheritPath, InheritProvider}, {cfg.InheritIPPath, InheritIPProvider}, {cfg.HoldPath, HoldProvider}} {
+		{cfg.InheritPath, InheritProvider}, {cfg.InheritIPPath, InheritIPProvider}, {cfg.HoldPath, HoldProvider}, {cfg.RefusePath, RefuseProvider}} {
 		path, provider := l[0], l[1]
 		if path == "" || id != cur {
 			continue

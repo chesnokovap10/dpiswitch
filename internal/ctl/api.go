@@ -69,6 +69,7 @@ func Defaults() Config {
 		InheritPath:    paths.Inherit(),
 		InheritIPPath:  paths.InheritIP(),
 		HoldPath:       paths.Hold(),
+		RefusePath:     paths.Refuse(),
 		SplitAddr:      "127.0.0.1:7894", // goes out through direct-split
 		StatePath:      paths.State(),
 		JSONLPath:      paths.Reports(),

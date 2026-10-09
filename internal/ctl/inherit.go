@@ -43,11 +43,19 @@ import (
 // decides for a name with none: its own check follows as before, and a
 // direct connection that brings nothing is checked at once (suspectDirect).
 //
+// A name blocked on both direct ways whose domain is clearly direct here is
+// refused (RefuseProvider), not sent through the tunnel: a media host of a
+// direct page, through the tunnel, gets the 403 above, and the player waits
+// on it; refused, it takes another host in under a second (08.10). Only by
+// the domain, never the network: a blocked site in a cloud whose other
+// tenants go direct still needs the tunnel.
+//
 // On only, with the cut and families switched on; the networks are learnt
 // from RIPE, a few nodes a cycle (see asnBook).
 
 const (
 	HoldProvider      = "detector-hold"
+	RefuseProvider    = "inherit-refuse"
 	InheritProvider   = "inherit"
 	InheritIPProvider = "inherit-ip"
 )
@@ -107,7 +115,16 @@ type inheritance struct {
 	asns     []string // "AS15169", lending, ranges known or not
 	ranges   []string
 	hold     []string
+	refuse   []string // held names blocked on both direct ways, their domain direct
 	missing  []string // lending networks whose ranges the book lacks
+}
+
+// refusable: a verdict saying neither direct way gets through -- the cut
+// tried and failed, or the connection itself cut. A BLOCKED_TLS with the
+// cut on is one whose cut proved nothing (the tunnel silent); BLOCKED_QUIC
+// leaves TCP; CONTENT_DIFF and INCONCLUSIVE say too little to refuse by.
+func refusable(v probe.Verdict) bool {
+	return v == probe.BlockedDPI || v == probe.BlockedTCP
 }
 
 func (s *state) inheritance(id string, book *asnBook, fams []family) inheritance {
@@ -117,7 +134,7 @@ func (s *state) inheritance(id string, book *asnBook, fams []family) inheritance
 	}
 	byFam := map[string]*group{}
 	byASN := map[string]*group{}
-	var hold []string
+	var hold, blocked []string
 	now := time.Now()
 	add := func(m map[string]*group, k string, d, a bool) {
 		if k == "" || !d && !a {
@@ -148,6 +165,9 @@ func (s *state) inheritance(id string, book *asnBook, fams []family) inheritance
 		// verdict.
 		if !d && !(e.Verdict == probe.Inconcl && probe.TunnelDown(e.Reason)) {
 			hold = append(hold, dom)
+			if refusable(e.Verdict) && now.Before(e.ExpiresAt) {
+				blocked = append(blocked, dom)
+			}
 		}
 		add(byFam, familyOf(dom), d, a)
 		add(byASN, book.asnOf(e.TestedIP), d, a)
@@ -170,8 +190,14 @@ func (s *state) inheritance(id string, book *asnBook, fams []family) inheritance
 		}
 		out.ranges = append(out.ranges, r...)
 	}
+	for _, dom := range blocked {
+		if g := byFam[familyOf(dom)]; g != nil && g.lends() {
+			out.refuse = append(out.refuse, dom)
+		}
+	}
 	sort.Strings(out.families)
 	sort.Strings(out.asns)
+	sort.Strings(out.refuse)
 	sort.Strings(out.missing)
 	sort.Strings(hold)
 	out.hold = hold
@@ -184,7 +210,8 @@ func (s *state) inheritance(id string, book *asnBook, fams []family) inheritance
 // writeInherit brings the three lists in line with memory, or empties them
 // with inheritance off; listMu held. Unless forced it writes a list only
 // when it differs from the file. The held names go first: a name newly
-// blocked must be out before the rules that would lend it a way change.
+// blocked must be out before the rules that would lend it a way change; the
+// refused ones before them, a name refused before it is held.
 func writeInherit(cfg Config, a *api, st *state, netID string, fams []family, force bool) error {
 	if cfg.InheritPath == "" {
 		return nil
@@ -197,8 +224,9 @@ func writeInherit(cfg Config, a *api, st *state, netID string, fams []family, fo
 	}
 	lists := []struct {
 		path, provider, what string
-		rules            []string
+		rules                []string
 	}{
+		{cfg.RefusePath, RefuseProvider, "names blocked on both direct ways whose domain goes direct here: refused", in.refuse},
 		{cfg.HoldPath, HoldProvider, "names with a verdict that does not go direct: held out of inheritance", in.hold},
 		{cfg.InheritPath, InheritProvider, "domains whose names go direct here: a name with no verdict goes their way", in.families},
 		{cfg.InheritIPPath, InheritIPProvider, "address ranges of networks whose names go direct here: " + strings.Join(in.asns, ", "), in.ranges},
@@ -222,7 +250,11 @@ func writeInherit(cfg Config, a *api, st *state, netID string, fams []family, fo
 		if err := replaceList(a, l.path, l.provider, b.String()); err != nil {
 			return err
 		}
-		changed = changed || l.provider != HoldProvider
+		if l.provider == RefuseProvider && on {
+			log.Printf("applied: %d names blocked on both direct ways, their domain direct, refused (%s)",
+				len(in.refuse), preview(in.refuse))
+		}
+		changed = changed || l.provider != HoldProvider && l.provider != RefuseProvider
 	}
 	if changed && on {
 		var by []string

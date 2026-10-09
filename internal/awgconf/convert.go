@@ -688,6 +688,7 @@ func render(c *Conf) (string, error) {
 	w("  # no verdict takes after its relatives -- see ctl/inherit.go")
 	for _, p := range []struct{ name, behavior, file string }{
 		{ctl.HoldProvider, "domain", paths.Hold()},
+		{ctl.RefuseProvider, "domain", paths.Refuse()},
 		{ctl.InheritProvider, "domain", paths.Inherit()},
 		{ctl.InheritIPProvider, "ipcidr", paths.InheritIP()},
 	} {
@@ -840,7 +841,11 @@ func render(c *Conf) (string, error) {
 	w("  #     from. The relatives: the same domain, or the same network owning")
 	w("  #     the node -- the latter by the name's address, so a connection")
 	w("  #     with no name never takes it. A name with a verdict that does")
-	w("  #     not go direct is held out first. Written in On only.")
+	w("  #     not go direct is held out first -- refused when it is blocked")
+	w("  #     on both direct ways and its domain goes direct: through the")
+	w("  #     tunnel the service refuses it, refused the player takes another")
+	w("  #     host at once. Written in On only.")
+	w("  - RULE-SET,%s,REJECT", ctl.RefuseProvider)
 	w("  - RULE-SET,%s,%s", ctl.HoldProvider, ctl.TunnelRestGroup)
 	w("  - RULE-SET,%s,%s", ctl.InheritProvider, ctl.SplitOutbound)
 	w("  - AND,((DOMAIN-REGEX,.+),(RULE-SET,%s)),%s", ctl.InheritIPProvider, ctl.SplitOutbound)
@@ -1085,7 +1090,7 @@ func Regenerate() (bool, error) {
 // its file prevents the core from starting
 func EnsureLists() {
 	files := []string{paths.Verified(), paths.VerifiedAddr(), paths.VerifiedSplit(), paths.VerifiedSplitNoQUIC(), paths.VerifiedSplitNoTCP(), paths.ObserveAll(), paths.ObserveSplit(), paths.Presets(),
-		paths.Inherit(), paths.InheritIP(), paths.Hold()}
+		paths.Inherit(), paths.InheritIP(), paths.Hold(), paths.Refuse()}
 	for _, l := range paths.UserLists {
 		files = append(files, paths.Data(l), paths.Data(paths.IPList(l)), paths.Data(paths.AppList(l)))
 	}

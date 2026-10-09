@@ -128,17 +128,19 @@ func VerifiedSplitNoTCP() string { return Data("direct-split-notcp.txt") }
 
 // Inherit, InheritIP: the names and the address ranges a name with no verdict
 // of its own takes its relatives' way by, see ctl/inherit.go; Hold: the
-// names with a verdict that does not go direct, kept out of those
+// names with a verdict that does not go direct, kept out of those; Refuse:
+// the held names blocked on both direct ways whose domain goes direct
 func Inherit() string   { return Data("inherit.txt") }
 func InheritIP() string { return Data("inherit-ip.txt") }
 func Hold() string      { return Data("detector-hold.txt") }
+func Refuse() string    { return Data("inherit-refuse.txt") }
 
 // ASNBook: which network owns the nodes the detector probed, and the address
 // ranges of the networks inheritance spans
-func ASNBook() string { return Data("asn-book.json") }
-func ForceDirect() string         { return Data(DirectList) }
-func ForceDirectApps() string     { return Data(AppList(DirectList)) }
-func ForceBlock() string          { return Data(BlockList) }
+func ASNBook() string         { return Data("asn-book.json") }
+func ForceDirect() string     { return Data(DirectList) }
+func ForceDirectApps() string { return Data(AppList(DirectList)) }
+func ForceBlock() string      { return Data(BlockList) }
 
 // ObserveAll: the catch-all the service writes for observe only, see
 // ctl.SyncUserFiles

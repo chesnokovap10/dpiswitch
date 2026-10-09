@@ -2,6 +2,7 @@ package ctl
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -21,6 +22,7 @@ func inheritScenario(t *testing.T) *scenario {
 	s.cfg.InheritPath = filepath.Join(dir, "inherit.txt")
 	s.cfg.InheritIPPath = filepath.Join(dir, "inherit-ip.txt")
 	s.cfg.HoldPath = filepath.Join(dir, "hold.txt")
+	s.cfg.RefusePath = filepath.Join(dir, "refuse.txt")
 	s.cfg.book = loadASNBook(filepath.Join(dir, "asn-book.json"))
 	return s
 }
@@ -58,6 +60,46 @@ func TestInheritByDomain(t *testing.T) {
 	syncList(s.cfg, s.api, s.st, "n", false)
 	if got := listRules(s.cfg.InheritPath); len(got) != 0 {
 		t.Fatalf("three direct of five is not clearly direct: %v", got)
+	}
+}
+
+// At home googlevideo.com went direct 139 to 2: the two blocked hosts,
+// through the tunnel, got the service's 403 and the player waited on them.
+// Refused, it takes another host at once. A domain not clearly direct --
+// 10 to 19 on another network -- refuses nothing: its names keep the
+// tunnel; nor does a network, whose other tenants say nothing of a site.
+func TestInheritRefuse(t *testing.T) {
+	s := inheritScenario(t)
+	for i := range 12 {
+		s.put(fmt.Sprintf("rr%d---a.googlevideo.com", i+20), probe.CleanSplit, "")
+	}
+	s.put("rr7---x.googlevideo.com", probe.BlockedDPI, "")
+	// the cut proved nothing: held, not refused
+	s.put("rr8---y.googlevideo.com", probe.BlockedTLS, "")
+	// QUIC alone blocked: TCP may go
+	s.put("rr9---z.googlevideo.com", probe.BlockedQUIC, "")
+	s.st.put("n", "rr6---old.googlevideo.com", &entry{Verdict: probe.BlockedDPI, ExpiresAt: time.Now().Add(-time.Minute)})
+	for _, d := range []string{"a.split.net", "b.split.net"} {
+		s.put(d, probe.CleanSplit, "")
+	}
+	s.put("c.split.net", probe.BlockedDPI, "")
+	s.put("d.split.net", probe.BlockedDPI, "")
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := listRules(s.cfg.RefusePath); !slices.Equal(got, []string{"rr7---x.googlevideo.com"}) {
+		t.Fatalf("refused %v", got)
+	}
+	if got := listRules(s.cfg.HoldPath); !slices.Contains(got, "rr7---x.googlevideo.com") || !slices.Contains(got, "d.split.net") {
+		t.Fatalf("held %v", got)
+	}
+	if s.reloads[RefuseProvider] == 0 {
+		t.Errorf("not reloaded: %v", s.reloads)
+	}
+	// two more blocked: twelve of eighteen is not clearly direct, nothing refused
+	s.put("rr10---u.googlevideo.com", probe.BlockedDPI, "")
+	s.put("rr11---v.googlevideo.com", probe.BlockedTCP, "")
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := listRules(s.cfg.RefusePath); len(got) != 0 {
+		t.Fatalf("a torn domain refuses nothing: %v", got)
 	}
 }
 
