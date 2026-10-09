@@ -179,7 +179,9 @@ func localLink() string {
 		addrs, _ := ifc.Addrs()
 		for _, a := range addrs {
 			n, ok := a.(*net.IPNet)
-			if !ok || n.IP.To4() == nil || fakeIPRange.Contains(n.IP) {
+			// link-local ones say nothing of the network: Bluetooth's and
+			// Wi-Fi Direct's adapters hold 169.254.x and come and go
+			if !ok || n.IP.To4() == nil || fakeIPRange.Contains(n.IP) || n.IP.IsLinkLocalUnicast() {
 				continue
 			}
 			out = append(out, strconv.Itoa(ifc.Index)+"="+n.String())
