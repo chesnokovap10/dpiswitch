@@ -188,6 +188,7 @@ type familyWay struct {
 	cdnDirect, cdn int      // CDN names going direct, of those leaning
 	blockedPage    string   // a page blocked here, if any
 	refuse         []string // its CDN hosts blocked on both direct ways
+	pageSeen       bool     // a page of it has a verdict here
 }
 
 func (w familyWay) String() string {
@@ -234,6 +235,7 @@ func (s *state) familyWays(id string, book *cdnBook, wasDirect map[string]bool) 
 					ways[i].cdnDirect++
 				}
 			case page:
+				ways[i].pageSeen = true
 				if pageBlocked(e.Verdict) && now.Before(e.ExpiresAt) && ways[i].blockedPage == "" {
 					ways[i].blockedPage = dom
 				}
@@ -250,6 +252,11 @@ func (s *state) familyWays(id string, book *cdnBook, wasDirect map[string]bool) 
 		w.direct = w.blockedPage == "" && w.cdn >= cdnMinChecked && w.cdnDirect*den >= w.cdn*num
 		sort.Strings(w.refuse)
 	}
+	// a CDN none of whose pages was opened here is no family: its hosts
+	// are not a page's media but its own -- browserleaks.org's DNS test,
+	// a new name every run, whose certificate names zones of
+	// browserleaks.net that nothing here ever asked for
+	ways = slices.DeleteFunc(ways, func(w familyWay) bool { return !w.pageSeen })
 	sort.Slice(ways, func(i, j int) bool { return ways[i].f.CDN < ways[j].f.CDN })
 	return ways
 }

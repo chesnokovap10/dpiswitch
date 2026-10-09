@@ -217,3 +217,26 @@ func TestFamilyRefuse(t *testing.T) {
 		t.Fatalf("a family in the tunnel refuses nothing: %v", got)
 	}
 }
+
+// A CDN whose pages nothing here opened is no family: browserleaks.org's
+// DNS test hosts, its certificate naming zones of browserleaks.net.
+func TestFamilyNeedsAPage(t *testing.T) {
+	s := familyScenario(t)
+	e := &cdnEntry{At: time.Now()}
+	e.cdnFamily = clientZones("browserleaks.org", []string{"browserleaks.org", "*.browserleaks.org", "*.dns4.browserleaks.net", "*.dns6.browserleaks.net"})
+	s.cfg.cdns.CDNs["browserleaks.org"] = e
+	for i := range 12 {
+		s.put(fmt.Sprintf("x%d.dns4.browserleaks.org", i), probe.Clean, "")
+	}
+	s.shards(12, probe.CleanSplit, 0)
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := concat(listRules(s.cfg.FamilyDirectPath), listRules(s.cfg.FamilyTunnelPath)); len(got) != 0 {
+		t.Fatalf("no page opened, no family: %v", got)
+	}
+	s.put("www.youtube.com", probe.CleanSplit, "")
+	syncList(s.cfg, s.api, s.st, "n", false)
+	got := listRules(s.cfg.FamilyDirectPath)
+	if !slices.Contains(got, "+.googlevideo.com") || slices.Contains(got, "+.browserleaks.org") {
+		t.Fatalf("YouTube's page opened: its family alone: %v", got)
+	}
+}
