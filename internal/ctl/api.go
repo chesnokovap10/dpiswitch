@@ -190,6 +190,7 @@ func Run(ctx context.Context, cfg Config) {
 
 	wake := make(chan struct{}, 1)
 	go watchSettings(ctx, cfg, a, st, set, haveSet, wake)
+	go watchLocal(ctx)
 	settingsChanged := func() {
 		ns, ok := readSettings(cfg)
 		if !ok || haveSet && ns.Equal(set) {
@@ -228,51 +229,59 @@ func Run(ctx context.Context, cfg Config) {
 		cfg.alone = noFirstTunnel()
 		cycle(cfg, a, st, netID, w)
 	}
+	// a tick: the settings, the network, then a cycle. The public address
+	// seen to change runs it at once (netWake): it was found mid-cycle and
+	// the new network waited up to a tick for the loop
+	tick := func() {
+		settingsChanged()
+		// the network may have changed -- another network's verdicts do not apply
+		id := resolveNetwork(cfg, st)
+		if id == noNetwork {
+			// no gateway: Wi-Fi reconnecting, sleep, cable out. This is not
+			// a new network -- switching to an empty memory used to send every
+			// site into the tunnel for the duration of a one-minute Wi-Fi blip.
+			// Keep the current memory and skip probing: without a network
+			// every probe would fail anyway.
+			if !offline {
+				log.Printf("no network, keeping memory of %s and pausing probes", netID)
+				offline = true
+			}
+			allowed.Store(false)
+			return
+		}
+		if offline {
+			log.Printf("network is back")
+			offline = false
+		}
+		if id != netID {
+			log.Printf("network changed: %s -> %s, switching memory", netID, id)
+			netID = id
+			st.setCurrent(id)
+			_ = st.save()
+			cfg.network(id)
+			if cfg.Apply {
+				applyList(cfg, a, st, netID)
+			}
+		}
+		if !g.allow(time.Now().Round(0), health) {
+			allowed.Store(false)
+			// the list still follows memory: verdicts expire all the same
+			syncList(cfg, a, st, netID, false)
+			return
+		}
+		allowed.Store(true)
+		cfg.alone = noFirstTunnel()
+		cycle(cfg, a, st, netID, w)
+	}
 	for {
 		select {
 		case <-wake:
 			// a change the watcher saw: applied now, not at the next tick
 			settingsChanged()
 		case <-t.C:
-			settingsChanged()
-			// the network may have changed -- another network's verdicts do not apply
-			id := resolveNetwork(cfg, st)
-			if id == noNetwork {
-				// no gateway: Wi-Fi reconnecting, sleep, cable out. This is not
-				// a new network -- switching to an empty memory used to send every
-				// site into the tunnel for the duration of a one-minute Wi-Fi blip.
-				// Keep the current memory and skip probing: without a network
-				// every probe would fail anyway.
-				if !offline {
-					log.Printf("no network, keeping memory of %s and pausing probes", netID)
-					offline = true
-				}
-				allowed.Store(false)
-				continue
-			}
-			if offline {
-				log.Printf("network is back")
-				offline = false
-			}
-			if id != netID {
-				log.Printf("network changed: %s -> %s, switching memory", netID, id)
-				netID = id
-				st.setCurrent(id)
-				_ = st.save()
-				cfg.network(id)
-				if cfg.Apply {
-					applyList(cfg, a, st, netID)
-				}
-			}
-			if !g.allow(time.Now().Round(0), health) {
-				allowed.Store(false)
-				// the list still follows memory: verdicts expire all the same
-				syncList(cfg, a, st, netID, false)
-				continue
-			}
-			allowed.Store(true)
-			cfg.alone = noFirstTunnel()
-			cycle(cfg, a, st, netID, w)
+			tick()
+		case <-netWake:
+			tick()
 		case <-ctx.Done():
 			log.Println("controller stopped")
 			_ = st.save()

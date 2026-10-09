@@ -33,8 +33,10 @@ const asnCacheTTL = time.Hour
 // asnCacheTTL, and for up to an hour the old ISP's verdicts sent names
 // direct on the new one, where they may be blocked. The address changes with
 // the uplink, and asking for it is one small request: a changed one has the
-// ISP looked up at once.
-const ipRecheck = 5 * time.Minute
+// ISP looked up at once. Every 30 seconds: with five minutes a switch of the
+// router's uplink was seen a minute or more late, when a cycle happened to
+// look (09.10, AS12389 -> AS16345).
+const ipRecheck = 30 * time.Second
 
 type attachment struct {
 	Net     string    `json:"net"` // AS12389
@@ -66,7 +68,9 @@ func publicIP(cl *http.Client) (string, error) {
 			IP string `json:"ip"`
 		} `json:"data"`
 	}
-	if err := getJSON(cl, "https://stat.ripe.net/data/whats-my-ip/data.json", &ip); err != nil {
+	// sourceapp: RIPEstat asks callers past a thousand requests a day to
+	// name themselves; the address is asked twice a minute
+	if err := getJSON(cl, "https://stat.ripe.net/data/whats-my-ip/data.json?sourceapp=dpiswitch", &ip); err != nil {
 		return "", fmt.Errorf("public address: %w", err)
 	}
 	if ip.Data.IP == "" {
@@ -87,7 +91,7 @@ func lookupASN(directAddr string) (asn, ip string, err error) {
 			ASNs []string `json:"asns"`
 		} `json:"data"`
 	}
-	if err := getJSON(cl, "https://stat.ripe.net/data/network-info/data.json?resource="+
+	if err := getJSON(cl, "https://stat.ripe.net/data/network-info/data.json?sourceapp=dpiswitch&resource="+
 		url.QueryEscape(ip), &info); err != nil {
 		return "", "", fmt.Errorf("ISP: %w", err)
 	}
@@ -187,20 +191,25 @@ func resolveNetwork(cfg Config, st *state) string {
 		return att
 	}
 	cached, ok := st.attached(att)
+	// the local link changed (see watchLocal): the address is asked now, a
+	// failure held back by no backoff -- the new link may not carry yet
+	forced := netForced()
 	// the public address was seen to change: the cached ISP is not known
 	// to be the one behind it any more
 	moved := false
 	if ok && time.Since(cached.Checked) < asnCacheTTL {
-		if cached.IP != "" && time.Since(cached.IPChecked) < ipRecheck || st.ipHeld(att) {
+		if !forced && (cached.IP != "" && time.Since(cached.IPChecked) < ipRecheck || st.ipHeld(att)) {
 			return cached.Net
 		}
 		ip, err := publicIPFn(cfg.DirectAddr)
-		st.ipDone(att, err != nil)
+		st.ipDone(att, err != nil && !forced)
 		switch {
 		case err != nil:
-			// not known to have changed: asked again after ipBackoff
+			// not known to have changed: asked again after ipBackoff, or at
+			// the next tick while the link is new
 			return cached.Net
 		case ip == cached.IP:
+			netForce.Store(0)
 			st.sawIP(att)
 			return cached.Net
 		}
@@ -211,7 +220,7 @@ func resolveNetwork(cfg Config, st *state) string {
 		}
 	}
 
-	if st.lookupHeld(att) {
+	if !forced && st.lookupHeld(att) {
 		// failed a moment ago: what the failure below answers, without
 		// the minute it takes
 		if ok && !moved {
@@ -227,7 +236,7 @@ func resolveNetwork(cfg Config, st *state) string {
 		}
 		time.Sleep(lookupRetry)
 	}
-	st.lookupDone(att, err != nil)
+	st.lookupDone(att, err != nil && !forced)
 	if err != nil {
 		if ok && !moved {
 			// the ISP behind this gateway is already known, it just failed
@@ -244,6 +253,7 @@ func resolveNetwork(cfg Config, st *state) string {
 	if ok && cached.Net != asn {
 		log.Printf("ISP changed behind the same gateway: %s -> %s", cached.Net, asn)
 	}
+	netForce.Store(0)
 	st.attach(att, asn, ip)
 	if n := st.mergeInto(asn); n > 0 {
 		log.Printf("ISP %s: merged %d verdicts from previous gateway memory", asn, n)
@@ -253,7 +263,11 @@ func resolveNetwork(cfg Config, st *state) string {
 
 // ipStillRecheck: how old the last look at the public address may be before
 // a cycle's results are filed without looking again.
-const ipStillRecheck = time.Minute
+const ipStillRecheck = 15 * time.Second
+
+// netWake: the public address was seen to change -- the main loop looks
+// for the network now, not at its next tick
+var netWake = make(chan struct{}, 1)
 
 // ipStill: whether the public address behind att is still the one the ISP
 // was found by. The network guard sees the gateway only: behind the same
@@ -275,5 +289,9 @@ func ipStill(cfg Config, st *state, att string) bool {
 		return true
 	}
 	st.staleIP(att)
+	select {
+	case netWake <- struct{}{}:
+	default:
+	}
 	return false
 }

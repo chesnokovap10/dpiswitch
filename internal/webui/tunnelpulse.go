@@ -163,6 +163,12 @@ func (s *Server) handleTunnels(w http.ResponseWriter, r *http.Request) {
 		}
 		out[t] = map[string]any{"alive": st.Alive, "text": text, "pill": pill, "note": note}
 	}
+	// the network the service works in: a page sees a change within a
+	// second and draws itself anew, not when its parts' periods come round
+	// (09.10: the header's chip 5 s, the verdicts 10 s more)
+	if id := ctl.LoadCached(paths.State()).NetworkID; id != "" {
+		out["net"] = id
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(out)
 }

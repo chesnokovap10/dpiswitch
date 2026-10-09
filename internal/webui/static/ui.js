@@ -693,11 +693,23 @@ addEventListener('hashchange', () => point(location.hash.slice(1)));
 // tunnel's -- follows the tunnels every second: the parts they are in are
 // drawn every five or ten, and the chips said green while a part below
 // still said the tunnel was down (see tunnelpulse.go). Not while hidden.
+// The network comes with it: another one has every part drawn anew at once.
+let netSeen = '';
 setInterval(async () => {
   if (document.hidden || !document.querySelector('[data-tunnel]')) return;
   const r = await fetch('/api/tunnels').catch(() => null);
   if (!r || !r.ok) return;
   const st = await r.json().catch(() => ({}));
+  const chip = document.getElementById('netchip');
+  if (st.net && st.net !== netSeen) {
+    const was = netSeen || (chip && chip.dataset.cur);
+    netSeen = st.net;
+    if (was && was !== st.net) {
+      for (const p of document.querySelectorAll('[data-poll],[data-sync],[data-fresh]')) {
+        if (p.dataset.poll) due.set(p, 0); else if (!away(p)) poll(p);
+      }
+    }
+  }
   for (const c of document.querySelectorAll('[data-tunnel]')) {
     const s = st[c.dataset.tunnel];
     if (!s) continue;

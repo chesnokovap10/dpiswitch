@@ -1,8 +1,10 @@
 package ctl
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -166,6 +168,11 @@ func TestIPStill(t *testing.T) {
 	if !ipStill(Config{}, st, "gw1") || checks != 1 {
 		t.Fatal("the same address taken for a change")
 	}
+	select {
+	case <-netWake:
+		t.Fatal("the main loop woken with the address the same")
+	default:
+	}
 	st.staleIP("gw1")
 	ip = "198.51.100.7"
 	if ipStill(Config{}, st, "gw1") {
@@ -173,6 +180,12 @@ func TestIPStill(t *testing.T) {
 	}
 	if a, _ := st.attached("gw1"); !a.IPChecked.IsZero() {
 		t.Fatal("the change not left for the main loop to look up")
+	}
+	// and the main loop is woken to look it up now, not at its next tick
+	select {
+	case <-netWake:
+	default:
+		t.Fatal("the main loop not woken by the change")
 	}
 	if !ipStill(Config{}, st, "unknown-gw") {
 		t.Fatal("a gateway with no ISP known held the results back")
@@ -209,5 +222,69 @@ func TestResolveNetworkLookupBackoff(t *testing.T) {
 	lookupASNFn = func(string) (string, string, error) { lookups++; return "AS1", "203.0.113.1", nil }
 	if got := resolveNetwork(Config{}, st); got != "AS1" || lookups != 4 {
 		t.Fatalf("after the pause: %s, %d lookups", got, lookups)
+	}
+}
+
+// Another adapter or Wi-Fi, a new address from DHCP: the main loop is woken
+// at once, and its next look asks the public address whatever the caches
+// say -- a failure held back by no backoff while the link is new.
+func TestWatchLocal(t *testing.T) {
+	var mu sync.Mutex
+	link := "11=192.168.31.10/24"
+	oldFn, oldPoll := localLinkFn, localPoll
+	localLinkFn = func() string { mu.Lock(); defer mu.Unlock(); return link }
+	localPoll = time.Millisecond
+	t.Cleanup(func() { localLinkFn, localPoll = oldFn, oldPoll; netForce.Store(0) })
+	for len(netWake) > 0 {
+		<-netWake
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go watchLocal(ctx)
+	time.Sleep(20 * time.Millisecond)
+	if netForced() || len(netWake) > 0 {
+		t.Fatal("woken with the link the same")
+	}
+	mu.Lock()
+	link = "7=172.20.10.4/28"
+	mu.Unlock()
+	select {
+	case <-netWake:
+	case <-time.After(time.Second):
+		t.Fatal("not woken by the new link")
+	}
+	if !netForced() {
+		t.Fatal("the next look does not ask anew")
+	}
+
+	// the forced look: the address asked though checked just now, a
+	// failure not held
+	netIDMu.Lock()
+	netIDVal, netIDWhen = "gw1", time.Now().Add(time.Hour)
+	netIDMu.Unlock()
+	t.Cleanup(func() { netIDMu.Lock(); netIDVal, netIDWhen = "", time.Time{}; netIDMu.Unlock() })
+	checks := 0
+	fail := true
+	oldIP := publicIPFn
+	publicIPFn = func(string) (string, error) {
+		checks++
+		if fail {
+			return "", errors.New("the link not up yet")
+		}
+		return "203.0.113.1", nil
+	}
+	t.Cleanup(func() { publicIPFn = oldIP })
+	st := loadState(filepath.Join(t.TempDir(), "state.json"))
+	st.attach("gw1", "AS1", "203.0.113.1")
+	resolveNetwork(Config{}, st)
+	if checks != 1 || st.ipHeld("gw1") {
+		t.Fatalf("forced: %d checks, held %v", checks, st.ipHeld("gw1"))
+	}
+	fail = false
+	if got := resolveNetwork(Config{}, st); got != "AS1" || checks != 2 || netForced() {
+		t.Fatalf("answered: %s, %d checks, still forced %v", got, checks, netForced())
+	}
+	if resolveNetwork(Config{}, st); checks != 2 {
+		t.Fatalf("asked again after the answer: %d checks", checks)
 	}
 }

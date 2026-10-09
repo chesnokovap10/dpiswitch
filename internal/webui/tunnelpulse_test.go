@@ -1,8 +1,12 @@
 package webui
 
 import (
+	"os"
+	"strings"
 	"testing"
 	"time"
+
+	"dpiswitch/internal/paths"
 )
 
 // The traffic says when the last check is out of date: dials failing with
@@ -69,5 +73,18 @@ func TestTunnelPulse(t *testing.T) {
 	p.look(now)
 	if len(asked) != 2 {
 		t.Fatalf("failing sites took for a dead tunnel: %v", asked)
+	}
+}
+
+// The tunnels' answer names the network the service works in: a page that
+// sees it change draws itself anew at once.
+func TestTunnelsSayNetwork(t *testing.T) {
+	s, _ := testServer(t)
+	if err := os.WriteFile(paths.State(), []byte(`{"networks":{"AS7":{}},"current":"AS7"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b := do(t, s.Handler(), "GET", "/api/tunnels", nil, nil).Body.String()
+	if !strings.Contains(b, `"net":"AS7"`) {
+		t.Fatalf("no network in %s", b)
 	}
 }

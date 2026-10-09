@@ -1,6 +1,7 @@
 package ctl
 
 import (
+	"context"
 	"dpiswitch/internal/winexec"
 	"sync"
 	"sync/atomic"
@@ -31,12 +32,15 @@ var (
 )
 
 // networkID is cached: it queries route and arp, i.e. spawns processes,
-// while the tray status refreshes every few seconds. A network change is
-// not lost within half a minute -- the controller cycle is longer.
+// while the tray status refreshes every few seconds. Five seconds: with half
+// a minute a new Wi-Fi was taken for the old one that long (09.10, the UI
+// slow to see a network change).
+var netIDCache = 5 * time.Second
+
 func networkID() string {
 	netIDMu.Lock()
 	defer netIDMu.Unlock()
-	if netIDVal != "" && time.Since(netIDWhen) < 30*time.Second {
+	if netIDVal != "" && time.Since(netIDWhen) < netIDCache {
 		return netIDVal
 	}
 	netIDVal = computeNetworkID()
@@ -152,6 +156,84 @@ func localNets() []string {
 		}
 	}
 	return out
+}
+
+// localLink: the adapters up and their IPv4 addresses, as one string -- what
+// this machine sees of its network without asking anyone. It is no network's
+// identity (the ISP is, see resolveNetwork): it changes when the adapter
+// does, another Wi-Fi is joined, DHCP hands out another address, and then
+// the network is looked for at once. A switch of Wi-Fi or adapter was seen
+// only when the gateway's cache ran out and a tick came, the public address
+// only when its recheck was due (09.10: a minute). No process is started:
+// it is asked every two seconds.
+func localLink() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	var out []string
+	for _, ifc := range ifaces {
+		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, _ := ifc.Addrs()
+		for _, a := range addrs {
+			n, ok := a.(*net.IPNet)
+			if !ok || n.IP.To4() == nil || fakeIPRange.Contains(n.IP) {
+				continue
+			}
+			out = append(out, strconv.Itoa(ifc.Index)+"="+n.String())
+		}
+	}
+	sort.Strings(out)
+	return strings.Join(out, " ")
+}
+
+// the local link, and how often it is looked at; the tests script both
+var (
+	localLinkFn = localLink
+	localPoll   = 2 * time.Second
+)
+
+// netForce: when the local link last changed, unix nanoseconds; zero once
+// the network was found after it. Until then, for two minutes at most, a
+// look asks the gateway and the public address anew, whatever their caches
+// and backoffs say: with RIPE out of reach for good the backoffs hold again,
+// and the cycles are not held up by lookups at every tick
+var netForce atomic.Int64
+
+const netForceFor = 2 * time.Minute
+
+func netForced() bool {
+	at := netForce.Load()
+	return at != 0 && time.Since(time.Unix(0, at)) < netForceFor
+}
+
+// watchLocal wakes the main loop when the local link changes.
+func watchLocal(ctx context.Context) {
+	last := localLinkFn()
+	t := time.NewTicker(localPoll)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		cur := localLinkFn()
+		if cur == last {
+			continue
+		}
+		last = cur
+		netIDMu.Lock()
+		netIDWhen = time.Time{}
+		netIDMu.Unlock()
+		netForce.Store(time.Now().UnixNano())
+		select {
+		case netWake <- struct{}{}:
+		default:
+		}
+	}
 }
 
 // attachmentNow: the network the machine is attached to right now, not the
