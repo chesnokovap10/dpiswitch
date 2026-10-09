@@ -266,6 +266,9 @@ func Run(ctx context.Context, cfg Config) {
 			if cfg.Apply {
 				applyList(cfg, a, st, netID)
 			}
+			if n := closeOnNetworkChange(cfg, a); n > 0 {
+				log.Printf("network changed: %d open connections routed by the detector's lists closed", n)
+			}
 		}
 		if !g.allow(time.Now().Round(0), health) {
 			allowed.Store(false)

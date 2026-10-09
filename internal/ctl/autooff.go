@@ -418,3 +418,43 @@ func awg2Takes() func(connection) bool {
 		return false
 	}
 }
+
+// closeOnNetworkChange closes the open connections the detector's lists
+// routed: the verdicts are a network's own, and the lists were just
+// rewritten for the new one. The core routes a connection once, when it
+// opens -- a site through the tunnel on one network and direct on the next
+// kept the tunnel for as long as the browser held it. The user's lists,
+// the presets and the local network stay: their way is the same on every
+// network. Tunnel only routes nothing by the detector.
+func closeOnNetworkChange(cfg Config, a *api) int {
+	if cfg.mode != nil && cfg.modeNow() == ModeTunnel {
+		return 0
+	}
+	conns, err := a.connections()
+	if err != nil {
+		log.Printf("cannot read connections: %v", err)
+		return 0
+	}
+	byDetector := map[string]bool{}
+	for _, p := range []string{cfg.Provider, cfg.AddrProvider, cfg.SplitProvider, cfg.NoQUICProvider, cfg.NoTCPProvider,
+		ObserveSplitProvider, ObserveProvider, HoldProvider, InheritProvider, FamilyDirectProvider, FamilyTunnelProvider} {
+		if p != "" {
+			byDetector[p] = true
+		}
+	}
+	n := 0
+	for _, c := range conns {
+		if c.ID == "" || c.fromProbe() {
+			continue
+		}
+		if !(c.Rule == "Match" || c.inherited() || c.Rule == "RuleSet" && byDetector[c.RulePayload]) {
+			continue
+		}
+		if err := a.closeConnection(c.ID); err != nil {
+			log.Printf("connection %s not closed: %v", c.ID, err)
+			continue
+		}
+		n++
+	}
+	return n
+}
