@@ -404,6 +404,10 @@ pageInit.live = function (sec) {
         rows.splice(i, 0, r);
       }
     }
+    // nor does the table grow shorter while rows are picked: scrolled to its
+    // end, a row gone took the scroll back by a row, and every row, the
+    // picked ones too, moved down (09.10, the last row picked)
+    if (sel.size) while (rows.length < tbody.children.length) rows.push(null);
     const n = Math.min(rows.length, MAX);
     for (let i = 0, blank = 0; i < n; i++) {
       const r = rows[i];
