@@ -33,7 +33,6 @@
 +.cici.com
 +.claude.ai
 +.claudeusercontent.com
-+.claudeusercontent.com
 +.codeium.com
 +.community.openai.com
 +.console.anthropic.com
@@ -112,4 +111,3 @@
 +.xgpuwebf2p.gssv-play-prod.xboxlive.com
 +.xgpuweb.gssv-play-prod.xboxlive.com
 +.xsts.auth.xboxlive.com
-+.livepreview.claude.app

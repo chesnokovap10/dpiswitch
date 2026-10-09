@@ -39,4 +39,3 @@
 +.suggestqueries.google.com
 +.waa-pa.clients6.google.com
 +.webchannel-alkalimakersuite-pa.clients6.google.com
-+.claudeusercontent.com
