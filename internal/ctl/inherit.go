@@ -230,11 +230,11 @@ func writeInherit(cfg Config, a *api, st *state, netID string, fams []family, fo
 	var in inheritance
 	var ways []familyWay
 	var famDirect, famTunnel []string
+	was := map[string]bool{}
 	on := inheritOn(cfg) && netID != "" && netID != noNetwork
 	if on {
 		in = st.inheritance(netID, cfg.book, fams)
 		cfg.book.want(in.missing)
-		was := map[string]bool{}
 		for _, r := range listRules(cfg.FamilyDirectPath) {
 			was[strings.TrimPrefix(r, "+.")] = true
 		}
@@ -287,6 +287,15 @@ func writeInherit(cfg Config, a *api, st *state, netID string, fams []family, fo
 				len(in.refuse), preview(in.refuse))
 		}
 		changed = changed || l.provider != HoldProvider && l.provider != RefuseProvider
+	}
+	if on {
+		for _, w := range ways {
+			if w.direct != was[w.f.CDN] {
+				if n := closeFamily(a, w); n > 0 {
+					log.Printf("closed %d connections of CDN family %s going the old way", n, w.f.CDN)
+				}
+			}
+		}
 	}
 	if changed && on {
 		var by []string

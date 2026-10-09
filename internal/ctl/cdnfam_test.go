@@ -151,3 +151,37 @@ func TestFamilyBlockedPage(t *testing.T) {
 		t.Fatalf("the page clean with the cut: direct: %v", got)
 	}
 }
+
+func famConn(id, host string, chains ...string) connection {
+	var c connection
+	c.ID, c.Chains, c.Rule = id, chains, "RuleSet"
+	c.Metadata.Host = host
+	return c
+}
+
+// The page of 09.10 opened on the cut's way the moment the network changed
+// back to Beeline, and stayed there while its new CDN hosts went through the
+// tunnel. A family changing its way closes what goes the old one.
+func TestFamilyClosesOldWay(t *testing.T) {
+	s := familyScenario(t)
+	s.put("music.youtube.com", probe.CleanSplit, "")
+	s.shards(20, probe.CleanSplit, 0)
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := listRules(s.cfg.FamilyDirectPath); !slices.Contains(got, "+.googlevideo.com") {
+		t.Fatalf("direct: %v", got)
+	}
+	s.mu.Lock()
+	s.conns = []connection{
+		famConn("page", "music.youtube.com", SplitOutbound),
+		famConn("cdn", "rr1---sn-x.googlevideo.com", "awg1", "tunnel-rest"),
+		famConn("other", "www.google.com", SplitOutbound),
+	}
+	s.mu.Unlock()
+	s.put("music.youtube.com", probe.BlockedDPI, "")
+	syncList(s.cfg, s.api, s.st, "n", false)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !slices.Equal(s.closed, []string{"page"}) {
+		t.Fatalf("closed %v: the page on the cut's way, nothing else", s.closed)
+	}
+}

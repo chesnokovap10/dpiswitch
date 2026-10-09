@@ -34,6 +34,7 @@ type scenario struct {
 
 	mu      sync.Mutex
 	conns   []connection
+	closed  []string // the connections the core was told to close
 	reloads map[string]int
 	results map[string]probe.Report // "name tcp/443" -> what the probe says
 	probed  []string
@@ -53,6 +54,8 @@ func newScenario(t *testing.T) *scenario {
 			json.NewEncoder(w).Encode(map[string]any{"connections": s.conns})
 		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/providers/rules/"):
 			s.reloads[strings.TrimPrefix(r.URL.Path, "/providers/rules/")]++
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/connections/"):
+			s.closed = append(s.closed, strings.TrimPrefix(r.URL.Path, "/connections/"))
 		default:
 			http.NotFound(w, r)
 		}

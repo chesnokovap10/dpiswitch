@@ -435,3 +435,35 @@ func (b *cdnBook) save() error {
 	}
 	return paths.ReplaceFile(b.path, raw)
 }
+
+// closeFamily closes the family's open connections going the way it just
+// left: the core routes a connection once, when it opens, and a player
+// keeps its page's open for minutes -- on 09.10, back on Beeline, the page
+// stayed on the cut's way and its new CDN hosts went through the tunnel.
+// The user's own lists stay as they are.
+func closeFamily(a *api, w familyWay) int {
+	conns, err := a.connections()
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, c := range conns {
+		dom := c.domain()
+		if c.ID == "" || dom == "" || c.pinned() || c.fromProbe() || len(c.Chains) == 0 {
+			continue
+		}
+		if cdn, page := w.f.cdnOf(dom); !cdn && !page {
+			continue
+		}
+		direct := c.Chains[0] == "DIRECT" || c.Chains[0] == SplitOutbound
+		if direct == w.direct {
+			continue
+		}
+		if err := a.closeConnection(c.ID); err != nil {
+			log.Printf("connection %s not closed: %v", c.ID, err)
+			continue
+		}
+		n++
+	}
+	return n
+}
