@@ -17,23 +17,23 @@
 <form method="post" action="/act/set" data-swap="sform" data-instant="1" class="form" onsubmit="return false">
   <div class="g">{{.T "Detector"}}</div>
 
-  <div>{{.T "Auto-switch"}}</div>
+  <div><a class="hl" href="/help#h-modes">{{.T "Auto-switch"}}</a></div>
   <div><select id="auto_switch" name="auto_switch"><option value="on" {{if eq $m "on"}}selected{{end}}>{{.T "On"}}</option><option value="observe" {{if eq $m "observe"}}selected{{end}}>{{.T "Observe only"}}</option><option value="tunnel" {{if eq $m "tunnel"}}selected{{end}}>{{.T "Tunnel only"}}</option></select></div>
-  <div class="h"><span>{{.T "On: unblocked sites direct, the rest through awg1. Observe only: everything direct but the lists. Tunnel only: everything but Always direct through the tunnels."}} {{template "more" (more . "h-modes")}}</span>{{if not .St.HasConfig}}<span class="warn-t">{{.T "The first tunnel (awg1) is not loaded: the detector checks nothing but the ClientHello cut, and what no list names goes direct."}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "auto_switch")}}</div>
+  <div class="h"><span>{{.T "On: unblocked sites direct, the rest through awg1. Observe only: everything direct but the lists. Tunnel only: everything but Always direct through the tunnels."}}</span>{{if not .St.HasConfig}}<span class="warn-t">{{.T "The first tunnel (awg1) is not loaded: the detector checks nothing but the ClientHello cut, and what no list names goes direct."}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "auto_switch")}}</div>
 
-  <div>{{.T "Whole domains"}}</div>
+  <div><a class="hl" href="/help#h-families">{{.T "Whole domains"}}</a></div>
   <div><select name="families"><option value="1" {{if $s.Families}}selected{{end}}>{{.T "Extend to the domain"}}</option><option value="0" {{if not $s.Families}}selected{{end}}>{{.T "Checked names only"}}</option></select></div>
-  <div class="h"><span>{{.T "3+ clean subdomains and none blocked: new subdomains go direct at once, checked afterwards."}} {{template "more" (more . "h-families")}}</span>{{template "rowmsg" ($d.MsgFor "families")}}</div>
+  <div class="h"><span>{{.T "3+ clean subdomains and none blocked: new subdomains go direct at once, checked afterwards."}}</span>{{template "rowmsg" ($d.MsgFor "families")}}</div>
 
   <div>{{.T "Latency tolerance, %"}}</div>
   <div><input type="number" name="slow_pct" min="0" max="500" step="5" value="{{$s.SlowPct}}"></div>
   <div class="h"><span>{{.T "How much slower than the tunnel the direct path may be and still be used. 0: only if not slower."}}</span>{{template "rowmsg" ($d.MsgFor "slow_pct")}}</div>
 
-  <div>{{.T "Attempts per probe"}}</div>
+  <div><a class="hl" href="/help#h-checks">{{.T "Attempts per probe"}}</a></div>
   <div><input type="number" id="attempts" name="attempts" min="1" max="10" value="{{$s.Attempts}}"></div>
-  <div class="h"><span>{{.T "A site is clean only if every attempt is. More: surer verdicts, longer checks."}} {{template "more" (more . "h-checks")}}</span>{{template "rowmsg" ($d.MsgFor "attempts")}}</div>
+  <div class="h"><span>{{.T "A site is clean only if every attempt is. More: surer verdicts, longer checks."}}</span>{{template "rowmsg" ($d.MsgFor "attempts")}}</div>
 
-  <div class="g">{{.T "Terms"}} · {{template "more" (more . "h-terms")}}</div>
+  <div class="g"><a class="hl" href="/help#h-terms">{{.T "Terms"}}</a></div>
 
   <div>{{.T "Keep direct for"}}</div>
   <div><select id="clean_ttl_min" name="clean_ttl_min">{{template "durs" (dur . ($d.DurOpts "clean_ttl_min" $s.CleanTTLMin) $s.CleanTTLMin)}}</select></div>
@@ -49,27 +49,27 @@
 
   <div class="g">{{.T "DPI bypass"}}</div>
 
-  <div>{{.T "Cut the ClientHello"}}</div>
+  <div><a class="hl" href="/help#h-split">{{.T "Cut the ClientHello"}}</a></div>
   <div><select id="split_hello" name="split_hello"><option value="1" {{if $s.SplitHello}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.SplitHello}}selected{{end}}>{{.T "Off"}}</option></select></div>
-  <div class="h"><span>{{.T "A site blocked by its name is checked once more with the ClientHello cut in two; if it works so, it goes direct that way."}} {{template "more" (more . "h-split")}}</span><span class="warn-t">{{.T "Can break a site whose other parts the cut does not get through. Off by default."}}</span>{{if and $s.SplitHello (eq $m "tunnel")}}<span class="warn-t">{{.T "Not working now: in Tunnel only nothing goes direct."}}</span>{{else if and $s.SplitHello (not .St.HasConfig)}}<span class="muted">{{.T "awg1 is not loaded: the cut is checked without comparing speed."}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "split_hello")}}</div>
+  <div class="h"><span>{{.T "A site blocked by its name is checked once more with the ClientHello cut in two; if it works so, it goes direct that way."}}</span><span class="warn-t">{{.T "Can break a site whose other parts the cut does not get through. Off by default."}}</span>{{if and $s.SplitHello (eq $m "tunnel")}}<span class="warn-t">{{.T "Not working now: in Tunnel only nothing goes direct."}}</span>{{else if and $s.SplitHello (not .St.HasConfig)}}<span class="muted">{{.T "awg1 is not loaded: the cut is checked without comparing speed."}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "split_hello")}}</div>
 
-  <div>{{.T "QUIC decoy"}}</div>
+  <div><a class="hl" href="/help#h-quic">{{.T "QUIC decoy"}}</a></div>
   <div><select id="quic_fake" name="quic_fake"><option value="1" {{if $s.QUICFake}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.QUICFake}}selected{{end}}>{{.T "Off"}}</option></select></div>
-  <div class="h"><span>{{.T "QUIC to the sites going direct with the cut goes direct too, a decoy first packet for www.google.com ahead of it; where that does not get through, QUIC is refused and the browser takes TCP. Off: their QUIC is always refused."}} {{template "more" (more . "h-quic")}}</span>{{if and $s.QUICFake (not $s.SplitHello)}}<span class="warn-t">{{.T "Not working now: it works together with the ClientHello cut, which is off."}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "quic_fake")}}</div>
+  <div class="h"><span>{{.T "QUIC to the sites going direct with the cut goes direct too, a decoy first packet for www.google.com ahead of it; where that does not get through, QUIC is refused and the browser takes TCP. Off: their QUIC is always refused."}}</span>{{if and $s.QUICFake (not $s.SplitHello)}}<span class="warn-t">{{.T "Not working now: it works together with the ClientHello cut, which is off."}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "quic_fake")}}</div>
 
   <div class="g">{{.T "Network"}}</div>
 
-  <div>IPv6</div>
+  <div><a class="hl" href="/help#h-ipv6">IPv6</a></div>
   <div><select name="ipv6"><option value="1" {{if $s.IPv6}}selected{{end}}>{{.T "Through the tunnel"}}</option><option value="0" {{if not $s.IPv6}}selected{{end}}>{{.T "Off"}}</option></select></div>
-  <div class="h"><span>{{.T "Gives IPv6 even where the ISP has none. Changing it restarts the core."}} {{template "more" (more . "h-ipv6")}}</span>{{if and $s.IPv6 .St.IPv6Blocked}}<span class="warn-t">{{.T "Switched off by the program: Windows does not let IPv6 reach the DPI Switch adapter -- a third-party network filter (a VPN client, an antivirus) takes it first. Checked again at the service's next start."}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "ipv6")}}</div>
+  <div class="h"><span>{{.T "Gives IPv6 even where the ISP has none. Changing it restarts the core."}}</span>{{if and $s.IPv6 .St.IPv6Blocked}}<span class="warn-t">{{.T "Switched off by the program: Windows does not let IPv6 reach the DPI Switch adapter -- a third-party network filter (a VPN client, an antivirus) takes it first. Checked again at the service's next start."}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "ipv6")}}</div>
 
-  <div>{{.T "Local DNS cache"}}</div>
+  <div><a class="hl" href="/help#h-dns">{{.T "Local DNS cache"}}</a></div>
   <div><select id="dns_cache" name="dns_cache"><option value="1" {{if $s.DNSCache}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.DNSCache}}selected{{end}}>{{.T "Off"}}</option></select></div>
-  <div class="h"><span>{{.T "Direct sites' names are answered from this computer's memory, kept for 7 days, restarts included. Changing it restarts the core."}} {{template "more" (more . "h-dns")}}</span>{{if $s.DNSCache}}{{if not $d.CacheUsable}}<span class="warn-t">{{.T "No server for direct sites is given by address: the cache cannot ask one, and the core asks them itself."}}</span>{{else}}{{with $d.Cache}}<span class="muted">{{$.Tf "Kept: %d names. Answered from the cache: %d%% of %d queries." .Names .HitPct .Asked}}{{with .Fastest}} {{$.Tf "Asked first: %s, %.0f ms." .Addr .Ms}}{{end}}</span>{{end}}{{end}}{{end}}{{template "rowmsg" ($d.MsgFor "dns_cache")}}</div>
+  <div class="h"><span>{{.T "Direct sites' names are answered from this computer's memory, kept for 7 days, restarts included. Changing it restarts the core."}}</span>{{if $s.DNSCache}}{{if not $d.CacheUsable}}<span class="warn-t">{{.T "No server for direct sites is given by address: the cache cannot ask one, and the core asks them itself."}}</span>{{else}}{{with $d.Cache}}<span class="muted">{{$.Tf "Kept: %d names. Answered from the cache: %d%% of %d queries." .Names .HitPct .Asked}}{{with .Fastest}} {{$.Tf "Asked first: %s, %.0f ms." .Addr .Ms}}{{end}}</span>{{end}}{{end}}{{end}}{{template "rowmsg" ($d.MsgFor "dns_cache")}}</div>
 
-  <div>{{.T "UDP leak guard"}}</div>
+  <div><a class="hl" href="/help#h-udpguard">{{.T "UDP leak guard"}}</a></div>
   <div><select id="udp_guard" name="udp_guard"><option value="1" {{if $s.UDPGuard}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.UDPGuard}}selected{{end}}>{{.T "Off"}}</option></select></div>
-  <div class="h"><span>{{.T "While the core runs, UDP that programs send straight out of the Wi-Fi or Ethernet adapter, around the tunnel -- WebRTC, calls, games -- is blocked. The local network is not touched."}} {{template "more" (more . "h-udpguard")}}</span><span class="warn-t">{{.T "Can break a VPN of its own, calls and games that need that UDP. Off by default."}}</span>{{if $s.UDPGuard}}<span id="udp_guard_state" data-poll="/frag/settings/guard" data-every="3">{{template "guard" .}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "udp_guard")}}</div>
+  <div class="h"><span>{{.T "While the core runs, UDP that programs send straight out of the Wi-Fi or Ethernet adapter, around the tunnel -- WebRTC, calls, games -- is blocked. The local network is not touched."}}</span><span class="warn-t">{{.T "Can break a VPN of its own, calls and games that need that UDP. Off by default."}}</span>{{if $s.UDPGuard}}<span id="udp_guard_state" data-poll="/frag/settings/guard" data-every="3">{{template "guard" .}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "udp_guard")}}</div>
 
   <div class="g">{{.T "Program"}}</div>
 
@@ -79,12 +79,10 @@
 </form>
 {{end}}
 
-{{define "more"}}<a class="more" href="/help#{{.ID}}">{{.V.T "More"}}</a>{{end}}
-
 {{define "guard"}}{{$d := .Data}}{{if $d.S.UDPGuard}}{{if not .St.ServiceRun}}<span class="muted">{{.T "The service is stopped: nothing is blocked."}}</span>{{else}}{{with $d.Guard}}{{if eq .State "on"}}{{if .Checked}}<span class="ok-t">{{$.T "In place, and checked: the engine dropped a test packet sent out of the adapter by its own address. UDP leaves the physical adapters only from the core and to the local network."}}</span>{{else}}<span class="ok-t">{{$.T "In place: UDP leaves the physical adapters only from the core and to the local network."}}</span>{{end}}{{else if eq .State "wait"}}{{if eq .Why "adapter"}}<span class="muted">{{$.T "Waiting for the DPI Switch adapter: it is not up, or has no route out."}}</span>{{else if eq .Why "traffic"}}<span class="warn-t">{{$.T "Not in place: Windows keeps the programs' traffic from the DPI Switch adapter -- something takes it first, a third-party network filter. Blocking UDP now would cut it off altogether."}}</span>{{else}}<span class="muted">{{$.T "Waiting for the core to run."}}</span>{{end}}{{else if eq .State "fail"}}{{if eq .Why "engine"}}<span class="bad-t">{{$.Tf "Not in place: the Windows Filtering Platform does not answer -- the Base Filtering Engine service is stopped, or refuses the program (%s). Nothing is blocked. Start the service in services.msc: the guard goes in by itself within seconds." .Err}}</span>{{else}}<span class="bad-t">{{$.Tf "Not in place: Windows refused a filter (%s). Nothing is blocked; tried again every 10 seconds." .Err}}</span>{{end}}{{else}}<span class="muted">{{$.T "Waiting for the core to run."}}</span>{{end}}{{else}}<span class="muted">{{$.T "The service has not reported yet. If it runs another build of the program, it does not know this setting."}}</span>{{end}}{{end}}{{end}}{{end}}
 
 {{define "dns"}}{{$d := .Data}}
-  <h3>DNS <small>{{template "more" (more . "h-dns")}}</small></h3>
+  <h3><a class="hl" href="/help#h-dns">DNS</a></h3>
   <form method="post" action="/act/dns" data-swap="dns">
     <div class="dnsgrid">
       <b>{{.T "For direct sites"}}</b>

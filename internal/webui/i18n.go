@@ -271,7 +271,6 @@ var ru = map[string]string{
 	"While the core runs, UDP that programs send straight out of the Wi-Fi or Ethernet adapter, around the tunnel -- WebRTC, calls, games -- is blocked. The local network is not touched.":                                            "Пока работает ядро, UDP, который программы шлют прямо через адаптер Wi-Fi или Ethernet мимо туннеля (WebRTC, звонки, игры), блокируется. Локальная сеть не затрагивается.",
 	"Can break a VPN of its own, calls and games that need that UDP. Off by default.":                                                                                                                                                  "Может сломать сторонний VPN, звонки и игры, которым нужен такой UDP. По умолчанию выключено.",
 	"How the tray opens these pages. Chrome, Edge, Brave, Vivaldi and Yandex make a window of their own; another browser opens a tab either way.":                                                                                      "Как трей открывает эти страницы. Своё окно умеют Chrome, Edge, Brave, Vivaldi и Яндекс; другой браузер всё равно откроет вкладку.",
-	"More":                       "Подробнее",
 	"Hide the detector's checks": "Скрыть проверки детектора",
 	"Not working now: it works together with the ClientHello cut, which is off.": "Сейчас не действует: работает только вместе с разбиением ClientHello, а оно выключено.",
 	"TLS cut by site name; gets through with the ClientHello cut, which is off":  "TLS обрывается по имени сайта; с разбиением ClientHello проходит, но разбиение выключено",

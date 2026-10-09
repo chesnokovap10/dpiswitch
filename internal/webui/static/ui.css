@@ -306,10 +306,8 @@ button.lx:hover{color:var(--bad)}
 .blink{animation:blink .6s ease-in-out 3}
 /* a label blinking is a box around its text, not a line under it */
 label.blink{border-radius:6px}
-/* a setting's link to its part of the help */
-a.more{white-space:nowrap}
-.form .g a.more{text-transform:none;letter-spacing:0;font-weight:500}
-h3 small{font-size:12px;font-weight:400;margin-left:6px;text-transform:none;letter-spacing:0}
+/* a setting's name links to its part of the help */
+a.hl:hover{text-decoration:underline}
 
 /* dialogs */
 dialog{border:1px solid var(--line);border-radius:10px;padding:16px;width:580px;background:var(--panel);color:var(--fg)}
