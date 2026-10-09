@@ -137,6 +137,26 @@ func TestSplitSwitchedOff(t *testing.T) {
 	}
 }
 
+// A cycle begun with the cut on writes its list by the cut as switched now:
+// on 09.10 one ending a second after the switch put 28 names back on the
+// cut's way, and music.youtube.com opened there and stayed.
+func TestSplitSwitchedOffDuringCycle(t *testing.T) {
+	s, _ := splitScenario(t, map[string]probe.Verdict{"ig.example.org": probe.CleanSplit})
+	s.cfg.cut = new(atomic.Value)
+	s.see(tunnelled("ig.example.org", 443))
+	s.script("ig.example.org tcp/443", blockedTLS("192.0.2.10"))
+	s.cycle()
+	if got := listRules(s.cfg.SplitListPath); len(got) != 1 {
+		t.Fatalf("cut on: list %v", got)
+	}
+	// switched off; the cycle's copy still says on
+	s.cfg.setCut(cutState{false, false})
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := listRules(s.cfg.SplitListPath); len(got) != 0 {
+		t.Fatalf("the cycle's copy wrote the cut's list after it was switched off: %v", got)
+	}
+}
+
 // Names going direct with the cut make no family: the domain is blocked by
 // name, and a family would send new subdomains direct without the cut.
 func TestSplitNoFamily(t *testing.T) {

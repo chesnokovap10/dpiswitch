@@ -123,6 +123,7 @@ func Run(ctx context.Context, cfg Config) {
 	a.cfgPath = cfg.CfgPath
 	cfg.autoOff = new(atomic.Bool)
 	cfg.mode = new(atomic.Value)
+	cfg.cut = new(atomic.Value)
 	cfg.stop = ctx.Done()
 	if cfg.InheritPath != "" {
 		cfg.book = loadASNBook(paths.ASNBook())

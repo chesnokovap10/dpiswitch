@@ -86,7 +86,7 @@ func inheritOn(cfg Config) bool {
 	if cfg.mode != nil {
 		on = cfg.modeNow() == ModeOn
 	}
-	return on && !cfg.off() && cfg.Split && cfg.Families && !cfg.alone
+	return on && !cfg.off() && cfg.cutNow().split && cfg.Families && !cfg.alone
 }
 
 // lean: which way a verdict points for its groups. A verdict going direct

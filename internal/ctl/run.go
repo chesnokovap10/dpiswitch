@@ -107,6 +107,8 @@ type Config struct {
 	autoOff *atomic.Bool
 	// the auto-switch mode chosen, see modeNow
 	mode *atomic.Value
+	// the cut and the decoy as switched now, see cutNow
+	cut *atomic.Value
 	// closed when the controller is stopping: a cycle starts no more probes
 	stop <-chan struct{}
 }
@@ -782,7 +784,7 @@ func applyList(cfg Config, a *api, st *state, netID string) {
 // in observe only with the ClientHello cut on -- everything goes the cut's
 // way there, and the names the cut harms must go plain (see observeFiles)
 func directLists(cfg Config) bool {
-	if cfg.modeNow() == ModeObserve && cfg.Split {
+	if cfg.modeNow() == ModeObserve && cfg.cutNow().split {
 		return true
 	}
 	// the mode as it is now, not as this copy of the config had it: a cycle
@@ -800,11 +802,12 @@ func directLists(cfg Config) bool {
 // only, not tunnel only. Switched off, its names leave the direct path at
 // once, not when their verdicts run out.
 func splitNames(cfg Config, st *state, netID string) []string {
-	if !cfg.Split || cfg.modeNow() == ModeTunnel || netID == "" || netID == noNetwork {
+	cut := cfg.cutNow()
+	if !cut.split || cfg.modeNow() == ModeTunnel || netID == "" || netID == noNetwork {
 		return nil
 	}
 	splits := st.verifiedSplit(netID)
-	if !cfg.QUICFake {
+	if !cut.quicFake {
 		// a name going direct over QUIC alone needs the decoy: without it
 		// it has no way direct at all
 		noTCP := st.verifiedSplitNoTCP(netID)

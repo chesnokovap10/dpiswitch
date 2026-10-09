@@ -415,6 +415,7 @@ func (s Settings) apply(cfg Config) Config {
 	// works with the cut only: alone it sends nothing anywhere -- only the
 	// cut's names take direct-split
 	cfg.QUICFake = s.QUICFake
+	cfg.setCut(cutState{cfg.Split, cfg.QUICFake})
 	cfg.DNSCache = s.DNSCache
 	cfg.DirectDNS = nil
 	for _, d := range s.DirectDNS {

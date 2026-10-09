@@ -34,6 +34,28 @@ func (cfg Config) modeNow() string {
 	return ModeOn
 }
 
+// cutState: the ClientHello cut and the QUIC decoy, switched on or off
+type cutState struct{ split, quicFake bool }
+
+// cutNow: the cut and the decoy as the user switched them now, not as the
+// copy of the settings a cycle started with. A cycle begun with the cut on
+// wrote its list after it was switched off -- 28 names cut again for
+// seconds, and music.youtube.com opened on the cut's way and stayed (09.10).
+func (cfg Config) cutNow() cutState {
+	if cfg.cut != nil {
+		if c, ok := cfg.cut.Load().(cutState); ok {
+			return c
+		}
+	}
+	return cutState{cfg.Split, cfg.QUICFake}
+}
+
+func (cfg Config) setCut(c cutState) {
+	if cfg.cut != nil {
+		cfg.cut.Store(c)
+	}
+}
+
 func (cfg Config) setMode(m string) {
 	if cfg.mode != nil {
 		cfg.mode.Store(m)
@@ -241,6 +263,7 @@ func watchSettings(ctx context.Context, cfg Config, a *api, st *state, last Sett
 		}
 		last, haveLast = ns, true
 		cfg.setMode(ns.Mode())
+		cfg.setCut(cutState{ns.SplitHello, ns.QUICFake})
 		switch now := ns.Mode(); {
 		case now != was:
 			// the settings as they are now: this copy may have started
