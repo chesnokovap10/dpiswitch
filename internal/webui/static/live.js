@@ -46,7 +46,7 @@ pageInit.live = function (sec) {
   const menu = rowMenu(W), closeMenu = () => menu.close();
 
   // what the page is looking at: kept per browser, a viewing preference
-  const pref = {tab: 'open', route: '', sort: 'start', desc: true};
+  const pref = {tab: 'open', route: '', noprobe: false, sort: 'start', desc: true};
   try { Object.assign(pref, JSON.parse(localStorage.getItem('live') || '{}')); } catch (e) {}
   // a filter kept from before: the two tunnels are one now, and the
   // bypass's is gone with the bypass off
@@ -85,6 +85,16 @@ pageInit.live = function (sec) {
   // the route filter: one for both tunnels
   const inRoute = (r, want) => want === 'tunnel' ? r.route === 'awg1' || r.route === 'awg2' : routeOf(r) === want;
   const clock = ms => new Date(ms).toLocaleTimeString(locale);
+  // when a row's event was: the clock, and under it the date when it was
+  // not today -- the table holds the core's whole run, days of it
+  function when(ms) {
+    const d = new Date(ms);
+    if (d.toDateString() === new Date(now).toDateString()) return clock(ms);
+    return clock(ms) + '\n' + d.toLocaleDateString(locale, {day: 'numeric', month: 'short'});
+  }
+  const stamp = ms => new Date(ms).toLocaleString(locale);
+  // a row's time: when it opened, closed, or last failed
+  const at = r => r.end || r.start;
   const why = r => W['why.' + r.why] || r.why;
 
   // --- the stream ---
@@ -190,7 +200,7 @@ pageInit.live = function (sec) {
     const o = m.get(r.id);
     if (!o) { m.set(r.id, r); return; }
     o.n = r.n; o.end = r.end; o.err = r.err; o.seq = r.seq; o._hay = null;
-    if (o.ip !== r.ip) { o.ip = r.ip; if (o._ip) o._ip.textContent = r.ip || ''; }
+    if (o.ip !== r.ip) { o.ip = r.ip; if (o._ip) o._ip.textContent = o._ip.title = r.ip || ''; }
     m.delete(o.id);
     m.set(o.id, o);
   }
@@ -227,6 +237,7 @@ pageInit.live = function (sec) {
     else { h.textContent = W.noname; h.classList.add('muted'); }
     r._ip = td();
     r._ip.textContent = r.ip || '';
+    r._ip.title = r.ip || '';
     td('num').textContent = r.port || '';
     const b = document.createElement('span');
     b.className = 'pb p-' + r.proto + (r.sure ? '' : ' guess');
@@ -240,10 +251,9 @@ pageInit.live = function (sec) {
       // no speed and no bytes: what the core said takes their place
       const w = td('c-why');
       w.colSpan = 4;
-      r._v = [w, td('num')];
+      r._v = [w, td('num c-t')];
     } else {
-      r._v = [td('num'), td('num'), td('num'), td('num'), td('num')];
-      r._v[4].title = W.started + ' ' + clock(r.start);
+      r._v = [td('num'), td('num'), td('num'), td('num'), td('num c-t')];
     }
     r._x = td('c-x');
     // the detector's own are not closed from here: that only breaks a check
@@ -291,15 +301,24 @@ pageInit.live = function (sec) {
     let v;
     if (r.why) {
       // the last time it failed; the first, when it failed more than once
-      v = [why(r) + (r.n > 1 ? ' ×' + r.n : ''), clock(r.end)];
-      const t0 = r.err + (r.n > 1 ? '\n' + fmt(W.attempts, r.n) : ''), t1 = r.n > 1 ? fmt(W.firstAt, clock(r.start)) : '';
+      v = [why(r) + (r.n > 1 ? ' ×' + r.n : ''), when(r.end)];
+      const t0 = r.err + (r.n > 1 ? '\n' + fmt(W.attempts, r.n) : ''), t1 = r.n > 1 ? fmt(W.firstAt, stamp(r.start)) : stamp(r.end);
       if (r._v[0].title !== t0) r._v[0].title = t0;
       if (r._v[1].title !== t1) r._v[1].title = t1;
     } else {
-      v = [speed(r.ds), speed(r.us), size(r.down), size(r.up), dur((r.end || now) - r.start)];
+      v = [speed(r.ds), speed(r.us), size(r.down), size(r.up), when(at(r))];
+      // how long it lasted: in the hint, the column says when
+      const t = fmt(W.openedAt, stamp(r.start)) + '\n' + (r.end ?
+        fmt(W.closedAt, stamp(r.end)) + '\n' + fmt(W.lasted, dur(r.end - r.start)) : fmt(W.openFor, dur(now - r.start)));
+      if (r._v[4].title !== t) r._v[4].title = t;
     }
     for (let i = 0; i < v.length; i++) {
-      if (r._last[i] !== v[i]) { r._last[i] = v[i]; r._v[i].textContent = v[i]; }
+      if (r._last[i] !== v[i]) {
+        r._last[i] = v[i];
+        r._v[i].textContent = v[i];
+        // a date under the clock: two lines in a row's height
+        if (r._v[i].classList.contains('c-t')) r._v[i].classList.toggle('d2', v[i].includes('\n'));
+      }
     }
   }
 
@@ -310,7 +329,9 @@ pageInit.live = function (sec) {
   function cmp(a, b) {
     const k = pref.sort;
     let d;
-    if (NUM[k]) d = (a[k] || 0) - (b[k] || 0);
+    // the time column says when a row's event was: sorted by that
+    if (k === 'start') d = at(a) - at(b);
+    else if (NUM[k]) d = (a[k] || 0) - (b[k] || 0);
     else {
       const x = k === 'route' ? label(a) : a[k] || '', y = k === 'route' ? label(b) : b[k] || '';
       // the blank ones last, whichever way
@@ -358,6 +379,7 @@ pageInit.live = function (sec) {
     const list = [], count = new Map(all.map(m => [m, 0]));
     for (const m of all) {
       for (const r of m.values()) {
+        if (pref.noprobe && r.probe) continue;
         count.set(m, count.get(m) + 1);
         if (!maps.includes(m) || pref.route && !inRoute(r, pref.route) || q && !hay(r).includes(q)) continue;
         list.push(r);
@@ -457,6 +479,9 @@ pageInit.live = function (sec) {
   on('lroutes', 'route', 'route');
 
   $('lfilter').addEventListener('input', () => { unpick(); draw(); });
+  const np = $('lnoprobe');
+  np.checked = !!pref.noprobe;
+  np.addEventListener('change', () => { pref.noprobe = np.checked; unpick(); save(); draw(); });
 
   const heads = root.querySelectorAll('th[data-sort]');
   function arrows() {

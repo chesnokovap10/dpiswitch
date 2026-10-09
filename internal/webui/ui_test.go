@@ -235,6 +235,17 @@ func TestSettingInstant(t *testing.T) {
 	if got := ctl.LoadSettings(paths.Settings()); got.MaxBackoffMin != 4320 {
 		t.Fatalf("a refused change was saved: %+v", got)
 	}
+	// the QUIC decoy: on by default, a switch of its own beside the cut's,
+	// and no core restart either way
+	if !ctl.LoadSettings(paths.Settings()).QUICFake {
+		t.Fatal("the QUIC decoy is off by default")
+	}
+	if body := post("quic_fake", "0"); !strings.Contains(body, "msg ok") || strings.Contains(body, "the core restarts") {
+		t.Fatalf("switching the decoy off:\n%s", body)
+	}
+	if got := ctl.LoadSettings(paths.Settings()); got.QUICFake || got.SplitHello {
+		t.Fatalf("the decoy off: %+v", got)
+	}
 	if w := do(t, h, "POST", "/act/set", url.Values{"field": {"nope"}, "value": {"1"}}, nil); w.Code != 400 {
 		t.Fatalf("an unknown setting: %d", w.Code)
 	}

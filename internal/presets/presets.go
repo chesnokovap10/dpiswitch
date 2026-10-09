@@ -4,8 +4,10 @@
 // The program ships a few, taken from server-side setups solving the same
 // task:
 //   - AI: an nginx SNI allow-list plus the Google AI zones;
-//   - Telegram: the ranges from core.telegram.org/resources/cidr.txt plus
-//     domains;
+//   - Telegram and WhatsApp: the ranges from core.telegram.org/resources/cidr.txt
+//     and Meta's (WhatsApp's calls go by address), plus domains -- one
+//     preset under Telegram's old ID, so one switched on stays on;
+//   - Discord: domains, its voice servers' network and the desktop app;
 //   - YouTube: domains (the server relays all of Google via goog.json;
 //     the client only needs YouTube).
 //
@@ -52,8 +54,10 @@ var shipped = []struct {
 	files           []string
 }{
 	{"youtube", "YouTube", "site, video, thumbnails, apps", []string{"youtube.txt"}},
-	{"telegram", "Telegram", "Telegram domains and networks -- the apps connect by IP",
-		[]string{"telegram-domains.txt", "telegram-cidr.txt"}},
+	{"telegram", "Telegram, WhatsApp", "their domains and networks -- the apps and calls connect by IP",
+		[]string{"telegram-domains.txt", "telegram-cidr.txt", "whatsapp-domains.txt", "whatsapp-cidr.txt"}},
+	{"discord", "Discord", "site, apps, voice and video",
+		[]string{"discord.txt"}},
 	{"ai", "AI services", "ChatGPT, Claude, Gemini, Grok, Copilot, DeepL and more",
 		[]string{"ai-sni.txt", "ai-google.txt"}},
 	{"social", "Instagram, Facebook, X", "their media CDNs too -- without those the page loads but photos and video do not",

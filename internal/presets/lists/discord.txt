@@ -1,0 +1,17 @@
+# Discord: the site, the apps, invites, CDN and media.
++.discord.com
++.discord.gg
++.discord.co
++.discord.dev
++.discord.gift
++.discord.new
++.discord.media
++.discordapp.com
++.discordapp.net
++.discordcdn.com
++.discordstatus.com
++.dis.gd
+# voice and video: UDP to Discord's own servers, by address (AS49544)
+66.22.192.0/18
+# the desktop app: its voice by whatever address
+Discord.exe

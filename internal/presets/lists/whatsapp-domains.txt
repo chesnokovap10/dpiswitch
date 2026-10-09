@@ -1,0 +1,8 @@
+# WhatsApp: the apps, WhatsApp Web, links and media.
+# Messages and media go by name; calls go to Meta's relays by address --
+# those ranges are in whatsapp-cidr.txt.
++.whatsapp.com
++.whatsapp.net
++.wa.me
++.whatsapp.biz
++.whatsapp.info

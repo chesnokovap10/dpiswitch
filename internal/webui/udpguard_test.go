@@ -28,10 +28,17 @@ func TestUDPGuardSetting(t *testing.T) {
 	if strings.Contains(b, `data-poll="/frag/settings/guard"`) {
 		t.Error("the guard's state refreshes itself with the guard off")
 	}
-	// what it is for and what it breaks are both said, whatever the state
-	for _, w := range []string{"WebRTC", "Windows Filtering Platform", "firewall off", "WireGuard", "casting to a TV", "Off by default"} {
+	// what it is for and what it breaks are both said, whatever the state:
+	// in short on the row, the rest in the help it links to
+	for _, w := range []string{"WebRTC", "VPN", "Off by default", `href="/help#h-udpguard"`} {
 		if !strings.Contains(b, w) {
 			t.Errorf("the description lacks %q", w)
+		}
+	}
+	help := do(t, h, "GET", "/help", nil, nil).Body.String()
+	for _, w := range []string{`id="h-udpguard"`, "Windows Filtering Platform", "firewall off", "WireGuard", "a TV you cast to"} {
+		if !strings.Contains(help, w) {
+			t.Errorf("the help lacks %q", w)
 		}
 	}
 

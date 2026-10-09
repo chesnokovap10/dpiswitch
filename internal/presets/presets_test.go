@@ -109,7 +109,7 @@ func TestRestore(t *testing.T) {
 	for _, p := range got {
 		ids = append(ids, p.ID)
 	}
-	if strings.Join(ids, ",") != "youtube,telegram,ai,social,mine" {
+	if strings.Join(ids, ",") != "youtube,telegram,discord,ai,social,mine" {
 		t.Fatalf("restored %v", ids)
 	}
 	if yt, _ := Shipped("youtube"); !slices.Equal(got[0].Lines, yt.Lines) || Restorable(got) {

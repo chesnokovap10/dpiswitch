@@ -814,11 +814,14 @@ func noTCPNames(cfg Config, st *state, netID string, splits []string) []string {
 }
 
 // noQUICNames: of the cut's names, the ones whose QUIC is refused (see
-// entry.NoQUIC) -- with the decoy on; off, the core refuses QUIC to all of
-// them anyway
+// entry.NoQUIC) -- with the decoy on; off, all of them: direct-split always
+// carries the decoy, and only this list keeps QUIC from it
 func noQUICNames(cfg Config, st *state, netID string, splits []string) []string {
-	if !cfg.QUICFake || len(splits) == 0 {
+	if len(splits) == 0 {
 		return nil
+	}
+	if !cfg.QUICFake {
+		return slices.Clone(splits)
 	}
 	return slices.DeleteFunc(st.verifiedSplitNoQUIC(netID), func(d string) bool {
 		_, ok := slices.BinarySearch(splits, d)

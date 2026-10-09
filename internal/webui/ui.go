@@ -51,6 +51,8 @@ func init() {
 			return tunArg{v, v.St, name, alive, note}
 		},
 		"dur": func(v *view, opts []durOpt, cur int) durArg { return durArg{v, opts, cur} },
+		// more: a setting's link to its part of the help
+		"more": func(v *view, id string) moreArg { return moreArg{v, id} },
 		// row: a verdict row with the page, for the templates that need both
 		"row": func(v *view, r vrow) rowArg { return rowArg{v, r} },
 		// dl: one of the domain lists for the "domainlist" template
@@ -81,6 +83,11 @@ type tunArg struct {
 	Name  string // awg1, awg2: what ui.js updates it by every second
 	Alive bool
 	Note  string
+}
+
+type moreArg struct {
+	V  *view
+	ID string
 }
 
 type durArg struct {

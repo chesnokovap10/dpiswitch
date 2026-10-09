@@ -105,7 +105,7 @@
 | **Обзор** | Сколько сайтов идёт напрямую, заблокировано, медленнее, не проверено; состояние обоих туннелей, замена `.conf`; последние события |
 | **Вердикты** | Все вердикты по вкладкам «Напрямую», «Заблокированы», «Медленнее», «Не проверено», фильтр по имени (русские имена ищутся и показываются как есть); строка выделяется кликом, правый клик отправляет её в список, ✕ сбрасывает её вердикт; «Сбросить вердикты…» — выбранной сети; сеть в шапке раскрывает список сетей |
 | **Списки маршрутов** | «Всегда напрямую», «Всегда через туннель», «Запрещено»: сайты, адреса и программы в каждом |
-| **Второй туннель** | Подключение awg2, пресеты (YouTube, Telegram, ИИ-сервисы, Instagram/Facebook/X; их можно изменить, удалить и добавить свои) и свои сайты |
+| **Второй туннель** | Подключение awg2, пресеты (YouTube, Telegram и WhatsApp, Discord, ИИ-сервисы, Instagram/Facebook/X; их можно изменить, удалить и добавить свои) и свои сайты |
 | **Настройки** | Детектор, сроки, IPv6, DNS; каждое изменение применяется сразу |
 | **Логи** | Лог контроллера и службы, ядра, трея и интерфейса; последние 400 строк, вместе с предыдущим файлом после ротации |
 | **Справка** | То, что описано ниже; ссылки из неё ведут прямо к нужному полю, и оно подсвечивается |
@@ -131,6 +131,8 @@
 | Держать напрямую | 7 дней | Сколько чистый сайт идёт напрямую до следующей проверки |
 | Перепроверять заблокированные через | 1 час | Затем всё реже, до потолка паузы |
 | Потолок паузы | 1 день | Самая долгая пауза между проверками сайта |
+| Разбивать ClientHello | Выкл | Сайт, заблокированный по имени, проверяется с разрезанным ClientHello и, если так работает, идёт напрямую с разбиением |
+| Подставной пакет QUIC | Вкл | QUIC к сайтам с разбиением идёт напрямую с подставным первым пакетом (www.google.com); где не помогает — отклоняется. Только вместе с разбиением |
 | IPv6 | Через туннель | Даёт IPv6 даже там, где у провайдера его нет |
 | DNS для прямых сайтов | `tls://8.8.8.8`, `tls://8.8.4.4` | DoT Google, мимо туннеля |
 | DNS внутри туннеля | из `.conf` | Для сайтов, идущих через туннель |
@@ -313,7 +315,7 @@ OpenVPN, IKEv2), звонок или игра, которым привязка �
 
 ### Второй туннель
 
-Второй сервер AmneziaWG только для выбранных сервисов: YouTube, Telegram, ИИ-сервисов (ChatGPT,
+Второй сервер AmneziaWG только для выбранных сервисов: YouTube, Telegram и WhatsApp, Discord, ИИ-сервисов (ChatGPT,
 Claude, Gemini, Grok, Copilot, DeepL и др.), Instagram, Facebook, X и вашего списка. Он стоит ниже
 «Запрещено», «Всегда через туннель» и «Всегда напрямую» и выше детектора — детектор его имена не трогает.
 Если он лежит, его сайты идут через первый туннель; если лежат оба — напрямую, а в «Только в туннель»
@@ -343,7 +345,7 @@ Claude, Gemini, Grok, Copilot, DeepL и др.), Instagram, Facebook, X и ваш
   не найдено…), «Запрещено» (попытки, которые отклонил список «Запрещено») и «Все». Та же ошибка той же
   программы к тому же адресу тем же маршрутом, по тому же правилу и по той же причине — не новая строка,
   а «×N» на прежней. Фильтр по хосту,
-  программе и адресу, по маршруту.
+  программе и адресу, по маршруту и галка «Скрыть проверки детектора».
 - **История.** Программа опрашивает ядро раз в секунду с запуска трея, открыта страница или нет. Закрытые
   соединения и ошибки хранятся весь запуск ядра, сколько бы времени ни прошло, — последние 100 000 каждого
   вида. Когда ядро запускается заново, история начинается сначала: служба помечает каждый запуск ядра, так
@@ -562,7 +564,7 @@ their own port and access key).
 | **Overview** | How many sites go direct, are blocked, slower, unverified; both tunnels' state, replacing a `.conf`; recent events |
 | **Verdicts** | Every verdict in the "Direct", "Blocked", "Slower", "Unverified" tabs, a name filter (names in Russian letters are found and shown as written); a click pins a row, a right-click sends it to a list, ✕ resets its verdict; "Reset verdicts…" of the network shown; the network in the header opens the list of networks |
 | **Routing lists** | "Always direct", "Always via tunnel", "Forbidden": sites, addresses and programs in each |
-| **Second tunnel** | Attaching awg2, presets (YouTube, Telegram, AI services, Instagram/Facebook/X; edit them, delete them, add your own) and your own list |
+| **Second tunnel** | Attaching awg2, presets (YouTube, Telegram and WhatsApp, Discord, AI services, Instagram/Facebook/X; edit them, delete them, add your own) and your own list |
 | **Settings** | Detector, terms, IPv6, DNS; every change applies at once |
 | **Logs** | The controller and service log, the core's, the tray and UI's; the last 400 lines, the previous file's included after a rotation |
 | **Help** | What is described below; its links lead straight to the field meant, which blinks |
@@ -588,6 +590,8 @@ many are blocked.
 | Keep direct for | 7 days | How long a clean site goes direct before it is checked again |
 | Re-check blocked after | 1 hour | Then less and less often, up to the pause cap |
 | Pause cap | 1 day | The longest wait between checks of a site |
+| Cut the ClientHello | Off | A site blocked by its name is checked with its ClientHello cut and, if it works so, goes direct with the cut |
+| QUIC decoy | On | QUIC to the cut's sites goes direct behind a decoy first packet (www.google.com); refused where that does not help. With the cut only |
 | IPv6 | Through the tunnel | Gives IPv6 even where the ISP has none |
 | DNS for direct sites | `tls://8.8.8.8`, `tls://8.8.4.4` | Google DoT, outside the tunnel |
 | DNS inside the tunnel | from the `.conf` | For the sites that go through the tunnel |
@@ -772,7 +776,7 @@ not recorded. The state is written to
 
 ### The second tunnel
 
-A second AmneziaWG server for chosen services only: YouTube, Telegram, AI services (ChatGPT, Claude,
+A second AmneziaWG server for chosen services only: YouTube, Telegram and WhatsApp, Discord, AI services (ChatGPT, Claude,
 Gemini, Grok, Copilot, DeepL and more), Instagram, Facebook, X and your own list. It stands below
 Forbidden, Always via tunnel and Always direct and above the detector, which leaves its names alone. If it
 is down, its sites go through the first tunnel; if both are down, direct — in Tunnel only refused. The detector measures the direct path against the first tunnel only: what goes to awg2 is never checked, and without awg1 nothing is, even with auto-switch On. Until it is attached, its presets and list route

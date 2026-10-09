@@ -364,7 +364,7 @@ func TestLivePresets(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatalf("%v: %s", err, w.Body.String())
 	}
-	if len(got) != 4 || got[2].ID != "ai" || got[2].Title != "ИИ-сервисы" || got[2].On || !got[1].On {
+	if len(got) != 5 || got[3].ID != "ai" || got[3].Title != "ИИ-сервисы" || got[3].On || !got[1].On || got[1].Title != "Telegram, WhatsApp" {
 		t.Fatalf("presets: %+v", got)
 	}
 }

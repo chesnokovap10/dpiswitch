@@ -189,18 +189,31 @@ td small{display:block;color:var(--muted)}
 .live .tile span{font-size:12px}
 .live .bar{flex-wrap:wrap;row-gap:8px}
 .live .bar > *{white-space:nowrap;flex:none}
-.ltable{white-space:nowrap;font-variant-numeric:tabular-nums}
-.ltable td{padding:3px 8px;vertical-align:middle}
+/* Fixed column widths: with the table laying itself out by what it held,
+   a sort, a long name or an IPv6 address moved every column, and a long
+   history ran wider than the page. Measured in Segoe UI 13px: the widest
+   value or head with its sort arrow, and 16px of padding. What is cut short
+   says itself in full in its hint. The host takes what is left. */
+.ltable{white-space:nowrap;font-variant-numeric:tabular-nums;table-layout:fixed;min-width:1240px}
+.ltable col.w-st{width:22px}.ltable col.w-p{width:120px}.ltable col.w-ip{width:140px}
+.ltable col.w-port{width:62px}.ltable col.w-type{width:60px}.ltable col.w-r{width:150px}
+.ltable col.w-sp{width:98px}.ltable col.w-b{width:92px}.ltable col.w-b2{width:106px}
+.ltable col.w-t{width:84px}.ltable col.w-x{width:30px}
+.ltable th,.ltable td{padding:3px 8px;overflow:hidden;text-overflow:ellipsis}
+.ltable td{vertical-align:middle}
+/* every row one height -- the blank ones that hold a picked row's place
+   too: shorter, they let it slide up as the rows above it went */
+.ltable tbody tr{height:27px}
+/* a date under the clock, in the same height */
+.ltable td.c-t.d2{white-space:pre;font-size:11px;line-height:12px;padding-top:0;padding-bottom:0}
 .ltable .num{text-align:right}
 .ltable th[data-sort]{cursor:pointer;user-select:none}
 .ltable th[data-sort]:hover{color:var(--fg)}
 .ltable th.asc::after{content:" ▲";font-size:9px}
 .ltable th.desc::after{content:" ▼";font-size:9px}
-.ltable .c-st{width:14px;padding-right:0}
-.ltable .c-p{max-width:160px;overflow:hidden;text-overflow:ellipsis}
-.ltable .c-h{max-width:320px;overflow:hidden;text-overflow:ellipsis}
-.ltable .c-r{max-width:220px;overflow:hidden;text-overflow:ellipsis}
-.ltable .c-x,.vtable .c-x{width:24px;padding:0 4px}
+.ltable .c-st{padding-right:0}
+.ltable .c-x{padding:0 4px}
+.vtable .c-x{width:24px;padding:0 4px}
 .r-direct td,.sw.r-direct,.r-split td,.sw.r-split{background:var(--ok-bg)}
 .r-awg1 td,.sw.r-awg1{background:var(--accent-bg)}
 .r-awg2 td,.sw.r-awg2{background:var(--awg2-bg)}
@@ -293,6 +306,10 @@ button.lx:hover{color:var(--bad)}
 .blink{animation:blink .6s ease-in-out 3}
 /* a label blinking is a box around its text, not a line under it */
 label.blink{border-radius:6px}
+/* a setting's link to its part of the help */
+a.more{white-space:nowrap}
+.form .g a.more{text-transform:none;letter-spacing:0;font-weight:500}
+h3 small{font-size:12px;font-weight:400;margin-left:6px;text-transform:none;letter-spacing:0}
 
 /* dialogs */
 dialog{border:1px solid var(--line);border-radius:10px;padding:16px;width:580px;background:var(--panel);color:var(--fg)}

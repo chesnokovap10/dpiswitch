@@ -74,7 +74,7 @@ it), addresses and networks (<code>1.2.3.4</code>, <code>192.168.0.0/16</code>) 
 made to it by address: a browser reaches sites by name, so add a site by its name. The tries the
 Forbidden list refuses show on a tab of their own in <a href="/live#ltabs">Live</a>.</p>
 
-<h4>How a site is checked</h4>
+<h4 id="h-checks">How a site is checked</h4>
 <ol>
 <li>The detector watches the connections the core carries and picks up the names in them
 (the name is read from the connection itself, so programs with their own DNS count too).</li>
@@ -107,7 +107,7 @@ moment than about the path.</p>
 <tr><td><span class="pill">INCONCLUSIVE</span></td><td>Nothing to compare: the tunnel failed too, the site answers nowhere, or its IPv6 node is out of reach directly</td><td>keeps the previous verdict; a new name stays in the tunnel</td></tr>
 </table>
 
-<h4>Terms and re-checks</h4>
+<h4 id="h-terms">Terms and re-checks</h4>
 <ul>
 <li>A clean site goes direct for the <a href="/settings#clean_ttl_min">term</a> set (7 days by default), then it is checked
 again. If the check cannot confirm it, it goes through the tunnel until the next one.</li>
@@ -119,12 +119,12 @@ row that finds the same doubles the wait, up to the pause cap (1 day).</li>
 left alone, and after ten days it is forgotten. If its term is over, the Verdicts page says "when next used" for it.</li>
 </ul>
 
-<h4>Whole domains</h4>
+<h4 id="h-families">Whole domains</h4>
 <p>When a domain has 3 or more clean subdomains and none blocked, slower or failing directly, the whole
 domain (<code>+.example.com</code>) goes direct: new subdomains do not wait for a check. The first
 bad subdomain removes the rule. It helps services with pools of servers: CDNs, speed tests, updates.</p>
 
-<h4>DPI bypass: cutting the ClientHello</h4>
+<h4 id="h-split">DPI bypass: cutting the ClientHello</h4>
 <p>ISPs block many sites by name: they read it off the first message of a TLS connection (the
 ClientHello) and cut the connection. With the <a href="/settings#split_hello">cut</a> on, a site found
 BLOCKED_TLS is checked once more -- through the core's <code>direct-split</code> outbound, which cuts the
@@ -134,12 +134,7 @@ together as usual: TLS allows it to be split into records. The check is as stric
 node, the handshake, a request and its answer, and the speed against the tunnel.</p>
 <ul>
 <li>It passes: the verdict is CLEAN_SPLIT, and the site goes direct with the cut, for the same term as a
-clean one. QUIC (UDP 443) to it is refused, and the browser takes TCP at once. With the <a
-href="/settings#split_hello">bypass</a> on, QUIC goes the same way: ahead of a connection's first packet the core
-sends a decoy one with the name www.google.com, the ISP judges the connection by it and lets the real one
-through. The detector checks QUIC this way too: QUIC blocked direct is tried again with the decoy. Where it
-does not help, QUIC to the site is refused ("QUIC refused" in the verdicts), and the browser takes TCP at once.
-A site clean over TCP with only its QUIC blocked goes direct with the decoy rather than to the tunnel.</li>
+clean one. Its QUIC (UDP 443) goes as the <a href="/settings#quic_fake">QUIC decoy</a> says, below.</li>
 <li>It fails: BLOCKED_DPI ("DPI bypass failed"), and the tunnel. It is re-checked on the same schedule as other
 blocks, with the cut each time. Only slower than the tunnel: SLOWER.</li>
 <li>Only the first message is cut; the rest of the traffic goes as it is. Encryption is not touched: the
@@ -162,7 +157,27 @@ compared. Once awg1 is loaded, such verdicts are the first checked again against
 <li>Such names make no family (Whole domains): the domain is blocked by name.</li>
 </ul>
 
-<h4>Auto-switch: on, observe only, tunnel only</h4>
+<h4 id="h-quic">DPI bypass: the QUIC decoy</h4>
+<p>QUIC (UDP 443) carries the name in its first packet, the Initial, and the ISP cuts it by that name just
+the same. With the <a href="/settings#quic_fake">QUIC decoy</a> on (the default), QUIC to the sites going
+direct with the cut goes direct too: ahead of a connection's first packet the core sends a decoy one with the
+name www.google.com, the ISP judges the connection by it and lets the real one through.</p>
+<ul>
+<li>The detector checks QUIC this way too: QUIC blocked direct is tried again with the decoy. Where it does
+not help, QUIC to the site is refused ("QUIC refused" in the verdicts), and the browser takes TCP at once.</li>
+<li>A site clean over TCP with only its QUIC blocked goes direct with the decoy rather than to the tunnel. One
+whose QUIC gets through with the decoy while its TCP is blocked even with the cut goes direct over QUIC, its
+TCP on 443 refused.</li>
+<li>Switched off, QUIC to every site going direct with the cut is refused, and the browser takes TCP; the
+names that go direct over QUIC alone go back to the tunnel. Its open QUIC connections close and open again
+the new way.</li>
+<li>It works only together with the <a href="/settings#split_hello">ClientHello cut</a>: only the cut's names
+take that way. In Observe only with the cut on, all QUIC goes with the decoy; with the decoy off, QUIC goes
+direct as it is.</li>
+<li>Switching it needs no core restart.</li>
+</ul>
+
+<h4 id="h-modes">Auto-switch: on, observe only, tunnel only</h4>
 <p>The detector checks sites and records verdicts in all three <a href="/settings#auto_switch">modes</a>; the modes differ only in where
 the traffic goes.</p>
 <ul>
@@ -186,7 +201,7 @@ On the Verdicts page the network in the header opens the list of the networks ke
 has its verdicts shown, and the page's reset and ✕ act on it alone. Leaving the page goes back to the
 current network. The tray's reset is of the current network.</p>
 
-<h4>DNS</h4>
+<h4 id="h-dns">DNS</h4>
 <ul>
 <li><b>Direct sites</b> are resolved by the resolvers for direct sites, asked outside the tunnel: CDNs
 then answer with nodes near your ISP. The detector uses the same resolvers, so it tests the node the
@@ -202,12 +217,12 @@ resolver for direct sites, the others joining in when it is slow. Answers are ke
 detector asks the same cache. Resolvers given by name, not by address, are not asked by the cache.</li>
 </ul>
 
-<h4>IPv6</h4>
+<h4 id="h-ipv6">IPv6</h4>
 <p>With IPv6 on, the computer gets IPv6 even where the ISP has none: it goes through the tunnel. Sites
 going direct use IPv4. If the tunnel's server has no working IPv6, the program finds out and resolves
 IPv4 only for it: the core restarts once, and that finding holds for a day before it is checked again.</p>
 
-<h4>UDP leak guard</h4>
+<h4 id="h-udpguard">UDP leak guard</h4>
 <p>A program that binds its UDP socket to the Wi-Fi or Ethernet adapter's own address leaves by that adapter
 whatever the routes say: around the tunnel, with your real address in the packet. A browser's WebRTC does it to
 show a site who you are; so do the calls of Discord and Telegram, games and torrent clients.
@@ -225,8 +240,8 @@ game that binds to the adapter and has no other way. A device on the local netwo
 cut off. The filters live in the service's own session: they go out when the core stops or restarts, when the
 setting is switched off, and with the service should it die.</p>
 
-<h4>The second tunnel</h4>
-<p>A second AmneziaWG server for chosen services only: YouTube, Telegram, AI services, social networks
+<h4 id="h-awg2">The second tunnel</h4>
+<p>A second AmneziaWG server for chosen services only: YouTube, Telegram and WhatsApp, Discord, AI services, social networks
 and your own list. It stands below Forbidden, Always via tunnel and Always direct and above the detector,
 which leaves its names alone. If it is down, its sites go through the first tunnel; if both are down,
 direct -- in Tunnel only refused. The detector measures the direct path against the first tunnel only: what goes to awg2 is never checked, and without awg1 nothing is, even with auto-switch On. Until it is attached, its
@@ -252,7 +267,7 @@ goes through the tunnel and the detector starts over.</li>
 right-click on a row sends the site straight to the list it belongs in.</li>
 </ol>
 
-<h4>Live</h4>
+<h4 id="h-live">Live</h4>
 <p>The connections the core holds, refreshed every second: the program, the host, the address, the port,
 the type, the route, the speed and the bytes both ways. A row's colour is its route: green direct, blue
 the first tunnel, violet the second, grey the detector's checks; closed rows have none. Hover over a route
@@ -260,8 +275,11 @@ for the group and the rule that chose it.</p>
 <ul>
 <li><b><a href="/live#ltabs">Tabs</a>.</b> Open, Closed, Failed, Forbidden — the tries the
 <a href="/lists#list-block">Forbidden</a> list refused — and All. Beside them, a <a href="/live#lroutes">filter by
-route</a>, and a <a href="/live#lfilter">search</a> by host, program
-and address. A click on a column's head sorts the table by it.</li>
+route</a>, a <a href="/live#lfilter">search</a> by host, program
+and address, and <a href="/live#lnoprobe">"Hide the detector's checks"</a>. A click on a column's head sorts
+the table by it; the columns keep their widths.</li>
+<li><b>Time</b> is when it happened: an open connection's, when it opened; a closed one's, when it closed; a
+failure's, its last try. Not today, the date goes under it. How long a connection lasted is in its hint.</li>
 <li><b>States.</b> <span class="st open"></span> open; <span class="st idle"></span> open, but no traffic for over 30 seconds; <span class="st closed"></span> closed; <span class="st failed"></span>
 failed: the core could not make the connection.</li>
 <li><b>Type.</b> TLS, QUIC and HTTP are told by the port: the likely protocol, not one seen, with a dashed

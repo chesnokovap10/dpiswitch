@@ -324,6 +324,7 @@ async function send(url, body, target, changed) {
     const keep = changed !== undefined && a && el.contains(a) && a.name && a.name !== changed &&
       'value' in a ? {name: a.name, value: a.value, s: a.selectionStart, e: a.selectionEnd} : null;
     el.innerHTML = html;
+    reblink(el);
     el._html = undefined;
     // an answer may carry a new value for a field outside it: the DNS test
     // puts the address that answered in place of the one written
@@ -416,6 +417,7 @@ async function refresh(el, url) {
   const html = await r.text();
   if (current()) {
     el.innerHTML = html;
+    reblink(el);
     el._html = undefined;
   }
 }
@@ -496,6 +498,7 @@ async function poll(el) {
     const follow = el.dataset.follow !== undefined && follows(el, bottom);
     const at = el.dataset.follow !== undefined && !follow ? readingAt(el) : null;
     el.innerHTML = html;
+    reblink(el);
     el._html = html;
     if (follow) el.scrollTop = el.scrollHeight;
     else if (!at || !backTo(el, at)) el.scrollTop = top;
@@ -612,19 +615,44 @@ function keepScroll() {
   addEventListener('pagehide', keepScroll);
 })();
 
+// what blinks: a checkbox is too small to be seen blinking, its label goes
+// with it
+function blinkTarget(id) {
+  const el = byId(id);
+  if (el && el.matches('input[type=checkbox], input[type=radio]') && el.closest('label')) return el.closest('label');
+  return el;
+}
+function blinkOn(el, elapsed) {
+  el.classList.remove('blink');
+  void el.offsetWidth; // restarts the animation on a second click
+  // carried on where it was, in an element drawn anew
+  el.style.animationDelay = elapsed ? -elapsed + 'ms' : '';
+  el.classList.add('blink');
+  el.addEventListener('animationend', () => { el.classList.remove('blink'); el.style.animationDelay = ''; }, {once: true});
+}
+// The part pointed at blinks on when the part around it is drawn anew: a
+// page shown has its parts refreshed right after (see freshen), and the
+// settings' fields, the DNS boxes and the second tunnel's switch were
+// replaced by new ones a frame into their blink -- it was not seen at all.
+let blinking = null;
+const BLINK_MS = 1800; // .blink in ui.css: 0.6 s three times
+function reblink(root) {
+  if (!blinking) return;
+  const elapsed = performance.now() - blinking.at;
+  if (elapsed >= BLINK_MS) { blinking = null; return; }
+  const el = blinkTarget(blinking.id);
+  if (el && root.contains(el) && !el.classList.contains('blink')) blinkOn(el, elapsed);
+}
+
 // A help link points at a part of a page (/settings#attempts): it is shown
 // and its edge blinks, to say where to look. Not again on "back".
 function point(id) {
   id = id && decodeURIComponent(id);
-  let el = id && byId(id);
+  const el = id && blinkTarget(id);
   if (!el) return;
-  // a checkbox is too small to be seen blinking: its label goes with it
-  if (el.matches('input[type=checkbox], input[type=radio]') && el.closest('label')) el = el.closest('label');
   el.scrollIntoView({block: 'center'});
-  el.classList.remove('blink');
-  void el.offsetWidth; // restarts the animation on a second click
-  el.classList.add('blink');
-  el.addEventListener('animationend', () => el.classList.remove('blink'), {once: true});
+  blinking = {id, at: performance.now()};
+  blinkOn(el, 0);
   // the browser focuses the anchor's target when it can (the log, a field, a
   // checkbox), and its focus ring stayed after the blink: the blink says where
   // to look, not the ring, as on every other link

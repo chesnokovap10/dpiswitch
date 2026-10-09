@@ -150,3 +150,35 @@ func TestLoadStateBad(t *testing.T) {
 		t.Fatal("the saved copy was overwritten")
 	}
 }
+
+// Observe only with the cut on sends everything the cut's way -- its QUIC
+// too, the decoy ahead of it. The decoy off, QUIC goes plain and TCP alone
+// is cut: direct-split always carries the decoy.
+func TestObserveFilesQUICDecoy(t *testing.T) {
+	rules := func(b []byte) []string {
+		var out []string
+		for _, l := range strings.Split(string(b), "\n") {
+			if l != "" && !strings.HasPrefix(l, "#") {
+				out = append(out, l)
+			}
+		}
+		return out
+	}
+	for _, c := range []struct {
+		split, decoy bool
+		plain, cut   string
+	}{
+		{true, true, "", "NETWORK,tcp NETWORK,udp"},
+		{true, false, "NETWORK,udp", "NETWORK,tcp"},
+		{false, true, "NETWORK,tcp NETWORK,udp", ""},
+		{false, false, "NETWORK,tcp NETWORK,udp", ""},
+	} {
+		plain, cut := observeFiles(Settings{SplitHello: c.split, QUICFake: c.decoy})
+		if got := strings.Join(rules(plain), " "); got != c.plain {
+			t.Errorf("cut %v, decoy %v: plain %q, want %q", c.split, c.decoy, got, c.plain)
+		}
+		if got := strings.Join(rules(cut), " "); got != c.cut {
+			t.Errorf("cut %v, decoy %v: cut %q, want %q", c.split, c.decoy, got, c.cut)
+		}
+	}
+}

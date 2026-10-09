@@ -21,6 +21,7 @@
       <button type="button" data-route="tunnel">{{.T "Tunnels"}}</button>
     </div>
     <input type="search" id="lfilter" placeholder="{{.T "Host, program, address"}}" style="width:180px">
+    <label class="cb"><input type="checkbox" id="lnoprobe"> {{.T "Hide the detector's checks"}}</label>
     <span class="spacer"></span>
     <span class="muted" id="lstate"></span>
     <button type="button" id="lpause">{{.T "Pause"}}</button>
@@ -28,6 +29,9 @@
   <div class="flash bad" id="lbanner" hidden></div>
   <div class="tablebox" id="ltable">
     <table class="ltable">
+      {{/* the widths are fixed (ui.css): sorting, a long name or an IPv6
+           address no longer move the columns, and the host takes what is left */}}
+      <colgroup><col class="w-st"><col class="w-p"><col class="w-h"><col class="w-ip"><col class="w-port"><col class="w-type"><col class="w-r"><col class="w-sp"><col class="w-sp"><col class="w-b"><col class="w-b2"><col class="w-t"><col class="w-x"></colgroup>
       <thead><tr>
         <th class="c-st"></th>
         <th data-sort="proc">{{.T "Program"}}</th>

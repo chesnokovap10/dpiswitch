@@ -188,6 +188,12 @@ func closeDetectorDirect(cfg Config, a *api) int {
 
 // closeByProvider closes the open connections a rule of this provider routed
 func closeByProvider(a *api, provider string) int {
+	return closeByProviderNet(a, provider, "")
+}
+
+// closeByProviderNet: closeByProvider for one network only, tcp or udp;
+// empty -- both
+func closeByProviderNet(a *api, provider, network string) int {
 	if provider == "" {
 		return 0
 	}
@@ -198,7 +204,7 @@ func closeByProvider(a *api, provider string) int {
 	}
 	n := 0
 	for _, c := range conns {
-		if c.ID == "" || !c.byProvider(provider) {
+		if c.ID == "" || !c.byProvider(provider) || network != "" && !strings.EqualFold(c.Metadata.Network, network) {
 			continue
 		}
 		if err := a.closeConnection(c.ID); err != nil {

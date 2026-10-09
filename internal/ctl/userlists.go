@@ -51,6 +51,11 @@ func observeFiles(s Settings) (plain, cut []byte) {
 	empty := []byte("# empty\n")
 	all := observeAll(s.Mode())
 	if s.Mode() == ModeObserve && s.SplitHello {
+		if !s.QUICFake {
+			// the decoy off: QUIC goes plain, TCP is cut
+			return []byte("# observe only, the QUIC decoy off: UDP goes plain\nNETWORK,udp\n"),
+				[]byte("# observe only: TCP goes with the ClientHello cut\nNETWORK,tcp\n")
+		}
 		return empty, all
 	}
 	return all, empty

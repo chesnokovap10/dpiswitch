@@ -534,6 +534,25 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 			n := closeByProvider(a, cfg.SplitProvider)
 			log.Printf("the ClientHello cut switched off: %d open connections it carried closed", n)
 		}
+		// the decoy switched off, the cut on: QUIC it carried opens again
+		// refused, or plain in observe only; switched on there, the plain
+		// QUIC opens again behind the decoy
+		if cfg.Split && old.Split && old.QUICFake && !cfg.QUICFake {
+			n := closeByProviderNet(a, cfg.SplitProvider, "udp")
+			if s.Mode() == ModeObserve {
+				listMu.Lock()
+				syncUserFiles(a)
+				listMu.Unlock()
+				n += closeByProviderNet(a, ObserveSplitProvider, "udp")
+			}
+			log.Printf("the QUIC decoy switched off: %d QUIC connections it carried closed", n)
+		} else if cfg.Split && old.Split && !old.QUICFake && cfg.QUICFake && s.Mode() == ModeObserve {
+			listMu.Lock()
+			syncUserFiles(a)
+			listMu.Unlock()
+			n := closeByProviderNet(a, ObserveProvider, "udp")
+			log.Printf("observe only, the QUIC decoy on: %d QUIC connections moved", n)
+		}
 		// observe only: its catch-all changed hands -- what the other one
 		// carries opens again the new way
 		if old.Split != cfg.Split && s.Mode() == ModeObserve {

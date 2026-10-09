@@ -363,9 +363,9 @@ func TestCycleQUICDecoyAlone(t *testing.T) {
 	}
 }
 
-// The decoy switched off: QUIC is not tried through it, and the list of
-// names whose QUIC is refused stays empty -- the core refuses QUIC to all
-// the cut's names then.
+// The decoy switched off: QUIC is not tried through it, and QUIC to every
+// name of the cut's is refused -- direct-split carries the decoy always,
+// only that list keeps their QUIC from it.
 func TestCycleQUICDecoyOff(t *testing.T) {
 	s, tried := quicScenario(t, map[string]probe.Verdict{"yt.example.org": probe.CleanSplit},
 		map[string]probe.Verdict{"yt.example.org": probe.CleanSplit})
@@ -380,7 +380,7 @@ func TestCycleQUICDecoyOff(t *testing.T) {
 	if e := s.entry("yt.example.org"); e == nil || e.Verdict != probe.CleanSplit {
 		t.Fatalf("verdict %+v", e)
 	}
-	if got := listRules(s.cfg.NoQUICListPath); len(got) != 0 {
+	if got := listRules(s.cfg.NoQUICListPath); !slices.Equal(got, []string{"yt.example.org"}) {
 		t.Errorf("QUIC refused list %v", got)
 	}
 }

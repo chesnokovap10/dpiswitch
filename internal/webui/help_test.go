@@ -42,3 +42,30 @@ func TestHelpLinks(t *testing.T) {
 		}
 	}
 }
+
+// A setting's "More" link goes to its part of the help, in both languages,
+// and the QUIC decoy has a row of its own beside the ClientHello cut.
+func TestSettingsHelpLinks(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	link := regexp.MustCompile(`href="/help#([A-Za-z0-9_-]+)"`)
+	for _, l := range []string{"en", "ru"} {
+		c := map[string]string{"Cookie": "lang=" + l}
+		page := do(t, h, "GET", "/settings", nil, c).Body.String()
+		help := do(t, h, "GET", "/help", nil, c).Body.String()
+		links := link.FindAllStringSubmatch(page, -1)
+		if len(links) < 8 {
+			t.Fatalf("%s: only %d links to the help", l, len(links))
+		}
+		for _, m := range links {
+			if !strings.Contains(help, `id="`+m[1]+`"`) {
+				t.Errorf("%s: /help#%s: no such part of the help", l, m[1])
+			}
+		}
+		for _, id := range []string{`id="split_hello"`, `id="quic_fake"`} {
+			if !strings.Contains(page, id) {
+				t.Errorf("%s: no %s row", l, id)
+			}
+		}
+	}
+}
