@@ -80,10 +80,10 @@ func (s *scenario) shards(n int, v probe.Verdict, from int) {
 	}
 }
 
-// The family goes the tunnel's way until its CDN is known here; direct at
-// 1 in 4 of its CDN names direct -- Beeline's 10 of 31 -- its page and CDN
-// together; a blocked page keeps it in the tunnel; once direct it keeps so
-// down to 15 in 100.
+// The family goes the tunnel's way until its CDN is known here, and on
+// Beeline's 10 of 31 too; direct at 3 in 4 of its CDN names direct -- home's
+// 139 of 141 -- its page and CDN together; a blocked page keeps it in the
+// tunnel; once direct it keeps so down to 1 in 2.
 func TestFamilyWay(t *testing.T) {
 	s := familyScenario(t)
 	s.put("music.youtube.com", probe.CleanSplit, "")
@@ -93,10 +93,22 @@ func TestFamilyWay(t *testing.T) {
 		t.Fatalf("five CDN names checked: the tunnel's way, page and CDN: %v", got)
 	}
 	s.shards(5, probe.CleanSplit, 5)
-	s.shards(21, probe.BlockedDPI, 10)
+	s.shards(21, probe.BlockedDPI, 100)
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := listRules(s.cfg.FamilyTunnelPath); !slices.Contains(got, "+.googlevideo.com") {
+		t.Fatalf("10 of 31 direct: the tunnel: %v", got)
+	}
+	// 60 of 81: under 3 in 4, still the tunnel
+	s.shards(50, probe.CleanSplit, 10)
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := listRules(s.cfg.FamilyTunnelPath); !slices.Contains(got, "+.googlevideo.com") {
+		t.Fatalf("60 of 81: the tunnel: %v", got)
+	}
+	// the blocked ones checked again, clean with the cut: 81 of 81
+	s.shards(21, probe.CleanSplit, 100)
 	syncList(s.cfg, s.api, s.st, "n", false)
 	if got := listRules(s.cfg.FamilyDirectPath); !slices.Contains(got, "+.googlevideo.com") || !slices.Contains(got, "+.c.youtube.com") || !slices.Contains(got, "+.youtube.com") {
-		t.Fatalf("10 of 31 direct: the family goes direct: %v", got)
+		t.Fatalf("81 of 81 direct: the family goes direct: %v", got)
 	}
 	if got := listRules(s.cfg.FamilyTunnelPath); len(got) != 0 {
 		t.Fatalf("tunnel list %v", got)
@@ -104,25 +116,23 @@ func TestFamilyWay(t *testing.T) {
 	if s.reloads[FamilyDirectProvider] == 0 || s.reloads[FamilyTunnelProvider] == 0 {
 		t.Errorf("not reloaded: %v", s.reloads)
 	}
-	// 10 of 51: under 1 in 4, over 15 in 100 -- direct it stays
-	s.shards(20, probe.BlockedDPI, 40)
+	// 81 of 141: under 3 in 4, over 1 in 2 -- direct it stays
+	s.shards(60, probe.BlockedDPI, 200)
 	syncList(s.cfg, s.api, s.st, "n", false)
 	if got := listRules(s.cfg.FamilyDirectPath); !slices.Contains(got, "+.googlevideo.com") {
-		t.Fatalf("10 of 51 keeps a direct family direct: %v", got)
+		t.Fatalf("81 of 141 keeps a direct family direct: %v", got)
 	}
-	// 10 of 71: under 15 in 100 -- back to the tunnel
-	s.shards(20, probe.BlockedDPI, 60)
+	// 81 of 171: under 1 in 2 -- back to the tunnel
+	s.shards(30, probe.BlockedDPI, 300)
 	syncList(s.cfg, s.api, s.st, "n", false)
 	if got := listRules(s.cfg.FamilyTunnelPath); !slices.Contains(got, "+.googlevideo.com") {
-		t.Fatalf("10 of 71: the tunnel: %v", got)
+		t.Fatalf("81 of 171: the tunnel: %v", got)
 	}
-	// 10 of 51 again: not direct before, 1 in 4 is wanted
-	for i := range 20 {
-		s.st.put("n", fmt.Sprintf("rr%d---sn-x.googlevideo.com", 60+i), &entry{Verdict: probe.BlockedDPI, ExpiresAt: time.Now().Add(-time.Minute)})
-	}
+	// 101 of 171: over 1 in 2, but from the tunnel 3 in 4 is wanted
+	s.shards(20, probe.CleanSplit, 300)
 	syncList(s.cfg, s.api, s.st, "n", false)
 	if got := listRules(s.cfg.FamilyTunnelPath); !slices.Contains(got, "+.googlevideo.com") {
-		t.Fatalf("10 of 51, from the tunnel: stays there: %v", got)
+		t.Fatalf("101 of 171, from the tunnel: stays there: %v", got)
 	}
 }
 

@@ -39,10 +39,9 @@ import (
 // YouTube. A CDN is a domain with at least cdnMinNames names checked here.
 //
 // A family goes the tunnel's way by default. It goes direct, the cut's
-// way, when at least 1 of every 4 of its CDN names checked goes direct
+// way, when at least 3 of every 4 of its CDN names checked go direct
 // (cdnMinChecked of them at least) and none of its pages is blocked; it
-// keeps direct down to 15 of every 100, so it does not swing on one
-// verdict. Direct, its CDN hosts the cut does not get through are refused
+// keeps direct down to 1 in 2, so it does not swing on one verdict. Direct, its CDN hosts the cut does not get through are refused
 // (RefuseProvider) -- through the tunnel the service would refuse them --
 // and the player takes another host.
 
@@ -58,9 +57,12 @@ const (
 	// a family decides by this many of its CDN names checked; below it
 	// stays in the tunnel
 	cdnMinChecked = 10
-	// direct at 1 in 4, kept direct down to 15 in 100
-	cdnEnterNum, cdnEnterDen = 1, 4
-	cdnKeepNum, cdnKeepDen   = 15, 100
+	// direct at 3 in 4, kept direct down to 1 in 2. On 09.10 a family
+	// direct at 10 of 31 on Beeline hung: the cut got through to a third of
+	// the new hosts, the rest dropped silently until checked; through the
+	// tunnel, page and all, it played.
+	cdnEnterNum, cdnEnterDen = 3, 4
+	cdnKeepNum, cdnKeepDen   = 1, 2
 	cdnTerm                  = 7 * 24 * time.Hour
 	cdnRetry                 = time.Hour
 )
