@@ -68,10 +68,14 @@ const (
 )
 
 // inherited: the connection went direct by inheritance, by the name's
-// domain or by its address's network. The latter rule is an AND, its
-// payload in the core's own words: "((DomainRegex,.+) && (RuleSet,inherit-ip))"
+// domain or by its address's network, or by its CDN family (cdnfam.go) --
+// a way lent, not the name's own verdict. The network's rule is an AND,
+// its payload in the core's own words: "((DomainRegex,.+) &&
+// (RuleSet,inherit-ip))". The family's was left out at first, and a new
+// CDN host of a family going direct was never taken for a check: blocked,
+// it hung instead of being refused (09.10).
 func (c connection) inherited() bool {
-	return c.byProvider(InheritProvider) ||
+	return c.byProvider(InheritProvider) || c.byProvider(FamilyDirectProvider) ||
 		c.Rule == "AND" && strings.Contains(c.RulePayload, "RuleSet,"+InheritIPProvider+")")
 }
 

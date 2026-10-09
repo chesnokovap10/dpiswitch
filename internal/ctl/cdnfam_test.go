@@ -240,3 +240,14 @@ func TestFamilyNeedsAPage(t *testing.T) {
 		t.Fatalf("YouTube's page opened: its family alone: %v", got)
 	}
 }
+
+// A new CDN host of a family going direct is a way lent, like inheritance:
+// the watcher takes it for a check, and one that brings nothing is checked
+// at once. Left out, a blocked one was never checked nor refused.
+func TestFamilyDirectIsLent(t *testing.T) {
+	c := famConn("x", "rr1---sn-new.googlevideo.com", SplitOutbound)
+	c.RulePayload = FamilyDirectProvider
+	if !c.inherited() {
+		t.Fatal("a family's direct way is a lent one")
+	}
+}
