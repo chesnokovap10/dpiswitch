@@ -43,8 +43,8 @@ import (
 // decides for a name with none: its own check follows as before, and a
 // direct connection that brings nothing is checked at once (suspectDirect).
 //
-// A name blocked on both direct ways whose domain is clearly direct here is
-// refused (RefuseProvider), not sent through the tunnel: a media host of a
+// A name blocked on both direct ways whose domain goes direct here at
+// least 1 time in 4 is refused (RefuseProvider), not sent through the tunnel: a media host of a
 // direct page, through the tunnel, gets the 403 above, and the player waits
 // on it; refused, it takes another host in under a second (08.10). Only by
 // the domain, never the network: a blocked site in a cloud whose other
@@ -65,6 +65,9 @@ const (
 	// at least inheritNum of every inheritDen names that went one way or the
 	// other go direct
 	inheritNum, inheritDen = 3, 4
+	// a group's blocked names are refused at 1 of every 4 direct, see
+	// refuses; below it they keep the tunnel
+	refuseNum, refuseDen = 1, 4
 )
 
 // inherited: the connection went direct by inheritance, by the name's
@@ -100,6 +103,14 @@ func lean(e *entry, now time.Time) (direct, against bool) {
 
 // group: the count of one group's names, see lean
 type group struct{ direct, against int }
+
+// refuses: the group goes direct often enough that its blocked names are
+// refused rather than sent through the tunnel -- a lower bar than lends: on
+// 09.10 googlevideo.com went direct 10 to 19 on one network, its player
+// direct, and refused its blocked hosts the player went on in 1-2 s
+func (g group) refuses() bool {
+	return g.direct >= minInherit && g.direct*refuseDen >= (g.direct+g.against)*refuseNum
+}
 
 func (g group) lends() bool {
 	return g.direct >= minInherit && g.direct*inheritDen >= (g.direct+g.against)*inheritNum
@@ -191,7 +202,7 @@ func (s *state) inheritance(id string, book *asnBook, fams []family) inheritance
 		out.ranges = append(out.ranges, r...)
 	}
 	for _, dom := range blocked {
-		if g := byFam[familyOf(dom)]; g != nil && g.lends() {
+		if g := byFam[familyOf(dom)]; g != nil && g.refuses() {
 			out.refuse = append(out.refuse, dom)
 		}
 	}

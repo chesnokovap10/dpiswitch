@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -65,9 +66,10 @@ func TestInheritByDomain(t *testing.T) {
 
 // At home googlevideo.com went direct 139 to 2: the two blocked hosts,
 // through the tunnel, got the service's 403 and the player waited on them.
-// Refused, it takes another host at once. A domain not clearly direct --
-// 10 to 19 on another network -- refuses nothing: its names keep the
-// tunnel; nor does a network, whose other tenants say nothing of a site.
+// Refused, it takes another host at once -- on another network too, at 10
+// to 19. A domain going direct less than 1 time in 4 refuses nothing: its
+// names keep the tunnel; nor does a network, whose other tenants say
+// nothing of a site.
 func TestInheritRefuse(t *testing.T) {
 	s := inheritScenario(t)
 	for i := range 12 {
@@ -94,12 +96,28 @@ func TestInheritRefuse(t *testing.T) {
 	if s.reloads[RefuseProvider] == 0 {
 		t.Errorf("not reloaded: %v", s.reloads)
 	}
-	// two more blocked: twelve of eighteen is not clearly direct, nothing refused
+	// two more blocked: twelve of eighteen lends nothing, but still refuses
 	s.put("rr10---u.googlevideo.com", probe.BlockedDPI, "")
 	s.put("rr11---v.googlevideo.com", probe.BlockedTCP, "")
 	syncList(s.cfg, s.api, s.st, "n", false)
-	if got := listRules(s.cfg.RefusePath); len(got) != 0 {
-		t.Fatalf("a torn domain refuses nothing: %v", got)
+	if got := listRules(s.cfg.InheritPath); len(got) != 0 {
+		t.Fatalf("twelve of eighteen lends nothing: %v", got)
+	}
+	if got := listRules(s.cfg.RefusePath); len(got) != 3 {
+		t.Fatalf("twelve of eighteen refuses its blocked: %v", got)
+	}
+	// 3 direct of 33: the cut barely works here, the blocked keep the tunnel
+	for i := range 30 {
+		s.put(fmt.Sprintf("h%d.torn.net", i), probe.BlockedDPI, "")
+	}
+	for _, d := range []string{"a.torn.net", "b.torn.net", "c.torn.net"} {
+		s.put(d, probe.CleanSplit, "")
+	}
+	syncList(s.cfg, s.api, s.st, "n", false)
+	for _, d := range listRules(s.cfg.RefusePath) {
+		if strings.HasSuffix(d, ".torn.net") {
+			t.Fatalf("a domain direct 3 of 33 refuses nothing: %v", d)
+		}
 	}
 }
 
