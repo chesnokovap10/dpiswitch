@@ -97,7 +97,7 @@ moment than about the path.</p>
 <tr><th>Verdict</th><th>What was seen</th><th>Route</th></tr>
 <tr><td><span class="pill ok">CLEAN</span></td><td>Every attempt passed directly just as through the tunnel, not slower</td><td>direct</td></tr>
 <tr><td><span class="pill ok">CLEAN_SPLIT</span></td><td>Blocked direct by name (BLOCKED_TLS), but with the ClientHello cut every attempt went as well as through the tunnel, and no slower. Only with the <a href="/settings#split_hello">cut</a> on</td><td>direct with the cut; cut off: tunnel</td></tr>
-<tr><td><span class="pill bad">BLOCKED_TCP</span></td><td>The connection is refused, reset or times out directly, and works through the tunnel</td><td>tunnel</td></tr>
+<tr><td><span class="pill bad">BLOCKED_TCP</span></td><td>The address does not answer directly, with the site name or without, and works through the tunnel every time: an IP block, no DPI bypass helps here</td><td>tunnel</td></tr>
 <tr><td><span class="pill bad">BLOCKED_TLS</span></td><td>TCP connects, but the TLS handshake is cut once the site's name is seen: the typical DPI block</td><td>tunnel</td></tr>
 <tr><td><span class="pill bad">BLOCKED_DPI</span></td><td>"DPI bypass failed": blocked by name (BLOCKED_TLS), and the ClientHello cut does not get through either. Only with the <a href="/settings#split_hello">cut</a> on; each re-check tries the cut again</td><td>tunnel</td></tr>
 <tr><td><span class="pill bad">BLOCKED_QUIC</span></td><td>QUIC (UDP 443) is blocked directly. TCP may work, but a name goes one way as a whole</td><td>tunnel</td></tr>

@@ -224,7 +224,7 @@ func verdictWords(v *view) map[string]string {
 func (v *view) VName(verdict string) string {
 	switch probe.Verdict(verdict) {
 	case probe.BlockedTCP:
-		return v.T("connection cut")
+		return v.T("blocked by address")
 	case probe.BlockedTLS:
 		return v.T("TLS cut by site name")
 	case probe.BlockedDPI:
