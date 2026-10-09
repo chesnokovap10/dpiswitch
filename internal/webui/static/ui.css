@@ -207,10 +207,15 @@ td small{display:block;color:var(--muted)}
 /* a date under the clock, in the same height */
 .ltable td.c-t.d2{white-space:pre;font-size:11px;line-height:12px;padding-top:0;padding-bottom:0}
 .ltable .num{text-align:right}
-.ltable th[data-sort]{cursor:pointer;user-select:none}
-.ltable th[data-sort]:hover{color:var(--fg)}
+.ltable th[data-sort],.vtable th[data-sort]{cursor:pointer;user-select:none}
+.ltable th[data-sort]:hover,.vtable th[data-sort]:hover{color:var(--fg)}
 .ltable th.asc::after{content:" ▲";font-size:9px}
 .ltable th.desc::after{content:" ▼";font-size:9px}
+/* the verdicts' columns lay themselves out by what they hold: the arrow's
+   room is kept on every head, so a sort moves no column */
+.vtable th[data-sort]::after{content:" ▲";font-size:9px;visibility:hidden}
+.vtable th.asc::after{visibility:visible}
+.vtable th.desc::after{content:" ▼";visibility:visible}
 .ltable .c-st{padding-right:0}
 .ltable .c-x{padding:0 4px}
 .vtable .c-x{width:24px;padding:0 4px}

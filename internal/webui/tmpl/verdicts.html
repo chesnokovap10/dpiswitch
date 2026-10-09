@@ -33,7 +33,7 @@
 {{if not $d.Rows}}<div class="empty">{{if $d.Q}}{{.T "Nothing matches the filter."}}{{else if eq $d.Cat "direct"}}{{.T "No site goes direct yet: the detector checks the sites you open and moves the unblocked ones here."}}{{else}}{{.T "None."}}{{end}}</div>
 {{else if eq $d.Cat "direct"}}
 <table class="vtable">
-  <thead><tr><th>{{.T "Name"}}</th><th>{{.T "Decided"}}</th><th>{{.T "Checked again in"}}</th><th>{{.T "Node probed"}}</th><th class="c-x"></th></tr></thead>
+  <thead><tr><th data-sort="name">{{.T "Name"}}</th><th data-sort="dec">{{.T "Decided"}}</th><th data-sort="left">{{.T "Checked again in"}}</th><th data-sort="node">{{.T "Node probed"}}</th><th class="c-x"></th></tr></thead>
   <tbody>{{range $d.Rows}}
     {{if .Fam}}<tr {{template "vkey" .}}><td><b>{{.Domain}}</b>{{template "uni" .}}</td><td colspan="3" class="muted">{{$v.Tf "whole domain: %d clean subdomains, none blocked" .Fam}}</td>{{template "vx" $v}}</tr>
     {{else}}<tr {{template "vkey" .}}><td>{{.Domain}}{{template "uni" .}}{{if .Addr}} <span class="muted">({{$v.T "address, no name"}})</span>{{end}}{{if eq .Verdict "CLEAN_SPLIT"}} <span class="pill">{{$v.T "with the ClientHello cut"}}</span>{{if .NoQUIC}} <span class="pill">{{$v.T "QUIC refused"}}</span>{{end}}{{if .NoTCP}} <span class="pill">{{$v.T "QUIC only, TCP refused"}}</span>{{end}}{{end}}</td><td class="nw">{{$v.Time .Decided}}</td><td class="nw">{{template "left" (row $v .)}}</td><td class="muted nw">{{.Node}}</td>{{template "vx" $v}}</tr>{{end}}
@@ -41,7 +41,7 @@
 </table>
 {{else}}
 <table class="vtable">
-  <thead><tr><th>{{.T "Name"}}</th><th>{{.T "Why"}}</th><th>{{.T "Decided"}}</th><th>{{.T "Checked again in"}}</th><th class="c-x"></th></tr></thead>
+  <thead><tr><th data-sort="name">{{.T "Name"}}</th><th data-sort="why">{{.T "Why"}}</th><th data-sort="dec">{{.T "Decided"}}</th><th data-sort="left">{{.T "Checked again in"}}</th><th class="c-x"></th></tr></thead>
   <tbody>{{range $d.Rows}}
     <tr {{template "vkey" .}}><td>{{.Domain}}{{template "uni" .}}{{if .Addr}} <span class="muted">({{$v.T "address, no name"}})</span>{{end}}</td>
       <td><span class="pill {{if eq $d.Cat "blocked"}}bad{{else if eq $d.Cat "slow"}}warn{{end}}">{{$v.VName .Verdict}}</span><small>{{.Reason}}</small></td>
@@ -52,7 +52,10 @@
 {{end}}
 
 {{/* what a row's menu and reset need of it (see static/verdicts.js) */}}
-{{define "vkey"}}data-key="{{.Key}}"{{with .Dom}} data-dom="{{.}}"{{end}}{{if .Addr}} data-addr="{{.Domain}}"{{else}}{{with .Node}} data-ip="{{.}}"{{end}}{{end}}{{end}}
+{{define "vkey"}}data-key="{{.Key}}"{{with .Dom}} data-dom="{{.}}"{{end}}{{if .Addr}} data-addr="{{.Domain}}"{{else}}{{with .Node}} data-ip="{{.}}"{{end}}{{end}}{{template "vsort" .}}{{end}}
+{{/* what the columns sort by (see verdicts.js): when decided and when due,
+   in milliseconds, "idle" for a name waiting to be used; the verdict */}}
+{{define "vsort"}}{{if not .Decided.IsZero}} data-dec="{{.Decided.UnixMilli}}"{{end}}{{if .Idle}} data-left="idle"{{else if not .Expires.IsZero}} data-left="{{.Expires.UnixMilli}}"{{end}}{{with .Verdict}} data-why="{{.}} {{$.Reason}}"{{end}}{{end}}
 {{define "vx"}}<td class="c-x"><button type="button" class="lx" title="{{.T "Reset the verdict: through the tunnel until the detector checks it again"}}">✕</button></td>{{end}}
 
 {{define "uni"}}{{with .Uni}} <span class="muted">({{.}})</span>{{end}}{{end}}

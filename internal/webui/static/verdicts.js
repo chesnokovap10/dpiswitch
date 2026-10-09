@@ -54,9 +54,70 @@ pageInit.verdicts = function (sec) {
       if (!sel.size) unpick(); else mark();
     }
   }
-  new MutationObserver(mark).observe(box, {childList: true, subtree: true});
+  new MutationObserver(() => { order(); mark(); }).observe(box, {childList: true, subtree: true});
   // another tab: its rows are others
-  box.addEventListener('tab:show', () => unpick());
+  box.addEventListener('tab:show', () => { unpick(); order(); });
+
+  // --- the columns' sort ---
+  // A click on a column's head sorts by it, again the other way. By name,
+  // A to Z, is the order the server draws them in, and the default. Kept per
+  // browser; a column a tab does not have sorts that tab by name.
+  const sort = {k: 'name', desc: false};
+  try { Object.assign(sort, JSON.parse(localStorage.getItem('vsort') || '{}')); } catch (e) {}
+  const coll = new Intl.Collator(document.documentElement.lang || 'en', {numeric: true});
+  // the value a row sorts by; '' sorts last whichever way
+  function val(tr, k) {
+    const d = tr.dataset;
+    switch (k) {
+      case 'dec': return d.dec ? +d.dec : '';
+      // waiting to be used: after every term
+      case 'left': return d.left === 'idle' ? Infinity : d.left ? +d.left : '';
+      case 'node': return d.ip || d.addr || '';
+      case 'why': return d.why || '';
+    }
+    return '';
+  }
+  // the table shown put in the order asked for: the server's order -- by
+  // name -- is noted on each drawing, so the name sort and the ties keep it
+  function order() {
+    const t = table();
+    const tb = t && t.querySelector('tbody');
+    if (!tb) return;
+    const trs = Array.from(tb.children);
+    if (!tb._drawn) {
+      tb._drawn = true;
+      trs.forEach((tr, i) => { tr._i = i; });
+    }
+    const heads = t.querySelectorAll('th[data-sort]');
+    const k = Array.from(heads).some(th => th.dataset.sort === sort.k) ? sort.k : 'name';
+    const desc = k === sort.k && sort.desc;
+    for (const th of heads) {
+      th.classList.toggle('asc', th.dataset.sort === k && !desc);
+      th.classList.toggle('desc', th.dataset.sort === k && desc);
+    }
+    const by = trs.slice().sort((a, b) => {
+      let d = 0;
+      if (k !== 'name') {
+        const x = val(a, k), y = val(b, k);
+        if ((x === '') !== (y === '')) return x === '' ? 1 : -1;
+        d = typeof x === 'number' && typeof y === 'number' ? (x === y ? 0 : x < y ? -1 : 1) : coll.compare(String(x), String(y));
+      }
+      if (desc) d = -d;
+      return d || (k === 'name' && desc ? b._i - a._i : a._i - b._i);
+    });
+    if (by.some((tr, i) => tr !== trs[i])) tb.append(...by);
+  }
+  box.addEventListener('click', e => {
+    const th = e.target.closest('th[data-sort]');
+    if (!th) return;
+    const k = th.dataset.sort;
+    // the times start from the newest decided and the soonest due
+    sort.desc = k === sort.k ? !sort.desc : k === 'dec';
+    sort.k = k;
+    try { localStorage.setItem('vsort', JSON.stringify(sort)); } catch (e) {}
+    order();
+  });
+  order();
 
   function setSel(next, a) {
     sel = next;
