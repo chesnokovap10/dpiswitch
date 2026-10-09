@@ -79,6 +79,11 @@ type state struct {
 	// tunnel left 32 direct of 40, and the family went direct onto the
 	// blocked ones (09.10)
 	Pending map[string]map[string]time.Time `json:"pending,omitempty"`
+	// Parked: verdicts set aside, by network, while a list or a skip holds
+	// their name (see park). They were dropped: a preset switched on and
+	// off again cost YouTube its 155 verdicts, and www.youtube.com went
+	// through the tunnel for a minute and a half until checked anew (09.10)
+	Parked map[string]map[string]*entry `json:"parked,omitempty"`
 	// resets: how many times the verdicts were reset, see resetEpoch
 	resets int
 	// lookupFailed: when the ISP behind a gateway last could not be looked
@@ -502,6 +507,13 @@ func (s *state) forget(id string, idle time.Duration) int {
 			n++
 		}
 	}
+	// a name held by a list is not touched: what was set aside ages from
+	// its last use before
+	for dom, e := range s.Parked[id] {
+		if e.lastSeen().Before(cut) {
+			delete(s.Parked[id], dom)
+		}
+	}
 	return n
 }
 
@@ -535,6 +547,7 @@ func (s *state) dropStale(current string, term time.Duration) (nets, names int) 
 		nets, names = nets+1, names+len(m)
 		delete(s.Networks, id)
 		delete(s.V6, id)
+		delete(s.Parked, id)
 	}
 	return nets, names
 }
@@ -622,6 +635,7 @@ func (s *state) resetVerdicts(id string) int {
 	if s.Networks[id] != nil {
 		s.Networks[id] = map[string]*entry{}
 	}
+	delete(s.Parked, id)
 	s.resets++
 	return n
 }
@@ -637,6 +651,7 @@ func (s *state) forgetVerdicts(id string, keys []string) int {
 	now := time.Now()
 	drop := func(dom string) {
 		delete(s.Networks[id], dom)
+		delete(s.Parked[id], dom)
 		if s.Pending == nil {
 			s.Pending = map[string]map[string]time.Time{}
 		}
@@ -653,8 +668,14 @@ func (s *state) forgetVerdicts(id string, keys []string) int {
 					drop(dom)
 				}
 			}
+			for dom := range s.Parked[id] {
+				if dom == base || strings.HasSuffix(dom, "."+base) {
+					delete(s.Parked[id], dom)
+				}
+			}
 			continue
 		}
+		delete(s.Parked[id], k)
 		if _, ok := s.Networks[id][k]; ok {
 			drop(k)
 		}
@@ -672,16 +693,51 @@ func (s *state) resetEpoch() int {
 	return s.resets
 }
 
-// drop removes the verdicts of the names that match.
-func (s *state) drop(id string, match func(dom string) bool) int {
+// park sets aside the verdicts of the names that match: out of the lists,
+// the families and the re-checks, as dropped ones were, and back by unpark
+// once nothing holds the name.
+func (s *state) park(id string, match func(dom string) bool) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := 0
-	for dom := range s.Networks[id] {
+	for dom, e := range s.Networks[id] {
 		if match(dom) {
+			if s.Parked == nil {
+				s.Parked = map[string]map[string]*entry{}
+			}
+			if s.Parked[id] == nil {
+				s.Parked[id] = map[string]*entry{}
+			}
+			s.Parked[id][dom] = e
 			delete(s.Networks[id], dom)
 			n++
 		}
+	}
+	return n
+}
+
+// unpark puts back the verdicts set aside whose name nothing holds now. A
+// verdict made meanwhile wins; one expired is re-checked as any other.
+func (s *state) unpark(id string, held func(dom string) bool) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for dom, e := range s.Parked[id] {
+		if held(dom) {
+			continue
+		}
+		delete(s.Parked[id], dom)
+		if _, ok := s.Networks[id][dom]; ok {
+			continue
+		}
+		if s.Networks == nil {
+			s.Networks = map[string]map[string]*entry{}
+		}
+		if s.Networks[id] == nil {
+			s.Networks[id] = map[string]*entry{}
+		}
+		s.Networks[id][dom] = e
+		n++
 	}
 	return n
 }

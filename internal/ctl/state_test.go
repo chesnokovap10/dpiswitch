@@ -177,11 +177,51 @@ func TestDropPinnedAndSkipped(t *testing.T) {
 	}}}
 	cfg := Defaults()
 	pinned := map[string]bool{"c.ex.com": true}
-	if n := st.drop("n", func(d string) bool { return pinned[d] || skipped(cfg, d) }); n != 2 {
-		t.Fatalf("dropped %d, want 2", n)
+	held := func(d string) bool { return pinned[d] || skipped(cfg, d) }
+	if n := st.park("n", held); n != 2 {
+		t.Fatalf("set aside %d, want 2", n)
 	}
 	if len(st.families("n")) != 0 {
 		t.Error("two CLEAN left after the pinned one went: no family")
+	}
+	if n := st.unpark("n", held); n != 0 {
+		t.Fatalf("put back %d while still held, want 0", n)
+	}
+
+	// the list lets c.ex.com go: its verdict comes back, not a new check;
+	// one made meanwhile wins over the one set aside
+	pinned = map[string]bool{}
+	st.Networks["n"]["c.ex.com"] = &entry{Verdict: probe.BlockedTLS, ExpiresAt: live}
+	if n := st.unpark("n", held); n != 0 {
+		t.Fatalf("put back %d, want 0: c.ex.com has a newer verdict", n)
+	}
+	if e, _ := st.get("n", "c.ex.com"); e.Verdict != probe.BlockedTLS {
+		t.Errorf("c.ex.com: %v, want the newer BLOCKED_TLS", e.Verdict)
+	}
+	if _, ok := st.Parked["n"]["c.ex.com"]; ok {
+		t.Error("c.ex.com still set aside")
+	}
+	if _, ok := st.Parked["n"]["cloudflare-ech.com"]; !ok {
+		t.Error("cloudflare-ech.com is skipped: it stays aside")
+	}
+	st.Networks["n"]["c.ex.com"] = &entry{Verdict: probe.Clean, ExpiresAt: live}
+	st.park("n", func(d string) bool { return d == "c.ex.com" })
+	if n := st.unpark("n", held); n != 1 {
+		t.Fatalf("put back %d, want 1", n)
+	}
+	if len(st.families("n")) != 1 {
+		t.Error("c.ex.com back: the family of three again")
+	}
+
+	// a reset and a forgotten name take what is aside too
+	st.park("n", func(d string) bool { return d == "a.ex.com" })
+	st.forgetVerdicts("n", []string{"a.ex.com"})
+	if _, ok := st.Parked["n"]["a.ex.com"]; ok {
+		t.Error("a.ex.com forgotten from the UI, still set aside")
+	}
+	st.resetVerdicts("n")
+	if len(st.Parked["n"]) != 0 {
+		t.Errorf("after a reset %d still set aside", len(st.Parked["n"]))
 	}
 
 	force := connection{Rule: "RuleSet", RulePayload: "force-tunnel"}

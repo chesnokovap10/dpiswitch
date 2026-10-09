@@ -181,8 +181,11 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	leaveAlone := func(dom string) bool {
 		return seenPinned[dom] || lists.has(dom) || skipped(cfg, dom)
 	}
-	if n := st.drop(netID, leaveAlone); n > 0 {
-		log.Printf("dropped %d verdicts for names that are skipped or pinned by a list", n)
+	if n := st.park(netID, leaveAlone); n > 0 {
+		log.Printf("set aside %d verdicts for names that are skipped or pinned by a list", n)
+	}
+	if n := st.unpark(netID, leaveAlone); n > 0 {
+		log.Printf("put back %d verdicts set aside: no list holds their names now", n)
 	}
 	// the networks owning the probed nodes, learnt beside the cycle: the
 	// lists follow once a round learnt any
