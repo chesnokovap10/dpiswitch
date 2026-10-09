@@ -185,8 +185,9 @@ func pageBlocked(v probe.Verdict) bool {
 type familyWay struct {
 	f              cdnFamily
 	direct         bool
-	cdnDirect, cdn int    // CDN names going direct, of those leaning
-	blockedPage    string // a page blocked here, if any
+	cdnDirect, cdn int      // CDN names going direct, of those leaning
+	blockedPage    string   // a page blocked here, if any
+	refuse         []string // its CDN hosts blocked on both direct ways
 }
 
 func (w familyWay) String() string {
@@ -222,6 +223,9 @@ func (s *state) familyWays(id string, book *cdnBook, wasDirect map[string]bool) 
 			cdn, page := ways[i].f.cdnOf(dom)
 			switch {
 			case cdn:
+				if refusable(e.Verdict) && now.Before(e.ExpiresAt) {
+					ways[i].refuse = append(ways[i].refuse, dom)
+				}
 				d, a := lean(e, now)
 				if d || a {
 					ways[i].cdn++
@@ -244,6 +248,7 @@ func (s *state) familyWays(id string, book *cdnBook, wasDirect map[string]bool) 
 			num, den = cdnKeepNum, cdnKeepDen
 		}
 		w.direct = w.blockedPage == "" && w.cdn >= cdnMinChecked && w.cdnDirect*den >= w.cdn*num
+		sort.Strings(w.refuse)
 	}
 	sort.Slice(ways, func(i, j int) bool { return ways[i].f.CDN < ways[j].f.CDN })
 	return ways

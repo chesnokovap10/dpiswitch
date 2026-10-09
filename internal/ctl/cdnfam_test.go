@@ -185,3 +185,35 @@ func TestFamilyClosesOldWay(t *testing.T) {
 		t.Fatalf("closed %v: the page on the cut's way, nothing else", s.closed)
 	}
 }
+
+// Refused are the CDN hosts of a family going direct the cut does not get
+// through -- through the tunnel the service refuses them, refused the
+// player takes another. Nothing else: a family in the tunnel refuses
+// nothing, and a site outside any family goes through the tunnel, its
+// domain direct or not.
+func TestFamilyRefuse(t *testing.T) {
+	s := familyScenario(t)
+	s.put("music.youtube.com", probe.CleanSplit, "")
+	s.shards(30, probe.CleanSplit, 0)
+	s.put("rr7---sn-x.googlevideo.com", probe.BlockedDPI, "")
+	s.put("rr8---sn-x.googlevideo.com", probe.BlockedTCP, "")
+	s.put("rr9---sn-x.googlevideo.com", probe.BlockedTLS, "")
+	s.st.put("n", "rr6---old.googlevideo.com", &entry{Verdict: probe.BlockedDPI, ExpiresAt: time.Now().Add(-time.Minute)})
+	for i := range 12 {
+		s.put(fmt.Sprintf("h%d.other.net", i), probe.CleanSplit, "")
+	}
+	s.put("x.other.net", probe.BlockedDPI, "")
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := listRules(s.cfg.RefusePath); !slices.Equal(got, []string{"rr7---sn-x.googlevideo.com", "rr8---sn-x.googlevideo.com"}) {
+		t.Fatalf("refused %v", got)
+	}
+	if got := listRules(s.cfg.HoldPath); !slices.Contains(got, "x.other.net") {
+		t.Fatalf("a site outside the families is held for the tunnel: %v", got)
+	}
+	// the page blocked: the family to the tunnel, nothing refused
+	s.put("music.youtube.com", probe.BlockedDPI, "")
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := listRules(s.cfg.RefusePath); len(got) != 0 {
+		t.Fatalf("a family in the tunnel refuses nothing: %v", got)
+	}
+}

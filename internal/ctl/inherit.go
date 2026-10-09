@@ -43,12 +43,12 @@ import (
 // decides for a name with none: its own check follows as before, and a
 // direct connection that brings nothing is checked at once (suspectDirect).
 //
-// A name blocked on both direct ways whose domain goes direct here at
-// least 1 time in 4 is refused (RefuseProvider), not sent through the tunnel: a media host of a
-// direct page, through the tunnel, gets the 403 above, and the player waits
-// on it; refused, it takes another host in under a second (08.10). Only by
-// the domain, never the network: a blocked site in a cloud whose other
-// tenants go direct still needs the tunnel.
+// A CDN host of a family going direct (cdnfam.go) blocked on both direct
+// ways is refused (RefuseProvider), not sent through the tunnel: through
+// the tunnel it gets the 403 above, and the player waits on it; refused, it
+// takes another host in under a second (08.10). Nothing else is refused: a
+// site the cut does not get through goes through the tunnel, however its
+// domain goes.
 //
 // On only, with the cut and families switched on; the networks are learnt
 // from RIPE, a few nodes a cycle (see asnBook).
@@ -65,9 +65,6 @@ const (
 	// at least inheritNum of every inheritDen names that went one way or the
 	// other go direct
 	inheritNum, inheritDen = 3, 4
-	// a group's blocked names are refused at 1 of every 4 direct, see
-	// refuses; below it they keep the tunnel
-	refuseNum, refuseDen = 1, 4
 )
 
 // inherited: the connection went direct by inheritance, by the name's
@@ -104,14 +101,6 @@ func lean(e *entry, now time.Time) (direct, against bool) {
 // group: the count of one group's names, see lean
 type group struct{ direct, against int }
 
-// refuses: the group goes direct often enough that its blocked names are
-// refused rather than sent through the tunnel -- a lower bar than lends: on
-// 09.10 googlevideo.com went direct 10 to 19 on one network, its player
-// direct, and refused its blocked hosts the player went on in 1-2 s
-func (g group) refuses() bool {
-	return g.direct >= minInherit && g.direct*refuseDen >= (g.direct+g.against)*refuseNum
-}
-
 func (g group) lends() bool {
 	return g.direct >= minInherit && g.direct*inheritDen >= (g.direct+g.against)*inheritNum
 }
@@ -126,7 +115,6 @@ type inheritance struct {
 	asns     []string // "AS15169", lending, ranges known or not
 	ranges   []string
 	hold     []string
-	refuse   []string // held names blocked on both direct ways, their domain direct
 	missing  []string // lending networks whose ranges the book lacks
 }
 
@@ -145,7 +133,7 @@ func (s *state) inheritance(id string, book *asnBook, fams []family) inheritance
 	}
 	byFam := map[string]*group{}
 	byASN := map[string]*group{}
-	var hold, blocked []string
+	var hold []string
 	now := time.Now()
 	add := func(m map[string]*group, k string, d, a bool) {
 		if k == "" || !d && !a {
@@ -176,9 +164,6 @@ func (s *state) inheritance(id string, book *asnBook, fams []family) inheritance
 		// verdict.
 		if !d && !(e.Verdict == probe.Inconcl && probe.TunnelDown(e.Reason)) {
 			hold = append(hold, dom)
-			if refusable(e.Verdict) && now.Before(e.ExpiresAt) {
-				blocked = append(blocked, dom)
-			}
 		}
 		add(byFam, familyOf(dom), d, a)
 		add(byASN, book.asnOf(e.TestedIP), d, a)
@@ -201,14 +186,8 @@ func (s *state) inheritance(id string, book *asnBook, fams []family) inheritance
 		}
 		out.ranges = append(out.ranges, r...)
 	}
-	for _, dom := range blocked {
-		if g := byFam[familyOf(dom)]; g != nil && g.refuses() {
-			out.refuse = append(out.refuse, dom)
-		}
-	}
 	sort.Strings(out.families)
 	sort.Strings(out.asns)
-	sort.Strings(out.refuse)
 	sort.Strings(out.missing)
 	sort.Strings(hold)
 	out.hold = hold
@@ -229,7 +208,7 @@ func writeInherit(cfg Config, a *api, st *state, netID string, fams []family, fo
 	}
 	var in inheritance
 	var ways []familyWay
-	var famDirect, famTunnel []string
+	var famDirect, famTunnel, refuse []string
 	was := map[string]bool{}
 	on := inheritOn(cfg) && netID != "" && netID != noNetwork
 	if on {
@@ -242,17 +221,20 @@ func writeInherit(cfg Config, a *api, st *state, netID string, fams []family, fo
 		for _, w := range ways {
 			if w.direct {
 				famDirect = append(famDirect, w.f.rules()...)
+				refuse = append(refuse, w.refuse...)
 			} else {
 				famTunnel = append(famTunnel, w.f.rules()...)
 			}
 		}
+		refuse = dedupe(refuse)
+		sort.Strings(refuse)
 	}
 	lists := []struct {
 		path, provider, what string
 		rules                []string
 	}{
 		{cfg.FamilyTunnelPath, FamilyTunnelProvider, "CDN families going the tunnel's way here, page and CDN together", famTunnel},
-		{cfg.RefusePath, RefuseProvider, "names blocked on both direct ways whose domain goes direct here: refused", in.refuse},
+		{cfg.RefusePath, RefuseProvider, "CDN hosts of a family going direct, blocked on both direct ways: refused", refuse},
 		{cfg.HoldPath, HoldProvider, "names with a verdict that does not go direct: held out of inheritance", in.hold},
 		{cfg.FamilyDirectPath, FamilyDirectProvider, "CDN families going direct here, page and CDN together", famDirect},
 		{cfg.InheritPath, InheritProvider, "domains whose names go direct here: a name with no verdict goes their way", in.families},
@@ -283,8 +265,8 @@ func writeInherit(cfg Config, a *api, st *state, netID string, fams []family, fo
 			}
 		}
 		if l.provider == RefuseProvider && on {
-			log.Printf("applied: %d names blocked on both direct ways, their domain direct, refused (%s)",
-				len(in.refuse), preview(in.refuse))
+			log.Printf("applied: %d CDN hosts blocked on both direct ways, their family direct, refused (%s)",
+				len(refuse), preview(refuse))
 		}
 		changed = changed || l.provider != HoldProvider && l.provider != RefuseProvider
 	}
