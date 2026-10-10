@@ -162,8 +162,12 @@ func gatewayFromTable() (gw string, ifIndex uint32, ok bool) {
 		if windows.GetIpInterfaceEntry(&ifc) == nil {
 			metric += int(ifc.Metric)
 		}
-		if best < 0 || metric < best {
-			best, gw, ifIndex = metric, ip.String(), r.InterfaceIndex
+		// two of one metric: the same one at every look, whatever order the
+		// table gives them in -- the network's name hangs on it
+		g := ip.String()
+		if best < 0 || metric < best || metric == best &&
+			(r.InterfaceIndex < ifIndex || r.InterfaceIndex == ifIndex && g < gw) {
+			best, gw, ifIndex = metric, g, r.InterfaceIndex
 		}
 	}
 	return gw, ifIndex, true
