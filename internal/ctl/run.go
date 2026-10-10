@@ -1660,7 +1660,12 @@ func splitNoQUIC(eps []endpoint, reps []probe.Report) bool {
 		if !eps[i].udp && r.Verdict == probe.CleanSplit {
 			split = true
 		}
-		if eps[i].udp && r.Verdict != probe.Clean && r.Verdict != probe.CleanSplit {
+		// not one the tunnel's side failed: that says nothing of the name's
+		// QUIC, and the decoy was not tried. Ten seconds after a restart
+		// (10.10) music.youtube.com had its QUIC refused for a week so,
+		// QUIC that the decoy gets through.
+		if eps[i].udp && r.Verdict != probe.Clean && r.Verdict != probe.CleanSplit &&
+			!(r.Verdict == probe.Inconcl && r.Unmeasured) {
 			bad = true
 		}
 	}

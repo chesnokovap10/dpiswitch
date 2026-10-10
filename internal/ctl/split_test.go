@@ -574,3 +574,31 @@ func TestObserveCutNames(t *testing.T) {
 		t.Fatalf("seen %v", ports)
 	}
 }
+
+// A QUIC check the tunnel's side failed says nothing of the name's QUIC,
+// and the decoy is not tried after it: the name's QUIC is not refused for
+// it. A host that has no QUIC on either path is, as before -- there is
+// nothing to wait on.
+func TestCycleQUICTunnelSilent(t *testing.T) {
+	s, tried := quicScenario(t,
+		map[string]probe.Verdict{"mu.example.org": probe.CleanSplit, "none.example.net": probe.CleanSplit}, nil)
+	for _, d := range []string{"mu.example.org", "none.example.net"} {
+		s.see(tunnelled(d, 443), quic(d))
+		s.script(d+" tcp/443", blockedTLS("192.0.2.60"))
+	}
+	s.script("mu.example.org quic/443", probe.Report{Verdict: probe.Inconcl, Unmeasured: true, TestedIP: "192.0.2.60",
+		Reason: "tunnel path unavailable: silent drop (no reply) on quic", Direct: tcpFails, Tunnel: tcpFails})
+	s.script("none.example.net quic/443", probe.Report{Verdict: probe.Inconcl, TestedIP: "192.0.2.60",
+		Reason: "fails the same on both paths", Direct: tcpFails, Tunnel: tcpFails})
+	s.see(tunnelled("mu.example.org", 443), quic("mu.example.org"), tunnelled("none.example.net", 443), quic("none.example.net"))
+	s.cycle()
+	if len(*tried) != 0 {
+		t.Errorf("decoy tried for %v", *tried)
+	}
+	if e := s.entry("mu.example.org"); e == nil || e.Verdict != probe.CleanSplit || e.NoQUIC {
+		t.Errorf("the tunnel silent: %+v", e)
+	}
+	if e := s.entry("none.example.net"); e == nil || e.Verdict != probe.CleanSplit || !e.NoQUIC {
+		t.Errorf("no QUIC on either path: %+v", e)
+	}
+}
