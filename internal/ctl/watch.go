@@ -141,8 +141,12 @@ func (w *watcher) observe(cfg Config, conns []connection) {
 		// And what no rule but the last took and that went direct: with no
 		// first tunnel loaded, everything -- the ClientHello cut is checked
 		// then (see Config.alone).
+		// The cut's own names too: their ports were not seen from the day
+		// of their verdict on, and a check made while one is open on QUIC
+		// did not know of it.
 		if dom == "" || !c.probeable() ||
 			!(c.viaTunnel(cfg.ProxyName) || c.byProvider(cfg.Provider) || c.byProvider(ObserveProvider) ||
+				cfg.SplitProvider != "" && c.byProvider(cfg.SplitProvider) ||
 				c.byProvider(ObserveSplitProvider) || c.inherited() ||
 				c.Rule == "Match" && c.viaDirect()) {
 			continue

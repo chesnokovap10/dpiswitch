@@ -502,3 +502,75 @@ func TestResetEmptiesRefusals(t *testing.T) {
 		}
 	}
 }
+
+// A name going direct with the cut was met over TCP alone -- the fast lane
+// takes it within a second -- and the cut's outbound carries its QUIC too,
+// behind the decoy: it is probed all the same. Through, its QUIC is
+// remembered; not, refused; a host with no QUIC at all is as it was.
+func TestCycleUnseenQUIC(t *testing.T) {
+	names := []string{"thru.example.org", "stuck.example.org", "none.example.org"}
+	cut := map[string]probe.Verdict{}
+	for _, d := range names {
+		cut[d] = probe.CleanSplit
+	}
+	s, tried := quicScenario(t, cut,
+		map[string]probe.Verdict{"thru.example.org": probe.CleanSplit, "stuck.example.org": probe.BlockedQUIC})
+	for _, d := range names {
+		s.script(d+" tcp/443", blockedTLS("192.0.2.40"))
+		s.script(d+" quic/443", blockedQUIC("192.0.2.40"))
+	}
+	s.script("none.example.org quic/443", probe.Report{Verdict: probe.Inconcl, TestedIP: "192.0.2.40",
+		Direct: tcpFails, Tunnel: tcpFails})
+	s.see(tunnelled(names[0], 443), tunnelled(names[1], 443), tunnelled(names[2], 443))
+	s.cycle()
+	slices.Sort(*tried)
+	if !slices.Equal(*tried, []string{"stuck.example.org", "thru.example.org"}) {
+		t.Errorf("decoy tried for %v", *tried)
+	}
+	for d, want := range map[string]struct{ quic, refused bool }{
+		"thru.example.org": {true, false}, "stuck.example.org": {true, true}, "none.example.org": {false, false},
+	} {
+		e := s.entry(d)
+		if e == nil || e.Verdict != probe.CleanSplit {
+			t.Fatalf("%s: %+v", d, e)
+		}
+		if got := slices.Contains(e.Endpoints, "quic/443"); got != want.quic || e.NoQUIC != want.refused {
+			t.Errorf("%s: ports %v, QUIC refused %v", d, e.Endpoints, e.NoQUIC)
+		}
+	}
+	if got := listRules(s.cfg.NoQUICListPath); !slices.Equal(got, []string{"stuck.example.org"}) {
+		t.Errorf("QUIC refused for %v", got)
+	}
+}
+
+// Not with the decoy off -- QUIC to the cut's names is refused then -- and
+// not for a name clean as it is: its QUIC goes plain, checked when seen.
+func TestCycleUnseenQUICNotAsked(t *testing.T) {
+	s, _ := quicScenario(t, map[string]probe.Verdict{"yt.example.org": probe.CleanSplit}, nil)
+	s.script("plain.example.org tcp/443", clean("192.0.2.41"))
+	s.see(tunnelled("plain.example.org", 443))
+	s.cycle()
+	s.cfg.QUICFake = false
+	s.script("yt.example.org tcp/443", blockedTLS("192.0.2.41"))
+	s.see(tunnelled("yt.example.org", 443))
+	s.cycle()
+	if e := s.entry("yt.example.org"); e == nil || e.Verdict != probe.CleanSplit {
+		t.Fatalf("verdict %+v", e)
+	}
+	for _, k := range []string{"plain.example.org quic/443", "yt.example.org quic/443"} {
+		if s.wasProbed(k) {
+			t.Errorf("probed %s", k)
+		}
+	}
+}
+
+// The watcher takes in the ports of the cut's own names: a check made while
+// one of them is open on QUIC probes that QUIC.
+func TestObserveCutNames(t *testing.T) {
+	s, _ := quicScenario(t, nil, nil)
+	s.see(via("yt.example.org", 443, "udp", SplitOutbound, "RuleSet", SplitProvider))
+	ports, _ := s.w.drain()
+	if !slices.Equal(ports["yt.example.org"], []endpoint{{udp: true, port: 443}}) {
+		t.Fatalf("seen %v", ports)
+	}
+}

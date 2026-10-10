@@ -481,6 +481,27 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 				reachedV6 = reachedV6 || directReachedV6(r)
 				reps = append(reps, r)
 			}
+			// The cut's outbound carries the name's QUIC too, behind the decoy,
+			// seen on QUIC or not: a name first met over TCP -- the fast lane
+			// takes it within a second -- had its QUIC never looked at, and on
+			// a network the decoy does not get through there it went nowhere
+			// unrefused (music.youtube.com on 09.10, beside www.youtube.com
+			// refused). Only what the probe showed plainly is kept: through, or
+			// blocked with the tunnel answering -- a host with no QUIC at all
+			// is as it was.
+			if ep, ok := unseenQUIC(cfg, eps, reps); ok {
+				r := checkProto(direct, tunnel, dom, ep.port, cfg.Attempts, true, was)
+				appendJSONL(cfg.JSONLPath, r)
+				if r = follow(r, ep); r.Aborted {
+					mu.Lock()
+					cut = append(cut, dom)
+					mu.Unlock()
+					return
+				}
+				if goesDirect(r.Verdict) || r.Verdict == probe.BlockedQUIC {
+					eps, reps = append(eps, ep), append(reps, r)
+				}
+			}
 			rep = worstPort(eps, reps)
 			noQUIC := splitNoQUIC(eps, reps)
 			// works over QUIC alone: the QUIC port's verdict stands for the
@@ -1634,6 +1655,26 @@ func splitNoQUIC(eps []endpoint, reps []probe.Report) bool {
 		}
 	}
 	return split && bad
+}
+
+// unseenQUIC: QUIC on 443 of a name going direct with its hello cut, not
+// among the ports probed -- to be probed all the same, see probeBatch. With
+// the decoy on only: off, QUIC to every name of the cut's is refused.
+func unseenQUIC(cfg Config, eps []endpoint, reps []probe.Report) (endpoint, bool) {
+	q := endpoint{udp: true, port: 443}
+	if cfg.alone || !cfg.Split || !cfg.QUICFake || len(eps) >= maxEndpoints {
+		return q, false
+	}
+	cut := false
+	for i, r := range reps {
+		switch {
+		case eps[i] == q:
+			return q, false
+		case eps[i] == endpoint{port: 443}:
+			cut = r.Verdict == probe.CleanSplit
+		}
+	}
+	return q, cut
 }
 
 // splitNoTCP: the mirror of splitNoQUIC -- a name whose QUIC on 443 goes
