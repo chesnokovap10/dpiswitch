@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -623,6 +624,35 @@ func (s *state) quicOnly(id string, idle time.Duration) []string {
 		}
 	}
 	sort.Strings(out)
+	return out
+}
+
+// newPorts: of the names the watcher just saw, in its order, the ones going
+// direct that were seen on a port their verdict does not hold. A check takes
+// the ports seen that minute and the ones remembered: tcp/443 found clean,
+// the name went direct on every port and protocol, and its QUIC -- 89 names
+// in three days of 07-10.10 -- or a port a program took up later was never
+// looked at. The check remembers the port, so a name comes here once for it.
+func (s *state) newPorts(id string, seen map[string][]endpoint, order []string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	now := time.Now()
+	for _, dom := range order {
+		e := s.Networks[id][dom]
+		if e == nil || e.Alone || !goesDirect(e.Verdict) || !now.Before(e.ExpiresAt) {
+			continue
+		}
+		if _, addr := probe.AddrKey(dom); addr {
+			continue // an address goes direct on the ports probed alone
+		}
+		for _, ep := range seen[dom] {
+			if ep.port > 0 && !slices.Contains(e.Endpoints, ep.String()) {
+				out = append(out, dom)
+				break
+			}
+		}
+	}
 	return out
 }
 

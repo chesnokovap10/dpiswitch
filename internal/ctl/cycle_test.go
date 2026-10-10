@@ -1029,3 +1029,60 @@ func TestCycleSwitchedToOnMidCycle(t *testing.T) {
 		t.Fatalf("a stale copy emptied the list: %v", got)
 	}
 }
+
+// A name found clean on tcp/443 goes direct on every port and protocol. Seen
+// later on another -- its QUIC, a port a program took up -- it is checked
+// there the same cycle, not when its term runs out; once, the port being
+// remembered. Blocked there, the name leaves the direct list.
+func TestCycleNewPortOfKnownName(t *testing.T) {
+	s := newScenario(t)
+	direct := func(host string, port int, network string) connection {
+		return via(host, port, network, "DIRECT", "RuleSet", "direct-verified")
+	}
+	for _, d := range []string{"q.example.org", "p.example.net", "b.example.com"} {
+		s.script(d+" tcp/443", clean("192.0.2.50"))
+	}
+	s.see(tunnelled("q.example.org", 443), tunnelled("p.example.net", 443), tunnelled("b.example.com", 443))
+	s.cycle()
+	if got := listRules(s.cfg.ListPath); len(got) != 3 {
+		t.Fatalf("direct list %v", got)
+	}
+
+	// the same ports again: nothing to check
+	s.see(direct("q.example.org", 443, "tcp"))
+	s.cycle()
+	if s.wasProbed("q.example.org tcp/443") {
+		t.Fatal("a name seen on its checked port was probed again")
+	}
+
+	s.script("q.example.org quic/443", clean("192.0.2.50"))
+	s.script("p.example.net tcp/5228", cleanTCP("192.0.2.50"))
+	s.script("b.example.com quic/443", probe.Report{Verdict: probe.BlockedQUIC, TestedIP: "192.0.2.50",
+		Direct: tcpFails, Tunnel: pathOK})
+	s.see(direct("q.example.org", 443, "udp"), direct("p.example.net", 5228, "tcp"), direct("b.example.com", 443, "udp"))
+	s.cycle()
+	for _, k := range []string{"q.example.org quic/443", "q.example.org tcp/443", "p.example.net tcp/5228", "b.example.com quic/443"} {
+		if !s.wasProbed(k) {
+			t.Errorf("%s not probed", k)
+		}
+	}
+	if e := s.entry("q.example.org"); e.Verdict != probe.Clean || !slices.Contains(e.Endpoints, "quic/443") {
+		t.Errorf("q: %s, ports %v", e.Verdict, e.Endpoints)
+	}
+	if e := s.entry("p.example.net"); e.Verdict != probe.Clean || !slices.Contains(e.Endpoints, "tcp/5228") {
+		t.Errorf("p: %s, ports %v", e.Verdict, e.Endpoints)
+	}
+	if e := s.entry("b.example.com"); e.Verdict != probe.BlockedQUIC {
+		t.Errorf("b: %s", e.Verdict)
+	}
+	if got := listRules(s.cfg.ListPath); !slices.Equal(got, []string{"p.example.net", "q.example.org"}) {
+		t.Errorf("direct list %v", got)
+	}
+
+	// seen there again: the port is known now
+	s.see(direct("q.example.org", 443, "udp"), direct("p.example.net", 5228, "tcp"))
+	s.cycle()
+	if s.wasProbed("q.example.org quic/443") || s.wasProbed("p.example.net tcp/5228") {
+		t.Error("a port checked once was probed again the next cycle")
+	}
+}

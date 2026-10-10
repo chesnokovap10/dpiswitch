@@ -221,11 +221,21 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	if checksV6(cfg, st, netID) {
 		unseenV6 = st.unseenV6(netID, cfg.Idle)
 	}
+	// and the names going direct seen on a port their check did not take:
+	// the rule sends the whole name direct, and the port went so unchecked
+	// until the term ran out -- a week
+	var newPorts []string
+	if !cfg.alone {
+		if newPorts = st.newPorts(netID, ports, order); len(newPorts) > 0 {
+			log.Printf("%d names going direct seen on a port not checked: %s", len(newPorts), preview(newPorts))
+		}
+	}
 	queue := dedupe(concat(
 		suspectDirect(cfg, st, netID, conns),
 		madeAlone,
 		st.quicOnly(netID, cfg.Idle),
 		st.expired(netID, cfg.Idle),
+		newPorts,
 		pickCandidates(cfg, st, netID, order),
 		unseenV6,
 	))
