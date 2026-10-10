@@ -467,7 +467,6 @@ var ru = map[string]string{
 	"Data":                                                                                          "Данные",
 	"Received":                                                                                      "Получено",
 	"Sent":                                                                                          "Отправлено",
-	"%d px: drag to change, double-click to put back":                                               "%d px: тяните, чтобы изменить; двойной щелчок возвращает",
 	"Time":                                                                                          "Время",
 	"open":                                                                                          "открыто",
 	"idle over 30 s":                                                                                "простой больше 30 с",

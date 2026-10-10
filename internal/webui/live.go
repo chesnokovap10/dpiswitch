@@ -915,7 +915,6 @@ func liveWords(v *view) liveData {
 		"reject":        v.T("Forbidden"),
 		"other":         v.T("Other"),
 		"probe":         v.T("check"),
-		"colWidth":      v.T("%d px: drag to change, double-click to put back"),
 		"noname":        v.T("no name"),
 		"open":          v.T("open"),
 		"idle":          v.T("idle: no traffic for over 30 s"),

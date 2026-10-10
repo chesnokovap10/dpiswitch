@@ -89,12 +89,14 @@ pageInit.live = function (sec) {
   // the route filter: one for both tunnels
   const inRoute = (r, want) => want === 'tunnel' ? r.route === 'awg1' || r.route === 'awg2' : routeOf(r) === want;
   const clock = ms => new Date(ms).toLocaleTimeString(locale);
-  // when a row's event was: the clock, and under it the date when it was
-  // not today -- the table holds the core's whole run, days of it
-  function when(ms) {
-    const d = new Date(ms);
-    if (d.toDateString() === new Date(now).toDateString()) return clock(ms);
-    return clock(ms) + '\n' + d.toLocaleDateString(locale, {day: 'numeric', month: 'short'});
+  // when a row's event was: the clock, and the date after it -- the table
+  // holds the core's whole run, days of it. Kept by the row: a thousand
+  // rows are painted every second
+  const day = new Intl.DateTimeFormat(locale, {day: '2-digit', month: '2-digit', year: 'numeric'});
+  function when(r) {
+    const ms = at(r);
+    if (r._at !== ms) { r._at = ms; r._when = clock(ms) + ' ' + day.format(ms); }
+    return r._when;
   }
   const stamp = ms => new Date(ms).toLocaleString(locale);
   // a row's time: when it opened, closed, or last failed
@@ -228,26 +230,67 @@ pageInit.live = function (sec) {
   }
 
   // --- the columns' widths ---
-  // Each column is as wide as it is set here, and the table as their sum: a
-  // wider window widens none. A head's right edge drags its column, and a
-  // double click on it puts the column back; the widths are kept with the
-  // other preferences. The address's column is as wide as the longest
-  // address the table has shown, and a little more, unless it was dragged.
-  const table = root.querySelector('table.ltable');
+  // The table is as wide as its box, whatever the window, and nothing
+  // scrolls sideways: the columns share the width by their weights -- the
+  // ones below, or the ones their heads were dragged to. A head's right edge
+  // moves the border between its column and the next, and a double click on
+  // it puts every column back; the weights are kept with the other
+  // preferences. A column has a least width too -- the address's the
+  // longest address the table has shown, unless it was dragged, and one
+  // with arrows in its head the head's: in a window too narrow for its
+  // share it keeps that, and the others share what is left.
+  const box = $('ltable'), table = root.querySelector('table.ltable');
   const cols = [...table.querySelectorAll('col')];
-  const DEF = {'w-st': 22, 'w-p': 150, 'w-h': 260, 'w-ip': 118, 'w-port': 70, 'w-type': 72, 'w-r': 110,
-    'w-sp': 96, 'w-b': 88, 'w-t': 84, 'w-x': 30};
+  const DEF = {'w-st': 22, 'w-p': 180, 'w-h': 275, 'w-ip': 192, 'w-port': 87, 'w-type': 72, 'w-r': 130,
+    'w-sp': 97, 'w-b': 106, 'w-t': 175, 'w-x': 30};
+  const FIXED = {'w-st': 1, 'w-x': 1}; // the same in any window
+  const NARROW = 40; // no column is narrower
   if (!pref.cols || typeof pref.cols !== 'object') pref.cols = {};
-  let ipWide = DEF['w-ip'], ipLen = 0;
-  const colW = c => pref.cols[c] || (c === 'w-ip' ? ipWide : DEF[c]);
-  function fit() {
-    let sum = 0;
-    for (const c of cols) {
-      const w = colW(c.className);
-      c.style.width = w + 'px';
-      sum += w;
+  const flex = cols.map(c => c.className).filter(k => !FIXED[k]);
+  // the least a column takes: the address's by what it shows (see ipFit),
+  // the ones with arrows by their heads, measured once the page is laid out
+  const need = {'w-ip': 0};
+  let px = {}, ipLen = 0, measured = false;
+  function headNeeds() {
+    measured = true;
+    for (const hd of table.querySelectorAll('th .hd')) {
+      const k = cols[hd.parentNode.cellIndex].className;
+      // the name in full, the arrows, the sort's mark, the gaps, the padding
+      need[k] = hd.querySelector('.lb').scrollWidth + hd.querySelector('.dir').offsetWidth + 10 + 6 + 16 + 1;
     }
-    table.style.width = sum + 'px';
+  }
+  function fit() {
+    // nothing to measure while the page is away: fitted when it is shown
+    const avail = box.clientWidth;
+    if (!avail) return;
+    if (!measured) headNeeds();
+    const w = k => pref.cols[k] || DEF[k];
+    // the address's least is not the whole of a narrow window
+    const least = k => k !== 'w-ip' ? need[k] || NARROW :
+      pref.cols[k] ? NARROW : Math.max(NARROW, Math.min(need[k], Math.floor(avail / 6)));
+    px = {'w-st': DEF['w-st'], 'w-x': DEF['w-x']};
+    let free = avail - px['w-st'] - px['w-x'], left = flex, scale = 0;
+    // the ones whose share is under their least take the least, and the
+    // rest share anew
+    for (;;) {
+      let sum = 0;
+      for (const k of left) sum += w(k);
+      scale = free / sum;
+      const k = left.find(k => w(k) * scale < least(k));
+      if (!k) break;
+      px[k] = least(k);
+      free -= px[k];
+      left = left.filter(x => x !== k);
+    }
+    for (const k of left) {
+      px[k] = Math.floor(w(k) * scale);
+      free -= px[k];
+    }
+    // what the rounding left
+    if (left.length) px[left.includes('w-h') ? 'w-h' : left[0]] += free;
+    for (const c of cols) c.style.width = px[c.className] + 'px';
+    // narrower than every least together, the table does scroll
+    table.style.width = cols.reduce((n, c) => n + px[c.className], 0) + 'px';
   }
   const ruler = document.createElement('canvas').getContext('2d');
   function ipFit(ip) {
@@ -257,30 +300,37 @@ pageInit.live = function (sec) {
     ruler.font = cs.fontSize + ' ' + cs.fontFamily;
     // the cell's padding, and a little room
     const w = Math.ceil(ruler.measureText(ip).width) + 16 + 12;
-    if (w > ipWide) { ipWide = w; fit(); }
+    if (w > need['w-ip']) { need['w-ip'] = w; fit(); }
   }
   fit();
-  [...table.tHead.rows[0].cells].forEach((th, i) => {
-    const cls = cols[i].className;
-    if (cls === 'w-st' || cls === 'w-x') return;
+  new ResizeObserver(fit).observe(box);
+  sec.addEventListener('pg:show', fit);
+  // the last column has no edge to drag: there is no next one to take from
+  flex.slice(0, -1).forEach((cls, i) => {
+    const next = flex[i + 1];
     const h = document.createElement('span');
     h.className = 'rs';
-    const tip = () => { h.title = fmt(W.colWidth, colW(cls)); };
-    tip();
-    h.addEventListener('pointerenter', tip);
     h.addEventListener('click', e => e.stopPropagation());
     h.addEventListener('dblclick', e => {
       e.stopPropagation();
-      delete pref.cols[cls];
-      save(); fit(); tip();
+      pref.cols = {};
+      save(); fit();
     });
     h.addEventListener('pointerdown', e => {
       if (e.button) return;
       e.preventDefault(); e.stopPropagation();
-      const x0 = e.clientX, w0 = colW(cls);
+      // the widths as they are become the weights: a pixel dragged is a pixel
+      for (const k of flex) pref.cols[k] = px[k];
+      const x0 = e.clientX, w0 = px[cls], both = px[cls] + px[next];
       h.classList.add('on');
       h.setPointerCapture(e.pointerId);
-      const move = m => { pref.cols[cls] = Math.max(30, Math.round(w0 + m.clientX - x0)); fit(); tip(); };
+      const least = k => k !== 'w-ip' && need[k] || NARROW;
+      const move = m => {
+        const w = Math.max(least(cls), Math.min(both - least(next), Math.round(w0 + m.clientX - x0)));
+        pref.cols[cls] = w;
+        pref.cols[next] = both - w;
+        fit();
+      };
       const up = () => {
         h.classList.remove('on');
         h.removeEventListener('pointermove', move);
@@ -292,7 +342,7 @@ pageInit.live = function (sec) {
       h.addEventListener('pointerup', up);
       h.addEventListener('pointercancel', up);
     });
-    th.append(h);
+    table.tHead.rows[0].cells[cols.findIndex(c => c.className === cls)].append(h);
   });
 
   // --- drawing ---
@@ -312,7 +362,7 @@ pageInit.live = function (sec) {
     r._ip.textContent = r.ip || '';
     ipFit(r.ip);
     r._ip.title = r.ip || '';
-    td('num').textContent = r.port || '';
+    td().textContent = r.port || '';
     const b = document.createElement('span');
     b.className = 'pb p-' + r.proto + (r.sure ? '' : ' guess');
     b.textContent = r.proto;
@@ -327,9 +377,9 @@ pageInit.live = function (sec) {
       // no speed and no bytes: what the core said takes their place
       const w = td('c-why');
       w.colSpan = 2;
-      r._v = [w, td('num c-t')];
+      r._v = [w, td()];
     } else {
-      r._v = [td('num'), td('num'), td('num c-t')];
+      r._v = [td(), td(), td()];
     }
     r._x = td('c-x');
     // the detector's own are not closed from here: that only breaks a check
@@ -377,13 +427,13 @@ pageInit.live = function (sec) {
     let v;
     if (r.why) {
       // the last time it failed; the first, when it failed more than once
-      v = [why(r) + (r.n > 1 ? ' ×' + r.n : ''), when(r.end)];
+      v = [why(r) + (r.n > 1 ? ' ×' + r.n : ''), when(r)];
       const t0 = r.err + (r.n > 1 ? '\n' + fmt(W.attempts, r.n) : ''), t1 = r.n > 1 ? fmt(W.firstAt, stamp(r.start)) : stamp(r.end);
       if (r._v[0].title !== t0) r._v[0].title = t0;
       if (r._v[1].title !== t1) r._v[1].title = t1;
     } else {
       // one way at a time, the one its head's arrow picks
-      v = [speed(pref.sp === 'u' ? r.us : r.ds), size(pref.data === 'u' ? r.up : r.down), when(at(r))];
+      v = [speed(pref.sp === 'u' ? r.us : r.ds), size(pref.data === 'u' ? r.up : r.down), when(r)];
       // how long it lasted: in the hint, the column says when
       const t = fmt(W.openedAt, stamp(r.start)) + '\n' + (r.end ?
         fmt(W.closedAt, stamp(r.end)) + '\n' + fmt(W.lasted, dur(r.end - r.start)) : fmt(W.openFor, dur(now - r.start)));
@@ -393,8 +443,6 @@ pageInit.live = function (sec) {
       if (r._last[i] !== v[i]) {
         r._last[i] = v[i];
         r._v[i].textContent = v[i];
-        // a date under the clock: two lines in a row's height
-        if (r._v[i].classList.contains('c-t')) r._v[i].classList.toggle('d2', v[i].includes('\n'));
       }
     }
   }

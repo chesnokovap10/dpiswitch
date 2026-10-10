@@ -191,29 +191,33 @@ td small{display:block;color:var(--muted)}
 .live .tile span{font-size:12px}
 .live .bar{flex-wrap:wrap;row-gap:8px}
 .live .bar > *{white-space:nowrap;flex:none}
-/* The columns' widths are live.js's: a default each, the one its head was
-   dragged to, the address's by the longest address shown; the table is as
-   wide as their sum. What is cut short says itself in full in its hint. */
+/* The columns' widths are live.js's: the box's width, shared by their
+   weights. What is cut short says itself in full in its hint. */
 .ltable{white-space:nowrap;font-variant-numeric:tabular-nums;table-layout:fixed}
-/* a head's right edge drags its column */
+/* a head's right edge drags the border with the next column */
 .ltable th .rs{position:absolute;top:0;right:0;width:7px;height:100%;cursor:col-resize;border-right:1px solid var(--line)}
 .ltable th .rs:hover,.ltable th .rs.on{border-right:3px solid var(--accent)}
 /* which way a column shows, down or up */
-.ltable th .dir{margin-left:4px}
-.ltable th .dir button{border:0;background:none;padding:0 2px;font:inherit;color:var(--muted);opacity:.4;cursor:pointer}
-.ltable th .dir button.on{opacity:1;color:var(--accent);font-weight:700}
+/* the arrows keep their room: a narrow head cuts its name short, not them;
+   the sort's mark keeps its own, so a sort moves nothing */
+.ltable th .hd{display:flex;align-items:center;gap:3px}
+.ltable th .hd::after{content:"▲";font-size:9px;flex:none;visibility:hidden}
+.ltable th .lb{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.ltable th .dir{display:flex;flex:none}
+.ltable th .dir button{border:0;background:none;padding:0 1px;font:inherit;font-size:15px;line-height:1;color:var(--muted);cursor:pointer}
+.ltable th .dir button.on{color:var(--accent);font-weight:700}
 .ltable th,.ltable td{padding:3px 8px;overflow:hidden;text-overflow:ellipsis}
 .ltable td{vertical-align:middle}
 /* every row one height -- the blank ones that hold a picked row's place
    too: shorter, they let it slide up as the rows above it went */
 .ltable tbody tr{height:27px}
-/* a date under the clock, in the same height */
-.ltable td.c-t.d2{white-space:pre;font-size:11px;line-height:12px;padding-top:0;padding-bottom:0}
-.ltable .num{text-align:right}
 .ltable th[data-sort],.vtable th[data-sort]{cursor:pointer;user-select:none}
 .ltable th[data-sort]:hover,.vtable th[data-sort]:hover{color:var(--fg)}
 .ltable th.asc::after{content:" ▲";font-size:9px}
 .ltable th.desc::after{content:" ▼";font-size:9px}
+.ltable th:has(.hd)::after{content:none}
+.ltable th.asc .hd::after{visibility:visible}
+.ltable th.desc .hd::after{content:"▼";visibility:visible}
 /* the verdicts' columns lay themselves out by what they hold: the arrow's
    room is kept on every head, so a sort moves no column */
 .vtable th[data-sort]::after{content:" ▲";font-size:9px;visibility:hidden}

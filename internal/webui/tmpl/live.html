@@ -29,21 +29,21 @@
   <div class="flash bad" id="lbanner" hidden></div>
   <div class="tablebox" id="ltable">
     <table class="ltable">
-      {{/* the widths are set by live.js: a default each, the one a head was
-           dragged to, and the address's by the longest address shown */}}
+      {{/* the widths are set by live.js: the box's width shared by the
+           columns' weights */}}
       <colgroup><col class="w-st"><col class="w-p"><col class="w-h"><col class="w-ip"><col class="w-port"><col class="w-type"><col class="w-r"><col class="w-sp"><col class="w-b"><col class="w-t"><col class="w-x"></colgroup>
       <thead><tr>
         <th class="c-st"></th>
         <th data-sort="proc">{{.T "Program"}}</th>
         <th data-sort="host">{{.T "Host"}}</th>
         <th data-sort="ip">IP</th>
-        <th data-sort="port" class="num">{{.T "Port"}}</th>
+        <th data-sort="port">{{.T "Port"}}</th>
         <th data-sort="proto">{{.T "Type"}}</th>
         <th data-sort="route">{{.T "Route"}}</th>
         {{/* one way at a time: the arrows pick down or up (live.js) */}}
-        <th data-sort="sp" class="num">{{.T "Speed"}}<span class="dir" data-dir="sp"><button type="button" data-v="d" title="{{.T "Download"}}">↓</button><button type="button" data-v="u" title="{{.T "Upload"}}">↑</button></span></th>
-        <th data-sort="data" class="num">{{.T "Data"}}<span class="dir" data-dir="data"><button type="button" data-v="d" title="{{.T "Received"}}">↓</button><button type="button" data-v="u" title="{{.T "Sent"}}">↑</button></span></th>
-        <th data-sort="start" class="num">{{.T "Time"}}</th>
+        <th data-sort="sp"><span class="hd"><span class="lb">{{.T "Speed"}}</span><span class="dir" data-dir="sp"><button type="button" data-v="d" title="{{.T "Download"}}">↓</button><button type="button" data-v="u" title="{{.T "Upload"}}">↑</button></span></span></th>
+        <th data-sort="data"><span class="hd"><span class="lb">{{.T "Data"}}</span><span class="dir" data-dir="data"><button type="button" data-v="d" title="{{.T "Received"}}">↓</button><button type="button" data-v="u" title="{{.T "Sent"}}">↑</button></span></span></th>
+        <th data-sort="start">{{.T "Time"}}</th>
         <th class="c-x"></th>
       </tr></thead>
       <tbody id="lrows"></tbody>
