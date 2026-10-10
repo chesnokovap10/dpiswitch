@@ -293,3 +293,39 @@ func TestWatchStep(t *testing.T) {
 		}
 	}
 }
+
+// A reset drops the names waiting for their check after being dropped by
+// hand, and a gateway's memory folded into its ISP's takes along what was set
+// aside and dropped under it.
+func TestResetAndMergeCarryTheRest(t *testing.T) {
+	st := &state{Networks: map[string]map[string]*entry{}}
+	now := time.Now()
+	e := func() *entry { return &entry{Verdict: probe.Clean, DecidedAt: now, ExpiresAt: now.Add(time.Hour)} }
+	st.put("gw", "a.ex.com", e())
+	st.put("gw", "b.ex.com", e())
+	st.put("gw", "held.ex.com", e())
+	st.park("gw", func(d string) bool { return d == "held.ex.com" })
+	st.forgetVerdicts("gw", []string{"b.ex.com"})
+	st.attach("gw", "AS1", "192.0.2.1")
+	st.mergeInto("AS1")
+	if _, ok := st.Parked["AS1"]["held.ex.com"]; !ok {
+		t.Error("the verdict set aside under the gateway did not go to the ISP's memory")
+	}
+	if _, ok := st.Pending["AS1"]["b.ex.com"]; !ok {
+		t.Error("the name dropped by hand under the gateway did not go to the ISP's memory")
+	}
+	if len(st.Parked["gw"])+len(st.Pending["gw"]) != 0 {
+		t.Error("the gateway's memory kept what was set aside or dropped")
+	}
+	st.resetVerdicts("AS1")
+	if len(st.Pending["AS1"]) != 0 {
+		t.Errorf("after a reset %d names still wait for a check", len(st.Pending["AS1"]))
+	}
+	// a verdict read is a copy: changing it changes nothing in memory
+	st.put("AS1", "c.ex.com", e())
+	got, _ := st.get("AS1", "c.ex.com")
+	got.Verdict = probe.BlockedTLS
+	if again, _ := st.get("AS1", "c.ex.com"); again.Verdict != probe.Clean {
+		t.Error("a verdict read was memory's own, not a copy")
+	}
+}

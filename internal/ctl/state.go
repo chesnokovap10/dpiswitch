@@ -221,6 +221,26 @@ func (s *state) mergeInto(asn string) int {
 			}
 		}
 		delete(s.Networks, gw)
+		// what was set aside and dropped by hand under the gateway goes
+		// with it: left there, nothing ever read or removed it again
+		for dom, e := range s.Parked[gw] {
+			if s.Parked[asn] == nil {
+				s.Parked[asn] = map[string]*entry{}
+			}
+			if _, ok := s.Parked[asn][dom]; !ok {
+				s.Parked[asn][dom] = e
+			}
+		}
+		delete(s.Parked, gw)
+		for dom, at := range s.Pending[gw] {
+			if s.Pending[asn] == nil {
+				s.Pending[asn] = map[string]time.Time{}
+			}
+			if at.After(s.Pending[asn][dom]) {
+				s.Pending[asn][dom] = at
+			}
+		}
+		delete(s.Pending, gw)
 	}
 	return n
 }
@@ -234,11 +254,18 @@ func (s *state) net(id string) map[string]*entry {
 	return s.Networks[id]
 }
 
+// get: a copy of the name's verdict as it stands. The one memory holds is
+// written under mu -- touch marks it seen, new settings move its term --
+// while a probe of the fast lane reads what it got here with no lock held.
 func (s *state) get(id, dom string) (*entry, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	e, ok := s.Networks[id][dom]
-	return e, ok
+	if !ok || e == nil {
+		return nil, false
+	}
+	c := *e
+	return &c, true
 }
 
 func (s *state) put(id, dom string, e *entry) {
@@ -636,6 +663,9 @@ func (s *state) resetVerdicts(id string) int {
 		s.Networks[id] = map[string]*entry{}
 	}
 	delete(s.Parked, id)
+	// nor is a name dropped by hand before the reset still waiting for its
+	// check: it counted against its CDN family for an hour after
+	delete(s.Pending, id)
 	s.resets++
 	return n
 }

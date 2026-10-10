@@ -133,9 +133,12 @@ func (s *scenario) wasProbed(key string) bool {
 	return slices.Contains(s.probed, key)
 }
 
+// entry: the name's verdict as memory holds it, not get's copy -- the tests
+// change it in place: a term run out, a name long unused
 func (s *scenario) entry(dom string) *entry {
-	e, _ := s.st.get("n", dom)
-	return e
+	s.st.mu.Lock()
+	defer s.st.mu.Unlock()
+	return s.st.Networks["n"][dom]
 }
 
 // --- connections and probe results as the core and the prober give them ---
