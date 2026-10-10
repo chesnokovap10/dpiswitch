@@ -343,6 +343,29 @@ func (w *watcher) drain() (map[string][]endpoint, []string) {
 	return out, order
 }
 
+// idle: a tick that runs no cycle -- the probes paused, no network. Only a
+// cycle drained what the watcher gathers, and it went on gathering every
+// second: with the tunnel down for a day, or no first tunnel and the cut
+// off -- paused for good -- every name and every bare address seen stayed,
+// a torrent client's peers among them, for as long as the service ran. The
+// names and addresses in use are handed over, to be marked as a cycle marks
+// them; the candidates wait for the probes within maxBacklog, the oldest
+// going past it; the rest is dropped.
+func (w *watcher) idle() (live, bare []string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	live, bare = keys(w.live), keys(w.bare)
+	w.live, w.bare, w.pinned = map[string]bool{}, map[string]bool{}, map[string]bool{}
+	w.addrPorts = map[string]map[endpoint]bool{}
+	if n := len(w.order) - maxBacklog; n > 0 {
+		for _, d := range w.order[:n] {
+			delete(w.seen, d)
+		}
+		w.order = append([]string(nil), w.order[n:]...)
+	}
+	return live, bare
+}
+
 // maxBacklog bounds the candidates kept between cycles: past it the oldest
 // go -- a flood of one-off names must not grow memory without end.
 const maxBacklog = 1000

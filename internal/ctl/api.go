@@ -258,6 +258,15 @@ func Run(ctx context.Context, cfg Config) {
 	// a tick: the settings, the network, then a cycle. The public address
 	// seen to change runs it at once (netWake): it was found mid-cycle and
 	// the new network waited up to a tick for the loop
+	// idle: a tick with no cycle takes what the watcher gathered all the
+	// same, see watcher.idle
+	idle := func() {
+		live, bare := w.idle()
+		if netID != noNetwork {
+			st.touch(netID, live)
+			st.touchIPs(netID, bare)
+		}
+	}
 	tick := func() {
 		settingsChanged()
 		// the network may have changed -- another network's verdicts do not apply
@@ -273,6 +282,7 @@ func Run(ctx context.Context, cfg Config) {
 				offline = true
 			}
 			allowed.Store(false)
+			idle()
 			return
 		}
 		if offline {
@@ -294,6 +304,7 @@ func Run(ctx context.Context, cfg Config) {
 		}
 		if !g.allow(time.Now().Round(0), health) {
 			allowed.Store(false)
+			idle()
 			// the list still follows memory: verdicts expire all the same
 			syncList(cfg, a, st, netID, false)
 			return
