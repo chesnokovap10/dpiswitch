@@ -48,6 +48,8 @@ pageInit.live = function (sec) {
   // what the page is looking at: kept per browser, a viewing preference
   const pref = {tab: 'open', route: '', noprobe: false, sort: 'start', desc: true};
   try { Object.assign(pref, JSON.parse(localStorage.getItem('live') || '{}')); } catch (e) {}
+  // a sort kept from when down and up had a column each
+  pref.sort = {ds: 'sp', us: 'sp', down: 'data', up: 'data'}[pref.sort] || pref.sort;
   // a filter kept from before: the two tunnels are one now, and the
   // bypass's is gone with the bypass off
   if (pref.route === 'awg1' || pref.route === 'awg2') pref.route = 'tunnel';
@@ -71,6 +73,8 @@ pageInit.live = function (sec) {
       fmt(W.sinceOn, d.toLocaleDateString(locale, {day: 'numeric', month: 'short'}) + ', ' + hm);
   }
   const speed = b => b > 0 ? size(b) + W.perSec : '';
+  // down over up, in one cell: two columns of each stood mostly empty
+  const pair = (d, u) => d || u ? (d && '↓ ' + d) + '\n' + (u && '↑ ' + u) : '';
   function dur(ms) {
     const s = Math.max(0, Math.floor(ms / 1000));
     if (s < 60) return fmt(W.sec, s);
@@ -246,15 +250,17 @@ pageInit.live = function (sec) {
     b.title = r.sure ? W.sure : W.byPort;
     td().append(b);
     const rt = td('c-r');
-    rt.textContent = label(r) + (r.probe ? ' · ' + W.probe : '');
-    rt.title = r.chain + (r.rule ? '\n' + r.rule : '');
+    // a check's row says so by its tint, and here: the word made the column
+    // twice as wide as any route's name
+    rt.textContent = label(r);
+    rt.title = (r.probe ? W.probe + '\n' : '') + r.chain + (r.rule ? '\n' + r.rule : '');
     if (r.why) {
       // no speed and no bytes: what the core said takes their place
       const w = td('c-why');
-      w.colSpan = 4;
+      w.colSpan = 2;
       r._v = [w, td('num c-t')];
     } else {
-      r._v = [td('num'), td('num'), td('num'), td('num'), td('num c-t')];
+      r._v = [td('num c-2'), td('num c-2'), td('num c-t')];
     }
     r._x = td('c-x');
     // the detector's own are not closed from here: that only breaks a check
@@ -307,11 +313,11 @@ pageInit.live = function (sec) {
       if (r._v[0].title !== t0) r._v[0].title = t0;
       if (r._v[1].title !== t1) r._v[1].title = t1;
     } else {
-      v = [speed(r.ds), speed(r.us), size(r.down), size(r.up), when(at(r))];
+      v = [pair(speed(r.ds), speed(r.us)), pair(size(r.down), size(r.up)), when(at(r))];
       // how long it lasted: in the hint, the column says when
       const t = fmt(W.openedAt, stamp(r.start)) + '\n' + (r.end ?
         fmt(W.closedAt, stamp(r.end)) + '\n' + fmt(W.lasted, dur(r.end - r.start)) : fmt(W.openFor, dur(now - r.start)));
-      if (r._v[4].title !== t) r._v[4].title = t;
+      if (r._v[2].title !== t) r._v[2].title = t;
     }
     for (let i = 0; i < v.length; i++) {
       if (r._last[i] !== v[i]) {
@@ -323,7 +329,7 @@ pageInit.live = function (sec) {
     }
   }
 
-  const NUM = {port: 1, ds: 1, us: 1, down: 1, up: 1, start: 1};
+  const NUM = {port: 1, sp: 1, data: 1, start: 1};
   // one collator for every comparison: localeCompare with options makes one
   // each time, and sorting a long history by a name took seconds
   const coll = new Intl.Collator(locale, {numeric: true});
@@ -332,6 +338,8 @@ pageInit.live = function (sec) {
     let d;
     // the time column says when a row's event was: sorted by that
     if (k === 'start') d = at(a) - at(b);
+    else if (k === 'sp') d = (a.ds || 0) + (a.us || 0) - (b.ds || 0) - (b.us || 0);
+    else if (k === 'data') d = (a.down || 0) + (a.up || 0) - (b.down || 0) - (b.up || 0);
     else if (NUM[k]) d = (a[k] || 0) - (b[k] || 0);
     else {
       const x = k === 'route' ? label(a) : a[k] || '', y = k === 'route' ? label(b) : b[k] || '';

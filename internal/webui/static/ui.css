@@ -196,16 +196,18 @@ td small{display:block;color:var(--muted)}
    history ran wider than the page. Measured in Segoe UI 13px: the widest
    value or head with its sort arrow, and 16px of padding. What is cut short
    says itself in full in its hint. The host takes what is left. */
-.ltable{white-space:nowrap;font-variant-numeric:tabular-nums;table-layout:fixed;min-width:1240px}
+.ltable{white-space:nowrap;font-variant-numeric:tabular-nums;table-layout:fixed;min-width:960px}
 .ltable col.w-st{width:22px}.ltable col.w-p{width:120px}.ltable col.w-ip{width:140px}
-.ltable col.w-port{width:62px}.ltable col.w-type{width:60px}.ltable col.w-r{width:150px}
-.ltable col.w-sp{width:98px}.ltable col.w-b{width:92px}.ltable col.w-b2{width:106px}
+.ltable col.w-port{width:62px}.ltable col.w-type{width:60px}.ltable col.w-r{width:92px}
+.ltable col.w-sp{width:88px}.ltable col.w-b{width:80px}
 .ltable col.w-t{width:84px}.ltable col.w-x{width:30px}
 .ltable th,.ltable td{padding:3px 8px;overflow:hidden;text-overflow:ellipsis}
 .ltable td{vertical-align:middle}
 /* every row one height -- the blank ones that hold a picked row's place
    too: shorter, they let it slide up as the rows above it went */
 .ltable tbody tr{height:27px}
+/* down over up -- speed, bytes -- two lines in a row's height */
+.ltable td.c-2{white-space:pre;font-size:11px;line-height:12px;padding-top:0;padding-bottom:0}
 /* a date under the clock, in the same height */
 .ltable td.c-t.d2{white-space:pre;font-size:11px;line-height:12px;padding-top:0;padding-bottom:0}
 .ltable .num{text-align:right}

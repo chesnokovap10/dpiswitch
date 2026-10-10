@@ -31,7 +31,7 @@
     <table class="ltable">
       {{/* the widths are fixed (ui.css): sorting, a long name or an IPv6
            address no longer move the columns, and the host takes what is left */}}
-      <colgroup><col class="w-st"><col class="w-p"><col class="w-h"><col class="w-ip"><col class="w-port"><col class="w-type"><col class="w-r"><col class="w-sp"><col class="w-sp"><col class="w-b"><col class="w-b2"><col class="w-t"><col class="w-x"></colgroup>
+      <colgroup><col class="w-st"><col class="w-p"><col class="w-h"><col class="w-ip"><col class="w-port"><col class="w-type"><col class="w-r"><col class="w-sp"><col class="w-b"><col class="w-t"><col class="w-x"></colgroup>
       <thead><tr>
         <th class="c-st"></th>
         <th data-sort="proc">{{.T "Program"}}</th>
@@ -40,10 +40,9 @@
         <th data-sort="port" class="num">{{.T "Port"}}</th>
         <th data-sort="proto">{{.T "Type"}}</th>
         <th data-sort="route">{{.T "Route"}}</th>
-        <th data-sort="ds" class="num">↓ {{.T "Speed"}}</th>
-        <th data-sort="us" class="num">↑ {{.T "Speed"}}</th>
-        <th data-sort="down" class="num">{{.T "Received"}}</th>
-        <th data-sort="up" class="num">{{.T "Sent"}}</th>
+        {{/* down over up in one cell each; sorted by the two together */}}
+        <th data-sort="sp" class="num" title="{{.T "Down and up; sorted by their sum"}}">{{.T "Speed"}}</th>
+        <th data-sort="data" class="num" title="{{.T "Received and sent; sorted by their sum"}}">{{.T "Data"}}</th>
         <th data-sort="start" class="num">{{.T "Time"}}</th>
         <th class="c-x"></th>
       </tr></thead>
