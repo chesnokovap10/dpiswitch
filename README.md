@@ -14,7 +14,7 @@
   <img alt="AmneziaWG" src="https://img.shields.io/badge/AmneziaWG-awg1%20%2B%20awg2-2563eb?style=flat-square">
   <img alt="mihomo" src="https://img.shields.io/badge/core-mihomo-6b7280?style=flat-square">
   <img alt="Go 1.26+" src="https://img.shields.io/badge/Go-1.26%2B-00ADD8?style=flat-square">
-  <img alt="1.7.0" src="https://img.shields.io/badge/version-1.7.0-127a3d?style=flat-square">
+  <a href="https://github.com/chesnokovap10/dpiswitch/releases/latest"><img alt="latest release" src="https://img.shields.io/github/v/release/chesnokovap10/dpiswitch?style=flat-square&label=version&color=127a3d"></a>
 </p>
 
 <p align="center">
