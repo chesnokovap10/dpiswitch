@@ -49,19 +49,21 @@ func TestCycleChecksIPv6Node(t *testing.T) {
 		"both.example.org":  probe.Clean,
 		"cut6.example.org":  probe.BlockedTLS,
 		"slow6.example.org": probe.Slower,
+		"dead6.example.org": probe.BlockedTCP,
 	})
-	for i, d := range []string{"both.example.org", "cut6.example.org", "slow6.example.org", "only4.example.org"} {
+	for i, d := range []string{"both.example.org", "cut6.example.org", "slow6.example.org", "dead6.example.org", "only4.example.org"} {
 		s.see(tunnelled(d, 443))
 		s.script(d+" tcp/443", clean("192.0.2."+string(rune('1'+i))))
 	}
 	s.cycle()
-	if len(asked()) != 4 {
-		t.Fatalf("IPv6 nodes asked after: %v, want all four names", asked())
+	if len(asked()) != 5 {
+		t.Fatalf("IPv6 nodes asked after: %v, want all five names", asked())
 	}
 	for d, want := range map[string]probe.Verdict{
 		"both.example.org":  probe.Clean,
 		"only4.example.org": probe.Clean,      // no IPv6 node: IPv4's alone
 		"slow6.example.org": probe.Clean,      // slower there is no block
+		"dead6.example.org": probe.Clean,      // nor a node not taking the connection: IPv4 is dialled too
 		"cut6.example.org":  probe.BlockedTLS, // the IPv6 node's
 	} {
 		if e := s.entry(d); e == nil || e.Verdict != want {
@@ -159,5 +161,20 @@ func TestCycleNewNamesBeforeIPv6Rechecks(t *testing.T) {
 	s.cycle()
 	if !s.wasProbed("a.example.org tcp/443") || !s.wasProbed("b.example.org tcp/443") {
 		t.Errorf("the next cycle probed %v, want the two waiting for their IPv6 node", s.probed)
+	}
+}
+
+// QUIC is not checked on the IPv6 node: for UDP the core takes the IPv4 node
+// of a name that has one.
+func TestCycleNoIPv6CheckForQUIC(t *testing.T) {
+	s, asked := v6Scenario(t, true, map[string]probe.Verdict{"q.example.org": probe.Clean})
+	c := tunnelled("q.example.org", 443)
+	c.Metadata.Network = "udp"
+	s.see(c)
+	s.script("q.example.org quic/443", clean("192.0.2.1"))
+	s.script("q.example.org tcp/443", clean("192.0.2.1"))
+	s.cycle()
+	if got := asked(); len(got) != 1 {
+		t.Errorf("IPv6 node asked after %d times, want once: for TCP alone", len(got))
 	}
 }

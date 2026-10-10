@@ -448,13 +448,18 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 				// the name's IPv6 node too, where the direct path has IPv6: the core
 				// dials either, and the worse of the two is the port's verdict. A
 				// check of the IPv4 node alone called a name clean whose IPv6 one
-				// is cut.
-				if v6Too && !r.Aborted && r.TestedIP != "" && net.ParseIP(r.TestedIP).To4() != nil {
+				// is cut. TCP only: for UDP the core takes the IPv4 node of a name
+				// that has one, and QUIC to the IPv6 one is never sent direct.
+				if v6Too && !ep.udp && !r.Aborted && r.TestedIP != "" && net.ParseIP(r.TestedIP).To4() != nil {
 					if r6, ok := checkProtoV6(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp, was); ok {
 						appendJSONL(cfg.JSONLPath, r6)
 						// slower there is no block: the core takes whichever node
-						// answers first, and the IPv4 one's speed is the name's
-						if r6 = follow(r6, ep); r6.Aborted || r6.Verdict != probe.Slower && worse(r6.Verdict, r.Verdict) {
+						// answers first, and the IPv4 one's speed is the name's.
+						// Nor is a node that does not take the connection: the core
+						// dials both and goes on with the IPv4 one. On the first day
+						// (10.10) download.windowsupdate.com and cloudflare-dns.com
+						// were reverted for IPv6 nodes nothing direct ever went to.
+						if r6 = follow(r6, ep); r6.Aborted || r6.Verdict != probe.Slower && r6.Verdict != probe.BlockedTCP && worse(r6.Verdict, r.Verdict) {
 							r = r6
 						}
 					}
