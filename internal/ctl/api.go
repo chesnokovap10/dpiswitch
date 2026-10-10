@@ -210,8 +210,8 @@ func Run(ctx context.Context, cfg Config) {
 			return
 		}
 		if coreChanged(ns, set, haveSet) && cfg.OnCoreChange != nil {
-			log.Printf("core settings changed (DNS: direct %v, tunnel %v, second tunnel %v; IPv6 %v; DNS cache %v) -- restarting the core",
-				ns.DirectDNS, ns.TunnelDNS, ns.TunnelDNS2, ns.IPv6, ns.DNSCache)
+			log.Printf("core settings changed (DNS: direct %v, tunnel %v, second tunnel %v; IPv6 %v; DNS cache %v; second tunnel on %v) -- restarting the core",
+				ns.DirectDNS, ns.TunnelDNS, ns.TunnelDNS2, ns.IPv6, ns.DNSCache, ns.SecondTunnel)
 			cfg.OnCoreChange()
 		}
 		cfg = onSettingsChanged(cfg, ns, a, st, netID)
@@ -479,9 +479,12 @@ func LoadCachedNet(path, id string) Snapshot {
 // what its config was built from -- while there was no settings file, the
 // defaults. The first save used to restart nothing, and the core kept the
 // default resolvers while the prober asked the new ones: other CDN nodes.
+// The defaults as a missing file is read: the second tunnel on with a .conf
+// loaded for it (see oldSecond).
 func coreChanged(ns, set Settings, haveSet bool) bool {
 	if !haveSet {
 		set = DefaultSettings()
+		set.SecondTunnel = Awg2Loaded()
 	}
 	return !ns.SameCore(set)
 }

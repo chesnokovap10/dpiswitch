@@ -235,22 +235,37 @@ func (s *Server) actConfig2(w http.ResponseWriter, r *http.Request) {
 // actDelete1 deletes the first tunnel's config. The service runs without
 // it: what no list names goes direct, and the detector checks nothing.
 func (s *Server) actDelete1(w http.ResponseWriter, r *http.Request) {
+	// the one tunnel there is, while the second is off in the settings
+	var note string
+	if note = "Tunnel config deleted"; s.status().Second {
+		note = "First tunnel config deleted"
+	}
 	err := os.Remove(paths.SourceConf())
 	switch {
 	case os.IsNotExist(err):
 		// deleted already -- in another window
-		s.redirect(w, r, nil, "First tunnel config deleted")
+		s.redirect(w, r, nil, note)
 		return
 	case err != nil:
 		s.redirect(w, r, err, "")
 		return
 	}
-	s.redirect(w, r, restartService(), "First tunnel config deleted")
+	s.redirect(w, r, restartService(), note)
 }
 
 // actDetach2 deletes the second tunnel's config: the button says so. To
 // switch awg2 off for a while there is the switch, which keeps the config.
 func (s *Server) actDetach2(w http.ResponseWriter, r *http.Request) {
+	// the second tunnel stays switched on in the settings: a file written
+	// before that switch existed has it on by the .conf alone (see
+	// ctl.oldSecond), and with the .conf gone the page deleted from was gone
+	// with it. Saved as read, it is on by the file.
+	if _, err := os.Stat(paths.SourceConf2()); err == nil {
+		if _, err := ctl.UpdateSettings(paths.Settings(), func(*ctl.Settings) error { return nil }); err != nil {
+			s.redirect(w, r, err, "")
+			return
+		}
+	}
 	err := os.Remove(paths.SourceConf2())
 	switch {
 	case os.IsNotExist(err):
@@ -560,6 +575,42 @@ func (s *Server) actPreset(w http.ResponseWriter, r *http.Request) {
 	s.part(w, r, "awg2", "presets", ok, msg)
 }
 
+// actSecond switches the second tunnel on or off in the settings (see
+// ctl.Settings.SecondTunnel): off, the program works with one tunnel and
+// the pages say nothing of a second. A plain form, the page loaded anew:
+// the menu, the pages and the rows' menu are drawn with it or without. With
+// a .conf loaded for it the service restarts the core, which gains or loses
+// awg2 -- every open connection goes with the old core, the second tunnel's
+// among them.
+func (s *Server) actSecond(w http.ResponseWriter, r *http.Request) {
+	on := r.FormValue("second_tunnel") == "1"
+	restart := false
+	err := paths.UserReady()
+	if err == nil {
+		_, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
+			was := *set
+			set.SecondTunnel = on
+			restart = !set.SameCore(was)
+			return nil
+		})
+	}
+	restart = restart && s.status().ServiceRun
+	var note string
+	switch {
+	case on && restart:
+		note = "Second tunnel switched on: the core restarts, the tunnel drops for a couple of seconds"
+	case on && !ctl.Awg2Loaded():
+		note = "Second tunnel switched on: attach its config on its page"
+	case on:
+		note = "Second tunnel switched on"
+	case restart:
+		note = "Second tunnel switched off: the core restarts, the tunnel drops for a couple of seconds"
+	default:
+		note = "Second tunnel switched off"
+	}
+	s.redirect(w, r, err, note)
+}
+
 // actAwg2 switches the second tunnel on or off in the auto-switch mode
 // chosen; each mode keeps its own (see ctl.Settings.Awg2Active). Switched
 // off, its presets and list route nothing. What the switch moves is closed,
@@ -740,11 +791,17 @@ func (s *Server) actDNS(w http.ResponseWriter, r *http.Request) {
 	if tunnel2 == nil {
 		tunnel2 = []string{}
 	}
+	// the second tunnel's box is on the page only while it is on in the
+	// settings: a form without it keeps the servers saved for it
+	_, has2 := r.Form["tunnel_dns2"]
 	restart := false
 	err := paths.UserReady()
 	if err == nil {
 		_, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
 			was := *set
+			if !has2 {
+				tunnel2 = set.TunnelDNS2
+			}
 			set.DirectDNS, set.TunnelDNS, set.TunnelDNS2 = direct, tunnel, tunnel2
 			restart = !set.SameCore(was)
 			return nil
@@ -772,7 +829,8 @@ func (s *Server) coreNote(changed bool) string {
 }
 
 // actDefaults puts every setting back to its default -- the second
-// tunnel's presets aside: they are not on this page.
+// tunnel's presets aside: they are not on this page. Its switch is, and
+// goes back to off with the rest.
 func (s *Server) actDefaults(w http.ResponseWriter, r *http.Request) {
 	restart := false
 	err := paths.UserReady()

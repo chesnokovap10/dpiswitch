@@ -6,11 +6,12 @@
     <div class="cm-what" id="lwhat" title="{{.T "What to send"}}"></div>
     <button type="button" data-to="direct" title="{{.T "Adds it to “Always direct”"}}">{{.T "Direct"}}</button>
     <button type="button" data-to="tunnel" title="{{.T "Adds it to “Always via tunnel”"}}">{{.T "Via the tunnel"}}</button>
-    <button type="button" data-to="awg2" title="{{.T "Adds it to the second tunnel's own list"}}">{{.T "Via the second tunnel"}}</button>
+    {{/* the second tunnel's list and presets: only while it is on in the settings */}}
+    {{if .St.Second}}<button type="button" data-to="awg2" title="{{.T "Adds it to the second tunnel's own list"}}">{{.T "Via the second tunnel"}}</button>
     <div class="cm-sub">
       <button type="button" id="lpresetbtn" class="cm-more">{{.T "To a preset"}}</button>
       <div class="cmenu" id="lpresets"></div>
-    </div>
+    </div>{{end}}
     <button type="button" data-to="block" title="{{.T "Adds it to “Forbidden”"}}">{{.T "Forbid"}}</button>
     <hr id="lrevealhr">
     <button type="button" id="lreveal">{{.T "File location"}}</button>

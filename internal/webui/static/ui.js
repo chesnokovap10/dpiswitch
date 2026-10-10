@@ -390,6 +390,26 @@ document.addEventListener('change', e => {
   swap(f.action, fd, f.dataset.swap, el.name);
 });
 
+// A control with data-submit sends its form the moment it changes -- a plain
+// form, whose answer is the page loaded anew: the second tunnel's switch.
+document.addEventListener('change', e => {
+  const el = e.target;
+  if (el.dataset && el.dataset.submit !== undefined && el.form) el.form.requestSubmit();
+});
+
+// The document is drawn with the second tunnel or without it (see
+// layout.html): the menu's item, its page, the items of the rows' menu, what
+// the other pages say of it. The menu, refreshed, says which the settings
+// have now -- switched in another window -- and a document drawn the other
+// way is loaded anew; not over a list being written and not saved.
+const secondDrawn = (document.querySelector('#navitems [data-second]') || {dataset: {}}).dataset.second;
+function secondSeen(nav) {
+  const m = nav.querySelector('[data-second]');
+  if (!m || secondDrawn === undefined || m.dataset.second === secondDrawn) return;
+  for (const t of document.querySelectorAll('textarea')) if (t.value !== t.defaultValue) return;
+  location.reload();
+}
+
 document.addEventListener('click', e => {
   const o = e.target.closest('[data-open]');
   if (o) byId(o.dataset.open).showModal();
@@ -500,6 +520,7 @@ async function poll(el) {
     el.innerHTML = html;
     reblink(el);
     el._html = html;
+    if (el.id === 'navitems') secondSeen(el);
     if (follow) el.scrollTop = el.scrollHeight;
     else if (!at || !backTo(el, at)) el.scrollTop = top;
     const sec = el.closest('.pg');

@@ -50,7 +50,7 @@ func TestSyncRoutes(t *testing.T) {
 	defer func() { routesSet = map[string]string{} }()
 	set := func(mode string, on bool) {
 		t.Helper()
-		if _, err := UpdateSettings(paths.Settings(), func(s *Settings) error { s.SetMode(mode); s.SetAwg2(on); return nil }); err != nil {
+		if _, err := UpdateSettings(paths.Settings(), func(s *Settings) error { s.SecondTunnel = true; s.SetMode(mode); s.SetAwg2(on); return nil }); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -900,9 +900,14 @@ func liveWords(v *view) liveData {
 	if split {
 		on = "1"
 	}
+	// one tunnel while the second is off in the settings
+	tunnels := v.T("Tunnel")
+	if v.St.Second {
+		tunnels = v.T("Tunnels")
+	}
 	return liveData{Split: split, Words: map[string]string{
 		"splitOn":       on,
-		"tunnel":        v.T("Tunnels"),
+		"tunnel":        tunnels,
 		"direct":        v.T("Direct"),
 		"split":         v.T("DPI bypass"),
 		"awg1":          v.T("Tunnel"),

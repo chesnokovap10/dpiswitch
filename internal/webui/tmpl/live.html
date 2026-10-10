@@ -18,7 +18,7 @@
       <button type="button" data-route="" class="on">{{.T "All"}}</button>
       <button type="button" data-route="direct">{{.T "Direct"}}</button>
       {{if .Data.Split}}<button type="button" data-route="split">{{.T "DPI bypass"}}</button>{{end}}
-      <button type="button" data-route="tunnel">{{.T "Tunnels"}}</button>
+      <button type="button" data-route="tunnel">{{if .St.Second}}{{.T "Tunnels"}}{{else}}{{.T "Tunnel"}}{{end}}</button>
     </div>
     <input type="search" id="lfilter" placeholder="{{.T "Host, program, address"}}" style="width:180px">
     <label class="cb"><input type="checkbox" id="lnoprobe"> {{.T "Hide the detector's checks"}}</label>
@@ -59,7 +59,7 @@
     <span class="spacer"></span>
     <span class="sw r-direct">{{.T "Direct"}}</span>
     <span class="sw r-awg1">{{.T "Tunnel"}}</span>
-    <span class="sw r-awg2">{{.T "Tunnel 2"}}</span>
+    {{if .St.Second}}<span class="sw r-awg2">{{.T "Tunnel 2"}}</span>{{end}}
     <span class="sw r-probe">{{.T "The detector's checks"}}</span>
   </div>
   <script type="application/json" id="lwords">{{.Data.Words}}</script>

@@ -410,3 +410,76 @@ func TestRenderQUICFake(t *testing.T) {
 		t.Error("the bypass's switch counts as a core setting")
 	}
 }
+
+// The second tunnel switched off in the settings: its .conf stays, and the
+// config is the one of a program with one tunnel -- no awg2, no listener of
+// its, no rule for its server. Switched on, they are back.
+func TestRenderSecondOff(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Parse("[Interface]\nPrivateKey = k\nAddress = 10.8.1.3/32\nDNS = 10.8.0.1\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.7:51820\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	two := "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.9.1.3/32\nDNS = 10.9.0.1\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.8:51820\n"
+	if err := os.WriteFile(paths.SourceConf2(), []byte(two), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// the config but its secret, which is made anew while no config is kept
+	render := func() string {
+		t.Helper()
+		out, err := c.Render()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var keep []string
+		for _, l := range strings.Split(out, "\n") {
+			if !strings.HasPrefix(l, "secret: ") && !strings.Contains(l, "password: ") {
+				keep = append(keep, l)
+			}
+		}
+		return strings.Join(keep, "\n")
+	}
+	none := render()
+	os.Remove(paths.SourceConf2())
+	alone := render()
+	if err := os.WriteFile(paths.SourceConf2(), []byte(two), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sw := func(on bool) string {
+		t.Helper()
+		if _, err := ctl.UpdateSettings(paths.Settings(), func(s *ctl.Settings) error { s.SecondTunnel = on; return nil }); err != nil {
+			t.Fatal(err)
+		}
+		return render()
+	}
+	off := sw(false)
+	for _, s := range []string{"awg2\n", "probe-tunnel2", "198.51.100.8", "10.9.0.1"} {
+		if strings.Contains(off, s) {
+			t.Errorf("switched off, the config has %q", strings.TrimSpace(s))
+		}
+	}
+	if off != alone {
+		t.Error("switched off, the config is not the one with no second .conf loaded")
+	}
+	if c2, err := Second(c); c2 != nil || err != nil {
+		t.Errorf("switched off: Second %v, %v", c2, err)
+	}
+	if got := Tunnels(); len(got) != 0 {
+		// no first tunnel's .conf in the data directory here: none at all
+		t.Errorf("switched off: tunnels %v", got)
+	}
+	on := sw(true)
+	for _, s := range []string{"  - name: awg2\n", "probe-tunnel2", "198.51.100.8"} {
+		if !strings.Contains(on, s) {
+			t.Errorf("switched on, the config lacks %q", strings.TrimSpace(s))
+		}
+	}
+	// a file from before the switch existed reads as on: the config an
+	// update builds is the one the user had
+	if on != none {
+		t.Error("no switch in the settings yet, a .conf loaded: not the config with awg2")
+	}
+}

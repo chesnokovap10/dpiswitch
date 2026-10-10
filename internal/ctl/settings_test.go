@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"dpiswitch/internal/paths"
 	"dpiswitch/internal/probe"
 )
 
@@ -97,6 +98,8 @@ func TestSettingsMode(t *testing.T) {
 // first save with other resolvers or IPv6 needs a restart, one with only
 // controller values does not.
 func TestCoreChanged(t *testing.T) {
+	// no second tunnel's .conf: the machine's own is not this test's
+	t.Setenv("ProgramData", t.TempDir())
 	d := DefaultSettings()
 	ttl := d
 	ttl.CleanTTLMin = 60
@@ -186,5 +189,59 @@ func TestDoHPathKept(t *testing.T) {
 	}
 	if got := LoadSettings(p).DirectDNS; !reflect.DeepEqual(got, want) {
 		t.Fatalf("saved %v, want %v", got, want)
+	}
+}
+
+// The second tunnel is off by default, and off it is switched on in no
+// mode. A file from before the switch existed -- or none -- has it on with a
+// .conf loaded for it: an update must not take a user's second tunnel away.
+// Switched, it restarts the core only with a .conf loaded.
+func TestSecondTunnel(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	p := paths.Settings()
+	if s := LoadSettings(p); s.SecondTunnel || s.Awg2Active() || Awg2Attached() {
+		t.Fatal("a second tunnel by default")
+	}
+	if err := os.WriteFile(paths.SourceConf2(), []byte("[Interface]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if s := LoadSettings(p); !s.SecondTunnel || !s.Awg2Active() || !s.Awg2Carries() {
+		t.Fatal("no settings file, a .conf loaded for it: read as off")
+	}
+	if !coreChanged(DefaultSettings(), Settings{}, false) {
+		t.Error("the first save switching it off, its .conf loaded: the core keeps awg2")
+	}
+	os.WriteFile(p, []byte(`{"auto_switch":true,"tunnel_only":false}`), 0o644)
+	if s := LoadSettings(p); !s.SecondTunnel {
+		t.Fatal("a file from before the switch, a .conf loaded for it: read as off")
+	}
+	// saved, the switch is the file's: off stays off beside the .conf, and
+	// what a mode was switched to by hand does not bring it back
+	s := LoadSettings(p)
+	s.SetAwg2(true)
+	s.SecondTunnel = false
+	if err := SaveSettings(p, s); err != nil {
+		t.Fatal(err)
+	}
+	s = LoadSettings(p)
+	if s.SecondTunnel || s.Awg2Active() || s.Awg2Carries() || Awg2Attached() {
+		t.Fatalf("switched off and saved: %+v", s)
+	}
+	for g, m := range RouteChoice(s) {
+		if m == TunnelAnyGroup || m == TunnelSoftAnyGroup {
+			t.Errorf("switched off: %s takes %s", g, m)
+		}
+	}
+	on := s
+	on.SecondTunnel = true
+	if on.SameCore(s) {
+		t.Error("switched on with a .conf loaded: the core must gain awg2")
+	}
+	os.Remove(paths.SourceConf2())
+	if !on.SameCore(s) {
+		t.Error("switched on with no .conf: the config is the same, the core restarted for nothing")
 	}
 }

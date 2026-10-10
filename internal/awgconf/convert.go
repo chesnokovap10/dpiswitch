@@ -221,12 +221,17 @@ func (c *Conf) Usable() error {
 var ErrSameKey = errors.New("this is the same config as the first tunnel")
 
 // Second: the second tunnel's .conf as the config takes it. nil and no
-// error when none is loaded; nil and why, when one is and the core could
-// not use it -- the first tunnel's key included, first given. The config,
-// the UI's state of the tunnel and the service's IPv6 check go by it alike:
-// the UI said "attached" of a .conf the service had left out.
+// error when none is loaded, or the second tunnel is off in the settings
+// (ctl.Settings.SecondTunnel): the program works with one tunnel then, a
+// .conf kept for the second or not. nil and why, when one is loaded and the
+// core could not use it -- the first tunnel's key included, first given. The
+// config, the UI's state of the tunnel and the service's IPv6 check go by it
+// alike: the UI said "attached" of a .conf the service had left out.
 func Second(first *Conf) (*Conf, error) {
 	if _, err := os.Stat(paths.SourceConf2()); err != nil {
+		return nil, nil
+	}
+	if !ctl.LoadSettings(paths.Settings()).SecondTunnel {
 		return nil, nil
 	}
 	c, err := ParseFile(paths.SourceConf2())

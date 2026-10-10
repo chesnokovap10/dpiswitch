@@ -10,7 +10,7 @@ import (
 // it is switched on: switched off, its server down, it restarted the core
 // every minute for a tunnel nothing goes through
 func TestWatchedOf(t *testing.T) {
-	on, off := ctl.Settings{}, ctl.Settings{}
+	on, off := ctl.Settings{SecondTunnel: true}, ctl.Settings{SecondTunnel: true}
 	on.SetMode(ctl.ModeOn)
 	on.SetAwg2(true)
 	off.SetMode(ctl.ModeOn)

@@ -102,6 +102,7 @@ h3{font-size:12px;margin:0 0 8px;color:var(--muted);font-weight:600;text-transfo
 .hint{color:var(--muted);font-size:12px;margin:0 0 8px}
 .muted{color:var(--muted)}
 .ok-t{color:var(--ok)}.bad-t{color:var(--bad)}.warn-t{color:var(--warn)}
+.cols1{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
 .cols2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .cols3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 /* the lists' three blocks line up across: title, text, picker, box and
@@ -175,6 +176,7 @@ td small{display:block;color:var(--muted)}
 .presets .p button{padding:2px 9px;font-size:12px}
 /* DNS: the two columns share rows, so their buttons line up whatever the hints' length */
 .dnsgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));column-gap:14px;row-gap:6px;align-items:start}
+.dnsgrid.two{grid-template-columns:repeat(2,minmax(0,1fr))}
 .dnsgrid .hint{margin:0}
 .dnsres{font-size:12px;line-height:1.7;min-height:1px}
 

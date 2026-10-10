@@ -258,6 +258,8 @@ func setupRouting(t *testing.T, mode, loaded string) (*simCore, []string) {
 	}
 	first := loaded == "awg1" || strings.HasPrefix(loaded, "both")
 	second := strings.HasPrefix(loaded, "awg2") || strings.HasPrefix(loaded, "both")
+	// "hidden": its .conf loaded, the second tunnel off in the settings
+	hidden := strings.HasSuffix(loaded, " hidden")
 	var tunnels []string
 	if first {
 		write(paths.SourceConf(), routingConf1)
@@ -265,7 +267,9 @@ func setupRouting(t *testing.T, mode, loaded string) (*simCore, []string) {
 	}
 	if second {
 		write(paths.SourceConf2(), conf2)
-		tunnels = append(tunnels, "awg2")
+		if !hidden {
+			tunnels = append(tunnels, "awg2")
+		}
 	}
 	// the user's lists, and a preset of their own switched on
 	write(paths.User(paths.TunnelList), hostTunnel+"\n")
@@ -279,6 +283,8 @@ func setupRouting(t *testing.T, mode, loaded string) (*simCore, []string) {
 	}
 	set, err := ctl.UpdateSettings(paths.Settings(), func(s *ctl.Settings) error {
 		s.SetMode(mode)
+		// the second tunnel on in the settings where the row has one
+		s.SecondTunnel = second && !hidden
 		// the switch as the row has it; a row with no second tunnel has
 		// it on, as it is by default
 		s.SetAwg2(!strings.HasSuffix(loaded, " off"))
@@ -694,11 +700,67 @@ func TestRouteChoice(t *testing.T) {
 		{ctl.ModeTunnel, false, ctl.TunnelOneGroup, ctl.Tunnel2StrictGroup, ctl.TunnelOneGroup},
 	} {
 		s := ctl.DefaultSettings()
+		s.SecondTunnel = true
 		s.SetMode(c.mode)
 		s.SetAwg2(c.awg2)
 		got := ctl.RouteChoice(s)
 		if got[ctl.TunnelListsGroup] != c.lists || got[ctl.Tunnel2Group] != c.two || got[ctl.TunnelRestGroup] != c.rest {
 			t.Errorf("%s, awg2 %v: %v", c.mode, c.awg2, got)
+		}
+		// off in the settings, whatever the mode was switched to by hand:
+		// the members of one tunnel
+		s.SecondTunnel = false
+		off := ctl.RouteChoice(s)
+		s.SecondTunnel = true
+		s.SetAwg2(false)
+		if want := ctl.RouteChoice(s); fmt.Sprint(off) != fmt.Sprint(want) {
+			t.Errorf("%s, the second tunnel off in the settings: %v, want %v", c.mode, off, want)
+		}
+	}
+}
+
+// TestRoutingSecondOff: the second tunnel off in the settings, its .conf,
+// its presets and its list kept. Every cell is the one of the row without
+// it -- "awg1" for both loaded, "none" for the second alone -- in every
+// mode, and the config knows no awg2.
+func TestRoutingSecondOff(t *testing.T) {
+	for _, mode := range []string{ctl.ModeOn, ctl.ModeObserve, ctl.ModeTunnel} {
+		rows := map[string]row{}
+		for _, r := range routingTables[mode] {
+			rows[r.loaded] = r
+		}
+		for hidden, as := range map[string]string{"both hidden": "awg1", "awg2 hidden": "none"} {
+			r := rows[as]
+			t.Run(mode+"/"+hidden, func(t *testing.T) {
+				core, loaded := setupRouting(t, mode, hidden)
+				for _, c := range []struct {
+					col, host string
+					want      route
+				}{
+					{"what no list names", hostUnnamed, r.unnamed},
+					{"a clean site", hostClean, r.clean},
+					{"a preset", hostPreset, r.preset},
+					{"the awg2 list", hostAwg2, r.awg2},
+					{"Always via tunnel", hostTunnel, r.tunnel},
+					{"Always direct", hostDirect, r.direct},
+					{"Forbidden", hostBlock, r.block},
+				} {
+					for _, alive := range aliveSets(loaded) {
+						got, why := core.route(c.host, alive)
+						if want := c.want.want(alive); got != want {
+							t.Errorf("%s (%s), alive %v: %s, want %s\n  %s", c.col, c.want, alive, got, want, why)
+						}
+					}
+				}
+				for name, g := range core.groups {
+					if slices.Contains(g.members, "awg2") {
+						t.Errorf("group %s has awg2", name)
+					}
+				}
+				if got := Tunnels(); slices.Contains(got, "awg2") {
+					t.Errorf("tunnels %v", got)
+				}
+			})
 		}
 	}
 }

@@ -9,6 +9,7 @@ sees your real ISP. Everything else stays in the tunnel.</p>
 them. When in doubt a site stays in the tunnel: a wrong "clean" breaks a site, a wrong "blocked"
 only costs a detour.</div>
 
+{{if .St.Second}}
 <h4>Where a connection goes</h4>
 <p>Every new connection is matched against these rules from the top; the first one that fits decides.</p>
 <table>
@@ -67,6 +68,42 @@ compare with.</p>
 <p>The core decides once, when a connection opens. When you change a list or a preset here, the
 open connections the change moves are closed, and the programs reconnect over the new route. Turning
 auto-switch off closes the connections the detector sent direct.</p>
+{{else}}
+<h4>Where a connection goes</h4>
+<p>Every new connection is matched against these rules from the top; the first one that fits decides.</p>
+<table>
+<tr><th>#</th><th>Rule</th><th>Route</th></tr>
+<tr><td>1</td><td>The tunnel's server itself</td><td>direct (otherwise the tunnel would loop into itself)</td></tr>
+<tr><td>2</td><td>Addresses inside the tunnel (its DNS server)</td><td>the tunnel</td></tr>
+<tr><td>3</td><td><a href="/lists#list-block">Forbidden</a>: programs, sites, addresses</td><td>refused, in every mode</td></tr>
+<tr><td>4</td><td>Local networks: the router, printers, shares, <code>.local</code> and <code>.lan</code> names</td><td>direct</td></tr>
+<tr><td>5</td><td><a href="/lists#list-tunnel">Always via tunnel</a>: programs, sites, addresses</td><td>the tunnel; never direct</td></tr>
+<tr><td>6</td><td><a href="/lists#list-direct">Always direct</a>: programs, sites, addresses</td><td>direct, in every mode</td></tr>
+<tr><td>7</td><td>Everything else, while "Observe only" is chosen</td><td>direct</td></tr>
+<tr><td>8</td><td>Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name)</td><td>direct</td></tr>
+<tr><td>9</td><td>Everything else</td><td>by the mode -- see the table below</td></tr>
+</table>
+<p>A line written in several lists goes by the one higher in this table: Forbidden → Always via tunnel →
+Always direct → the detector.</p>
+<p>How it goes in each auto-switch mode. "Clean" are the sites the detector found unblocked; the detector
+works only with the tunnel's config loaded.</p>
+<table>
+<tr><th>Mode</th><th>The tunnel's config</th><th>What no list names</th><th>Always via tunnel</th><th>Always direct</th><th>Forbidden</th></tr>
+<tr><td>On</td><td>loaded</td><td>clean ones direct, the rest through the tunnel; if the tunnel is down, direct</td><td>the tunnel; if it is down, refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>On</td><td>not loaded</td><td>direct</td><td>refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>Observe only</td><td>loaded</td><td>direct</td><td>the tunnel; if it is down, refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>Observe only</td><td>not loaded</td><td>direct</td><td>refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>Tunnel only</td><td>loaded</td><td>all through the tunnel; if it is down, refused</td><td>the tunnel; if it is down, refused</td><td>direct</td><td>refused</td></tr>
+<tr><td>Tunnel only</td><td>not loaded</td><td>refused</td><td>refused</td><td>direct</td><td>refused</td></tr>
+</table>
+<p>Tunnel only is a strict mode: nothing but Always direct goes direct, even with the tunnel down.</p>
+<p>Without the tunnel's config the service runs all the same: <a href="/live#ltable">Live</a> shows the
+traffic, and the lists work as the table above says. The detector checks nothing then, having no tunnel to
+compare with.</p>
+<p>The core decides once, when a connection opens. When you change a list here, the
+open connections the change moves are closed, and the programs reconnect over the new route. Turning
+auto-switch off closes the connections the detector sent direct.</p>
+{{end}}
 <p>Every list takes sites (<code>example.com</code>, <code>+.example.com</code> for the domain and all under
 it), addresses and networks (<code>1.2.3.4</code>, <code>192.168.0.0/16</code>) and programs
 (<code>telegram.exe</code>, or a full path for one copy) in any mix. A name in its own letters
@@ -151,7 +188,7 @@ path at once and closes their connections: they open again through the tunnel.</
 cut on everything goes with it at once, before any check: a name not checked would hang until the detector
 got to it. The names the detector found clean without the cut go direct as they are. In Tunnel only nothing
 goes direct, the cut included; the detector checks and records there too.</li>
-<li>With no first tunnel (awg1 not loaded) there is nothing to compare against, and the detector checks the
+<li>{{if .St.Second}}With no first tunnel{{else}}With no tunnel{{end}} (awg1 not loaded) there is nothing to compare against, and the detector checks the
 cut alone: a site is tried direct as it is, and when it is cut on its ClientHello, direct with the cut.
 CLEAN_SPLIT only when the cut gets a certificate that passes the chain check and an answer; speed is not
 compared. Once awg1 is loaded, such verdicts are the first checked again against it.</li>
@@ -183,7 +220,7 @@ direct as it is.</li>
 the traffic goes.</p>
 <ul>
 <li><b>On</b>: the verdicts are applied. Unblocked sites go direct, the rest by the lists and through awg1.</li>
-<li><b>Observe only</b>: plain direct -- a whitelist. Everything goes direct but the lists, which go their
+{{if .St.Second}}<li><b>Observe only</b>: plain direct -- a whitelist. Everything goes direct but the lists, which go their
 way as in every mode. The second tunnel starts switched off each time this mode is chosen: switch it on on
 its page, and its presets and list go to awg2 too. The detector checks everything that goes direct.</li>
 <li><b>Tunnel only</b>: a strict mode. Everything but "Always direct" goes through the tunnels and never
@@ -191,7 +228,12 @@ direct: with the tunnels down it fails. "Always direct" is the one way out past 
 </ul>
 <p>The second tunnel's switch is kept per mode: switched off in On, it is off again whenever On is
 chosen, and so for Tunnel only. Switched off, its presets and list route nothing.</p>
-<p>The local network and the tunnels' own addresses go direct, and the Forbidden list is refused, in every mode. Switching applies within a
+<p>The local network and the tunnels' own addresses go direct,{{else}}<li><b>Observe only</b>: plain direct -- a whitelist. Everything goes direct but the lists, which go their
+way as in every mode. The detector checks everything that goes direct.</li>
+<li><b>Tunnel only</b>: a strict mode. Everything but "Always direct" goes through the tunnel and never
+direct: with the tunnel down it fails. "Always direct" is the one way out past the tunnel.</li>
+</ul>
+<p>The local network and the tunnel's own address go direct,{{end}} and the Forbidden list is refused, in every mode. Switching applies within a
 second: the open connections the mode sends another way are closed, and the programs reconnect the new
 way. The verdicts are kept in every mode.</p>
 
@@ -207,7 +249,7 @@ current network. The tray's reset is of the current network.</p>
 <li><b>Direct sites</b> are resolved by the resolvers for direct sites, asked outside the tunnel: CDNs
 then answer with nodes near your ISP. The detector uses the same resolvers, so it tests the node the
 traffic will go to. DoH or DoT by address is the safe choice: many ISPs block or tamper with plain DNS.</li>
-<li><b>Tunnelled sites</b> are resolved inside the tunnel they go through, by that tunnel's own DNS: <a href="/settings#tunnel_dns">awg1's</a> and <a href="/settings#tunnel_dns2">awg2's</a> are set apart, each from its <code>.conf</code> unless set. A <code>.conf</code> with no <code>DNS =</code> and nothing set: the names are resolved by the resolvers for direct sites, outside the tunnel.</li>
+{{if .St.Second}}<li><b>Tunnelled sites</b> are resolved inside the tunnel they go through, by that tunnel's own DNS: <a href="/settings#tunnel_dns">awg1's</a> and <a href="/settings#tunnel_dns2">awg2's</a> are set apart, each from its <code>.conf</code> unless set. A <code>.conf</code> with no <code>DNS =</code> and nothing set: the names are resolved by the resolvers for direct sites, outside the tunnel.</li>{{else}}<li><b>Tunnelled sites</b> are resolved inside the tunnel, by its own DNS: the one <a href="/settings#tunnel_dns">set here</a>, or with none set the one from its <code>.conf</code>. A <code>.conf</code> with no <code>DNS =</code> and nothing set: the names are resolved by the resolvers for direct sites, outside the tunnel.</li>{{end}}
 <li>Programs get stand-in addresses from the core (<code>198.18.0.0/16</code>, <code>2001:2::/48</code>) and
 the core resolves the real one on the chosen route. That is why a name, not an address, decides the route.</li>
 <li><b><a href="/settings#dns_cache">Local DNS cache</a></b> (off by default): the core asks the service for
@@ -241,7 +283,12 @@ game that binds to the adapter and has no other way. A device on the local netwo
 cut off. The filters live in the service's own session: they go out when the core stops or restarts, when the
 setting is switched off, and with the service should it die.</p>
 
+{{if .St.Second}}
 <h4 id="h-awg2">The second tunnel</h4>
+<p><a href="/settings#second_tunnel"><b>Second tunnel</b></a> in the settings switches it on and off altogether
+(off by default). Off, it is not connected to its server, and its page and whatever the others say of it are
+gone; its config, presets and list are kept. With its config loaded, switching it restarts the core:
+connections drop for a couple of seconds. The Use the second tunnel switch on its page does not restart the core.</p>
 <p>A second AmneziaWG server for chosen services only: YouTube, Telegram and WhatsApp, Discord, AI services, social networks
 and your own list. It stands below Forbidden, Always via tunnel and Always direct and above the detector,
 which leaves its names alone. If it is down, its sites go through the first tunnel; if both are down,
@@ -252,6 +299,15 @@ its presets and list route nothing, and what they name goes the way the other li
 lines (sites, addresses and programs, as in the lists), <b>Delete</b> removes it, <b>Add…</b> makes a new one,
 switched on at once. A change applies at once, like a switch. Once a built-in preset is deleted or edited,
 <b>Restore built-in presets…</b> puts them back as the program ships them; your own presets stay.</p>
+{{else}}
+<h4 id="h-awg2">The second tunnel</h4>
+<p>The program works with one tunnel by default. <a href="/settings#second_tunnel"><b>Second tunnel</b></a> in
+the settings switches on a second AmneziaWG server for chosen services only -- YouTube, Telegram, AI services,
+your own list: its page comes up in the menu, where its config is loaded and its presets are chosen. While it
+is off the program does not connect to it, whether its config is loaded or not, and its presets and list route
+nothing; the config, the presets and the list are kept. With its config loaded, switching it restarts the
+core: connections drop for a couple of seconds.</p>
+{{end}}
 
 <h4>When a site does not open</h4>
 <ol>
@@ -270,8 +326,9 @@ right-click on a row sends the site straight to the list it belongs in.</li>
 
 <h4 id="h-live">Live</h4>
 <p>The connections the core holds, refreshed every second: the program, the host, the address, the port,
-the type, the route, the speed and the bytes both ways. A row's colour is its route: green direct, blue
-the first tunnel, violet the second, grey the detector's checks; closed rows have none. Hover over a route
+the type, the route, the speed and the bytes both ways. A row's colour is its route: green direct, {{if .St.Second}}blue
+the first tunnel, violet the second, grey the detector's checks;{{else}}blue
+the tunnel, grey the detector's checks;{{end}} closed rows have none. Hover over a route
 for the group and the rule that chose it.</p>
 <ul>
 <li><b><a href="/live#ltabs">Tabs</a>.</b> Open, Closed, Failed, Forbidden — the tries the
@@ -310,9 +367,9 @@ picked hold their places. A plain click on a row picked keeps them all picked: o
 connection follows the rules as they are now. ✕ on a row picked closes the connections of all the rows picked.</li>
 <li><b>A row right-clicked</b> opens a menu. On top, what to send: the whole domain (<code>+.example.com</code>),
 the name alone, the address (a list routes by address only the connections made to it by address) or the
-program. Then where: <b>Direct</b>, <b>Via the tunnel</b>, <b>Via the second
+program. {{if .St.Second}}Then where: <b>Direct</b>, <b>Via the tunnel</b>, <b>Via the second
 tunnel</b> (its <a href="/awg2#list-awg2">own list</a>), <b>To a preset</b> (the <a href="/awg2#presets">presets</a>
-switched off are greyed: they route nothing), <b>Forbid</b>. <b>File location</b> opens the program's folder
+switched off are greyed: they route nothing), <b>Forbid</b>.{{else}}Then where: <b>Direct</b>, <b>Via the tunnel</b>, <b>Forbid</b>.{{end}} <b>File location</b> opens the program's folder
 with its file picked out — for the detector's checks, DPI Switch's own; greyed for several rows picked and
 on the Verdicts page. On a row picked the menu is for all the rows picked: on top, in place of one name,
 groups with their count (<b>Whole domains</b>, <b>Names only</b>, <b>IP addresses</b>, <b>Programs</b>, the lines
@@ -325,17 +382,17 @@ come in this order:</p>
 <li><a href="/lists#list-block">Forbidden</a>;</li>
 <li><a href="/lists#list-tunnel">Always via tunnel</a>;</li>
 <li><a href="/lists#list-direct">Always direct</a>;</li>
-<li>the second tunnel: its <a href="/awg2#presets">presets</a> switched on, then its <a href="/awg2#list-awg2">own list</a>;</li>
-<li>the detector's verdicts.</li>
+{{if .St.Second}}<li>the second tunnel: its <a href="/awg2#presets">presets</a> switched on, then its <a href="/awg2#list-awg2">own list</a>;</li>
+{{else}}{{end}}<li>the detector's verdicts.</li>
 </ol>
 <p>A list whose rules come <b>before</b> the one chosen loses every line routing it, a wider one too:
 <code>+.example.com</code> for <code>api.example.com</code>, <code>10.0.0.0/8</code> for an address in it, a
 program by its name for a copy of it by its path. A wider line goes whole — a list cannot hold an exception
 for one name — so the answer names what went, and from where. A list whose rules come <b>after</b> it loses
-the same line and the narrower ones only: a wider line there is in nobody's way. The presets stand below every
+the same line and the narrower ones only: a wider line there is in nobody's way. {{if .St.Second}}The presets stand below every
 list: a line sent to a list leaves them as they are, and a line sent to a preset is taken out of the lists.
 The lists and the presets
-change as one: a file failing to write puts back the ones written before it.</p>
+change as one:{{else}}The lists change as one:{{end}} a file failing to write puts back the ones written before it.</p>
 
 <h4>Files</h4>
 <p>Everything is kept in <code>{{.St.DataDir}}</code>: the configs (locked to administrators and you, they
@@ -349,7 +406,7 @@ Only administrators can change that file — the service runs as SYSTEM.</p>
 <li><b><a href="https://github.com/MetaCubeX/mihomo" target="_blank" rel="noopener">mihomo</a></b> — the proxy core
 DPI Switch runs on: the TUN, the rules, the groups, DNS.</li>
 <li><b><a href="https://github.com/amnezia-vpn/amneziawg-go" target="_blank" rel="noopener">AmneziaWG</a></b> —
-WireGuard disguised against DPI; the protocol of both tunnels.</li>
+{{if .St.Second}}WireGuard disguised against DPI; the protocol of both tunnels.</li>{{else}}WireGuard disguised against DPI; the tunnel's protocol.</li>{{end}}
 <li><b><a href="https://github.com/chesnokovap10/dpiswitch" target="_blank" rel="noopener">dpiswitch</a></b> —
 this program: the service, the block detector, the tray and this interface.</li>
 <li><b><a href="https://github.com/chesnokovap10/mihomo-dpiswitch" target="_blank" rel="noopener">mihomo-dpiswitch</a></b> —

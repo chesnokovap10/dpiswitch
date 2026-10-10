@@ -35,7 +35,11 @@ function rowMenu(W) {
 }
 function makeRowMenu(W) {
   const $ = id => document.getElementById(id);
-  const menu = $('lmenu'), sub = $('lpresets'), reveal = $('lreveal'), revealHr = $('lrevealhr');
+  // the second tunnel's items -- its list, its presets -- are in the menu
+  // only while it is on in the settings (see rowmenu.html): with none, the
+  // presets' list is a part never shown nor filled
+  const hasPresets = !!$('lpresets');
+  const menu = $('lmenu'), sub = $('lpresets') || document.createElement('div'), reveal = $('lreveal'), revealHr = $('lrevealhr');
   // the lines the item picked sends, and what the file location opens
   let what = [], onReveal = null;
 
@@ -100,10 +104,11 @@ function makeRowMenu(W) {
     if (over > 0) sub.style.top = (-5 - Math.min(over, r.top - 4)) + 'px';
   }
   // on hover the list shows at once; the frame after, it has its size
-  sub.parentElement.addEventListener('mouseenter', () => requestAnimationFrame(fitSub));
+  if (hasPresets) sub.parentElement.addEventListener('mouseenter', () => requestAnimationFrame(fitSub));
 
   // the presets as they are now: another tab may have added one
   async function presets() {
+    if (!hasPresets) return;
     sub.textContent = '';
     try {
       const r = await fetch('/live/presets');
@@ -137,7 +142,7 @@ function makeRowMenu(W) {
     for (const c of $('lwhat').children) c.classList.toggle('on', c === b);
   });
   // the presets open on hover, and on a click for those without a mouse
-  $('lpresetbtn').addEventListener('click', () => {
+  if (hasPresets) $('lpresetbtn').addEventListener('click', () => {
     sub.classList.toggle('shown');
     requestAnimationFrame(fitSub);
   });

@@ -216,6 +216,7 @@ func TestModeFiles(t *testing.T) {
 	// a second tunnel loaded: without one its list routes nothing
 	os.WriteFile(paths.SourceConf2(), []byte("[Interface]\n"), 0o600)
 	set := DefaultSettings()
+	set.SecondTunnel = true
 	for _, c := range []struct {
 		mode, direct, tunnel, awg2 string
 		observe                    bool

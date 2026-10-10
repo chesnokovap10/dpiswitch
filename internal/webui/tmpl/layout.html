@@ -17,7 +17,7 @@
 {{/* every page lives in the one document, drawn once and kept: the menu
    shows another at once, as a program's tabs do (see static/ui.js). The
    page asked for comes with the document, the rest follow it. */}}
-<main id="pages" data-pages="{{pagelist}}">
+<main id="pages" data-pages="{{.PageList}}">
 <section class="pg" data-page="{{.Page}}">
 {{if .Flash}}<div class="flash pgflash {{if .Flash.OK}}ok{{else}}bad{{end}}" style="margin-bottom:12px">{{.Flash.Text}}</div>{{end}}
 {{template "content" .}}
@@ -61,7 +61,7 @@
     <span class="seg">
       <button name="value" value="on" class="{{if eq $s.Mode "on"}}on{{end}}" title="{{.T "Sites the detector found unblocked go direct"}}">{{.T "On"}}</button>
       <button name="value" value="observe" class="{{if eq $s.Mode "observe"}}on{{end}}" title="{{.T "Everything goes direct; the detector records verdicts"}}">{{.T "Observe only"}}</button>
-      <button name="value" value="tunnel" class="{{if eq $s.Mode "tunnel"}}on{{end}}" title="{{.T "Everything but Always direct goes through the tunnels and never direct: with the tunnels down it fails. The detector records verdicts"}}">{{.T "Tunnel only"}}</button>
+      <button name="value" value="tunnel" class="{{if eq $s.Mode "tunnel"}}on{{end}}" title="{{if $s.Second}}{{.T "Everything but Always direct goes through the tunnels and never direct: with the tunnels down it fails. The detector records verdicts"}}{{else}}{{.T "Everything but Always direct goes through the tunnel and never direct: with the tunnel down it fails. The detector records verdicts"}}{{end}}">{{.T "Tunnel only"}}</button>
     </span>
   </form>
   {{if $s.Installed}}
@@ -72,11 +72,14 @@
   {{end}}
 {{end}}
 
+{{/* data-second: whether the second tunnel is on in the settings. The
+   document is drawn with it or without -- this menu, the pages, the rows'
+   menu -- and one drawn the other way is loaded anew (see static/ui.js). */}}
 {{define "navitems"}}{{$s := .St}}
-  <a href="/overview" class="{{if eq .Page "overview"}}on{{end}}">{{.T "Overview"}}</a>
+  <a href="/overview" data-second="{{if $s.Second}}1{{else}}0{{end}}" class="{{if eq .Page "overview"}}on{{end}}">{{.T "Overview"}}</a>
   <a href="/verdicts" class="{{if eq .Page "verdicts"}}on{{end}}">{{.T "Verdicts"}} <span class="n">{{$s.DirectCount}} · {{$s.Blocked}}</span></a>
   <a href="/lists" class="{{if eq .Page "lists"}}on{{end}}">{{.T "Routing lists"}}</a>
-  <a href="/awg2" class="{{if eq .Page "awg2"}}on{{end}}">{{.T "Second tunnel"}} <span class="n">{{if $s.Awg2}}{{$s.Presets}} · {{$s.Awg2Hosts}}{{else}}{{.T "off"}}{{end}}</span></a>
+  {{if $s.Second}}<a href="/awg2" class="{{if eq .Page "awg2"}}on{{end}}">{{.T "Second tunnel"}} <span class="n">{{if $s.Awg2}}{{$s.Presets}} · {{$s.Awg2Hosts}}{{else}}{{.T "off"}}{{end}}</span></a>{{end}}
   <a href="/settings" class="{{if eq .Page "settings"}}on{{end}}">{{.T "Settings"}}</a>
   <a href="/logs" class="{{if eq .Page "logs"}}on{{end}}">{{.T "Logs"}}</a>
   <hr>
@@ -168,6 +171,6 @@
 
 {{/* the mode decides whether the verdicts apply: said while they do not; on
    the verdicts page and under the overview's counts */}}
-{{define "vnote"}}{{if not .St.HasConfig}}<p class="hint warn-t" style="margin:0">{{.T "The first tunnel (awg1) is not loaded: the detector checks nothing, even with auto-switch On, but the ClientHello cut when DPI bypass has it switched on. It measures the direct path against awg1 only, never awg2; until awg1 is loaded, what no list names goes direct."}}</p>
-{{- else if eq .St.Mode "observe"}}<p class="hint warn-t" style="margin:0">{{.T "Observe only is on: the verdicts are recorded, not applied. Everything goes direct but Forbidden, Always via tunnel and the second tunnel while switched on."}}</p>
-{{- else if eq .St.Mode "tunnel"}}<p class="hint warn-t" style="margin:0">{{.T "Tunnel only is on: the verdicts are recorded, not applied. Everything but Always direct goes through the tunnels and never direct."}}</p>{{end}}{{end}}
+{{define "vnote"}}{{if not .St.HasConfig}}<p class="hint warn-t" style="margin:0">{{if .St.Second}}{{.T "The first tunnel (awg1) is not loaded: the detector checks nothing, even with auto-switch On, but the ClientHello cut when DPI bypass has it switched on. It measures the direct path against awg1 only, never awg2; until awg1 is loaded, what no list names goes direct."}}{{else}}{{.T "The tunnel's config (awg1) is not loaded: the detector checks nothing, even with auto-switch On, but the ClientHello cut when DPI bypass has it switched on. Until it is loaded, what no list names goes direct."}}{{end}}</p>
+{{- else if eq .St.Mode "observe"}}<p class="hint warn-t" style="margin:0">{{if .St.Second}}{{.T "Observe only is on: the verdicts are recorded, not applied. Everything goes direct but Forbidden, Always via tunnel and the second tunnel while switched on."}}{{else}}{{.T "Observe only is on: the verdicts are recorded, not applied. Everything goes direct but Forbidden and Always via tunnel."}}{{end}}</p>
+{{- else if eq .St.Mode "tunnel"}}<p class="hint warn-t" style="margin:0">{{if .St.Second}}{{.T "Tunnel only is on: the verdicts are recorded, not applied. Everything but Always direct goes through the tunnels and never direct."}}{{else}}{{.T "Tunnel only is on: the verdicts are recorded, not applied. Everything but Always direct goes through the tunnel and never direct."}}{{end}}</p>{{end}}{{end}}

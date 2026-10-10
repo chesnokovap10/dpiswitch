@@ -22,7 +22,7 @@
   </div>
 </div>
 {{template "confdialog" .Dlg "config"}}
-{{template "confdialog" .Dlg "config2"}}
+{{if .St.Second}}{{template "confdialog" .Dlg "config2"}}{{end}}
 {{end}}
 
 {{define "summary"}}{{$s := .St}}
@@ -33,22 +33,23 @@
     <a class="tile" href="/verdicts?cat=unknown"><b>{{$s.Unverified}}</b><span>{{.T "could not verify"}}</span></a>
   </div>
   {{- template "vnote" .}}
-  <div class="cols2">
+  <div class="{{if $s.Second}}cols2{{else}}cols1{{end}}">
     <div class="box">
-      <h3>{{.T "Main tunnel"}} · awg1</h3>
+      <h3>{{if $s.Second}}{{.T "Main tunnel"}}{{else}}{{.T "Tunnel"}}{{end}} · awg1</h3>
       {{if $s.HasConfig}}
       <div class="kv">
         <span>{{.T "State"}}</span><div>{{template "tunstate" (tun . "awg1" $s.TunnelAlive $s.TunnelNote)}}</div>
         <span>Endpoint</span><div>{{$s.Endpoint}}</div>
         <span>DNS</span><div>{{with .Data.DNS}}{{.}}{{if $.Data.DNSSet}} <a class="muted" href="/settings#dns">({{$.T "from the settings"}})</a>{{end}}{{else}}<span class="muted">—</span>{{end}}</div>
-        <span>{{.T "Carries"}}</span><div>{{.T "everything not sent direct or to awg2"}}</div>
+        <span>{{.T "Carries"}}</span><div>{{if $s.Second}}{{.T "everything not sent direct or to awg2"}}{{else}}{{.T "everything not sent direct"}}{{end}}</div>
       </div>
       <div class="actions">
         <button type="button" data-open="dlg-config">{{.T "Replace config…"}}</button>
-        <form method="post" action="/act/delete1" data-confirm="{{.T "Delete the first tunnel's config? To use it again you will load the .conf again. Until then no site is checked, what no list names goes direct -- in Tunnel only it is refused -- and the service restarts."}}"><button class="danger" data-busy="{{.T "Applying…"}}">{{.T "Delete config…"}}</button></form>
+        <form method="post" action="/act/delete1" data-confirm="{{if $s.Second}}{{.T "Delete the first tunnel's config? To use it again you will load the .conf again. Until then no site is checked, what no list names goes direct -- in Tunnel only it is refused -- and the service restarts."}}{{else}}{{.T "Delete the tunnel's config? To use it again you will load the .conf again. Until then no site is checked, what no list names goes direct -- in Tunnel only it is refused -- and the service restarts."}}{{end}}"><button class="danger" data-busy="{{.T "Applying…"}}">{{.T "Delete config…"}}</button></form>
       </div>
       {{else}}<p class="hint">{{.T "No config loaded yet."}} {{.T "Without it what the lists do not name goes direct"}}.</p>{{end}}
     </div>
+    {{if $s.Second}}
     <div class="box">
       <h3>{{.T "Second tunnel"}} · awg2</h3>
       {{if $s.Awg2}}
@@ -68,6 +69,7 @@
       <div class="actions"><button type="button" data-open="dlg-config2">{{.T "Attach…"}}</button></div>
       {{end}}
     </div>
+    {{end}}
   </div>
 {{end}}
 

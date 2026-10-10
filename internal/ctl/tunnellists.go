@@ -42,8 +42,15 @@ const (
 )
 
 // Awg2Attached: whether the core's config has a second tunnel. Set by
-// awgconf, which decides it; this default only looks for the .conf.
+// awgconf, which decides it; this default only looks for the .conf and the
+// settings' switch.
 var Awg2Attached = func() bool {
+	return Awg2Loaded() && LoadSettings(paths.Settings()).SecondTunnel
+}
+
+// Awg2Loaded: whether a .conf is loaded for the second tunnel, usable or
+// not, the tunnel switched on in the settings or not; a var for tests
+var Awg2Loaded = func() bool {
 	_, err := os.Stat(paths.SourceConf2())
 	return err == nil
 }

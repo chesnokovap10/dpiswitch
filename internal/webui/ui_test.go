@@ -52,9 +52,18 @@ func testServer(t *testing.T) (*Server, string) {
 	t.Cleanup(func() { serviceRunning, restartService = was, wasRestart })
 	s := &Server{statusFn: func() status {
 		return status{Installed: true, PathOK: true, ServiceRun: true, TunnelAlive: true, TunnelNote: "60 ms",
-			Awg2: true, Version: "test", DataDir: paths.DataDir(), NetworkID: "AS1", Mode: ctl.ModeOn}
+			Second: true, Awg2: true, Version: "test", DataDir: paths.DataDir(), NetworkID: "AS1", Mode: ctl.ModeOn}
 	}}
 	return s, paths.DataDir()
+}
+
+// secondOn: the second tunnel switched on in the settings, as testServer's
+// status says it is -- off, which is the default, there is none
+func secondOn(t *testing.T) {
+	t.Helper()
+	if _, err := ctl.UpdateSettings(paths.Settings(), func(s *ctl.Settings) error { s.SecondTunnel = true; return nil }); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func do(t *testing.T, h http.Handler, method, target string, form url.Values, hdr map[string]string) *httptest.ResponseRecorder {
@@ -1045,6 +1054,7 @@ func TestDNSTestFixesPath(t *testing.T) {
 func TestAwg2Switch(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
+	secondOn(t)
 	active := func() bool { return ctl.LoadSettings(paths.Settings()).Awg2Active() }
 	mode := func(m string) {
 		t.Helper()
@@ -1132,6 +1142,7 @@ func TestNoFirstNoProbes(t *testing.T) {
 func TestDNSSecondTunnel(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
+	secondOn(t)
 	body := do(t, h, "POST", "/act/dns", url.Values{"direct_dns": {"https://77.88.8.8/dns-query"},
 		"tunnel_dns": {""}, "tunnel_dns2": {"10.9.0.1"}}, nil).Body.String()
 	if strings.Contains(body, `class="msg bad"`) {
@@ -1385,5 +1396,182 @@ func TestListOldAppsStuck(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(paths.User(paths.DirectList)); strings.TrimSpace(string(b)) != "a.example" {
 		t.Fatalf("the list after a save undone: %q", b)
+	}
+}
+
+// The second tunnel switched off in the settings -- the default: no page
+// says a word of it but the settings' row that switches it on and the help's
+// section about that row. Its menu item, its page, its box on the overview,
+// its DNS, its items in the rows' menu, its colour in Live's legend are gone.
+func TestSecondTunnelHidden(t *testing.T) {
+	s, _ := testServer(t)
+	s.statusFn = func() status {
+		return status{Installed: true, PathOK: true, ServiceRun: true, HasConfig: true, TunnelAlive: true, TunnelNote: "60 ms",
+			Version: "test", DataDir: paths.DataDir(), NetworkID: "AS1", Mode: ctl.ModeOn}
+	}
+	h := s.Handler()
+	// a .conf kept for it, presets and a list: hidden all the same
+	if err := os.WriteFile(paths.SourceConf2(), []byte(testConf2), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	set := ctl.DefaultSettings()
+	set.Awg2Presets, set.TunnelDNS2 = []string{"youtube"}, []string{"10.9.0.1"}
+	if err := ctl.SaveSettings(paths.Settings(), set); err != nil {
+		t.Fatal(err)
+	}
+	script := regexp.MustCompile(`(?s)<script[^>]*>.*?</script>`)
+	said := regexp.MustCompile(`(?i)awg2|second tunnel|second server|tunnel 2|втор(ой|ого|ому|ым|ом) (туннел|сервер)|туннель 2|preset|пресет`)
+	// the settings' row and the help's section on it: the one place it is named
+	row := regexp.MustCompile(`(?s)<div><a class="hl" href="/help#h-awg2">.*?<div class="g">|<h4 id="h-awg2">.*?</p>`)
+	for _, lang := range []string{"en", "ru"} {
+		cookie := map[string]string{"Cookie": "lang=" + lang}
+		for _, p := range pageNames {
+			if p == "awg2" {
+				continue
+			}
+			targets := []string{"/" + p, "/frag/" + p + "/navitems", "/frag/" + p + "/header"}
+			switch p {
+			case "overview":
+				targets = append(targets, "/frag/overview/summary")
+			case "settings":
+				targets = append(targets, "/frag/settings/form", "/frag/settings/dns")
+			case "lists":
+				targets = append(targets, "/frag/lists/list-direct", "/frag/lists/list-tunnel", "/frag/lists/list-block")
+			}
+			for _, target := range targets {
+				w := do(t, h, "GET", target, nil, cookie)
+				if w.Code != 200 {
+					t.Fatalf("%s %s: %d", lang, target, w.Code)
+				}
+				body := script.ReplaceAllString(w.Body.String(), "")
+				kept := row.FindAllString(body, -1)
+				if p != "settings" && p != "help" && len(kept) > 0 {
+					t.Errorf("%s %s: the settings' row is on this page", lang, target)
+				}
+				body = row.ReplaceAllString(body, "")
+				if m := said.FindAllString(body, -1); m != nil {
+					i := said.FindStringIndex(body)
+					t.Errorf("%s %s says %q: …%s…", lang, target, m, body[max(i[0]-80, 0):min(i[1]+80, len(body))])
+				}
+			}
+		}
+	}
+	page := do(t, h, "GET", "/settings", nil, nil).Body.String()
+	for _, want := range []string{`id="second_tunnel"`, `form="secondform"`, `action="/act/second"`, `href="/help#h-awg2"`, `data-second="0"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the settings page lacks %q", want)
+		}
+	}
+	if strings.Contains(page, `data-pages="overview verdicts lists awg2`) || !strings.Contains(page, `data-pages="overview verdicts lists settings`) {
+		t.Error("the document's pages still hold the second tunnel's")
+	}
+	if help := do(t, h, "GET", "/help", nil, nil).Body.String(); !strings.Contains(help, `id="h-awg2"`) || !strings.Contains(help, `href="/settings#second_tunnel"`) {
+		t.Error("the help does not say where the second tunnel is switched on")
+	}
+	// its page leads to the switch, and none of its parts is served
+	if w := do(t, h, "GET", "/awg2", nil, nil); w.Code != http.StatusFound || w.Header().Get("Location") != "/settings#second_tunnel" {
+		t.Errorf("/awg2: %d to %q", w.Code, w.Header().Get("Location"))
+	}
+	for target, want := range map[string]int{"/frag/awg2/content": 404, "/frag/awg2/presets": 404, "/frag/awg2/navitems": 200} {
+		if w := do(t, h, "GET", target, nil, nil); w.Code != want {
+			t.Errorf("%s: %d, want %d", target, w.Code, want)
+		}
+	}
+	// DNS saved from a page without the second tunnel's box keeps its servers
+	if w := do(t, h, "POST", "/act/dns", url.Values{"direct_dns": {"tls://8.8.8.8"}, "tunnel_dns": {"10.8.0.1"}}, nil); w.Code != 200 {
+		t.Fatalf("DNS save: %d", w.Code)
+	}
+	if got := ctl.LoadSettings(paths.Settings()); strings.Join(got.TunnelDNS2, ",") != "10.9.0.1" || strings.Join(got.TunnelDNS, ",") != "10.8.0.1" {
+		t.Errorf("DNS saved with the second tunnel off: first %v, second %v", got.TunnelDNS, got.TunnelDNS2)
+	}
+}
+
+// The settings' switch of the second tunnel: a plain form, the page loaded
+// anew with what it came to; its presets, list and .conf are kept through
+// off and on.
+func TestSecondTunnelSwitch(t *testing.T) {
+	s, _ := testServer(t)
+	real := func() status {
+		set := ctl.LoadSettings(paths.Settings())
+		return status{Installed: true, PathOK: true, ServiceRun: true, HasConfig: true, Second: set.SecondTunnel,
+			Awg2: ctl.Awg2Attached(), Awg2On: set.Awg2Active(), Version: "test", DataDir: paths.DataDir(), Mode: set.Mode()}
+	}
+	s.statusFn = real
+	h := s.Handler()
+	sw := func(v string) string {
+		t.Helper()
+		w := do(t, h, "POST", "/act/second", url.Values{"second_tunnel": {v}}, nil)
+		if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/settings" {
+			t.Fatalf("switch %s: %d to %q", v, w.Code, w.Header().Get("Location"))
+		}
+		return do(t, h, "GET", "/settings", nil, nil).Body.String()
+	}
+	// no .conf for it yet: on, the page says where to load one, no restart
+	page := sw("1")
+	if !ctl.LoadSettings(paths.Settings()).SecondTunnel {
+		t.Fatal("not switched on")
+	}
+	for _, want := range []string{"Second tunnel switched on: attach its config on its page", `href="/awg2"`, `data-second="1"`, `id="tunnel_dns2"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("switched on, the page lacks %q", want)
+		}
+	}
+	if w := do(t, h, "GET", "/awg2", nil, nil); w.Code != 200 {
+		t.Errorf("switched on, its page: %d", w.Code)
+	}
+	// a .conf, a preset: switched off and on they are as they were, and the
+	// core restarts each time -- it gains or loses awg2
+	if err := os.WriteFile(paths.SourceConf2(), []byte(testConf2), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error { set.Awg2Presets = []string{"youtube"}; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	page = sw("0")
+	if !strings.Contains(page, "Second tunnel switched off: the core restarts") || strings.Contains(page, `href="/awg2"`) {
+		t.Errorf("switched off: %s", page)
+	}
+	if set := ctl.LoadSettings(paths.Settings()); set.SecondTunnel || set.Awg2Carries() || strings.Join(set.Awg2Presets, ",") != "youtube" {
+		t.Errorf("switched off: %+v", set)
+	}
+	if _, err := os.Stat(paths.SourceConf2()); err != nil {
+		t.Error("switched off, its .conf is gone")
+	}
+	page = sw("1")
+	if !strings.Contains(page, "Second tunnel switched on: the core restarts") || !strings.Contains(page, `href="/awg2"`) {
+		t.Errorf("switched on again: %s", page)
+	}
+	if set := ctl.LoadSettings(paths.Settings()); !set.Awg2Carries() || strings.Join(set.Awg2Presets, ",") != "youtube" {
+		t.Errorf("switched on again: %+v", set)
+	}
+	// reset to defaults puts it back to off, with the rest of the page
+	if w := do(t, h, "POST", "/act/defaults", nil, nil); w.Code != http.StatusSeeOther {
+		t.Fatalf("defaults: %d", w.Code)
+	}
+	if set := ctl.LoadSettings(paths.Settings()); set.SecondTunnel || strings.Join(set.Awg2Presets, ",") != "youtube" {
+		t.Errorf("defaults: %+v", set)
+	}
+}
+
+// A second tunnel's .conf deleted on a machine whose settings were written
+// before the switch existed: the tunnel stays switched on -- by the .conf
+// alone it was on, and its page went with the .conf.
+func TestDetachKeepsSwitch(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	if err := os.WriteFile(paths.SourceConf2(), []byte(testConf2), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !ctl.LoadSettings(paths.Settings()).SecondTunnel {
+		t.Fatal("a .conf from before the switch: read as off")
+	}
+	if w := do(t, h, "POST", "/act/detach2", nil, nil); w.Code != http.StatusSeeOther {
+		t.Fatalf("detach: %d", w.Code)
+	}
+	if _, err := os.Stat(paths.SourceConf2()); err == nil {
+		t.Fatal("not deleted")
+	}
+	if !ctl.LoadSettings(paths.Settings()).SecondTunnel {
+		t.Error("the .conf deleted, the second tunnel switched off with it")
 	}
 }

@@ -61,8 +61,6 @@ func init() {
 			b, err := json.Marshal(v)
 			return string(b), err
 		},
-		// the pages the document holds, see layout.html
-		"pagelist": func() string { return strings.Join(pageNames, " ") },
 	}
 	for _, p := range pageNames {
 		t := template.New("").Funcs(funcs)
@@ -111,7 +109,10 @@ type dlg struct{ Name, Title, Hint, Cancel, Load, Busy string }
 func (v *view) Dlg(name string) dlg {
 	d := dlg{Name: name, Cancel: v.T("Cancel"), Load: v.T("Load and apply"), Busy: v.T("Applying…"),
 		Hint: v.T("Paste the .conf, drop the file on the field or pick it below. Keys stay on this machine. A running service restarts: the tunnel drops for a couple of seconds.")}
-	d.Title = v.T("Main tunnel config (awg1)")
+	d.Title = v.T("Tunnel config (awg1)")
+	if v.St.Second {
+		d.Title = v.T("Main tunnel config (awg1)")
+	}
 	if name == "config2" {
 		d.Title = v.T("Second tunnel config (awg2)")
 	}
@@ -119,6 +120,18 @@ func (v *view) Dlg(name string) dlg {
 }
 
 func (v *view) T(en string) string { return tr(v.Lang, en) }
+
+// PageList: the pages the document holds, see layout.html -- the second
+// tunnel's only while it is switched on in the settings
+func (v *view) PageList() string {
+	var out []string
+	for _, p := range pageNames {
+		if p != "awg2" || v.St.Second {
+			out = append(out, p)
+		}
+	}
+	return strings.Join(out, " ")
+}
 
 // Note: a tunnel's state as the core said it, in the page's language
 func (v *view) Note(note string) string { return TunnelNote(v.Lang, note) }
@@ -211,6 +224,12 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v := s.newView(r, page)
+	if page == "awg2" && !v.St.Second {
+		// no such page while the second tunnel is off: a link kept to it
+		// leads to the switch
+		http.Redirect(w, r, "/settings#second_tunnel", http.StatusFound)
+		return
+	}
 	v.Data = s.pageData(r, page, v)
 	render(w, v, "layout")
 }
@@ -254,6 +273,12 @@ func (s *Server) handleFrag(w http.ResponseWriter, r *http.Request) {
 	// the page the fragment is on, not the fragment's own path: the language
 	// links in a refreshed header must lead back to the page
 	v := &view{Lang: lang(r), Page: page, Path: back(r), St: s.status()}
+	// the second tunnel's page while it is off: none of its parts, but the
+	// frame's -- a window left on it learns from the menu that it is gone
+	if page == "awg2" && !v.St.Second && name != "header" && name != "navitems" && name != "svcbox" {
+		http.NotFound(w, r)
+		return
+	}
 	v.Data = s.pageData(r, page, v)
 	render(w, v, name)
 }
@@ -343,6 +368,7 @@ type status struct {
 	Version     string         `json:"version"`
 	Mode        string         `json:"-"` // see ctl.Settings.Mode
 	Endpoint    string         `json:"-"`
+	Second      bool           `json:"-"` // the second tunnel is on in the settings: off, the pages say nothing of it
 	Awg2        bool           `json:"-"` // a second tunnel is attached
 	Awg2Err     string         `json:"-"` // why the .conf loaded for it is not
 	Awg2On      bool           `json:"-"` // switched on in the mode chosen, see ctl.Settings.Awg2Active
@@ -392,7 +418,7 @@ func collectStatus() status {
 		st.Awg2Err = err.Error()
 	}
 	set := ctl.LoadSettings(paths.Settings())
-	st.Mode, st.Awg2On = set.Mode(), set.Awg2Active()
+	st.Mode, st.Second, st.Awg2On = set.Mode(), set.SecondTunnel, set.Awg2Active()
 	tunV6 := ctl.LoadTunnelIPv6(paths.TunnelIPv6())
 	st.IPv6Blocked = st.ServiceRun && tunV6.SystemBlocked()
 	st.TunBlocked = st.ServiceRun && tunV6.TrafficBlocked()

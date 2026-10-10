@@ -1,9 +1,13 @@
 {{define "content"}}
 <div class="page scroll">
   <div id="sform" data-sync="/frag/settings/form">{{template "form" .}}</div>
+  {{/* the second tunnel's switch sends this form, a plain one: the page comes
+     back whole, drawn with the second tunnel or without it. It cannot sit
+     inside the settings' form, whose controls each save by themselves. */}}
+  <form id="secondform" method="post" action="/act/second" hidden></form>
   <div class="box" id="dns" data-fresh="/frag/settings/dns">{{template "dns" .}}</div>
   <div class="actions" style="padding-top:0">
-    <form method="post" action="/act/defaults" data-confirm="{{.T "Put every setting on this page back to its default? DNS included. Presets and lists are not touched."}}">
+    <form method="post" action="/act/defaults" data-confirm="{{if .St.Second}}{{.T "Put every setting on this page back to its default? DNS included, and the second tunnel switched off. Presets and lists are not touched."}}{{else}}{{.T "Put every setting on this page back to its default? DNS included. Lists are not touched."}}{{end}}">
       <button>{{.T "Reset to defaults…"}}</button>
     </form>
     <span class="muted">{{.T "Every change applies at once: the detector picks it up within a second."}}</span>
@@ -19,7 +23,7 @@
 
   <div><a class="hl" href="/help#h-modes">{{.T "Auto-switch"}}</a></div>
   <div><select id="auto_switch" name="auto_switch"><option value="on" {{if eq $m "on"}}selected{{end}}>{{.T "On"}}</option><option value="observe" {{if eq $m "observe"}}selected{{end}}>{{.T "Observe only"}}</option><option value="tunnel" {{if eq $m "tunnel"}}selected{{end}}>{{.T "Tunnel only"}}</option></select></div>
-  <div class="h"><span>{{.T "On: unblocked sites direct, the rest through awg1. Observe only: everything direct but the lists. Tunnel only: everything but Always direct through the tunnels."}}</span>{{if not .St.HasConfig}}<span class="warn-t">{{.T "The first tunnel (awg1) is not loaded: the detector checks nothing but the ClientHello cut, and what no list names goes direct."}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "auto_switch")}}</div>
+  <div class="h"><span>{{if .St.Second}}{{.T "On: unblocked sites direct, the rest through awg1. Observe only: everything direct but the lists. Tunnel only: everything but Always direct through the tunnels."}}{{else}}{{.T "On: unblocked sites direct, the rest through the tunnel. Observe only: everything direct but the lists. Tunnel only: everything but Always direct through the tunnel."}}{{end}}</span>{{if not .St.HasConfig}}<span class="warn-t">{{if .St.Second}}{{.T "The first tunnel (awg1) is not loaded: the detector checks nothing but the ClientHello cut, and what no list names goes direct."}}{{else}}{{.T "The tunnel's config (awg1) is not loaded: the detector checks nothing but the ClientHello cut, and what no list names goes direct."}}{{end}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "auto_switch")}}</div>
 
   <div><a class="hl" href="/help#h-families">{{.T "Whole domains"}}</a></div>
   <div><select name="families"><option value="1" {{if $s.Families}}selected{{end}}>{{.T "Extend to the domain"}}</option><option value="0" {{if not $s.Families}}selected{{end}}>{{.T "Checked names only"}}</option></select></div>
@@ -59,6 +63,10 @@
 
   <div class="g">{{.T "Network"}}</div>
 
+  <div><a class="hl" href="/help#h-awg2">{{.T "Second tunnel"}}</a></div>
+  <div><select id="second_tunnel" name="second_tunnel" form="secondform" data-submit><option value="1" {{if $s.SecondTunnel}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.SecondTunnel}}selected{{end}}>{{.T "Off"}}</option></select></div>
+  <div class="h"><span>{{.T "A second server for chosen services only: its presets and your own list. Off: one tunnel, and nothing of the second is shown. Changing it restarts the core while its config is loaded."}}</span></div>
+
   <div><a class="hl" href="/help#h-ipv6">IPv6</a></div>
   <div><select name="ipv6"><option value="1" {{if $s.IPv6}}selected{{end}}>{{.T "Through the tunnel"}}</option><option value="0" {{if not $s.IPv6}}selected{{end}}>{{.T "Off"}}</option></select></div>
   <div class="h"><span>{{.T "Gives IPv6 even where the ISP has none. Changing it restarts the core."}}</span>{{if and $s.IPv6 .St.IPv6Blocked}}<span class="warn-t">{{.T "Switched off by the program: Windows does not let IPv6 reach the DPI Switch adapter -- a third-party network filter (a VPN client, an antivirus) takes it first. Checked again at the service's next start."}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "ipv6")}}</div>
@@ -84,22 +92,22 @@
 {{define "dns"}}{{$d := .Data}}
   <h3><a class="hl" href="/help#h-dns">DNS</a></h3>
   <form method="post" action="/act/dns" data-swap="dns">
-    <div class="dnsgrid">
+    <div class="dnsgrid{{if not .St.Second}} two{{end}}">
       <b>{{.T "For direct sites"}}</b>
-      <b>{{.T "Inside the first tunnel (awg1)"}}</b>
-      <b>{{.T "Inside the second tunnel (awg2)"}}</b>
+      <b>{{if .St.Second}}{{.T "Inside the first tunnel (awg1)"}}{{else}}{{.T "Inside the tunnel (awg1)"}}{{end}}</b>
+      {{if .St.Second}}<b>{{.T "Inside the second tunnel (awg2)"}}</b>{{end}}
       <p class="hint">{{.T "Asked outside the tunnel, so CDNs pick nodes near your ISP. The detector asks it too: it tests the node the traffic will go to."}}</p>
       <p class="hint">{{.T "For the sites that go through awg1. Empty: the DNS from its .conf"}}{{with $d.ConfDNS}} ({{.}}){{end}}.{{if not $d.First}} <span class="warn-t">{{.T "awg1 is not loaded."}}</span>{{end}}</p>
-      <p class="hint">{{.T "For the sites that go through awg2 -- its own: the first server's may not answer through it. Empty: the DNS from its .conf"}}{{with $d.ConfDNS2}} ({{.}}){{end}}.{{if not $d.Second}} <span class="warn-t">{{.T "awg2 is not loaded."}}</span>{{end}}</p>
+      {{if .St.Second}}<p class="hint">{{.T "For the sites that go through awg2 -- its own: the first server's may not answer through it. Empty: the DNS from its .conf"}}{{with $d.ConfDNS2}} ({{.}}){{end}}.{{if not $d.Second}} <span class="warn-t">{{.T "awg2 is not loaded."}}</span>{{end}}</p>{{end}}
       <textarea id="direct_dns" name="direct_dns" rows="3" spellcheck="false">{{lines $d.S.DirectDNS}}</textarea>
       <textarea id="tunnel_dns" name="tunnel_dns" rows="3" spellcheck="false" placeholder="{{$d.ConfDNS}}">{{lines $d.S.TunnelDNS}}</textarea>
-      <textarea id="tunnel_dns2" name="tunnel_dns2" rows="3" spellcheck="false" placeholder="{{$d.ConfDNS2}}">{{lines $d.S.TunnelDNS2}}</textarea>
+      {{if .St.Second}}<textarea id="tunnel_dns2" name="tunnel_dns2" rows="3" spellcheck="false" placeholder="{{$d.ConfDNS2}}">{{lines $d.S.TunnelDNS2}}</textarea>{{end}}
       <div><button formaction="/act/dnstest?path=direct" data-target="dnsres-direct" data-busy="{{.T "Testing…"}}">{{.T "Test"}}</button></div>
       <div><button formaction="/act/dnstest?path=tunnel" data-target="dnsres-tunnel" data-busy="{{.T "Testing…"}}"{{if not $d.First}} disabled title="{{.T "awg1 is not loaded."}}"{{end}}>{{.T "Test"}}</button></div>
-      <div><button formaction="/act/dnstest?path=tunnel2" data-target="dnsres-tunnel2" data-busy="{{.T "Testing…"}}"{{if not $d.Second}} disabled title="{{.T "awg2 is not loaded."}}"{{end}}>{{.T "Test"}}</button></div>
+      {{if .St.Second}}<div><button formaction="/act/dnstest?path=tunnel2" data-target="dnsres-tunnel2" data-busy="{{.T "Testing…"}}"{{if not $d.Second}} disabled title="{{.T "awg2 is not loaded."}}"{{end}}>{{.T "Test"}}</button></div>{{end}}
       <div class="dnsres" id="dnsres-direct"></div>
       <div class="dnsres" id="dnsres-tunnel"></div>
-      <div class="dnsres" id="dnsres-tunnel2"></div>
+      {{if .St.Second}}<div class="dnsres" id="dnsres-tunnel2"></div>{{end}}
     </div>
     <p class="hint" style="margin-top:8px">{{.TH "One per line: <code>https://IP/dns-query</code> (DoH), <code>tls://IP</code> (DoT), <code>IP</code> (plain DNS, often blocked by ISPs). An address, not a name, where possible. The test finds whether a DoH server wants <code>/dns-query</code> and fixes the address."}}</p>
     <div class="actions"><button class="primary">{{.T "Save DNS"}}</button>{{template "msg" .}}<span class="muted">{{.T "Saving restarts the core: the tunnel drops for a couple of seconds."}}</span></div>

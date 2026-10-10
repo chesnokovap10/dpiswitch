@@ -76,8 +76,9 @@
    `%ProgramFiles%\DPI Switch` и дальше работает оттуда: служба — от SYSTEM, трей переезжает туда же
    и ставится в автозапуск. При первой установке на рабочем столе появляется ярлык «DPI Switch».
    Запущенный вами файл больше не используется, его можно удалить.
-4. Загрузите `.conf` AmneziaWG, который выдал ваш VPN-провайдер; по желанию — второй `.conf` для
-   второго туннеля (awg2). Ключи остаются на этом компьютере.
+4. Загрузите `.conf` AmneziaWG, который выдал ваш VPN-провайдер. Ключи остаются на этом компьютере.
+   Программа работает с одним туннелем; второй (awg2) включается в настройках — см.
+   [Второй туннель](#второй-туннель).
 
 > [!TIP]
 > **Обновление.** Запустите новый `dpiswitch.exe` откуда угодно: он предложит установить себя поверх
@@ -105,7 +106,7 @@
 | **Обзор** | Сколько сайтов идёт напрямую, заблокировано, медленнее, не проверено; состояние обоих туннелей, замена `.conf`; последние события |
 | **Вердикты** | Все вердикты по вкладкам «Напрямую», «Заблокированы», «Медленнее», «Не проверено», фильтр по имени (русские имена ищутся и показываются как есть); строка выделяется кликом, правый клик отправляет её в список, ✕ сбрасывает её вердикт; «Сбросить вердикты…» — выбранной сети; сеть в шапке раскрывает список сетей |
 | **Списки маршрутов** | «Всегда напрямую», «Всегда через туннель», «Запрещено»: сайты, адреса и программы в каждом |
-| **Второй туннель** | Подключение awg2, пресеты (YouTube, Telegram и WhatsApp, Discord, ИИ-сервисы, Instagram/Facebook/X; их можно изменить, удалить и добавить свои) и свои сайты |
+| **Второй туннель** | Только когда он включён в настройках. Подключение awg2, пресеты (YouTube, Telegram и WhatsApp, Discord, ИИ-сервисы, Instagram/Facebook/X; их можно изменить, удалить и добавить свои) и свои сайты |
 | **Настройки** | Детектор, сроки, IPv6, DNS; каждое изменение применяется сразу |
 | **Логи** | Лог контроллера и службы, ядра, трея и интерфейса; последние 400 строк, вместе с предыдущим файлом после ротации |
 | **Справка** | То, что описано ниже; ссылки из неё ведут прямо к нужному полю, и оно подсвечивается |
@@ -314,6 +315,14 @@ OpenVPN, IKEv2), звонок или игра, которым привязка �
 Состояние служба пишет в `%ProgramData%\dpiswitch\udp-guard.json`.
 
 ### Второй туннель
+
+По умолчанию программа работает с одним туннелем, и о втором в интерфейсе ничего нет. **Второй туннель** в
+настройках включает его: в меню появляется его страница, на обзоре — его блок, в настройках DNS — его
+серверы, в меню строк Live и «Вердиктов» — его список и пресеты. Выключенный, он не попадает в конфиг ядра
+и не подключается к серверу, даже если его `.conf` уже загружен; `.conf`, пресеты и список сохраняются.
+Если `.conf` загружен, переключение перезапускает ядро: соединения на пару секунд обрываются. Настройки,
+записанные версией 1.9.1 и раньше, с уже загруженным вторым `.conf` читаются как «включён». Всё ниже в этом
+разделе и упоминания awg2 в остальных — про включённый второй туннель.
 
 Второй сервер AmneziaWG только для выбранных сервисов: YouTube, Telegram и WhatsApp, Discord, ИИ-сервисов (ChatGPT,
 Claude, Gemini, Grok, Copilot, DeepL и др.), Instagram, Facebook, X и вашего списка. Он стоит ниже
@@ -535,8 +544,9 @@ your real ISP. Everything else stays in the tunnel.
    `%ProgramFiles%\DPI Switch` and runs from there: the service as SYSTEM, and the tray moves there
    too, with autostart. A first install puts a "DPI Switch" shortcut on the desktop. The file you
    started is no longer used and may be deleted.
-4. Load the AmneziaWG `.conf` your VPN provider gave you; optionally a second `.conf` for the second
-   tunnel (awg2). Keys stay on this machine.
+4. Load the AmneziaWG `.conf` your VPN provider gave you. Keys stay on this machine. The program
+   works with one tunnel; a second one (awg2) is switched on in the settings, see
+   [The second tunnel](#the-second-tunnel).
 
 > [!TIP]
 > **Updating.** Start the new `dpiswitch.exe` from anywhere: it offers to install itself over the
@@ -564,7 +574,7 @@ their own port and access key).
 | **Overview** | How many sites go direct, are blocked, slower, unverified; both tunnels' state, replacing a `.conf`; recent events |
 | **Verdicts** | Every verdict in the "Direct", "Blocked", "Slower", "Unverified" tabs, a name filter (names in Russian letters are found and shown as written); a click pins a row, a right-click sends it to a list, ✕ resets its verdict; "Reset verdicts…" of the network shown; the network in the header opens the list of networks |
 | **Routing lists** | "Always direct", "Always via tunnel", "Forbidden": sites, addresses and programs in each |
-| **Second tunnel** | Attaching awg2, presets (YouTube, Telegram and WhatsApp, Discord, AI services, Instagram/Facebook/X; edit them, delete them, add your own) and your own list |
+| **Second tunnel** | Only while it is switched on in the settings. Attaching awg2, presets (YouTube, Telegram and WhatsApp, Discord, AI services, Instagram/Facebook/X; edit them, delete them, add your own) and your own list |
 | **Settings** | Detector, terms, IPv6, DNS; every change applies at once |
 | **Logs** | The controller and service log, the core's, the tray and UI's; the last 400 lines, the previous file's included after a rotation |
 | **Help** | What is described below; its links lead straight to the field meant, which blinks |
@@ -775,6 +785,14 @@ not recorded. The state is written to
 `%ProgramData%\dpiswitch\udp-guard.json`.
 
 ### The second tunnel
+
+The program works with one tunnel by default, and its pages say nothing of a second. **Second tunnel** in
+the settings switches it on: its page comes up in the menu, its box on the overview, its servers in the DNS
+settings, its list and presets in the rows' menu of Live and Verdicts. Off, it is not in the core's config
+and is not connected to its server, whether its `.conf` is loaded or not; the `.conf`, the presets and the
+list are kept. With its `.conf` loaded, switching it restarts the core: connections drop for a couple of
+seconds. Settings written by version 1.9.1 or before, with a second `.conf` loaded already, are read as
+switched on. The rest of this section, and what the others say of awg2, is of the second tunnel switched on.
 
 A second AmneziaWG server for chosen services only: YouTube, Telegram and WhatsApp, Discord, AI services (ChatGPT, Claude,
 Gemini, Grok, Copilot, DeepL and more), Instagram, Facebook, X and your own list. It stands below
