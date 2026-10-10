@@ -73,8 +73,8 @@ pageInit.live = function (sec) {
       fmt(W.sinceOn, d.toLocaleDateString(locale, {day: 'numeric', month: 'short'}) + ', ' + hm);
   }
   const speed = b => b > 0 ? size(b) + W.perSec : '';
-  // down over up, in one cell: two columns of each stood mostly empty
-  const pair = (d, u) => d || u ? (d && '↓ ' + d) + '\n' + (u && '↑ ' + u) : '';
+  // down and up side by side in one cell, each in a place of its own
+  const arrow = (a, s) => s && a + ' ' + s;
   function dur(ms) {
     const s = Math.max(0, Math.floor(ms / 1000));
     if (s < 60) return fmt(W.sec, s);
@@ -260,7 +260,14 @@ pageInit.live = function (sec) {
       w.colSpan = 2;
       r._v = [w, td('num c-t')];
     } else {
-      r._v = [td('num c-2'), td('num c-2'), td('num c-t')];
+      // down and up in one cell, each a span of one width: they line up
+      // down the column as two columns did, without the room between
+      const two = () => {
+        const c = td('num c-2'), d = document.createElement('span'), u = document.createElement('span');
+        c.append(d, u);
+        return [d, u];
+      };
+      r._v = [...two(), ...two(), td('num c-t')];
     }
     r._x = td('c-x');
     // the detector's own are not closed from here: that only breaks a check
@@ -313,11 +320,11 @@ pageInit.live = function (sec) {
       if (r._v[0].title !== t0) r._v[0].title = t0;
       if (r._v[1].title !== t1) r._v[1].title = t1;
     } else {
-      v = [pair(speed(r.ds), speed(r.us)), pair(size(r.down), size(r.up)), when(at(r))];
+      v = [arrow('↓', speed(r.ds)), arrow('↑', speed(r.us)), '↓ ' + size(r.down), '↑ ' + size(r.up), when(at(r))];
       // how long it lasted: in the hint, the column says when
       const t = fmt(W.openedAt, stamp(r.start)) + '\n' + (r.end ?
         fmt(W.closedAt, stamp(r.end)) + '\n' + fmt(W.lasted, dur(r.end - r.start)) : fmt(W.openFor, dur(now - r.start)));
-      if (r._v[2].title !== t) r._v[2].title = t;
+      if (r._v[4].title !== t) r._v[4].title = t;
     }
     for (let i = 0; i < v.length; i++) {
       if (r._last[i] !== v[i]) {
