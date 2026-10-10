@@ -30,7 +30,7 @@
   <div class="tablebox" id="ltable">
     <table class="ltable">
       {{/* the widths are fixed (ui.css): sorting, a long name or an IPv6
-           address no longer move the columns, and the host takes what is left */}}
+           address no longer move the columns, and a wider window widens them all alike */}}
       <colgroup><col class="w-st"><col class="w-p"><col class="w-h"><col class="w-ip"><col class="w-port"><col class="w-type"><col class="w-r"><col class="w-sp"><col class="w-b"><col class="w-t"><col class="w-x"></colgroup>
       <thead><tr>
         <th class="c-st"></th>
@@ -41,8 +41,8 @@
         <th data-sort="proto">{{.T "Type"}}</th>
         <th data-sort="route">{{.T "Route"}}</th>
         {{/* down over up in one cell each; sorted by the two together */}}
-        <th data-sort="sp" class="num" title="{{.T "Down and up; sorted by their sum"}}">{{.T "Speed"}}</th>
-        <th data-sort="data" class="num" title="{{.T "Received and sent; sorted by their sum"}}">{{.T "Data"}}</th>
+        <th data-sort="sp" class="c-2" title="{{.T "Down and up; sorted by their sum"}}">{{.T "Speed"}}</th>
+        <th data-sort="data" class="c-2" title="{{.T "Received and sent; sorted by their sum"}}">{{.T "Data"}}</th>
         <th data-sort="start" class="num">{{.T "Time"}}</th>
         <th class="c-x"></th>
       </tr></thead>

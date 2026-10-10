@@ -195,10 +195,12 @@ td small{display:block;color:var(--muted)}
    a sort, a long name or an IPv6 address moved every column, and a long
    history ran wider than the page. Measured in Segoe UI 13px: the widest
    value or head with its sort arrow, and 16px of padding. What is cut short
-   says itself in full in its hint. The host takes what is left. */
-.ltable{white-space:nowrap;font-variant-numeric:tabular-nums;table-layout:fixed;min-width:1100px}
-.ltable col.w-st{width:22px}.ltable col.w-p{width:120px}.ltable col.w-ip{width:140px}
-.ltable col.w-port{width:62px}.ltable col.w-type{width:60px}.ltable col.w-r{width:92px}
+   says itself in full in its hint. Every column has a width, the host too:
+   a window wider than their sum widens them all alike -- left to the host
+   alone, it was half the screen. */
+.ltable{white-space:nowrap;font-variant-numeric:tabular-nums;table-layout:fixed;min-width:1258px}
+.ltable col.w-st{width:22px}.ltable col.w-p{width:150px}.ltable col.w-h{width:220px}.ltable col.w-ip{width:190px}
+.ltable col.w-port{width:70px}.ltable col.w-type{width:72px}.ltable col.w-r{width:110px}
 .ltable col.w-sp{width:166px}.ltable col.w-b{width:144px}
 .ltable col.w-t{width:84px}.ltable col.w-x{width:30px}
 .ltable th,.ltable td{padding:3px 8px;overflow:hidden;text-overflow:ellipsis}
@@ -208,9 +210,12 @@ td small{display:block;color:var(--muted)}
 .ltable tbody tr{height:27px}
 /* down and up -- speed, bytes -- side by side, each as wide as its widest:
    "↓ 1023 КБ/с" is 68px, "↓ 1023 КБ" 57 */
+.ltable td.c-2{text-align:center}
 .ltable td.c-2 span{display:inline-block;width:71px;text-align:right}
 .ltable td.c-2 span+span{margin-left:8px}
 .ltable td.c-2+td.c-2 span{width:60px}
+/* their heads stand over the middle of the pair */
+.ltable th.c-2{text-align:center}
 /* a date under the clock, in the same height */
 .ltable td.c-t.d2{white-space:pre;font-size:11px;line-height:12px;padding-top:0;padding-bottom:0}
 .ltable .num{text-align:right}
