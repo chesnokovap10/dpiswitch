@@ -9,7 +9,11 @@ import (
 
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
 	"regexp"
 	"sort"
 	"strconv"
@@ -55,9 +59,26 @@ func computeNetworkID() string {
 	// adapter (Bluetooth with APIPA, another VPN's virtual adapter) counted
 	// as a network change: accumulated verdicts were wiped at once.
 	// Seen in practice -- 192 domains lost.
-	if gw := defaultGateway(); gw != "" {
+	//
+	// Read from Windows' own tables. It was read off route.exe and arp.exe,
+	// 60 ms and two processes a look (10.10) -- and a look is made at every
+	// tick, and four for every name the fast lane probes: a page opening
+	// with thirty new names started over a hundred processes. The programs
+	// are asked only when the tables cannot be read.
+	gw, ifIndex, ok := gatewayFromTable()
+	if !ok {
+		gw = defaultGateway()
+	}
+	if gw != "" {
 		parts := []string{"gw=" + gw}
-		if mac := arpMAC(gw); mac != "" {
+		mac, read := "", false
+		if ok {
+			mac, read = macFromTable(gw, ifIndex)
+		}
+		if !read {
+			mac = arpMAC(gw)
+		}
+		if mac != "" {
 			// tells apart different networks with the same 192.168.1.x
 			parts = append(parts, "mac="+mac)
 		}
@@ -112,6 +133,86 @@ func pickGateway(out string) string {
 		}
 	}
 	return best
+}
+
+// gatewayFromTable: defaultGateway off the routing table itself -- the IPv4
+// default routes with a gateway, the TUN's left out, the lowest metric as
+// route.exe shows it (the route's plus the interface's) -- and the interface
+// it leaves by. ok false when the table cannot be read.
+func gatewayFromTable() (gw string, ifIndex uint32, ok bool) {
+	var t *windows.MibIpForwardTable2
+	if err := windows.GetIpForwardTable2(windows.AF_INET, &t); err != nil {
+		return "", 0, false
+	}
+	defer windows.FreeMibTable(unsafe.Pointer(t))
+	best := -1
+	for _, r := range t.Rows() {
+		if r.DestinationPrefix.PrefixLength != 0 || r.NextHop.Family != windows.AF_INET {
+			continue
+		}
+		a := (*windows.RawSockaddrInet4)(unsafe.Pointer(&r.NextHop)).Addr
+		ip := net.IPv4(a[0], a[1], a[2], a[3])
+		// no gateway: an on-link route, a mobile modem's -- route.exe says
+		// "On-link" there, and it was never taken
+		if ip.IsUnspecified() || fakeIPRange.Contains(ip) {
+			continue
+		}
+		metric := int(r.Metric)
+		ifc := windows.MibIpInterfaceRow{Family: windows.AF_INET, InterfaceIndex: r.InterfaceIndex}
+		if windows.GetIpInterfaceEntry(&ifc) == nil {
+			metric += int(ifc.Metric)
+		}
+		if best < 0 || metric < best {
+			best, gw, ifIndex = metric, ip.String(), r.InterfaceIndex
+		}
+	}
+	return gw, ifIndex, true
+}
+
+var pGetIpNetTable2 = windows.NewLazySystemDLL("iphlpapi.dll").NewProc("GetIpNetTable2")
+
+// MIB_IPNET_TABLE2: the count, then the rows from offset 8; MIB_IPNET_ROW2
+// is 88 bytes -- the address (SOCKADDR_INET) at 0, the interface's index at
+// 28, the physical address at 40 and its length at 72
+const (
+	ipNetRows    = 8
+	ipNetRowSize = 88
+)
+
+// macFromTable: arpMAC off the neighbour table itself -- the address ip has
+// on the interface, written as arp.exe writes it; on another interface if
+// not on that one. read false when the table cannot be read.
+func macFromTable(ip string, ifIndex uint32) (mac string, read bool) {
+	want := net.ParseIP(ip).To4()
+	if want == nil || pGetIpNetTable2.Find() != nil {
+		return "", false
+	}
+	var table unsafe.Pointer
+	if r, _, _ := pGetIpNetTable2.Call(uintptr(windows.AF_INET), uintptr(unsafe.Pointer(&table))); r != 0 || table == nil {
+		return "", false
+	}
+	defer windows.FreeMibTable(table)
+	n := int(*(*uint32)(table))
+	other := ""
+	for i := 0; i < n; i++ {
+		row := unsafe.Add(table, ipNetRows+i*ipNetRowSize)
+		sa := (*windows.RawSockaddrInet4)(row)
+		if sa.Family != windows.AF_INET || !want.Equal(net.IP(sa.Addr[:])) || *(*uint32)(unsafe.Add(row, 72)) != 6 {
+			continue
+		}
+		hw := (*[6]byte)(unsafe.Add(row, 40))
+		if *hw == ([6]byte{}) {
+			continue // not answered yet
+		}
+		s := fmt.Sprintf("%02x-%02x-%02x-%02x-%02x-%02x", hw[0], hw[1], hw[2], hw[3], hw[4], hw[5])
+		if *(*uint32)(unsafe.Add(row, 28)) == ifIndex {
+			return s, true
+		}
+		if other == "" {
+			other = s
+		}
+	}
+	return other, true
 }
 
 var macRe = regexp.MustCompile(`([0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}`)

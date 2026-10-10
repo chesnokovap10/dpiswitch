@@ -18,3 +18,21 @@ func TestPickGatewaySkipsTUN(t *testing.T) {
 		t.Fatalf("only TUN -- there is no gateway, yet picked %q", got)
 	}
 }
+
+// The network's identity read off Windows' tables is the one route.exe and
+// arp.exe gave: memory is kept by it, and another one would start it over.
+// On the machine's own network; skipped with none.
+func TestNetIDTablesMatchPrograms(t *testing.T) {
+	gwExe := defaultGateway()
+	if gwExe == "" {
+		t.Skip("no gateway here")
+	}
+	gw, ifIndex, ok := gatewayFromTable()
+	if !ok || gw != gwExe {
+		t.Fatalf("gateway off the table %q (read %v), off route.exe %q", gw, ok, gwExe)
+	}
+	mac, read := macFromTable(gw, ifIndex)
+	if macExe := arpMAC(gwExe); !read || mac != macExe {
+		t.Errorf("the gateway's MAC off the table %q (read %v), off arp.exe %q", mac, read, macExe)
+	}
+}
