@@ -26,6 +26,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"regexp"
@@ -135,14 +136,29 @@ const fileMax = 4 << 20
 // with no usable ID, or with one a preset before it already has, is left
 // out.
 func Load() []Preset {
-	// the user's file, read by the service as SYSTEM: not through a link
-	b, err := paths.ReadUserFile(paths.UserPresets(), fileMax)
+	ps, err := read()
 	if err != nil {
 		return Builtin()
 	}
+	return ps
+}
+
+// read: Load, and the error when the user's file is there and could not be
+// read -- held, refused for what it is. Load gives the shipped presets then;
+// a change made to those and written (see Update) put them in the place of
+// every preset the user had.
+func read() ([]Preset, error) {
+	// the user's file, read by the service as SYSTEM: not through a link
+	b, err := paths.ReadUserFile(paths.UserPresets(), fileMax)
+	if errors.Is(err, fs.ErrNotExist) {
+		return Builtin(), nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	ps, err := decode(b)
 	if err != nil {
-		return Builtin()
+		return Builtin(), nil
 	}
 	out := []Preset{}
 	seen := map[string]bool{}
@@ -156,8 +172,11 @@ func Load() []Preset {
 		}
 		out = append(out, p)
 	}
-	return out
+	return out, nil
 }
+
+// errNotRead: the user's presets could not be read: none is written over them
+var errNotRead = errors.New("The presets could not be read: nothing saved, try again")
 
 // fileVersion: the file's format. Up to 1.6.1 it was the bare list of
 // presets, where a name took everything under it; since, a name is what it
@@ -248,7 +267,11 @@ var mu sync.Mutex
 func Update(change func([]Preset) ([]Preset, error)) error {
 	mu.Lock()
 	defer mu.Unlock()
-	ps, err := change(Load())
+	was, err := read()
+	if err != nil {
+		return fmt.Errorf("%w (%v)", errNotRead, err)
+	}
+	ps, err := change(was)
 	if err != nil {
 		return err
 	}
@@ -263,7 +286,12 @@ func Update(change func([]Preset) ([]Preset, error)) error {
 func Restore() ([]Preset, error) {
 	mu.Lock()
 	defer mu.Unlock()
-	was := Load()
+	was, err := read()
+	if err != nil {
+		// the user's own presets are kept through a restore: not read, they
+		// would go with it
+		return Load(), fmt.Errorf("%w (%v)", errNotRead, err)
+	}
 	ps := Builtin()
 	for _, p := range was {
 		if _, ok := Shipped(p.ID); !ok {

@@ -161,3 +161,46 @@ func TestOldFile(t *testing.T) {
 		t.Fatalf("read back as %s", got)
 	}
 }
+
+// The user's file there and not read -- refused for what it is, held -- is
+// not written over: a change made to the shipped presets, given in its
+// place, took every preset the user had.
+func TestUpdateKeepsWhatItCannotRead(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	if err := Update(func(ps []Preset) ([]Preset, error) {
+		return append(ps, Preset{ID: "mine", Title: "Mine", Lines: []string{"my.example"}}), nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	was, err := os.ReadFile(paths.UserPresets())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// another name of the file: the service refuses to read such a one
+	if err := os.Link(paths.UserPresets(), paths.UserPresets()+".other"); err != nil {
+		t.Skip("no hard links here: ", err)
+	}
+	if len(Load()) != len(shipped) {
+		t.Fatal("setup: the file is read all the same")
+	}
+	change := func(ps []Preset) ([]Preset, error) { return ps[:1], nil }
+	if err := Update(change); err == nil {
+		t.Error("a change was written over presets that could not be read")
+	}
+	if _, err := Restore(); err == nil {
+		t.Error("a restore was written over presets that could not be read")
+	}
+	if now, _ := os.ReadFile(paths.UserPresets()); string(now) != string(was) {
+		t.Error("the user's file changed")
+	}
+	// the other name gone, it is read and changed again
+	if err := os.Remove(paths.UserPresets() + ".other"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Update(change); err != nil {
+		t.Errorf("readable again: %v", err)
+	}
+}
