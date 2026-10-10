@@ -26,8 +26,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"regexp"
 	"slices"
@@ -269,7 +269,8 @@ func Update(change func([]Preset) ([]Preset, error)) error {
 	defer mu.Unlock()
 	was, err := read()
 	if err != nil {
-		return fmt.Errorf("%w (%v)", errNotRead, err)
+		log.Printf("presets: %s not read, nothing written: %v", paths.UserPresets(), err)
+		return errNotRead
 	}
 	ps, err := change(was)
 	if err != nil {
@@ -290,7 +291,8 @@ func Restore() ([]Preset, error) {
 	if err != nil {
 		// the user's own presets are kept through a restore: not read, they
 		// would go with it
-		return Load(), fmt.Errorf("%w (%v)", errNotRead, err)
+		log.Printf("presets: %s not read, nothing restored: %v", paths.UserPresets(), err)
+		return Load(), errNotRead
 	}
 	ps := Builtin()
 	for _, p := range was {
