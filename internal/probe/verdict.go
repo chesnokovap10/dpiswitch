@@ -310,6 +310,29 @@ func checkAlone(direct, split Dialer, dom string, attempts int) Report {
 }
 
 func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool, prev Verdict) Report {
+	rep, _ := checkFamily(direct, tunnel, dom, port, attempts, udp, prev, false)
+	return rep
+}
+
+// CheckProtoV6: CheckProto of the name's IPv6 node, for a name that has an
+// IPv4 one too -- on a network whose direct path has IPv6 the core dials
+// either, and a check of the IPv4 node alone called a name clean whose IPv6
+// one is cut. ok false: the name has no IPv6 node, nothing was probed. A
+// failure here is judged as on IPv4: the network has IPv6, so a node the
+// direct path does not reach and the tunnel does is blocked.
+func CheckProtoV6(direct, tunnel Dialer, dom string, port, attempts int, udp bool, prev Verdict) (Report, bool) {
+	rep, ok := checkFamily(direct, tunnel, dom, port, attempts, udp, prev, true)
+	if ok && rep.Verdict != Clean && (!direct.Alive() || !tunnel.Alive()) {
+		rep.Verdict, rep.Aborted = Inconcl, true
+		rep.Reason = "core unavailable (restarting?), check discarded"
+	}
+	return rep, ok
+}
+
+// checkFamily: the check of one node of the name -- the one direct traffic
+// goes to first (IPv4, or IPv6 for a name with nothing else), or with v6Only
+// its IPv6 node; ok false when v6Only finds none.
+func checkFamily(direct, tunnel Dialer, dom string, port, attempts int, udp bool, prev Verdict, v6Only bool) (Report, bool) {
 	proto := "tcp"
 	if udp {
 		proto = "quic"
@@ -318,7 +341,18 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool,
 
 	var ip string
 	a, isAddr := AddrKey(dom)
-	if isAddr {
+	if v6Only {
+		if isAddr || len(direct.DNS) == 0 {
+			return rep, false
+		}
+		ips, err := LookupAnyV6(direct, direct.DNS, dom)
+		if err != nil || len(ips) == 0 {
+			return rep, false
+		}
+		rep.DNSDirect = JoinIPs(ips)
+		rep.Note = "IPv6 node"
+		ip = ips[0]
+	} else if isAddr {
 		// an address seen with no name: there is nothing to resolve, and
 		// only plain TCP is probed this way (see the controller)
 		ip = a
@@ -342,7 +376,7 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool,
 		if err != nil {
 			rep.Verdict, rep.Reason = Inconcl, "direct DNS did not answer: "+errText(err)
 			rep.Unmeasured = true
-			return rep
+			return rep, true
 		}
 		rep.DNSDirect = JoinIPs(ips)
 		ip = ips[0]
@@ -352,7 +386,7 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool,
 		if err != nil || len(tunIPs) == 0 {
 			rep.Verdict, rep.Reason = Inconcl, "does not resolve even through the tunnel: "+errText(err)
 			rep.Unmeasured = true
-			return rep
+			return rep, true
 		}
 		rep.DNSTunnel = JoinIPs(tunIPs)
 		dirIPs, _ := ResolveVia(direct, dom)
@@ -366,10 +400,10 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool,
 	v6 := net.ParseIP(ip).To4() == nil
 	// a network whose direct path has reached no IPv6 node time after time:
 	// probing one more would only show that again (see the controller)
-	if v6 && direct.NoV6 {
+	if v6 && direct.NoV6 && !v6Only {
 		rep.Verdict, rep.DirectNoV6 = Inconcl, true
 		rep.Reason = "IPv6 node, and the direct path here has no IPv6: not probed"
-		return rep
+		return rep, true
 	}
 
 	// take the best measurement across passes, not the last one: the minimum
@@ -389,7 +423,7 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool,
 			d, t = RunTCP(direct, ip, port), RunTCP(tunnel, ip, port)
 		}
 		rep.Direct, rep.Tunnel = d, t
-		v, reason, noV6 := judgeNode(d, t, v6)
+		v, reason, noV6 := judgeNode(d, t, v6 && !v6Only)
 		rep.DirectNoV6 = rep.DirectNoV6 || noV6
 		rep.Unmeasured = v == Inconcl && strings.HasPrefix(reason, tunnelDown)
 		// for QUIC the handshake is indivisible, so both "transport"
@@ -410,7 +444,7 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool,
 			}
 		}
 		if v != Clean {
-			return rep // the first non-clean pass decides
+			return rep, true // the first non-clean pass decides
 		}
 		dt, dok := latency(d)
 		tt, tok := latency(t)
@@ -426,7 +460,7 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool,
 		measured = true
 	}
 	if !measured {
-		return rep // plain TCP: nothing to time, see latency
+		return rep, true // plain TCP: nothing to time, see latency
 	}
 	rep.DirectMs = bestDirect.Milliseconds()
 	rep.TunnelMs = bestTunnel.Milliseconds()
@@ -435,13 +469,13 @@ func checkProto(direct, tunnel Dialer, dom string, port, attempts int, udp bool,
 		rep.Verdict = Slower
 		rep.Reason = fmt.Sprintf("direct path is slower: %d ms vs %d via tunnel",
 			bestDirect.Milliseconds(), bestTunnel.Milliseconds())
-		return rep
+		return rep, true
 	}
 
 	// differing address sets between paths are NOT a sign of blocking:
 	// resolvers apply EDNS Client Subnet, and from the VPS address the same google
 	// returns a different CDN node than from home. Verified on example.com.
-	return rep
+	return rep, true
 }
 
 // confirmPasses: the passes a block by name is confirmed with, see

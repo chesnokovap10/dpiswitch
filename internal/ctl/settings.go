@@ -447,6 +447,7 @@ func (s Settings) apply(cfg Config) Config {
 	cfg.MaxBackoff = time.Duration(s.MaxBackoffMin) * time.Minute
 	cfg.Attempts = s.Attempts
 	cfg.Families = s.Families
+	cfg.IPv6 = s.IPv6
 	cfg.Split = s.SplitHello
 	// works with the cut only: alone it sends nothing anywhere -- only the
 	// cut's names take direct-split

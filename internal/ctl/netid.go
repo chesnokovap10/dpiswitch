@@ -169,6 +169,40 @@ func gatewayFromTable() (gw string, ifIndex uint32, ok bool) {
 	return gw, ifIndex, true
 }
 
+// hasDirectV6: whether the direct path has IPv6 -- an adapter with a global
+// IPv6 address and an IPv6 default route out by it. The core's own adapter
+// has neither kind of address a network gave: its is a local one.
+func hasDirectV6() bool {
+	var t *windows.MibIpForwardTable2
+	if err := windows.GetIpForwardTable2(windows.AF_INET6, &t); err != nil {
+		return false
+	}
+	routed := map[int]bool{}
+	for _, r := range t.Rows() {
+		if r.DestinationPrefix.PrefixLength == 0 {
+			routed[int(r.InterfaceIndex)] = true
+		}
+	}
+	windows.FreeMibTable(unsafe.Pointer(t))
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return false
+	}
+	for _, ifc := range ifaces {
+		if ifc.Flags&net.FlagUp == 0 || !routed[ifc.Index] {
+			continue
+		}
+		addrs, _ := ifc.Addrs()
+		for _, a := range addrs {
+			n, ok := a.(*net.IPNet)
+			if ok && n.IP.To4() == nil && n.IP.IsGlobalUnicast() && n.IP[0]&0xfe != 0xfc {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 var pGetIpNetTable2 = windows.NewLazySystemDLL("iphlpapi.dll").NewProc("GetIpNetTable2")
 
 // MIB_IPNET_TABLE2: the count, then the rows from offset 8; MIB_IPNET_ROW2

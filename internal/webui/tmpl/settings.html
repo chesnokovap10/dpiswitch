@@ -68,8 +68,8 @@
   <div class="h"><span>{{.T "A second server for chosen services only: its presets and your own list. Off: one tunnel, and nothing of the second is shown. Changing it restarts the core while its config is loaded."}}</span></div>
 
   <div><a class="hl" href="/help#h-ipv6">IPv6</a></div>
-  <div><select name="ipv6"><option value="1" {{if $s.IPv6}}selected{{end}}>{{.T "Through the tunnel"}}</option><option value="0" {{if not $s.IPv6}}selected{{end}}>{{.T "Off"}}</option></select></div>
-  <div class="h"><span>{{.T "Gives IPv6 even where the ISP has none. Off: no IPv6 at all -- what is dialled by an IPv6 address is refused, not let out past the tunnel. Changing it restarts the core."}}</span>{{if and $s.IPv6 .St.IPv6Blocked}}<span class="warn-t">{{.T "Switched off by the program: Windows does not let IPv6 reach the DPI Switch adapter -- a third-party network filter (a VPN client, an antivirus) takes it first. Checked again at the service's next start."}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "ipv6")}}</div>
+  <div><select name="ipv6"><option value="1" {{if $s.IPv6}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.IPv6}}selected{{end}}>{{.T "Off"}}</option></select></div>
+  <div class="h"><span>{{.T "On: IPv6 works everywhere -- through the tunnel even where the ISP has none, direct where the ISP has it, and the detector checks a site's IPv6 address too. Off: no IPv6 at all -- what is dialled by an IPv6 address is refused, not let out past the tunnel. Changing it restarts the core."}}</span>{{if and $s.IPv6 .St.IPv6Blocked}}<span class="warn-t">{{.T "Switched off by the program: Windows does not let IPv6 reach the DPI Switch adapter -- a third-party network filter (a VPN client, an antivirus) takes it first. Checked again at the service's next start."}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "ipv6")}}</div>
 
   <div><a class="hl" href="/help#h-dns">{{.T "Local DNS cache"}}</a></div>
   <div><select id="dns_cache" name="dns_cache"><option value="1" {{if $s.DNSCache}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.DNSCache}}selected{{end}}>{{.T "Off"}}</option></select></div>

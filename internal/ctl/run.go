@@ -78,7 +78,10 @@ type Config struct {
 	SettingsPath string
 	Families     bool // extend verdicts to the whole domain, see family.go
 	Split        bool // try a BLOCKED_TLS name with the ClientHello cut (BLOCKED_DPI when it fails too), see Settings.SplitHello
-	QUICFake     bool // with Split: try a BLOCKED_QUIC name through the core's QUIC decoy, see Settings.QUICFake
+	// IPv6: on in the settings -- a name's IPv6 node is checked too, see
+	// probe.CheckProtoV6
+	IPv6     bool
+	QUICFake bool // with Split: try a BLOCKED_QUIC name through the core's QUIC decoy, see Settings.QUICFake
 	// alone: no first tunnel's config is loaded -- nothing to measure
 	// against. With the cut switched on the detector still checks it, see
 	// probe.CheckAlone; without, it checks nothing.
@@ -134,6 +137,13 @@ var checkSplit = probe.CheckSplit
 // checkSplitQUIC: QUIC through the cut's outbound and its decoy, see
 // probe.CheckSplitQUIC
 var checkSplitQUIC = probe.CheckSplitQUIC
+
+// checkProtoV6: the probe of a name's IPv6 node, see probe.CheckProtoV6
+var checkProtoV6 = probe.CheckProtoV6
+
+// directHasV6: whether the direct path has IPv6, see hasDirectV6; the
+// tests put their own
+var directHasV6 = hasDirectV6
 
 // checkAlone: the probe with no tunnel, see probe.CheckAlone
 var checkAlone = probe.CheckAlone
@@ -287,6 +297,10 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 	tunnel := probe.Dialer{Addr: cfg.TunnelAddr, Timeout: cfg.Timeout, Established: a.established, Pass: pass}
 	split := direct
 	split.Addr = cfg.SplitAddr
+	// IPv6 on in the settings, and the direct path has it: a name's IPv6 node
+	// is checked beside its IPv4 one. With none here the core's dial of it
+	// fails at once and IPv4 is taken: nothing to check, see learnV6 too
+	v6Too := cfg.IPv6 && !cfg.alone && !direct.NoV6 && directHasV6()
 
 	// the verdicts are filed under netID: a probe made after the machine
 	// moved to another network measured that one
@@ -381,14 +395,9 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 			noV6 := false // see probe.Report.DirectNoV6
 			reachedV6 := false
 			reps := make([]probe.Report, 0, len(eps))
-			for _, ep := range eps {
-				var r probe.Report
-				if cfg.alone {
-					r = checkAlone(direct, split, dom, cfg.Attempts, was)
-				} else {
-					r = checkProto(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp, was)
-				}
-				appendJSONL(cfg.JSONLPath, r)
+			// follow: what a port's check is followed by -- a name blocked by its
+			// hello tried with the cut, a QUIC blocked tried through the decoy
+			follow := func(r probe.Report, ep endpoint) probe.Report {
 				if !cfg.alone && !r.Aborted && cfg.Split && !ep.udp && ep.port == 443 && r.Verdict == probe.BlockedTLS {
 					// blocked by its name: once more with the hello cut, on
 					// the same node. The cut path's verdict stands for the
@@ -419,6 +428,31 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 						r = s
 					default:
 						r.Note = "QUIC decoy: " + string(s.Verdict) + " " + s.Reason
+					}
+				}
+				return r
+			}
+			for _, ep := range eps {
+				var r probe.Report
+				if cfg.alone {
+					r = checkAlone(direct, split, dom, cfg.Attempts, was)
+				} else {
+					r = checkProto(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp, was)
+				}
+				appendJSONL(cfg.JSONLPath, r)
+				r = follow(r, ep)
+				// the name's IPv6 node too, where the direct path has IPv6: the core
+				// dials either, and the worse of the two is the port's verdict. A
+				// check of the IPv4 node alone called a name clean whose IPv6 one
+				// is cut.
+				if v6Too && !r.Aborted && r.TestedIP != "" && net.ParseIP(r.TestedIP).To4() != nil {
+					if r6, ok := checkProtoV6(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp, was); ok {
+						appendJSONL(cfg.JSONLPath, r6)
+						// slower there is no block: the core takes whichever node
+						// answers first, and the IPv4 one's speed is the name's
+						if r6 = follow(r6, ep); r6.Aborted || r6.Verdict != probe.Slower && worse(r6.Verdict, r.Verdict) {
+							r = r6
+						}
 					}
 				}
 				if r.Aborted {

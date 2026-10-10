@@ -134,7 +134,7 @@
 | Потолок паузы | 1 день | Самая долгая пауза между проверками сайта |
 | Разбивать ClientHello | Выкл | Сайт, заблокированный по имени, проверяется с разрезанным ClientHello и, если так работает, идёт напрямую с разбиением |
 | Подставной пакет QUIC | Вкл | QUIC к сайтам с разбиением идёт напрямую с подставным первым пакетом (www.google.com); где не помогает — отклоняется. Только вместе с разбиением |
-| IPv6 | Через туннель | Даёт IPv6 даже там, где у провайдера его нет |
+| IPv6 | Вкл | Вкл: IPv6 работает везде — через туннель, напрямую и в проверках детектора. Выкл: IPv6 нет совсем |
 | DNS для прямых сайтов | `tls://8.8.8.8`, `tls://8.8.4.4` | DoT Google, мимо туннеля |
 | DNS внутри туннеля | из `.conf` | Для сайтов, идущих через туннель |
 | Локальный DNS-кэш | Выкл | Имена прямых сайтов отвечаются из памяти компьютера, 7 дней, и после перезапусков; новое имя спрашивается у самого быстрого DNS для прямых сайтов |
@@ -282,7 +282,10 @@ CDN, спидтестам, обновлениям.
 ### IPv6
 
 С включённым IPv6 у компьютера есть IPv6, даже если у провайдера его нет: он идёт через туннель.
-Прямые сайты ходят по IPv4. Если у сервера туннеля IPv6 не работает, программа это замечает и
+Там, где IPv6 есть у самого провайдера, по нему ходят и прямые сайты — обычные и с обходом DPI, — а детектор
+проверяет IPv6-адрес сайта вместе с IPv4: вердикт сайта — худший из двух. С выключенным IPv6 его нет совсем:
+программы не получают IPv6-адресов для имён, а соединение по IPv6-адресу сразу отклоняется и мимо туннеля не
+уходит. Если у сервера туннеля IPv6 не работает, программа это замечает и
 резолвит для него только IPv4: ядро один раз перезапускается, и этот вывод держится сутки, потом
 проверяется снова. Переключение перезапускает ядро.
 
@@ -602,7 +605,7 @@ many are blocked.
 | Pause cap | 1 day | The longest wait between checks of a site |
 | Cut the ClientHello | Off | A site blocked by its name is checked with its ClientHello cut and, if it works so, goes direct with the cut |
 | QUIC decoy | On | QUIC to the cut's sites goes direct behind a decoy first packet (www.google.com); refused where that does not help. With the cut only |
-| IPv6 | Through the tunnel | Gives IPv6 even where the ISP has none |
+| IPv6 | On | On: IPv6 works everywhere — through the tunnel, direct and in the detector's checks. Off: no IPv6 at all |
 | DNS for direct sites | `tls://8.8.8.8`, `tls://8.8.4.4` | Google DoT, outside the tunnel |
 | DNS inside the tunnel | from the `.conf` | For the sites that go through the tunnel |
 | Local DNS cache | Off | Direct sites' names answered from the computer's memory, for 7 days and across restarts; a new name is asked of the fastest resolver for direct sites |
@@ -750,8 +753,11 @@ current network. The tray's reset is of the current network.
 
 ### IPv6
 
-With IPv6 on, the computer gets IPv6 even where the ISP has none: it goes through the tunnel. Sites
-going direct use IPv4. If the tunnel's server has no working IPv6, the program finds out and
+With IPv6 on, the computer gets IPv6 even where the ISP has none: it goes through the tunnel. Where
+the ISP has IPv6 of its own, sites going direct — plain or with the DPI bypass — use it too, and the
+detector checks a site's IPv6 address beside its IPv4 one: the worse of the two is the site's verdict.
+With IPv6 off there is none at all: programs get no IPv6 addresses for names, and a connection made to
+an IPv6 address is refused at once and does not leave around the tunnel. If the tunnel's server has no working IPv6, the program finds out and
 resolves IPv4 only for it: the core restarts once, and that finding holds for a day before it is
 checked again. Changing it restarts the core.
 

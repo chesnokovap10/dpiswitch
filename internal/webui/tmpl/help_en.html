@@ -261,8 +261,10 @@ detector asks the same cache. Resolvers given by name, not by address, are not a
 </ul>
 
 <h4 id="h-ipv6">IPv6</h4>
-<p>With IPv6 on, the computer gets IPv6 even where the ISP has none: it goes through the tunnel. Sites
-going direct use IPv4. If the tunnel's server has no working IPv6, the program finds out and resolves
+<p>With IPv6 on, the computer gets IPv6 even where the ISP has none: it goes through the tunnel. Where the ISP
+has IPv6 of its own, sites going direct -- plain or with the DPI bypass -- use it too, and the detector checks a
+site's IPv6 address beside its IPv4 one: the worse of the two is the site's verdict, so a site cut on IPv6 alone
+does not go direct. If the tunnel's server has no working IPv6, the program finds out and resolves
 IPv4 only for it: the core restarts once, and that finding holds for a day before it is checked again.</p>
 <p>With IPv6 off there is none at all, the ISP's own included: programs get no IPv6 addresses for names, and a
 connection made to an IPv6 address is refused at once, so the program takes IPv4. Nothing leaves over IPv6 around
