@@ -275,6 +275,9 @@ func analyze(c core, dir string, minHosts int, window time.Duration, certs bool)
 			spans = append(spans, *s)
 		}
 	}
+	if len(spans) == 0 {
+		return fmt.Errorf("the records in %s hold no connection with a name", dir)
+	}
 	sort.Slice(spans, func(i, j int) bool { return spans[i].from.Before(spans[j].from) })
 	// the recorded time: minutes with an alive line
 	recorded := 0.0
