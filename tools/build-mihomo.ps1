@@ -111,14 +111,16 @@ Write-Host ("done: {0} ({1:N1} MB, tags: {2})" -f $out, ((Get-Item $out).Length 
 # tunnels alive or dead for real (TestCoreTables). And what the fork locks
 # down: the prober's listener takes its user alone and UDP only through an
 # association, the API no config from outside and no upgrade
-# (TestCoreLockedDown).
-Write-Host "checking the core: tunnel only never goes direct, the tables of the help, the lock-down (~2 min)"
+# (TestCoreLockedDown). And what it answers to AAAA: a stand-in address with
+# IPv6 on, none with it off -- the adapter has no IPv6 then, and a real
+# address would be dialled past the core (TestCoreAAAA).
+Write-Host "checking the core: tunnel only never goes direct, the tables of the help, the lock-down, AAAA (~2 min)"
 $prev = $env:DPISWITCH_CORE
 Push-Location $root
 try {
     $env:DPISWITCH_CORE = $out
-    go test -tags routing -run 'TestCoreFailClosed|TestCoreTables|TestCoreLockedDown' -count=1 ./internal/awgconf
-    if ($LASTEXITCODE) { throw "the new core does not route as the help's tables say, or is not locked down: do not ship it" }
+    go test -tags routing -run 'TestCoreFailClosed|TestCoreTables|TestCoreLockedDown|TestCoreAAAA' -count=1 ./internal/awgconf
+    if ($LASTEXITCODE) { throw "the new core does not route as the help's tables say, is not locked down, or answers AAAA otherwise: do not ship it" }
 } finally {
     $env:DPISWITCH_CORE = $prev
     Pop-Location
