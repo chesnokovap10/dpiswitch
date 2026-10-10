@@ -383,7 +383,7 @@ func checkFamily(direct, tunnel Dialer, dom string, port, attempts int, udp bool
 		if isAddr || len(direct.DNS) == 0 {
 			return rep, false
 		}
-		ips, err := LookupAnyV6(direct, direct.DNS, dom)
+		ips, err := askTwice(func() ([]string, error) { return LookupAnyV6(direct, direct.DNS, dom) })
 		if err != nil || len(ips) == 0 {
 			return rep, false
 		}

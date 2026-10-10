@@ -414,20 +414,47 @@ func lookupAny(d Dialer, rs []Resolver, name string, lookup func(Resolver, Diale
 		go func(r Resolver) {
 			ips, err := lookup(r, d, name)
 			if err == nil && len(ips) == 0 {
-				err = errors.New("no records")
+				err = errNoRecords
 			}
 			ch <- res{ips, err}
 		}(r)
 	}
 	var errs []string
+	none := false
 	for range rs {
 		x := <-ch
 		if x.err == nil {
 			return x.ips, nil
 		}
+		none = none || x.err == errNoRecords
 		errs = append(errs, x.err.Error())
 	}
-	return nil, errors.New(strings.Join(errs, "; "))
+	return nil, lookupError{strings.Join(errs, "; "), none}
+}
+
+// errNoRecords: a resolver answered, and the name has no record of the type
+var errNoRecords = errors.New("no records")
+
+// lookupError: what the resolvers said, none of them with an address; none
+// when one of them answered that there is none -- an answer, not a failure
+type lookupError struct {
+	text string
+	none bool
+}
+
+func (e lookupError) Error() string        { return e.text }
+func (e lookupError) Is(target error) bool { return e.none && target == errNoRecords }
+
+// askTwice: a lookup asked once more when no resolver answered at all. The
+// IPv6 node of a name is looked for seconds after its IPv4 one was found: a
+// moment's failure there left the node unprobed and the name marked as
+// checked on IPv6 for its whole term (see CheckProtoV6).
+func askTwice(ask func() ([]string, error)) ([]string, error) {
+	ips, err := ask()
+	if err != nil && !errors.Is(err, errNoRecords) {
+		return ask()
+	}
+	return ips, err
 }
 
 // --- DNS message format: exactly what an A or AAAA query needs ---
