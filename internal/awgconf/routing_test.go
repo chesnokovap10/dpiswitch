@@ -566,7 +566,7 @@ func groupBlock(t *testing.T, out, name string) string {
 	return " " + rest
 }
 
-const conf2 = "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.9.1.3/32\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.8:51820\n"
+const conf2 = "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.9.1.3/32\n[Peer]\nPublicKey = AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nEndpoint = 198.51.100.8:51820\n"
 
 // The lists go in their order -- Forbidden, Always via tunnel, Always
 // direct, the second tunnel -- above the detector's verdicts, the cut's

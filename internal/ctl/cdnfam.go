@@ -183,9 +183,9 @@ func (f cdnFamily) rules() []string {
 }
 
 // pageBlocked: a verdict saying a page cannot go direct -- blocked, the cut
-// tried or not; QUIC alone leaves TCP
+// tried or not, or answered with another's certificate; QUIC alone leaves TCP
 func pageBlocked(v probe.Verdict) bool {
-	return v == probe.BlockedDPI || v == probe.BlockedTCP || v == probe.BlockedTLS
+	return v == probe.BlockedDPI || v == probe.BlockedTCP || v == probe.BlockedTLS || v == probe.MITM
 }
 
 // familyWay: what one family does on this network

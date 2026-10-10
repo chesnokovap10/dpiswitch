@@ -307,7 +307,21 @@ func TestResetAndMergeCarryTheRest(t *testing.T) {
 	st.park("gw", func(d string) bool { return d == "held.ex.com" })
 	st.forgetVerdicts("gw", []string{"b.ex.com"})
 	st.attach("gw", "AS1", "192.0.2.1")
+	st.learnV6("gw", v6Misses, false)
 	st.mergeInto("AS1")
+	if !st.directNoV6("AS1") || st.V6["gw"] != nil {
+		t.Error("what the gateway's probes showed of IPv6 did not go to the ISP's memory")
+	}
+	// a name dropped by hand long ago waits for nothing: forget drops it,
+	// and a network dropped whole takes its own along
+	st.Pending["AS1"]["old.ex.com"] = now.Add(-2 * pendingTerm)
+	st.Pending["gone"] = map[string]time.Time{"x.ex.com": now}
+	st.Networks["gone"] = map[string]*entry{}
+	st.forget("AS1", time.Hour)
+	st.dropStale("AS1", time.Hour)
+	if _, ok := st.Pending["AS1"]["old.ex.com"]; ok || st.Pending["gone"] != nil {
+		t.Errorf("names past their wait, or of a network dropped, still wait: %v", st.Pending)
+	}
 	if _, ok := st.Parked["AS1"]["held.ex.com"]; !ok {
 		t.Error("the verdict set aside under the gateway did not go to the ISP's memory")
 	}

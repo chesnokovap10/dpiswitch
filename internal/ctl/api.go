@@ -582,9 +582,17 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 		}
 		// the cut switched off: its list is empty now, and what it sent
 		// direct goes through the tunnel once it opens again
+		// By the outbound, not the rule: a family going direct and
+		// inheritance lent the cut's way too, and theirs stayed open on it
 		if old.Split && !cfg.Split {
-			n := closeByProvider(a, cfg.SplitProvider)
+			n := closeOnCut(a, "")
 			log.Printf("the ClientHello cut switched off: %d open connections it carried closed", n)
+		}
+		// families switched off, the cut on: their lists are empty now, and
+		// what they routed opens again by the names' own verdicts
+		if old.Families && !cfg.Families && cfg.Split && old.Split {
+			n := closeFamilies(a)
+			log.Printf("families switched off: %d open connections they routed closed", n)
 		}
 		// the decoy switched off, the cut on: QUIC it carried opens again
 		// refused, or plain in observe only; switched on there, the plain

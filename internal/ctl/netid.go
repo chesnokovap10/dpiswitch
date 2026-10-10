@@ -283,7 +283,7 @@ func localNets() []string {
 		addrs, _ := ifc.Addrs()
 		for _, a := range addrs {
 			n, ok := a.(*net.IPNet)
-			if !ok || n.IP.To4() == nil {
+			if !ok || n.IP.To4() == nil || n.IP.IsLinkLocalUnicast() {
 				continue
 			}
 			// skip mihomo's own TUN: otherwise the id depends on whether the

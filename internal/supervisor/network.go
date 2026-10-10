@@ -68,18 +68,19 @@ func physicalNetwork() bool {
 	return anyAddress4()
 }
 
-// endpointsV6: whether a tunnel's server is given by an IPv6 address
+// endpointsV6: whether a tunnel's server is given by an IPv6 address -- of
+// the tunnels the config is built with: a second one switched off or left
+// out (see awgconf.Second) brings nothing up
 var endpointsV6 = func() bool {
-	for _, p := range []string{paths.SourceConf(), paths.SourceConf2()} {
-		c, err := awgconf.ParseFile(p)
-		if err != nil {
-			continue
-		}
-		if endpointV6(c.Peer["Endpoint"]) {
-			return true
-		}
+	first, err := awgconf.ParseFile(paths.SourceConf())
+	if err != nil {
+		first = nil
 	}
-	return false
+	if first != nil && endpointV6(first.Peer["Endpoint"]) {
+		return true
+	}
+	c2, _ := awgconf.Second(first)
+	return c2 != nil && endpointV6(c2.Peer["Endpoint"])
 }
 
 // endpointV6: an Endpoint whose host is an IPv6 address

@@ -81,7 +81,13 @@ func (r *rotatingFile) Write(p []byte) (int, error) {
 	r.lost = false
 	n, err := r.f.Write(p)
 	r.written += int64(n)
-	return n, err
+	if err != nil {
+		// a full disk, say: opened anew at the next line
+		r.f.Close()
+		r.f = nil
+		r.drop(err)
+	}
+	return len(p), nil
 }
 
 func (r *rotatingFile) drop(err error) {

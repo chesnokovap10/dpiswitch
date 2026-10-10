@@ -39,6 +39,33 @@ func TestRotatingFile(t *testing.T) {
 	}
 }
 
+// A write that fails -- a full disk -- is no error to the copying either:
+// the line is dropped, and the file opened anew for the next.
+func TestRotatingFileWriteFails(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+	p := filepath.Join(t.TempDir(), "core.log")
+	r, err := openRotating(p, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	r.f.Close() // every write to it fails from here on
+	if n, err := r.Write([]byte("lost\n")); n != 5 || err != nil {
+		t.Fatalf("the failed write: %d, %v", n, err)
+	}
+	if n, err := r.Write([]byte("kept\n")); n != 5 || err != nil {
+		t.Fatalf("the next write: %d, %v", n, err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "kept\n" {
+		t.Fatalf("the log holds %q", b)
+	}
+	if got := strings.Count(buf.String(), "unavailable"); got != 1 {
+		t.Fatalf("said %d times: %q", got, buf.String())
+	}
+}
+
 // A core log that cannot be opened still takes the core's output -- an
 // error would stop the copying and hang the core -- and says so once.
 func TestRotatingFileLost(t *testing.T) {

@@ -1,6 +1,7 @@
 package awgconf
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -39,12 +40,28 @@ func TestConfCheck(t *testing.T) {
 	if err := good().check(); err != nil {
 		t.Fatal(err)
 	}
+	c := good()
+	c.Peer["Endpoint"], c.Peer["AllowedIPs"] = "1.2.3.4:65535", "0.0.0.0/0, ::/0, fd00::/8"
+	if err := c.check(); err != nil {
+		t.Fatal(err)
+	}
+	// a resolver outside the tunnel's own space is pinned alone, not its /64
+	var rules []string
+	writeInsideRules(func(f string, a ...any) { rules = append(rules, fmt.Sprintf(f, a...)) },
+		good(), []string{"fd00:1::53", "2001:4860:4860::8888"}, "tunnel")
+	if got := strings.Join(rules, "|"); !strings.Contains(got, "fd00:1::/64,") || !strings.Contains(got, "2001:4860:4860::8888/128,") {
+		t.Fatalf("inside rules: %s", got)
+	}
 	for name, mod := range map[string]func(*Conf){
 		"host with a comma": func(c *Conf) { c.Peer["Endpoint"] = "a,DIRECT:51820" },
 		"host with a quote": func(c *Conf) { c.Peer["Endpoint"] = "a'b:51820" },
 		"port not a number": func(c *Conf) { c.Peer["Endpoint"] = "1.2.3.4:5x" },
 		"MTU not a number":  func(c *Conf) { c.Interface["MTU"] = "1380 # {x: y}" },
 		"Jc not a number":   func(c *Conf) { c.Interface["Jc"] = "{}" },
+		"port 0":            func(c *Conf) { c.Peer["Endpoint"] = "1.2.3.4:0" },
+		"port past 65535":   func(c *Conf) { c.Peer["Endpoint"] = "1.2.3.4:70000" },
+		"AllowedIPs /33":    func(c *Conf) { c.Peer["AllowedIPs"] = "0.0.0.0/0, 192.168.1.0/33" },
+		"AllowedIPs bare":   func(c *Conf) { c.Peer["AllowedIPs"] = "192.168.1.1" },
 	} {
 		c := good()
 		mod(c)
@@ -164,7 +181,7 @@ func TestRenderSkipsSameKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	conf := func(key string) string {
-		return "[Interface]\nPrivateKey = " + key + "\nAddress = 10.8.1.3/32\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.8:51820\n"
+		return "[Interface]\nPrivateKey = " + key + "\nAddress = 10.8.1.3/32\n[Peer]\nPublicKey = AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nEndpoint = 198.51.100.8:51820\n"
 	}
 	c, err := Parse(conf("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="))
 	if err != nil {
@@ -195,7 +212,7 @@ func TestSecond(t *testing.T) {
 		t.Fatal(err)
 	}
 	conf := func(key, addr string) string {
-		return "[Interface]\nPrivateKey = " + key + "\nAddress = " + addr + "\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.8:51820\n"
+		return "[Interface]\nPrivateKey = " + key + "\nAddress = " + addr + "\n[Peer]\nPublicKey = AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nEndpoint = 198.51.100.8:51820\n"
 	}
 	k1, k2 := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 	first, err := Parse(conf(k1, "10.8.1.3/32"))
@@ -212,6 +229,8 @@ func TestSecond(t *testing.T) {
 	}{
 		{conf(k2, "fd00::2/128"), false, nil},
 		{conf(k1, "10.8.1.4/32"), false, ErrSameKey},
+		// a key that is none, in a file put there by hand
+		{conf("k", "10.8.1.4/32"), false, nil},
 		{conf(k2, "10.8.1.4/32"), true, nil},
 	} {
 		if err := os.WriteFile(paths.SourceConf2(), []byte(tc.text), 0o600); err != nil {
@@ -239,7 +258,7 @@ func TestRenderSecondDNS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	two := "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.9.1.3/32\nDNS = 10.9.0.1\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.8:51820\n"
+	two := "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.9.1.3/32\nDNS = 10.9.0.1\n[Peer]\nPublicKey = AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nEndpoint = 198.51.100.8:51820\n"
 	out, err := c.Render()
 	if err != nil {
 		t.Fatal(err)
@@ -423,7 +442,7 @@ func TestRenderSecondOff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	two := "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.9.1.3/32\nDNS = 10.9.0.1\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.8:51820\n"
+	two := "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.9.1.3/32\nDNS = 10.9.0.1\n[Peer]\nPublicKey = AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nEndpoint = 198.51.100.8:51820\n"
 	if err := os.WriteFile(paths.SourceConf2(), []byte(two), 0o600); err != nil {
 		t.Fatal(err)
 	}

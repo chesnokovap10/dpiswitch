@@ -244,6 +244,13 @@ func (s *state) mergeInto(asn string) int {
 			}
 		}
 		delete(s.Pending, gw)
+		// and what the probes showed of IPv6 there: the ISP's own stands
+		if m, ok := s.V6[gw]; ok {
+			if s.V6[asn] == nil {
+				s.V6[asn] = m
+			}
+			delete(s.V6, gw)
+		}
 	}
 	return n
 }
@@ -544,6 +551,15 @@ func (s *state) forget(id string, idle time.Duration) int {
 			delete(s.Parked[id], dom)
 		}
 	}
+	// a name dropped by hand counts for pendingTerm, see familyWays
+	for dom, at := range s.Pending[id] {
+		if time.Since(at) >= pendingTerm {
+			delete(s.Pending[id], dom)
+		}
+	}
+	if len(s.Pending[id]) == 0 {
+		delete(s.Pending, id)
+	}
 	return n
 }
 
@@ -578,6 +594,7 @@ func (s *state) dropStale(current string, term time.Duration) (nets, names int) 
 		delete(s.Networks, id)
 		delete(s.V6, id)
 		delete(s.Parked, id)
+		delete(s.Pending, id)
 	}
 	return nets, names
 }

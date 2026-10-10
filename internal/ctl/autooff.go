@@ -217,7 +217,10 @@ func closeByProvider(a *api, provider string) int {
 // empty -- both
 // closeUDPOnCut closes the UDP connections the cut's outbound carries,
 // whatever rule sent them there, and says how many.
-func closeUDPOnCut(a *api) int {
+func closeUDPOnCut(a *api) int { return closeOnCut(a, "udp") }
+
+// closeOnCut: the same for one network, tcp or udp; empty -- both
+func closeOnCut(a *api, network string) int {
 	conns, err := a.connections()
 	if err != nil {
 		log.Printf("cannot read connections: %v", err)
@@ -225,7 +228,29 @@ func closeUDPOnCut(a *api) int {
 	}
 	n := 0
 	for _, c := range conns {
-		if c.ID == "" || len(c.Chains) == 0 || c.Chains[0] != SplitOutbound || !strings.EqualFold(c.Metadata.Network, "udp") {
+		if c.ID == "" || len(c.Chains) == 0 || c.Chains[0] != SplitOutbound || network != "" && !strings.EqualFold(c.Metadata.Network, network) {
+			continue
+		}
+		if err := a.closeConnection(c.ID); err != nil {
+			log.Printf("connection %s not closed: %v", c.ID, err)
+			continue
+		}
+		n++
+	}
+	return n
+}
+
+// closeFamilies closes the open connections the families' and inheritance's
+// lists routed, either way
+func closeFamilies(a *api) int {
+	conns, err := a.connections()
+	if err != nil {
+		log.Printf("cannot read connections: %v", err)
+		return 0
+	}
+	n := 0
+	for _, c := range conns {
+		if c.ID == "" || c.fromProbe() || !(c.inherited() || c.byProvider(FamilyTunnelProvider)) {
 			continue
 		}
 		if err := a.closeConnection(c.ID); err != nil {

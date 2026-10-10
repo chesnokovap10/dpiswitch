@@ -50,7 +50,8 @@ func question(m []byte) (key string, end int, ok bool) {
 	end = off + 4
 	k := make([]byte, end-12)
 	copy(k, m[12:end])
-	for i, c := range k {
+	// the name alone: type and class are numbers, and HTTPS (65) is 'A'
+	for i, c := range k[:len(k)-4] {
 		if 'A' <= c && c <= 'Z' {
 			k[i] = c + 'a' - 'A'
 		}

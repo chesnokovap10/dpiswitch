@@ -156,6 +156,48 @@ func TestFamilyBlockedPage(t *testing.T) {
 	if got := listRules(s.cfg.FamilyDirectPath); !slices.Contains(got, "+.googlevideo.com") {
 		t.Fatalf("the page clean with the cut: direct: %v", got)
 	}
+	// answered direct with another's certificate, the page goes no more
+	// direct than a blocked one
+	s.put("music.youtube.com", probe.MITM, "")
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := listRules(s.cfg.FamilyDirectPath); slices.Contains(got, "+.googlevideo.com") {
+		t.Fatalf("a page with a foreign certificate: its family direct: %v", got)
+	}
+}
+
+// The cut switched off closes what its outbound carries whatever rule sent
+// it there -- a family's and inheritance's too; families switched off, what
+// their lists routed.
+func TestCloseLentWays(t *testing.T) {
+	s := familyScenario(t)
+	byRule := func(c connection, provider string) connection {
+		c.RulePayload = provider
+		return c
+	}
+	s.mu.Lock()
+	s.conns = []connection{
+		byRule(famConn("cut", "a.example", SplitOutbound), s.cfg.SplitProvider),
+		byRule(famConn("family", "rr1---sn-x.googlevideo.com", SplitOutbound), FamilyDirectProvider),
+		byRule(famConn("famtunnel", "rr2---sn-x.googlevideo.com", "awg1", "tunnel-rest"), FamilyTunnelProvider),
+		byRule(famConn("plain", "b.example", "DIRECT"), s.cfg.Provider),
+	}
+	s.mu.Unlock()
+	if n := closeOnCut(s.api, ""); n != 2 {
+		t.Errorf("the cut off: %d closed", n)
+	}
+	s.mu.Lock()
+	got := slices.Clone(s.closed)
+	s.closed = nil
+	s.mu.Unlock()
+	if !slices.Equal(got, []string{"cut", "family"}) {
+		t.Errorf("the cut off: closed %v", got)
+	}
+	closeFamilies(s.api)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !slices.Equal(s.closed, []string{"family", "famtunnel"}) {
+		t.Errorf("families off: closed %v", s.closed)
+	}
 }
 
 func famConn(id, host string, chains ...string) connection {

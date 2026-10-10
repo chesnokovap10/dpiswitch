@@ -280,7 +280,7 @@ func TestLiveOverlap(t *testing.T) {
 }
 
 // testConf2: a second tunnel's .conf the config takes
-const testConf2 = "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.9.1.3/32\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.8:51820\n"
+const testConf2 = "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.9.1.3/32\n[Peer]\nPublicKey = AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nEndpoint = 198.51.100.8:51820\n"
 
 // The presets stand below every list: a line sent to a list leaves them as
 // they are -- the list routes it first --, and a line sent to a preset is

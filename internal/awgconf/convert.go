@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"log"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -134,8 +135,19 @@ func (c *Conf) check() error {
 		if v == "" && k != "Endpoint port" {
 			continue
 		}
-		if n, err := strconv.Atoi(v); err != nil || n < 0 {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
 			return fmt.Errorf("%s = %q: not a number", k, v)
+		}
+		// the core takes the port as 16 bits: 70000 went in as 4464
+		if k == "Endpoint port" && (n < 1 || n > 65535) {
+			return fmt.Errorf("%s = %q: not a port (1-65535)", k, v)
+		}
+	}
+	// as the core reads them: an address with its prefix, nothing else
+	for _, a := range split(c.Peer["AllowedIPs"]) {
+		if _, err := netip.ParsePrefix(a); err != nil {
+			return fmt.Errorf("AllowedIPs %q: not a network (address/prefix)", a)
 		}
 	}
 	return nil
@@ -239,6 +251,10 @@ func Second(first *Conf) (*Conf, error) {
 		return nil, err
 	}
 	if err := c.Usable(); err != nil {
+		return nil, err
+	}
+	// the UI checks them on saving; a file put there by hand is not
+	if err := c.CheckKeys(); err != nil {
 		return nil, err
 	}
 	if first != nil && SameKey(first, c) {
@@ -971,9 +987,18 @@ func writeInsideRules(w func(string, ...any), c *Conf, dns []string, group strin
 		if ip == nil || ip.To4() != nil {
 			continue
 		}
+		// a resolver outside the tunnel's own space (the settings may name a
+		// public one) is pinned alone: its /64 took the neighbours along,
+		// above the user's lists
+		if !ula.Contains(ip) {
+			emit(ip.String() + "/128")
+			continue
+		}
 		emit(prefix64(ip.String()))
 	}
 }
+
+var ula = &net.IPNet{IP: net.ParseIP("fc00::"), Mask: net.CIDRMask(7, 128)}
 
 // prefix64: the /64 an address belongs to. Both ends of a tunnel and its DNS
 // sit in the same /64, so one rule covers them.
