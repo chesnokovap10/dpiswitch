@@ -36,6 +36,13 @@ const SplitProvider = "direct-split-verified"
 // and, in awgconf, its rule
 const NoQUICProvider = "direct-split-noquic"
 
+// QUICOffProvider: matches UDP while the QUIC decoy is switched off. The
+// cut's outbound always sends the decoy, and the names the cut's way lends
+// -- a family going direct, inheritance -- are no list of names the decoy's
+// switch could refuse QUIC to: on 09.10, the decoy off, googlevideo hosts
+// went direct over QUIC behind the decoy all the same
+const QUICOffProvider = "quic-decoy-off"
+
 // NoTCPProvider: the cut's names going direct over QUIC alone -- the
 // rule-provider that refuses their TCP on 443
 const NoTCPProvider = "direct-split-notcp"
@@ -64,6 +71,7 @@ func Defaults() Config {
 		SplitListPath:    paths.VerifiedSplit(),
 		NoQUICProvider:   NoQUICProvider,
 		NoQUICListPath:   paths.VerifiedSplitNoQUIC(),
+		QUICOffPath:      paths.QUICDecoyOff(),
 		NoTCPProvider:    NoTCPProvider,
 		NoTCPListPath:    paths.VerifiedSplitNoTCP(),
 		InheritPath:      paths.Inherit(),
@@ -555,13 +563,14 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 		// refused, or plain in observe only; switched on there, the plain
 		// QUIC opens again behind the decoy
 		if cfg.Split && old.Split && old.QUICFake && !cfg.QUICFake {
-			n := closeByProviderNet(a, cfg.SplitProvider, "udp")
 			if s.Mode() == ModeObserve {
 				listMu.Lock()
 				syncUserFiles(a)
 				listMu.Unlock()
-				n += closeByProviderNet(a, ObserveSplitProvider, "udp")
 			}
+			// by the outbound, not the rule: a family going direct and
+			// inheritance lend the cut's way too
+			n := closeUDPOnCut(a)
 			log.Printf("the QUIC decoy switched off: %d QUIC connections it carried closed", n)
 		} else if cfg.Split && old.Split && !old.QUICFake && cfg.QUICFake && s.Mode() == ModeObserve {
 			listMu.Lock()

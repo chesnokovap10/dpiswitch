@@ -215,6 +215,28 @@ func closeByProvider(a *api, provider string) int {
 
 // closeByProviderNet: closeByProvider for one network only, tcp or udp;
 // empty -- both
+// closeUDPOnCut closes the UDP connections the cut's outbound carries,
+// whatever rule sent them there, and says how many.
+func closeUDPOnCut(a *api) int {
+	conns, err := a.connections()
+	if err != nil {
+		log.Printf("cannot read connections: %v", err)
+		return 0
+	}
+	n := 0
+	for _, c := range conns {
+		if c.ID == "" || len(c.Chains) == 0 || c.Chains[0] != SplitOutbound || !strings.EqualFold(c.Metadata.Network, "udp") {
+			continue
+		}
+		if err := a.closeConnection(c.ID); err != nil {
+			log.Printf("connection %s not closed: %v", c.ID, err)
+			continue
+		}
+		n++
+	}
+	return n
+}
+
 func closeByProviderNet(a *api, provider, network string) int {
 	if provider == "" {
 		return 0

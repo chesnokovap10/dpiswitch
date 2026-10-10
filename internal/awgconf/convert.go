@@ -684,6 +684,12 @@ func render(c *Conf) (string, error) {
 	w("    behavior: domain")
 	w("    format: text")
 	w("    path: ./%s", filepath.Base(paths.VerifiedSplitNoQUIC()))
+	w("  # UDP while the QUIC decoy is switched off, see ctl.QUICOffProvider")
+	w("  %s:", ctl.QUICOffProvider)
+	w("    type: file")
+	w("    behavior: classical")
+	w("    format: text")
+	w("    path: ./%s", filepath.Base(paths.QUICDecoyOff()))
 	w("  # names with a verdict that does not go direct, and the way a name with")
 	w("  # no verdict takes after its relatives -- see ctl/inherit.go")
 	for _, p := range []struct{ name, behavior, file string }{
@@ -857,9 +863,14 @@ func render(c *Conf) (string, error) {
 	w("  #     A CDN family going direct (ctl/cdnfam.go): its page and CDN")
 	w("  #     hosts the cut's way, the held ones too -- through the tunnel")
 	w("  #     the service would refuse them")
+	w("  #     The cut's outbound always sends the QUIC decoy: switched off, QUIC")
+	w("  #     on these lent ways is refused, as on the cut's own names")
+	w("  - AND,((DST-PORT,443),(RULE-SET,%s),(RULE-SET,%s)),REJECT", ctl.QUICOffProvider, ctl.FamilyDirectProvider)
 	w("  - RULE-SET,%s,%s", ctl.FamilyDirectProvider, ctl.SplitOutbound)
 	w("  - RULE-SET,%s,%s", ctl.HoldProvider, ctl.TunnelRestGroup)
+	w("  - AND,((DST-PORT,443),(RULE-SET,%s),(RULE-SET,%s)),REJECT", ctl.QUICOffProvider, ctl.InheritProvider)
 	w("  - RULE-SET,%s,%s", ctl.InheritProvider, ctl.SplitOutbound)
+	w("  - AND,((DOMAIN-REGEX,.+),(DST-PORT,443),(RULE-SET,%s),(RULE-SET,%s)),REJECT", ctl.QUICOffProvider, ctl.InheritIPProvider)
 	w("  - AND,((DOMAIN-REGEX,.+),(RULE-SET,%s)),%s", ctl.InheritIPProvider, ctl.SplitOutbound)
 	w("")
 	w("  # 12. everything else: the tunnels as the mode says -- in tunnel only")
@@ -1101,7 +1112,7 @@ func Regenerate() (bool, error) {
 // EnsureLists creates missing list files: a provider without
 // its file prevents the core from starting
 func EnsureLists() {
-	files := []string{paths.Verified(), paths.VerifiedAddr(), paths.VerifiedSplit(), paths.VerifiedSplitNoQUIC(), paths.VerifiedSplitNoTCP(), paths.ObserveAll(), paths.ObserveSplit(), paths.Presets(),
+	files := []string{paths.Verified(), paths.VerifiedAddr(), paths.VerifiedSplit(), paths.VerifiedSplitNoQUIC(), paths.VerifiedSplitNoTCP(), paths.QUICDecoyOff(), paths.ObserveAll(), paths.ObserveSplit(), paths.Presets(),
 		paths.Inherit(), paths.InheritIP(), paths.Hold(), paths.Refuse(), paths.FamilyDirect(), paths.FamilyTunnel()}
 	for _, l := range paths.UserLists {
 		files = append(files, paths.Data(l), paths.Data(paths.IPList(l)), paths.Data(paths.AppList(l)))

@@ -157,6 +157,33 @@ func TestSplitSwitchedOffDuringCycle(t *testing.T) {
 	}
 }
 
+// The decoy's flag follows the switch as it is now: off, the rules refusing
+// QUIC on the cut's lent ways -- a family going direct, inheritance -- fit
+// UDP; on, nothing.
+func TestQUICDecoyOffFlag(t *testing.T) {
+	s, _ := splitScenario(t, map[string]probe.Verdict{"ig.example.org": probe.CleanSplit})
+	s.cfg.QUICOffPath = filepath.Join(filepath.Dir(s.cfg.ListPath), "quic-decoy-off.txt")
+	s.cfg.cut = new(atomic.Value)
+	s.cfg.setCut(cutState{true, true})
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := listRules(s.cfg.QUICOffPath); len(got) != 0 {
+		t.Fatalf("decoy on: flag %v", got)
+	}
+	s.cfg.setCut(cutState{true, false})
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := listRules(s.cfg.QUICOffPath); !slices.Equal(got, []string{"NETWORK,UDP"}) {
+		t.Fatalf("decoy off: flag %v", got)
+	}
+	if s.reloads[QUICOffProvider] == 0 {
+		t.Error("the flag's provider not reloaded")
+	}
+	s.cfg.setCut(cutState{true, true})
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := listRules(s.cfg.QUICOffPath); len(got) != 0 {
+		t.Fatalf("decoy on again: flag %v", got)
+	}
+}
+
 // Names going direct with the cut make no family: the domain is blocked by
 // name, and a family would send new subdomains direct without the cut.
 func TestSplitNoFamily(t *testing.T) {

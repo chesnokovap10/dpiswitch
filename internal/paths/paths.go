@@ -122,6 +122,10 @@ func VerifiedSplit() string { return Data("direct-split-verified.txt") }
 // through -- refused, so the browser takes TCP at once
 func VerifiedSplitNoQUIC() string { return Data("direct-split-noquic.txt") }
 
+// QUICDecoyOff: "NETWORK,UDP" while the QUIC decoy is switched off, nothing
+// while on -- a flag the rules refusing QUIC on the cut's lent ways join
+func QUICDecoyOff() string { return Data("quic-decoy-off.txt") }
+
 // VerifiedSplitNoTCP: the cut's names that go direct over QUIC alone -- their
 // TCP on 443 is refused, so the browser keeps to QUIC
 func VerifiedSplitNoTCP() string { return Data("direct-split-notcp.txt") }

@@ -506,6 +506,11 @@ func (c *simCore) fits(r []string, host string) bool {
 		if strings.HasPrefix(strings.Join(r, ","), "AND,((NETWORK,UDP),") {
 			return false
 		}
+		// QUIC refused on the cut's lent ways while the decoy is off: the
+		// flag fits UDP alone
+		if strings.Contains(strings.Join(r, ","), "(RULE-SET,"+ctl.QUICOffProvider+")") {
+			return false
+		}
 		// TCP on 443 refused to the cut's names that go direct over QUIC
 		// alone: the connections here are TCP to 443, so it is the list
 		if p := "AND,((NETWORK,TCP),(DST-PORT,443),(RULE-SET,"; strings.HasPrefix(strings.Join(r, ","), p) {
