@@ -1,6 +1,7 @@
 package ctl
 
 import (
+	"fmt"
 	"os"
 	"sort"
 
@@ -210,8 +211,20 @@ func Run(ctx context.Context, cfg Config) {
 			return
 		}
 		if coreChanged(ns, set, haveSet) && cfg.OnCoreChange != nil {
-			log.Printf("core settings changed (DNS: direct %v, tunnel %v, second tunnel %v; IPv6 %v; DNS cache %v; second tunnel on %v) -- restarting the core",
-				ns.DirectDNS, ns.TunnelDNS, ns.TunnelDNS2, ns.IPv6, ns.DNSCache, ns.SecondTunnel)
+			// the overview shows these lines: with the second tunnel off, not
+			// a word of it but that it was switched
+			dns2, switched := "", ""
+			if ns.SecondTunnel {
+				dns2 = fmt.Sprintf(", second tunnel %v", ns.TunnelDNS2)
+			}
+			switch {
+			case haveSet && ns.SecondTunnel && !set.SecondTunnel:
+				switched = "; second tunnel switched on"
+			case haveSet && !ns.SecondTunnel && set.SecondTunnel:
+				switched = "; second tunnel switched off"
+			}
+			log.Printf("core settings changed (DNS: direct %v, tunnel %v%s; IPv6 %v; DNS cache %v%s) -- restarting the core",
+				ns.DirectDNS, ns.TunnelDNS, dns2, ns.IPv6, ns.DNSCache, switched)
 			cfg.OnCoreChange()
 		}
 		cfg = onSettingsChanged(cfg, ns, a, st, netID)
