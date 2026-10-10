@@ -125,7 +125,7 @@ name was really used on are the ones probed.</li>
 every attempt is clean, and the direct path is not slower than the tunnel by more than the
 tolerance.</li>
 </ol>
-<p>Checks run every 10 seconds, up to 20 names at a time, 8 at once. The checks pause while the tunnel fails the core's own health
+<p>A new name is checked the moment it is seen, up to 4 such at once. Re-checks, and what found no room, run in cycles every 10 seconds, up to 20 names a cycle, 8 at once. The checks pause while the tunnel fails the core's own health
 checks, and for a cycle after sleep or a network change: the measurements would say more about that
 moment than about the path.</p>
 
@@ -161,6 +161,17 @@ left alone, and after ten days it is forgotten. If its term is over, the Verdict
 <p>When a domain has 3 or more clean subdomains and none blocked, slower or failing directly, the whole
 domain (<code>+.example.com</code>) goes direct: new subdomains do not wait for a check. The first
 bad subdomain removes the rule. It helps services with pools of servers: CDNs, speed tests, updates.</p>
+<p>A name with no verdict of its own yet goes the way its relatives go -- names of the same domain, or
+addresses of the same owning network (AS) -- when they clearly go direct: at least 3 names, and at least three of
+every four checked. Such a name goes direct with the ClientHello cut, is checked at once, and goes by its own
+verdict from then on. That keeps a service's media servers out of the tunnel while its page goes direct: a service
+signs its links for the address the page was opened from, and refuses another. It works in On, with the
+<a href="/settings#split_hello">cut</a> and Whole domains switched on.</p>
+<p>A page and its CDN go together the same way: a CDN's domain and the sites it serves (the link is taken from the
+CDN's certificate). When three of every four of the CDN's names checked go direct -- at least 10 must be checked --
+and no page is blocked, the whole family goes direct; when not, all of it goes through the tunnel. In a family
+going direct, a CDN node blocked on both direct ways is refused, not sent through the tunnel: the player takes
+another node within a second.</p>
 
 <h4 id="h-split">DPI bypass: cutting the ClientHello</h4>
 <p>ISPs block many sites by name: they read it off the first message of a TLS connection (the
@@ -188,10 +199,10 @@ path at once and closes their connections: they open again through the tunnel.</
 cut on everything goes with it at once, before any check: a name not checked would hang until the detector
 got to it. The names the detector found clean without the cut go direct as they are. In Tunnel only nothing
 goes direct, the cut included; the detector checks and records there too.</li>
-<li>{{if .St.Second}}With no first tunnel{{else}}With no tunnel{{end}} (awg1 not loaded) there is nothing to compare against, and the detector checks the
+<li>{{if .St.Second}}With no first tunnel (awg1 not loaded){{else}}With no tunnel (its config not loaded){{end}} there is nothing to compare against, and the detector checks the
 cut alone: a site is tried direct as it is, and when it is cut on its ClientHello, direct with the cut.
 CLEAN_SPLIT only when the cut gets a certificate that passes the chain check and an answer; speed is not
-compared. Once awg1 is loaded, such verdicts are the first checked again against it.</li>
+compared. Once the config is loaded, such verdicts are the first checked again, against the tunnel.</li>
 <li>Such names make no family (Whole domains): the domain is blocked by name.</li>
 </ul>
 
@@ -219,7 +230,7 @@ direct as it is.</li>
 <p>The detector checks sites and records verdicts in all three <a href="/settings#auto_switch">modes</a>; the modes differ only in where
 the traffic goes.</p>
 <ul>
-<li><b>On</b>: the verdicts are applied. Unblocked sites go direct, the rest by the lists and through awg1.</li>
+<li><b>On</b>: the verdicts are applied. Unblocked sites go direct, the rest by the lists and through {{if .St.Second}}awg1{{else}}the tunnel{{end}}.</li>
 {{if .St.Second}}<li><b>Observe only</b>: plain direct -- a whitelist. Everything goes direct but the lists, which go their
 way as in every mode. The second tunnel starts switched off each time this mode is chosen: switch it on on
 its page, and its presets and list go to awg2 too. The detector checks everything that goes direct.</li>

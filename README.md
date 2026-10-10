@@ -189,7 +189,8 @@
 4. Это повторяется несколько раз (попыток на пробу). Имя чистое, только если чисты все попытки и
    прямой путь не медленнее туннеля больше допуска.
 
-Проверяется до 20 имён в минуту. Проверки встают на паузу, пока туннель не проходит собственные
+Новое имя проверяется сразу, как только замечено, — до 4 таких одновременно. Перепроверки и всё, что не
+поместилось, идут циклами раз в 10 секунд, до 20 имён за цикл. Проверки встают на паузу, пока туннель не проходит собственные
 проверки ядра, и на один цикл после сна или смены сети: замеры тогда говорили бы больше о моменте,
 чем о пути.
 
@@ -198,8 +199,10 @@
 | Вердикт | Что увидели | Маршрут |
 |---|---|---|
 | 🟢 `CLEAN` | Все попытки прошли напрямую так же, как через туннель, и не медленнее | напрямую |
-| 🔴 `BLOCKED_TCP` | Напрямую соединение отклоняется, сбрасывается или висит, а через туннель работает | туннель |
+| 🟢 `CLEAN_SPLIT` | Напрямую блокируется по имени, но с разбитым ClientHello все попытки прошли так же, как через туннель, и не медленнее. Только при включённом разбиении | напрямую с разбиением |
+| 🔴 `BLOCKED_TCP` | Напрямую адрес не отвечает — ни с именем сайта, ни без, а через туннель работает: блокировка по IP | туннель |
 | 🔴 `BLOCKED_TLS` | TCP устанавливается, но TLS-рукопожатие обрывается, как только видно имя сайта: типичная блокировка DPI | туннель |
+| 🔴 `BLOCKED_DPI` | Блокируется по имени, и с разбитым ClientHello тоже не проходит. Только при включённом разбиении | туннель |
 | 🔴 `BLOCKED_QUIC` | Напрямую заблокирован QUIC (UDP 443). TCP может работать, но имя идёт одним маршрутом целиком | туннель |
 | 🔴 `MITM` | Сертификат на прямом пути не сайта или не проходит проверку: вместо сайта отвечает кто-то другой | туннель |
 | 🔴 `CONTENT_DIFF` | Ответ на прямом пути отличается от туннельного: скорее всего, страница-заглушка | туннель |
@@ -224,6 +227,19 @@
 работающего напрямую, напрямую идёт весь домен (`+.example.com`): новые поддомены не ждут проверки
 и проверяются уже потом. Первый плохой поддомен снимает правило. Помогает сервисам с пулом серверов:
 CDN, спидтестам, обновлениям.
+
+Имя, у которого своего вердикта ещё нет, идёт туда же, куда его родня — имена того же домена или адреса
+той же сети-владельца (AS), — если родня явно идёт напрямую: не меньше 3 имён и не меньше трёх из каждых
+четырёх проверенных. Такое имя идёт напрямую с разбиением ClientHello, сразу проверяется и дальше идёт по
+своему вердикту. Так медиа-серверы сервиса не уходят в туннель, пока его страница идёт напрямую: сервис
+подписывает ссылки на адрес, с которого открыта страница, и другому адресу отказывает. Работает в режиме
+«Вкл» при включённых разбиении ClientHello и «Доменах целиком».
+
+Так же вместе идут страница и её CDN: домен CDN и сайты, которые он обслуживает (связь берётся из
+сертификата CDN). Когда из проверенных имён CDN — их нужно не меньше 10 — напрямую идут три из четырёх и ни
+одна страница не заблокирована, всё семейство идёт напрямую; когда нет — целиком через туннель. В
+семействе, идущем напрямую, узел CDN, заблокированный на обоих прямых путях, отклоняется, а не уходит в
+туннель: плеер за секунду берёт другой узел.
 
 ### Авто-переключение: вкл, «только наблюдать», «только в туннель»
 
@@ -660,7 +676,8 @@ only" is chosen, Always direct is set aside — the lists page says so.
 4. This is repeated several times (attempts per probe). The name is clean only if every attempt is
    clean, and the direct path is not slower than the tunnel by more than the tolerance.
 
-Up to 20 names are checked a minute. The checks pause while the tunnel fails the core's own health
+A new name is checked the moment it is seen, up to 4 such at once. Re-checks, and what found no room, run
+in cycles every 10 seconds, up to 20 names a cycle. The checks pause while the tunnel fails the core's own health
 checks, and for a cycle after sleep or a network change: the measurements would say more about that
 moment than about the path.
 
@@ -669,8 +686,10 @@ moment than about the path.
 | Verdict | What was seen | Route |
 |---|---|---|
 | 🟢 `CLEAN` | Every attempt passed directly just as through the tunnel, not slower | direct |
-| 🔴 `BLOCKED_TCP` | The connection is refused, reset or times out directly, and works through the tunnel | tunnel |
+| 🟢 `CLEAN_SPLIT` | Blocked by its name directly, but with the ClientHello cut every attempt passed just as through the tunnel, not slower. With the cut switched on only | direct with the cut |
+| 🔴 `BLOCKED_TCP` | The address does not answer directly, with the site's name or without, and works through the tunnel: blocked by IP | tunnel |
 | 🔴 `BLOCKED_TLS` | TCP connects, but the TLS handshake is cut once the site's name is seen: the typical DPI block | tunnel |
+| 🔴 `BLOCKED_DPI` | Blocked by its name, and the ClientHello cut does not get through either. With the cut switched on only | tunnel |
 | 🔴 `BLOCKED_QUIC` | QUIC (UDP 443) is blocked directly. TCP may work, but a name goes one way as a whole | tunnel |
 | 🔴 `MITM` | The certificate on the direct path is not the site's, or does not verify: someone answers in the site's place | tunnel |
 | 🔴 `CONTENT_DIFF` | The answer on the direct path differs from the tunnel's: most likely a block page | tunnel |
@@ -695,6 +714,19 @@ When a domain has 3 or more clean subdomains and none blocked, slower or failing
 domain (`+.example.com`) goes direct: new subdomains do not wait for a check and are verified
 afterwards. The first bad subdomain removes the rule. It helps services with pools of servers: CDNs,
 speed tests, updates.
+
+A name with no verdict of its own yet goes the way its relatives go — names of the same domain, or
+addresses of the same owning network (AS) — when they clearly go direct: at least 3 names, and at least
+three of every four checked. Such a name goes direct with the ClientHello cut, is checked at once, and goes
+by its own verdict from then on. That keeps a service's media servers out of the tunnel while its page goes
+direct: a service signs its links for the address the page was opened from, and refuses another. It works
+in On, with the ClientHello cut and Whole domains switched on.
+
+A page and its CDN go together the same way: a CDN's domain and the sites it serves (the link is taken
+from the CDN's certificate). When three of every four of the CDN's names checked go direct — at least 10
+must be checked — and no page is blocked, the whole family goes direct; when not, all of it goes through
+the tunnel. In a family going direct, a CDN node blocked on both direct ways is refused, not sent through
+the tunnel: the player takes another node within a second.
 
 ### Auto-switch: on, observe only, tunnel only
 
