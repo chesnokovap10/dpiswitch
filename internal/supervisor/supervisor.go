@@ -387,13 +387,15 @@ func disableTUN() error {
 // empty memory by gateway and wrote the direct list empty until the ISP
 // was found.
 func (s *Supervisor) waitAPI(ctx context.Context, addr string, limit time.Duration) bool {
-	secret := ctl.SecretFromConfig(paths.Config())
 	deadline := time.Now().Add(limit)
 	for time.Now().Before(deadline) {
 		if ctx.Err() != nil {
 			return false
 		}
-		if s.running.Load() && apiReady(addr, secret) {
+		// read at every look: read once, before a first start had written
+		// the config, it was none -- and the core, which has one, refused
+		// every look for the whole wait (as in keepHealthy)
+		if s.running.Load() && apiReady(addr, ctl.SecretFromConfig(paths.Config())) {
 			return true
 		}
 		sleepCtx(ctx, time.Second)
