@@ -197,15 +197,22 @@ const maxEndpoints = 8
 // first, without duplicates -- and how many more there were than the cap
 // let in. A name on more ports than that cannot be called clean: see cycle.
 func mergeEndpoints(now []endpoint, stored []string) (out []endpoint, dropped int) {
-	seen := map[endpoint]bool{}
+	seen, in := map[endpoint]bool{}, map[endpoint]bool{}
 	add := func(e endpoint) {
 		if seen[e] {
 			return
 		}
 		seen[e] = true
-		if len(out) < maxEndpoints {
+		switch {
+		case len(out) < maxEndpoints:
 			out = append(out, e)
-		} else {
+			in[e] = true
+		case !e.udp && in[endpoint{udp: true, port: e.port}]:
+			// the TCP of a QUIC port taken: withTCP puts it back, it is
+			// probed. Counted as left out, a name on eight ports whose
+			// QUIC had brought its TCP as a ninth was remembered with
+			// nine, and never came out of INCONCLUSIVE again
+		default:
 			dropped++
 		}
 	}

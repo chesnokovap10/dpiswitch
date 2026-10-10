@@ -76,3 +76,33 @@ func TestDirectDownOn(t *testing.T) {
 		}
 	}
 }
+
+// A name on eight ports, one of them QUIC with no TCP seen beside it: the
+// check adds that TCP (withTCP) and remembers nine. The ninth is no port
+// left out -- it is probed every time -- and counted as one it held the name
+// INCONCLUSIVE for good.
+func TestMergeEndpointsQUICTwin(t *testing.T) {
+	now := []endpoint{{udp: true, port: 443}}
+	for p := 1; p < maxEndpoints; p++ {
+		now = append(now, endpoint{port: 20000 + p})
+	}
+	eps, dropped := mergeEndpoints(now, nil)
+	if dropped != 0 {
+		t.Fatalf("first check: %d left out", dropped)
+	}
+	eps = withTCP(eps)
+	if len(eps) != maxEndpoints+1 {
+		t.Fatalf("setup: %d endpoints probed, want %d", len(eps), maxEndpoints+1)
+	}
+	again, dropped := mergeEndpoints(nil, endpointStrings(eps))
+	if dropped != 0 {
+		t.Errorf("re-check: %d counted as left out, want none", dropped)
+	}
+	if got := withTCP(again); !reflect.DeepEqual(got, eps) {
+		t.Errorf("re-check probes %v, want %v", got, eps)
+	}
+	// a ninth port of its own is left out, and said so
+	if _, dropped := mergeEndpoints([]endpoint{{port: 9}}, endpointStrings(eps)); dropped != 1 {
+		t.Errorf("a ninth port: %d left out, want 1", dropped)
+	}
+}
