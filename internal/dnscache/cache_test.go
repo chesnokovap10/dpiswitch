@@ -528,3 +528,31 @@ func TestSinkhole(t *testing.T) {
 		}
 	}
 }
+
+// A server's answer with no question in it -- a header alone, the ID right --
+// is no answer to keep or give: it used to be given, and making the reply out
+// of it ran past its end.
+func TestAnswerWithoutQuestion(t *testing.T) {
+	bare := &fakeServer{answer: func(q []byte) ([]byte, error) {
+		m := append([]byte(nil), q[:12]...)
+		m[2], m[3] = 0x81, 0x80
+		m[4], m[5] = 0, 0
+		return m, nil
+	}}
+	fakeServers(t, map[string]*fakeServer{"tls://192.0.2.53": bare})
+	s := newCache(t, "tls://192.0.2.53")
+	resp := ask(t, s, "a-rather-long-name-for-a-question.example.com", 7)
+	if rc := resp[3] & 0x0f; rc != rcodeServFail {
+		t.Errorf("rcode %d, want SERVFAIL", rc)
+	}
+	// and another name's answer is not this one's
+	other := &fakeServer{answer: func(q []byte) ([]byte, error) {
+		return answer(query("other.example.org", binary.BigEndian.Uint16(q)), net.ParseIP("192.0.2.9"), 300), nil
+	}}
+	fakeServers(t, map[string]*fakeServer{"tls://192.0.2.54": other})
+	s = newCache(t, "tls://192.0.2.54")
+	resp = ask(t, s, "name.example.com", 8)
+	if rc := resp[3] & 0x0f; rc != rcodeServFail {
+		t.Errorf("another name's answer given: rcode %d, want SERVFAIL", rc)
+	}
+}

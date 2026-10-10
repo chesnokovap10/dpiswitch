@@ -332,6 +332,7 @@ func (s *Server) ask(q []byte) (msg []byte, hole bool, err error) {
 	// an ID of its own: the asker's is put back in the answer (see reply)
 	uq := append([]byte(nil), q...)
 	_, _ = rand.Read(uq[:2])
+	asked, _, _ := question(uq)
 	type result struct {
 		u   *upstream
 		msg []byte
@@ -363,6 +364,14 @@ func (s *Server) ask(q []byte) (msg []byte, hole bool, err error) {
 		select {
 		case r := <-ch:
 			got++
+			// an answer is one to the question asked: only its ID is checked
+			// over a stream or DoH, and one with no question in it -- a
+			// header alone -- ran reply past its end
+			if r.err == nil {
+				if k, _, ok := answerQuestion(r.msg); !ok || k != asked {
+					r.err = errors.New("not an answer to the question asked")
+				}
+			}
 			if r.err == nil {
 				if rc := r.msg[3] & 0x0f; rc == rcodeOK || rc == rcodeNXDomain {
 					if !sinkhole(r.msg) {
