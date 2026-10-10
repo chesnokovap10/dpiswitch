@@ -26,8 +26,12 @@ import (
 //	permit  UDP to the local network: private, link-local and multicast
 //	        addresses, loopback -- the router, a TV cast to, a printer, the
 //	        network's discovery
-//	permit  UDP to a DHCP server's port: the lease is asked of an address
-//	        the lease itself gives
+//	permit  UDP from the DHCP client's port to a DHCP server's: the lease is
+//	        asked of an address the lease itself gives. By the server's port
+//	        alone it let any program's packet to that port of any address
+//	        out (seen on 10.10: 192.0.2.1:67 through, :9 and :53 dropped) --
+//	        a page names its STUN server's port itself. The client's port is
+//	        the DHCP service's, and no page picks the port it sends from.
 //	block   UDP out of a cable, Wi-Fi or mobile broadband adapter
 //
 // Nothing is said of the TUN adapter, and nothing needs to be: it is none of
@@ -107,11 +111,13 @@ type family struct {
 	layer wf.LayerID
 	local []netip.Prefix
 	dhcp  uint16 // the DHCP server's port: 67, and 547 for DHCPv6
+	// dhcpClient: the port its client sends from: 68, and 546 for DHCPv6
+	dhcpClient uint16
 }
 
 var families = []family{
-	{"IPv4", wf.LayerALEAuthConnectV4, local4, 67},
-	{"IPv6", wf.LayerALEAuthConnectV6, local6, 547},
+	{"IPv4", wf.LayerALEAuthConnectV4, local4, 67, 68},
+	{"IPv6", wf.LayerALEAuthConnectV6, local6, 547, 546},
 }
 
 // buildPlan: the filters for a core at the path given. The permits come
@@ -136,6 +142,7 @@ func buildPlan(core string) (plan, error) {
 				&wf.Match{Field: wf.FieldALEAppID, Op: wf.MatchTypeEqual, Value: app}),
 			f.rule("UDP to the local network", weightLocal, wf.ActionPermit, f.localMatches()...),
 			f.rule("UDP to a DHCP server", weightDHCP, wf.ActionPermit,
+				&wf.Match{Field: wf.FieldIPLocalPort, Op: wf.MatchTypeEqual, Value: f.dhcpClient},
 				&wf.Match{Field: wf.FieldIPRemotePort, Op: wf.MatchTypeEqual, Value: f.dhcp}),
 		)
 		blocks = append(blocks, f.rule("UDP out of a physical adapter", weightBlock, wf.ActionBlock, uplinkMatches()...))

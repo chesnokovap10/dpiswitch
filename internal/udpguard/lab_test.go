@@ -23,6 +23,9 @@ import (
 //     it does not.
 func TestLiveLab(t *testing.T) {
 	gateLive(t)
+	if Present() {
+		t.Skip("the service's guard is in the engine: the lab's rules take its keys, and stand alone. Switch the guard off in the settings to run it")
+	}
 	up := findUplink(t)
 	t.Logf("adapter %q: IPv4 %v", up.name, up.v4)
 	target := netip.MustParseAddr("192.0.2.1")

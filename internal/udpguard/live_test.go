@@ -177,7 +177,7 @@ func TestLive(t *testing.T) {
 		{"IPv4 bound to the adapter -> a public DNS port", func() (flow, error) { return send(up.v4, a("192.0.2.1"), 53, "") }, true},
 		{"IPv4 bound to the adapter -> a private address", func() (flow, error) { return send(up.v4, a("10.255.255.1"), 9, "") }, false},
 		{"IPv4 bound to the adapter -> a multicast group", func() (flow, error) { return send(up.v4, a("239.255.77.77"), 9, "") }, false},
-		{"IPv4 bound to the adapter -> a public address, DHCP's port", func() (flow, error) { return send(up.v4, a("192.0.2.1"), 67, "") }, false},
+		{"IPv4 bound to the adapter -> a public address, DHCP's port", func() (flow, error) { return send(up.v4, a("192.0.2.1"), 67, "") }, true},
 	}
 	if meta, err := net.InterfaceByName("Meta"); err == nil && meta.Flags&net.FlagUp != 0 {
 		probes = append(probes, liveProbe{"IPv4 unbound -> a public address, into the TUN",
@@ -190,7 +190,7 @@ func TestLive(t *testing.T) {
 			liveProbe{"IPv6 bound to the adapter -> a public address", func() (flow, error) { return send(up.v6, a("2001:db8::1"), 9, "") }, true},
 			liveProbe{"IPv6 bound to the adapter -> a unique local address", func() (flow, error) { return send(up.v6, a("fd00::1"), 9, "") }, false},
 			liveProbe{"IPv6 bound to the adapter -> a link-local multicast group", func() (flow, error) { return send(up.v6, a("ff02::77:77"), 9, up.name) }, false},
-			liveProbe{"IPv6 bound to the adapter -> a public address, DHCPv6's port", func() (flow, error) { return send(up.v6, a("2001:db8::1"), 547, "") }, false},
+			liveProbe{"IPv6 bound to the adapter -> a public address, DHCPv6's port", func() (flow, error) { return send(up.v6, a("2001:db8::1"), 547, "") }, true},
 		)
 	} else {
 		t.Log("no global IPv6 address on the adapter: IPv6 is left out")
@@ -233,12 +233,27 @@ func TestLive(t *testing.T) {
 	}
 
 	// 1: before -- none of them is dropped; one that is says another
-	// program's filter is in the way, and the rest of this check with it
-	round("before", func(liveProbe) bool { return false })
+	// program's filter is in the way, and the rest of this check with it.
+	// But with the service's own guard in the engine: then it is that guard
+	// the first round looks at -- what the machine is guarded by now, the
+	// build installed -- and this check's guard goes in beside it, under
+	// keys of its own: the engine refuses the same ones twice. A packet
+	// either of them blocks is dropped, so the round after shows this
+	// build's rules wherever they are the stricter.
+	service := Present()
+	if service {
+		t.Log("the service's guard is in the engine: the first round is its own")
+		round("service", func(p liveProbe) bool { return p.guarded })
+	} else {
+		round("before", func(liveProbe) bool { return false })
+	}
 
 	// 2: the guard in, the core another program
 	guardSince := time.Now()
 	g := New()
+	if service {
+		g.open = func(p plan) (engine, error) { return openWFP(besideKeys(p)) }
+	}
 	defer g.Lift()
 	ch, err := g.Ensure(core)
 	if err != nil || ch != Put {
@@ -292,6 +307,14 @@ func TestLive(t *testing.T) {
 		t.Error("Guard.Dropped sees a packet nobody sent")
 	}
 
+	if service {
+		// the rest is of a machine with no other guard: nothing dropped with
+		// the core this program, nothing with the guard lifted
+		g.Lift()
+		t.Log("the service's guard stays in: the rounds with no guard are left out")
+		return
+	}
+
 	// 3: with this very program the core, nothing of it is dropped
 	self, err := os.Executable()
 	if err != nil {
@@ -313,6 +336,19 @@ func TestLive(t *testing.T) {
 		t.Fatalf("Ensure after a lift: %v, %v", ch, err)
 	}
 	round("put again", func(p liveProbe) bool { return p.guarded })
+}
+
+// besideKeys: the plan under keys of its own, to stand in the engine beside
+// the service's guard
+func besideKeys(p plan) plan {
+	p.provider.ID.Data1++
+	p.sublayer.ID.Data1++
+	p.sublayer.Provider = p.provider.ID
+	for _, r := range p.rules {
+		r.ID.Data1 += 0x1000
+		r.Sublayer, r.Provider = p.sublayer.ID, p.provider.ID
+	}
+	return p
 }
 
 func describe(err error) string {

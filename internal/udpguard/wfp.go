@@ -59,6 +59,19 @@ func (e *wfpEngine) alive() bool {
 
 func (e *wfpEngine) close() { e.s.Close() }
 
+// Present: whether a guard is in the engine, whichever process put it -- the
+// service's, to a check run beside it: the keys are one guard's, and a
+// second with them is refused.
+func Present() bool {
+	s, err := wf.New(&wf.Options{Name: "DPI Switch UDP guard: a look", Dynamic: true})
+	if err != nil {
+		return false
+	}
+	defer s.Close()
+	sl, err := s.Sublayers(providerKey)
+	return err == nil && len(sl) > 0
+}
+
 // dropped reads the engine's net events: a packet a filter drops is recorded
 // with its addresses, ports and the program that sent it, within moments.
 func (e *wfpEngine) dropped(local, remote netip.AddrPort, since time.Time) bool {

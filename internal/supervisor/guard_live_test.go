@@ -34,6 +34,9 @@ func TestLiveGuardHolds(t *testing.T) {
 	}
 	t.Logf("the core let through: %s", core)
 
+	if udpguard.Present() {
+		t.Skip("the service's guard is in the engine: this one would take its keys. Switch the guard off in the settings to run it")
+	}
 	g := udpguard.New()
 	defer g.Lift()
 	if readGuardHolds(context.Background(), g) {

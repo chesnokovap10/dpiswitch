@@ -198,3 +198,39 @@ func TestPlanNeedsTheCore(t *testing.T) {
 		t.Fatal("a plan for a core that does not exist")
 	}
 }
+
+// The DHCP permit is the DHCP client's alone: from its port to the server's.
+// By the server's port alone it let any program's UDP to that port of any
+// address out around the tunnel.
+func TestDHCPPermitIsTheClients(t *testing.T) {
+	p, err := buildPlan(testExe(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[wf.LayerID][2]uint16{wf.LayerALEAuthConnectV4: {68, 67}, wf.LayerALEAuthConnectV6: {546, 547}}
+	seen := 0
+	for _, r := range p.rules {
+		if !strings.Contains(r.Name, "DHCP") {
+			continue
+		}
+		seen++
+		var local, remote uint16
+		for _, c := range r.Conditions {
+			switch c.Field {
+			case wf.FieldIPLocalPort:
+				local, _ = c.Value.(uint16)
+			case wf.FieldIPRemotePort:
+				remote, _ = c.Value.(uint16)
+			case wf.FieldIPProtocol:
+			default:
+				t.Errorf("%s: a condition on %v", r.Name, c.Field)
+			}
+		}
+		if got := [2]uint16{local, remote}; got != want[r.Layer] {
+			t.Errorf("%s: from port %d to port %d, want %v", r.Name, local, remote, want[r.Layer])
+		}
+	}
+	if seen != 2 {
+		t.Errorf("%d DHCP rules, want one for each family", seen)
+	}
+}
