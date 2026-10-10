@@ -94,17 +94,33 @@ var (
 // uiWindow: the UI's app window, or with tab the window whose tab shown is
 // the UI; 0 for none
 func uiWindow(tab bool) windows.HWND {
-	var found windows.HWND
-	cb := syscall.NewCallback(func(h windows.HWND, _ uintptr) uintptr {
-		if isUIWindow(h, tab) {
-			found = h
+	enum.Lock()
+	defer enum.Unlock()
+	enum.tab, enum.found = tab, 0
+	windows.EnumWindows(enumCallback(), nil)
+	return enum.found
+}
+
+// enum: what one look through the windows asks and finds. The callback is
+// made once: Go keeps every callback it makes for the life of the process,
+// 2,000 of them at most, and one made at every look -- twenty a second while
+// a window is waited for -- ended the tray with "too many callback functions"
+// after some dozens of openings.
+var enum struct {
+	sync.Mutex
+	tab   bool
+	found windows.HWND
+}
+
+var enumCallback = sync.OnceValue(func() uintptr {
+	return syscall.NewCallback(func(h windows.HWND, _ uintptr) uintptr {
+		if isUIWindow(h, enum.tab) {
+			enum.found = h
 			return 0
 		}
 		return 1
 	})
-	windows.EnumWindows(cb, nil)
-	return found
-}
+})
 
 func isUIWindow(h windows.HWND, tab bool) bool {
 	if !windows.IsWindowVisible(h) {
