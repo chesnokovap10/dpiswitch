@@ -53,3 +53,39 @@ func TestConfirmByName(t *testing.T) {
 		}
 	}
 }
+
+// An IPv6 node failing direct on the handshake, the tunnel with no IPv6 to
+// compare against: blocked by name when the direct path gets through with no
+// name and never with it; anything else says nothing, and stays so.
+func TestNameBlockedAlone(t *testing.T) {
+	oldNo, oldTLS := runNoName, runTLS
+	t.Cleanup(func() { runNoName, runTLS = oldNo, oldTLS })
+	for _, c := range []struct {
+		name             string
+		withName, noName int // passes through, of 3
+		want             Verdict
+	}{
+		{"by name", 0, 3, BlockedTLS},
+		{"by name, a lossy direct path", 0, 2, BlockedTLS},
+		{"the node answers nobody", 0, 0, Inconcl},
+		{"lucky once without the name", 0, 1, Inconcl},
+		{"through with the name after all", 1, 3, Inconcl},
+	} {
+		var mu sync.Mutex
+		left := map[string]int{"name": c.withName, "none": c.noName}
+		take := func(k string) bool {
+			mu.Lock()
+			defer mu.Unlock()
+			left[k]--
+			return left[k] >= 0
+		}
+		runNoName = func(Dialer, string) PathResult { return PathResult{TLSOk: take("none")} }
+		runTLS = func(Dialer, string, string) PathResult { return PathResult{TLSOk: take("name")} }
+		rep := Report{Domain: "a.example.org", TestedIP: "2001:db8::1", Verdict: Inconcl, Unmeasured: true,
+			Reason: tunnelDown + "no route"}
+		nameBlockedAlone(Dialer{Addr: "direct"}, &rep)
+		if rep.Verdict != c.want || (c.want == BlockedTLS) == rep.Unmeasured {
+			t.Errorf("%s: %s (unmeasured %v) %q", c.name, rep.Verdict, rep.Unmeasured, rep.Reason)
+		}
+	}
+}

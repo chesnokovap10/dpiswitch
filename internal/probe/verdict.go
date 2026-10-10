@@ -326,7 +326,45 @@ func CheckProtoV6(direct, tunnel Dialer, dom string, port, attempts int, udp boo
 		rep.Verdict, rep.Aborted = Inconcl, true
 		rep.Reason = "core unavailable (restarting?), check discarded"
 	}
+	if ok && !udp && port == 443 && rep.Verdict == Inconcl && TunnelDown(rep.Reason) &&
+		rep.Direct.TCPOk && rep.Direct.TLSTried && !rep.Direct.TLSOk {
+		nameBlockedAlone(direct, &rep)
+	}
 	return rep, ok
+}
+
+// nameBlockedAlone: an IPv6 node whose handshake failed direct while the
+// tunnel did not reach the node at all -- a tunnel with no IPv6 -- judged
+// with nothing to compare against. The direct path's own two ways tell a
+// block by name: with the name it fails every pass, with none it gets
+// through most (see confirmByName). The core dials this node direct once the
+// name is called clean by its IPv4 one, and a handshake cut after the
+// connection opened is not tried again on IPv4. Anything else stays
+// INCONCLUSIVE, the IPv4 node's verdict the name's.
+func nameBlockedAlone(direct Dialer, rep *Report) {
+	type pass struct{ name, noName bool }
+	res := make([]pass, confirmPasses)
+	var wg sync.WaitGroup
+	for i := range res {
+		wg.Add(2)
+		go func() { defer wg.Done(); res[i].name = runTLS(direct, rep.TestedIP, rep.Domain).TLSOk }()
+		go func() { defer wg.Done(); res[i].noName = runNoName(direct, rep.TestedIP).TLSOk }()
+	}
+	wg.Wait()
+	nameOK, noNameOK := 0, 0
+	for _, r := range res {
+		if r.name {
+			nameOK++
+		}
+		if r.noName {
+			noNameOK++
+		}
+	}
+	if nameOK == 0 && noNameOK*2 > confirmPasses {
+		rep.Verdict, rep.Unmeasured = BlockedTLS, false
+		rep.Reason = fmt.Sprintf("%s; direct got through %d of %d with no name and never with it, "+
+			"the tunnel has no IPv6 to compare against", ClassifyErr(rep.Direct), noNameOK, confirmPasses)
+	}
 }
 
 // checkFamily: the check of one node of the name -- the one direct traffic
