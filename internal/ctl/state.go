@@ -58,6 +58,9 @@ type entry struct {
 	// NoTCP: a CLEAN_SPLIT that goes direct over QUIC alone -- its TCP on
 	// 443 blocked even with the cut, refused; see splitNoTCP
 	NoTCP bool `json:"no_tcp,omitempty"`
+	// V6: the check looked for the name's IPv6 node too (see probeBatch). One
+	// going direct without it was judged by its IPv4 node alone, see unseenV6
+	V6 bool `json:"v6,omitempty"`
 }
 
 // state is split per network: the key is the ISP (AS...), see asn.go;
@@ -599,6 +602,28 @@ func (s *state) quicOnly(id string, idle time.Duration) []string {
 			}
 		}
 		if len(withTCP(eps)) > len(eps) {
+			out = append(out, dom)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// unseenV6: names going direct and still in use whose check never looked at
+// their IPv6 node -- made before it did, or while the direct path had no
+// IPv6. They are checked now, not when their term runs out a week later: the
+// core dials either node, and one cut on IPv6 alone breaks whenever that
+// node answers first.
+func (s *state) unseenV6(id string, idle time.Duration) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	now := time.Now()
+	for dom, e := range s.Networks[id] {
+		if e.V6 || e.Alone || !goesDirect(e.Verdict) || !now.Before(e.ExpiresAt) || !e.lastSeen().After(now.Add(-idle)) {
+			continue
+		}
+		if _, addr := probe.AddrKey(dom); !addr {
 			out = append(out, dom)
 		}
 	}

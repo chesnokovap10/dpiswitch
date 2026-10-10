@@ -96,3 +96,68 @@ func TestCycleNoIPv6NoCheck(t *testing.T) {
 		t.Errorf("IPv6 off in the settings: IPv6 nodes asked after %v", asked())
 	}
 }
+
+// A name called clean before its IPv6 node was looked at -- by a version that
+// did not, or while the direct path had no IPv6 -- is checked again at once,
+// not when its week runs out; and once looked at, left until then.
+func TestCycleRechecksCleanMadeWithoutIPv6(t *testing.T) {
+	s, asked := v6Scenario(t, false, map[string]probe.Verdict{"old.example.org": probe.BlockedTLS})
+	s.see(tunnelled("old.example.org", 443))
+	s.script("old.example.org tcp/443", clean("192.0.2.1"))
+	s.cycle()
+	if e := s.entry("old.example.org"); e == nil || e.Verdict != probe.Clean || e.V6 {
+		t.Fatalf("made with no IPv6 on the direct path: %+v, want CLEAN and V6 unset", e)
+	}
+	s.see()
+	s.cycle()
+	if s.wasProbed("old.example.org tcp/443") {
+		t.Fatal("no IPv6 on the direct path still, and the name was checked again")
+	}
+
+	directHasV6 = func() bool { return true }
+	s.cycle()
+	if !s.wasProbed("old.example.org tcp/443") || len(asked()) != 1 {
+		t.Fatalf("the direct path has IPv6 now: probed %v, IPv6 nodes asked after %v", s.probed, asked())
+	}
+	if e := s.entry("old.example.org"); e == nil || e.Verdict != probe.BlockedTLS || !e.V6 {
+		t.Fatalf("after the check with IPv6: %+v, want BLOCKED_TLS and V6 set", e)
+	}
+
+	// a clean one is looked at once, and then waits for its term
+	s.script("ok.example.org tcp/443", clean("192.0.2.2"))
+	s.see(tunnelled("ok.example.org", 443))
+	s.cycle()
+	if e := s.entry("ok.example.org"); e == nil || e.Verdict != probe.Clean || !e.V6 {
+		t.Fatalf("ok.example.org: %+v, want CLEAN and V6 set", e)
+	}
+	s.see()
+	s.cycle()
+	if s.wasProbed("ok.example.org tcp/443") {
+		t.Error("a name whose IPv6 node was looked at is checked again before its term")
+	}
+}
+
+// The names waiting for their IPv6 node come after the new ones: a cycle
+// with no room left takes none of them.
+func TestCycleNewNamesBeforeIPv6Rechecks(t *testing.T) {
+	s, _ := v6Scenario(t, false, nil)
+	s.cfg.PerCycle = 2
+	for i, d := range []string{"a.example.org", "b.example.org"} {
+		s.see(tunnelled(d, 443))
+		s.script(d+" tcp/443", clean("192.0.2."+string(rune('1'+i))))
+		s.cycle()
+	}
+	directHasV6 = func() bool { return true }
+	s.script("new1.example.org tcp/443", clean("192.0.2.8"))
+	s.script("new2.example.org tcp/443", clean("192.0.2.9"))
+	s.see(tunnelled("new1.example.org", 443), tunnelled("new2.example.org", 443))
+	s.cycle()
+	if !s.wasProbed("new1.example.org tcp/443") || !s.wasProbed("new2.example.org tcp/443") || s.wasProbed("a.example.org tcp/443") {
+		t.Fatalf("probed %v, want the two new names alone", s.probed)
+	}
+	s.see()
+	s.cycle()
+	if !s.wasProbed("a.example.org tcp/443") || !s.wasProbed("b.example.org tcp/443") {
+		t.Errorf("the next cycle probed %v, want the two waiting for their IPv6 node", s.probed)
+	}
+}

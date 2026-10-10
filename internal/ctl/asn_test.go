@@ -239,8 +239,10 @@ func TestWatchLocal(t *testing.T) {
 		<-netWake
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go watchLocal(ctx)
+	// the watcher is gone before the cleanup puts its hooks back
+	gone := make(chan struct{})
+	defer func() { cancel(); <-gone }()
+	go func() { watchLocal(ctx); close(gone) }()
 	time.Sleep(20 * time.Millisecond)
 	if netForced() || len(netWake) > 0 {
 		t.Fatal("woken with the link the same")

@@ -215,12 +215,19 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	if !cfg.alone {
 		madeAlone = st.madeAlone(netID, cfg.Idle)
 	}
+	// and the ones judged by their IPv4 node alone come last: they take the
+	// room a cycle has left, and hold up nothing
+	var unseenV6 []string
+	if checksV6(cfg, st, netID) {
+		unseenV6 = st.unseenV6(netID, cfg.Idle)
+	}
 	queue := dedupe(concat(
 		suspectDirect(cfg, st, netID, conns),
 		madeAlone,
 		st.quicOnly(netID, cfg.Idle),
 		st.expired(netID, cfg.Idle),
 		pickCandidates(cfg, st, netID, order),
+		unseenV6,
 	))
 	queue = slices.DeleteFunc(queue, leaveAlone)
 	if len(queue) == 0 {
@@ -297,10 +304,7 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 	tunnel := probe.Dialer{Addr: cfg.TunnelAddr, Timeout: cfg.Timeout, Established: a.established, Pass: pass}
 	split := direct
 	split.Addr = cfg.SplitAddr
-	// IPv6 on in the settings, and the direct path has it: a name's IPv6 node
-	// is checked beside its IPv4 one. With none here the core's dial of it
-	// fails at once and IPv4 is taken: nothing to check, see learnV6 too
-	v6Too := cfg.IPv6 && !cfg.alone && !direct.NoV6 && directHasV6()
+	v6Too := checksV6(cfg, st, netID)
 
 	// the verdicts are filed under netID: a probe made after the machine
 	// moved to another network measured that one
@@ -508,7 +512,7 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 			mu.Unlock()
 
 			mu.Lock()
-			results = append(results, checked{dom, rep, eps, checkFacts{directDown, noV6, unprobed, noQUIC, noTCP}})
+			results = append(results, checked{dom, rep, eps, checkFacts{directDown, noV6, unprobed, noQUIC, noTCP, v6Too}})
 			mu.Unlock()
 		}(dom)
 	}
@@ -567,6 +571,13 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 	syncList(cfg, a, st, netID, changed && !cfg.Apply)
 }
 
+// checksV6: IPv6 on in the settings, and the direct path has it: a name's
+// IPv6 node is checked beside its IPv4 one. With none here the core's dial
+// of it fails at once and IPv4 is taken: nothing to check, see learnV6 too
+func checksV6(cfg Config, st *state, netID string) bool {
+	return cfg.IPv6 && !cfg.alone && !st.directNoV6(netID) && directHasV6()
+}
+
 // probing: the names a batch is probing now, so a cycle and the fast lane
 // never probe one name at once
 var probing = struct {
@@ -612,6 +623,7 @@ type checkFacts struct {
 	unprobed   int  // ports the name was seen on beyond maxEndpoints
 	noQUIC     bool // see entry.NoQUIC
 	noTCP      bool // see entry.NoTCP
+	v6         bool // see entry.V6
 }
 
 // record files one name's check in memory and reports whether its verdict
@@ -651,6 +663,7 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 	if had && rep.Verdict == probe.Inconcl && prev.Verdict != probe.Inconcl && !dropClean && !noV6 {
 		kept := *prev
 		kept.Alone = cfg.alone
+		kept.V6 = f.v6
 		term := cfg.FailTTL
 		// A verdict the check measured and could not overturn -- the
 		// host fails the same on both paths, say -- backs off as a
@@ -678,6 +691,7 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 	if had && goesDirect(prev.Verdict) && rep.Verdict == probe.Slower && !prev.SlowOnce && !directDown {
 		kept := *prev
 		kept.SlowOnce = true
+		kept.V6 = f.v6
 		kept.ExpiresAt = time.Now().Add(cfg.FailTTL)
 		kept.Endpoints = endpointStrings(eps)
 		st.put(netID, dom, &kept)
@@ -696,6 +710,7 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 		Alone:      cfg.alone,
 		NoQUIC:     rep.Verdict == probe.CleanSplit && f.noQUIC,
 		NoTCP:      rep.Verdict == probe.CleanSplit && f.noTCP,
+		V6:         f.v6,
 	}
 	// A new name was just seen by the watcher. A known one keeps its
 	// own mark: the probe is not a use. It used to count as one, and
