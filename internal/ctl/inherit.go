@@ -312,9 +312,7 @@ type asnBook struct {
 	Nets []asnNet `json:"nets"`
 	// ASNs: the ranges of the networks wanted so far
 	ASNs map[string]*asnRanges `json:"asns"`
-	// what has not been looked up yet: nodes, and networks whose ranges
-	// are wanted; and when a lookup last failed
-	queue  []string
+	// the networks whose ranges are wanted, and when a lookup last failed
 	wanted map[string]bool
 	failed map[string]time.Time
 	busy   atomic.Bool

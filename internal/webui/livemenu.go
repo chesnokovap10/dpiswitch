@@ -40,12 +40,10 @@ var errUnchanged = errors.New("unchanged")
 
 // liveMove: what a menu action came to
 type liveMove struct {
-	had      bool      // the line was where it was sent already
-	outOf    []liveOut // the lines taken out of the lists and presets
-	still    []string  // presets switched on that take it all the same, above where it went
-	off      bool      // it went to a preset switched off, which routes nothing
-	moved    int
-	closeErr error
+	had   bool      // the line was where it was sent already
+	outOf []liveOut // the lines taken out of the lists and presets
+	still []string  // presets switched on that take it all the same, above where it went
+	off   bool      // it went to a preset switched off, which routes nothing
 }
 
 // liveOut: the lines taken out of a list or a preset, by its name
@@ -206,8 +204,15 @@ func (s *Server) actLiveAdd(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, liveAnswer{ok, msg})
 }
 
-// moveLine sends v to the list named to, or to the preset id, and takes it
-// out of the places that would route it otherwise. A list whose rules stand
+// moveLines sends each of vs to the list named to, or to the preset id, and
+// takes it out of the places that would route it otherwise -- the rows picked
+// on Live or on the verdicts page, sent at once: each line is taken out of
+// the lists and presets the lines before it left, the lists and presets are
+// written once, and the connections moved closed once. What each line came
+// to is in its own liveMove; the connections moved, and the error closing
+// them, are the whole call's.
+//
+// A list whose rules stand
 // before the one v went to loses every line routing what v routes -- the
 // same, a narrower one, and a wider one: "+.example.com" in "Always via
 // tunnel" would keep api.example.com sent direct in the tunnel. A list after
@@ -220,22 +225,6 @@ func (s *Server) actLiveAdd(w http.ResponseWriter, r *http.Request) {
 // the presets are read and written as one: under the lists' lock, inside
 // the presets' change, and a file failing to write puts back the ones
 // written before it.
-func (s *Server) moveLine(to, id, v string) (liveMove, error) {
-	mvs, moved, closeErr, err := s.moveLines(to, id, []string{v})
-	if err != nil {
-		return liveMove{}, err
-	}
-	mv := mvs[0]
-	mv.moved, mv.closeErr = moved, closeErr
-	return mv, nil
-}
-
-// moveLines does moveLine for each of vs in turn -- the rows picked on Live
-// or on the verdicts page, sent at once: each line is taken out of the
-// lists and presets the lines before it left, and the lists and presets
-// are written once, and the connections moved closed once. What each line
-// came to is in its own liveMove; the connections moved, and the error
-// closing them, are the whole call's.
 func (s *Server) moveLines(to, id string, vs []string) (mvs []liveMove, movedConns int, closeErr error, err error) {
 	on := ctl.LoadSettings(paths.Settings()).Awg2Presets
 	mvs = make([]liveMove, len(vs))
