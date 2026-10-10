@@ -86,35 +86,44 @@ $trays = @(Get-Process dpiswitch -ErrorAction SilentlyContinue |
 $trayPaths = @($trays | ForEach-Object { $_.Path } | Sort-Object -Unique)
 $trays | Stop-Process -Force
 
-if ($moved) {
-    # reinstalled from the build, for this user: it copies itself to
-    # Program Files and registers that copy (the prompt's "Done" is to be
-    # closed for the script to go on)
-    $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-    Start-Process $src -ArgumentList "reinstall", "--owner", $sid -Verb RunAs -Wait
-} else {
-    $shell = (Get-Process -Id $PID).Path
-    # Start-Process joins the list with spaces and quotes nothing: a path with
-    # a space in it reached the elevated half as two arguments
-    Start-Process $shell -Verb RunAs -Wait -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass",
-        "-File", "`"$PSCommandPath`"", "-Path", "`"$src`"", "-ServicePart"
-}
-if (-not (Wait-Until { (Get-Service dpiswitch).Status -eq 'Running' } 30)) {
-    throw "the service did not start again: see %ProgramData%\dpiswitch\logs\service.log"
-}
-$up = Get-Date
-$target = Service-Target
-if ((Get-FileHash $target).Hash -ne $hash) { throw "$target does not match $src after the copy" }
-
-foreach ($p in $trayPaths) {
-    if (-not [string]::Equals($p, $target, [StringComparison]::OrdinalIgnoreCase)) {
-        Copy-Item $p ($p -replace '\.exe$', '.last.exe') -Force
-        Copy-Item $src $p -Force
+# The trays come back whatever happens below. The administrator prompt
+# declined, or left to expire with nobody at the computer, threw here with
+# the trays already stopped: the session was left without one, and the UI
+# with it, until someone started it by hand (10.10).
+$deployed = $false
+try {
+    if ($moved) {
+        # reinstalled from the build, for this user: it copies itself to
+        # Program Files and registers that copy (the prompt's "Done" is to be
+        # closed for the script to go on)
+        $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        Start-Process $src -ArgumentList "reinstall", "--owner", $sid -Verb RunAs -Wait
+    } else {
+        $shell = (Get-Process -Id $PID).Path
+        # Start-Process joins the list with spaces and quotes nothing: a path with
+        # a space in it reached the elevated half as two arguments
+        Start-Process $shell -Verb RunAs -Wait -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass",
+            "-File", "`"$PSCommandPath`"", "-Path", "`"$src`"", "-ServicePart"
     }
-    # Through explorer, not Start-Process: a child of this shell lives in its
-    # job, and the tray died with the terminal (or Claude's session) that ran
-    # the deploy.
-    explorer.exe $p
+    if (-not (Wait-Until { (Get-Service dpiswitch).Status -eq 'Running' } 30)) {
+        throw "the service did not start again: see %ProgramData%\dpiswitch\logs\service.log"
+    }
+    $up = Get-Date
+    $target = Service-Target
+    if ((Get-FileHash $target).Hash -ne $hash) { throw "$target does not match $src after the copy" }
+    $deployed = $true
+} finally {
+    foreach ($p in $trayPaths) {
+        # a tray of its own file gets the build only once the service has it
+        if ($deployed -and -not [string]::Equals($p, $target, [StringComparison]::OrdinalIgnoreCase)) {
+            Copy-Item $p ($p -replace '\.exe$', '.last.exe') -Force
+            Copy-Item $src $p -Force
+        }
+        # Through explorer, not Start-Process: a child of this shell lives in its
+        # job, and the tray died with the terminal (or Claude's session) that ran
+        # the deploy.
+        explorer.exe $p
+    }
 }
 
 $v = (Get-Item $target).VersionInfo.FileVersion
