@@ -149,12 +149,40 @@ func isUIWindow(h windows.HWND, tab bool) bool {
 // Chrome". Chrome's and Firefox's titles alone were known by heart: with
 // another browser the tab was never found, and every click opened one more.
 func isUITabTitle(title string) bool {
+	title = lessEdgeCount(title)
 	for _, sep := range tabSeps {
 		if rest, ok := strings.CutPrefix(title, uiTitle+sep); ok {
 			return rest != "" && !slices.ContainsFunc(tabSeps, func(s string) bool { return strings.Contains(rest, s) })
 		}
 	}
 	return false
+}
+
+// lessEdgeCount: an Edge window's title without the count of its other tabs.
+// With more tabs than one Edge says so after the page's title -- "DPI Switch
+// and 3 more pages - Personal: Microsoft Edge", "DPI Switch и ещё 3 страницы
+// — Личный: Microsoft Edge" -- in the language it runs in: taken for it are
+// the words between the title and the first dash, when a number is among
+// them. Edge's titles only: another browser's are left as they are.
+func lessEdgeCount(title string) string {
+	if !strings.HasSuffix(title, "Microsoft Edge") && !strings.HasSuffix(title, "Microsoft\u200b Edge") {
+		return title
+	}
+	after, ok := strings.CutPrefix(title, uiTitle+" ")
+	if !ok {
+		return title
+	}
+	end := -1
+	for _, sep := range tabSeps {
+		// the dash's own space is the one before it
+		if i := strings.Index(" "+after, sep); i >= 0 && (end < 0 || i < end) {
+			end = i
+		}
+	}
+	if end <= 0 || !strings.ContainsAny(after[:end], "0123456789") {
+		return title
+	}
+	return uiTitle + " " + after[end:]
 }
 
 // tabSeps: what a browser puts between the page's title and its own name

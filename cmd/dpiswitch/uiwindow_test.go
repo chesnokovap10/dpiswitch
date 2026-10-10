@@ -34,6 +34,15 @@ func TestIsUITabTitle(t *testing.T) {
 		"DPI Switch - Brave":                  true,
 		"DPI Switch — Яндекс Браузер":         true,
 		"DPI Switch - Личный: Microsoft Edge": true,
+		// Edge with other tabs open says how many, in its own language
+		"DPI Switch и ещё 3 страницы — Личный: Microsoft\u200b Edge": true,
+		"DPI Switch and 2 more pages - Personal: Microsoft Edge":     true,
+		"DPI Switch and 1 more page - Microsoft Edge":                true,
+		// a count is Edge's alone, and comes before the first dash
+		"DPI Switch and 2 more pages - Google Chrome":                     false,
+		"DPI Switch - Bing и ещё 3 страницы — Личный: Microsoft Edge":     false,
+		"DPI Switch settings - Личный: Microsoft Edge":                    false,
+		"DPI Switch and 2 more pages - Search - Personal: Microsoft Edge": false,
 		"DPI Switch":    false, // the app window's, not a tab's
 		"DPI Switch - ": false,
 		"DPI Switch - Поиск в Google - Google Chrome": false,
