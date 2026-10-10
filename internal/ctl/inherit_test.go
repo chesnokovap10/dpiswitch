@@ -204,3 +204,32 @@ func TestInheritedIsChecked(t *testing.T) {
 		t.Fatalf("suspects %v", got)
 	}
 }
+
+// A network's ranges kept through a refresh that failed: the lookup is tried
+// again after asnRetry, and the ranges known so far go on lending meanwhile.
+// The failure used to replace them with none, and every name going the
+// network's way went back into the tunnel until RIPE answered again.
+func TestRangesKeptThroughFailedRefresh(t *testing.T) {
+	oldPfx := ripePrefixes
+	t.Cleanup(func() { ripePrefixes = oldPfx })
+	b := &asnBook{path: filepath.Join(t.TempDir(), "book.json"), ASNs: map[string]*asnRanges{
+		// past its term: looked up again
+		"AS15169": {Prefixes: []string{"74.125.0.0/16"}, At: time.Now().Add(-2 * asnRangesTerm)},
+	}}
+	ripePrefixes = func(*http.Client, string) ([]string, error) { return nil, errors.New("RIPE out of reach") }
+	if _, fresh := b.ranges("AS15169"); fresh {
+		t.Fatal("ranges past their term are not asked for again")
+	}
+	b.want([]string{"AS15169"})
+	b.round("127.0.0.1:1", nil, func() {})
+	for b.busy.Load() {
+		time.Sleep(time.Millisecond)
+	}
+	r, held := b.ranges("AS15169")
+	if !slices.Equal(r, []string{"74.125.0.0/16"}) {
+		t.Errorf("after a failed refresh the ranges are %v, want the ones known before", r)
+	}
+	if !held {
+		t.Error("a lookup that just failed is asked again at once")
+	}
+}

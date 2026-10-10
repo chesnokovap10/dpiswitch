@@ -418,7 +418,8 @@ func (b *asnBook) ranges(asn string) ([]string, bool) {
 		return nil, false
 	}
 	if r.Failed {
-		return nil, time.Since(r.At) < asnRetry
+		// what was known before the failure, if anything
+		return r.Prefixes, time.Since(r.At) < asnRetry
 	}
 	return r.Prefixes, time.Since(r.At) < asnRangesTerm
 }
@@ -551,7 +552,14 @@ func (b *asnBook) round(directAddr string, nodes []string, done func()) {
 				switch {
 				case err != nil:
 					log.Printf("network %s: ranges not learnt, trying again in %s: %v", asn, asnRetry, err)
-					b.ASNs[asn] = &asnRanges{At: time.Now(), Failed: true}
+					// the ranges known so far stay: a refresh that failed
+					// used to leave none, and the network lent nothing
+					// until RIPE answered again
+					failed := &asnRanges{At: time.Now(), Failed: true}
+					if old := b.ASNs[asn]; old != nil {
+						failed.Prefixes = old.Prefixes
+					}
+					b.ASNs[asn] = failed
 				case len(p) > maxASNRanges:
 					// kept for its term with no ranges: it lends nothing
 					log.Printf("network %s announces %d ranges, more than %d: too wide to lend one service's way",
