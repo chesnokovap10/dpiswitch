@@ -183,10 +183,16 @@ func (f cdnFamily) rules() []string {
 	return out
 }
 
-// pageBlocked: a verdict saying a page cannot go direct -- blocked, the cut
-// tried or not, or answered with another's certificate; QUIC alone leaves TCP
+// pageBlocked: a verdict saying a page cannot go direct -- blocked by its
+// name, the cut tried or not, or answered with another's certificate; QUIC
+// alone leaves TCP. Not blocked by address: that is of the one node probed,
+// and the core dials every address the name has. On 10.10 play.google.com,
+// a page of googlevideo.com's as youtube.com is, was probed on a node that
+// answers nothing direct: the whole family went the tunnel's way, YouTube
+// with it, while play.google.com itself opened direct in 0.2 s by another
+// node.
 func pageBlocked(v probe.Verdict) bool {
-	return v == probe.BlockedDPI || v == probe.BlockedTCP || v == probe.BlockedTLS || v == probe.MITM
+	return v == probe.BlockedDPI || v == probe.BlockedTLS || v == probe.MITM
 }
 
 // familyWay: what one family does on this network

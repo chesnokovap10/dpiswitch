@@ -237,7 +237,8 @@ CDN, спидтестам, обновлениям.
 
 Так же вместе идут страница и её CDN: домен CDN и сайты, которые он обслуживает (связь берётся из
 сертификата CDN). Когда из проверенных имён CDN — их нужно не меньше 10 — напрямую идут три из четырёх и ни
-одна страница не заблокирована, всё семейство идёт напрямую; когда нет — целиком через туннель. В
+одна страница не заблокирована по имени (блок по адресу относится к одному узлу и здесь не считается), всё
+семейство идёт напрямую; когда нет — целиком через туннель. В
 семействе, идущем напрямую, узел CDN, заблокированный на обоих прямых путях, отклоняется, а не уходит в
 туннель: плеер за секунду берёт другой узел.
 
@@ -724,7 +725,7 @@ in On, with the ClientHello cut and Whole domains switched on.
 
 A page and its CDN go together the same way: a CDN's domain and the sites it serves (the link is taken
 from the CDN's certificate). When three of every four of the CDN's names checked go direct — at least 10
-must be checked — and no page is blocked, the whole family goes direct; when not, all of it goes through
+must be checked — and no page is blocked by its name (a block by address is of one node, and counts for nothing here), the whole family goes direct; when not, all of it goes through
 the tunnel. In a family going direct, a CDN node blocked on both direct ways is refused, not sent through
 the tunnel: the player takes another node within a second.
 

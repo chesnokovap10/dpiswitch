@@ -156,6 +156,13 @@ func TestFamilyBlockedPage(t *testing.T) {
 	if got := listRules(s.cfg.FamilyDirectPath); !slices.Contains(got, "+.googlevideo.com") {
 		t.Fatalf("the page clean with the cut: direct: %v", got)
 	}
+	// blocked by address is the one node probed: the name has others, and
+	// the family stays
+	s.put("music.youtube.com", probe.BlockedTCP, "")
+	syncList(s.cfg, s.api, s.st, "n", false)
+	if got := listRules(s.cfg.FamilyDirectPath); !slices.Contains(got, "+.googlevideo.com") {
+		t.Fatalf("a page blocked by address on a node took its family into the tunnel: %v", got)
+	}
 	// answered direct with another's certificate, the page goes no more
 	// direct than a blocked one
 	s.put("music.youtube.com", probe.MITM, "")
