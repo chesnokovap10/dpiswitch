@@ -38,6 +38,11 @@ func TestIsUITabTitle(t *testing.T) {
 		"DPI Switch и ещё 3 страницы — Личный: Microsoft\u200b Edge": true,
 		"DPI Switch and 2 more pages - Personal: Microsoft Edge":     true,
 		"DPI Switch and 1 more page - Microsoft Edge":                true,
+		// Edge's profile after a dash of its own, with the count and without
+		"DPI Switch - Profile 1 - Microsoft\u200b Edge":       true,
+		"DPI Switch and 2 more pages - Work - Microsoft Edge": true,
+		"DPI Switch - Profile 1 - Google Chrome":              false,
+		"DPI Switch - Search - Profile 1 - Microsoft Edge":    false,
 		// a count is Edge's alone, and comes before the first dash
 		"DPI Switch and 2 more pages - Google Chrome":                     false,
 		"DPI Switch - Bing и ещё 3 страницы — Личный: Microsoft Edge":     false,

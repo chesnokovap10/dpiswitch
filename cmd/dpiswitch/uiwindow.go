@@ -152,10 +152,33 @@ func isUITabTitle(title string) bool {
 	title = lessEdgeCount(title)
 	for _, sep := range tabSeps {
 		if rest, ok := strings.CutPrefix(title, uiTitle+sep); ok {
-			return rest != "" && !slices.ContainsFunc(tabSeps, func(s string) bool { return strings.Contains(rest, s) })
+			return rest != "" && !hasTabSep(lessEdgeProfile(rest))
 		}
 	}
 	return false
+}
+
+func hasTabSep(s string) bool {
+	return slices.ContainsFunc(tabSeps, func(sep string) bool { return strings.Contains(s, sep) })
+}
+
+// edgeNames: how an Edge window's title ends; its own writing of the name
+// has a zero-width space in it
+var edgeNames = []string{"Microsoft Edge", "Microsoft\u200b Edge"}
+
+// lessEdgeProfile: what follows the page's title in an Edge window, without
+// the profile Edge puts before its own name after a dash -- "DPI Switch -
+// Profile 1 - Microsoft Edge". Told from a page named "DPI Switch - ..." it
+// cannot be; one part alone is taken for the profile.
+func lessEdgeProfile(rest string) string {
+	for _, name := range edgeNames {
+		for _, sep := range tabSeps {
+			if profile, ok := strings.CutSuffix(rest, sep+name); ok && profile != "" && !hasTabSep(profile) {
+				return name
+			}
+		}
+	}
+	return rest
 }
 
 // lessEdgeCount: an Edge window's title without the count of its other tabs.
@@ -165,7 +188,7 @@ func isUITabTitle(title string) bool {
 // the words between the title and the first dash, when a number is among
 // them. Edge's titles only: another browser's are left as they are.
 func lessEdgeCount(title string) string {
-	if !strings.HasSuffix(title, "Microsoft Edge") && !strings.HasSuffix(title, "Microsoft\u200b Edge") {
+	if !slices.ContainsFunc(edgeNames, func(n string) bool { return strings.HasSuffix(title, n) }) {
 		return title
 	}
 	after, ok := strings.CutPrefix(title, uiTitle+" ")
