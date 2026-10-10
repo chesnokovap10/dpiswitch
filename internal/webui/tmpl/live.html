@@ -29,8 +29,8 @@
   <div class="flash bad" id="lbanner" hidden></div>
   <div class="tablebox" id="ltable">
     <table class="ltable">
-      {{/* the widths are fixed (ui.css): sorting, a long name or an IPv6
-           address no longer move the columns, and a wider window widens them all alike */}}
+      {{/* the widths are set by live.js: a default each, the one a head was
+           dragged to, and the address's by the longest address shown */}}
       <colgroup><col class="w-st"><col class="w-p"><col class="w-h"><col class="w-ip"><col class="w-port"><col class="w-type"><col class="w-r"><col class="w-sp"><col class="w-b"><col class="w-t"><col class="w-x"></colgroup>
       <thead><tr>
         <th class="c-st"></th>
@@ -40,9 +40,9 @@
         <th data-sort="port" class="num">{{.T "Port"}}</th>
         <th data-sort="proto">{{.T "Type"}}</th>
         <th data-sort="route">{{.T "Route"}}</th>
-        {{/* down over up in one cell each; sorted by the two together */}}
-        <th data-sort="sp" class="c-2" title="{{.T "Down and up; sorted by their sum"}}">{{.T "Speed"}}</th>
-        <th data-sort="data" class="c-2" title="{{.T "Received and sent; sorted by their sum"}}">{{.T "Data"}}</th>
+        {{/* one way at a time: the arrows pick down or up (live.js) */}}
+        <th data-sort="sp" class="num">{{.T "Speed"}}<span class="dir" data-dir="sp"><button type="button" data-v="d" title="{{.T "Download"}}">↓</button><button type="button" data-v="u" title="{{.T "Upload"}}">↑</button></span></th>
+        <th data-sort="data" class="num">{{.T "Data"}}<span class="dir" data-dir="data"><button type="button" data-v="d" title="{{.T "Received"}}">↓</button><button type="button" data-v="u" title="{{.T "Sent"}}">↑</button></span></th>
         <th data-sort="start" class="num">{{.T "Time"}}</th>
         <th class="c-x"></th>
       </tr></thead>

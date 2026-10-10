@@ -46,7 +46,9 @@ pageInit.live = function (sec) {
   const menu = rowMenu(W), closeMenu = () => menu.close();
 
   // what the page is looking at: kept per browser, a viewing preference
-  const pref = {tab: 'open', route: '', noprobe: false, sort: 'start', desc: true};
+  // sp, data: which way the speed and the bytes columns show, down or up;
+  // cols: the widths the columns were dragged to, by their class
+  const pref = {tab: 'open', route: '', noprobe: false, sort: 'start', desc: true, sp: 'd', data: 'd', cols: {}};
   try { Object.assign(pref, JSON.parse(localStorage.getItem('live') || '{}')); } catch (e) {}
   // a sort kept from when down and up had a column each
   pref.sort = {ds: 'sp', us: 'sp', down: 'data', up: 'data'}[pref.sort] || pref.sort;
@@ -73,8 +75,6 @@ pageInit.live = function (sec) {
       fmt(W.sinceOn, d.toLocaleDateString(locale, {day: 'numeric', month: 'short'}) + ', ' + hm);
   }
   const speed = b => b > 0 ? size(b) + W.perSec : '';
-  // down and up side by side in one cell, each in a place of its own
-  const arrow = (a, s) => s && a + ' ' + s;
   function dur(ms) {
     const s = Math.max(0, Math.floor(ms / 1000));
     if (s < 60) return fmt(W.sec, s);
@@ -205,7 +205,7 @@ pageInit.live = function (sec) {
     const o = m.get(r.id);
     if (!o) { m.set(r.id, r); return; }
     o.n = r.n; o.end = r.end; o.err = r.err; o.seq = r.seq; o._hay = null;
-    if (o.ip !== r.ip) { o.ip = r.ip; if (o._ip) o._ip.textContent = o._ip.title = r.ip || ''; }
+    if (o.ip !== r.ip) { o.ip = r.ip; if (o._ip) { o._ip.textContent = o._ip.title = r.ip || ''; ipFit(r.ip); } }
     m.delete(o.id);
     m.set(o.id, o);
   }
@@ -227,6 +227,74 @@ pageInit.live = function (sec) {
     }
   }
 
+  // --- the columns' widths ---
+  // Each column is as wide as it is set here, and the table as their sum: a
+  // wider window widens none. A head's right edge drags its column, and a
+  // double click on it puts the column back; the widths are kept with the
+  // other preferences. The address's column is as wide as the longest
+  // address the table has shown, and a little more, unless it was dragged.
+  const table = root.querySelector('table.ltable');
+  const cols = [...table.querySelectorAll('col')];
+  const DEF = {'w-st': 22, 'w-p': 150, 'w-h': 260, 'w-ip': 118, 'w-port': 70, 'w-type': 72, 'w-r': 110,
+    'w-sp': 96, 'w-b': 88, 'w-t': 84, 'w-x': 30};
+  if (!pref.cols || typeof pref.cols !== 'object') pref.cols = {};
+  let ipWide = DEF['w-ip'], ipLen = 0;
+  const colW = c => pref.cols[c] || (c === 'w-ip' ? ipWide : DEF[c]);
+  function fit() {
+    let sum = 0;
+    for (const c of cols) {
+      const w = colW(c.className);
+      c.style.width = w + 'px';
+      sum += w;
+    }
+    table.style.width = sum + 'px';
+  }
+  const ruler = document.createElement('canvas').getContext('2d');
+  function ipFit(ip) {
+    if (!ip || ip.length <= ipLen) return;
+    ipLen = ip.length;
+    const cs = getComputedStyle(table);
+    ruler.font = cs.fontSize + ' ' + cs.fontFamily;
+    // the cell's padding, and a little room
+    const w = Math.ceil(ruler.measureText(ip).width) + 16 + 12;
+    if (w > ipWide) { ipWide = w; fit(); }
+  }
+  fit();
+  [...table.tHead.rows[0].cells].forEach((th, i) => {
+    const cls = cols[i].className;
+    if (cls === 'w-st' || cls === 'w-x') return;
+    const h = document.createElement('span');
+    h.className = 'rs';
+    const tip = () => { h.title = fmt(W.colWidth, colW(cls)); };
+    tip();
+    h.addEventListener('pointerenter', tip);
+    h.addEventListener('click', e => e.stopPropagation());
+    h.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      delete pref.cols[cls];
+      save(); fit(); tip();
+    });
+    h.addEventListener('pointerdown', e => {
+      if (e.button) return;
+      e.preventDefault(); e.stopPropagation();
+      const x0 = e.clientX, w0 = colW(cls);
+      h.classList.add('on');
+      h.setPointerCapture(e.pointerId);
+      const move = m => { pref.cols[cls] = Math.max(30, Math.round(w0 + m.clientX - x0)); fit(); tip(); };
+      const up = () => {
+        h.classList.remove('on');
+        h.removeEventListener('pointermove', move);
+        h.removeEventListener('pointerup', up);
+        h.removeEventListener('pointercancel', up);
+        save();
+      };
+      h.addEventListener('pointermove', move);
+      h.addEventListener('pointerup', up);
+      h.addEventListener('pointercancel', up);
+    });
+    th.append(h);
+  });
+
   // --- drawing ---
   function mk(r) {
     const tr = document.createElement('tr');
@@ -242,6 +310,7 @@ pageInit.live = function (sec) {
     else { h.textContent = W.noname; h.classList.add('muted'); }
     r._ip = td();
     r._ip.textContent = r.ip || '';
+    ipFit(r.ip);
     r._ip.title = r.ip || '';
     td('num').textContent = r.port || '';
     const b = document.createElement('span');
@@ -260,14 +329,7 @@ pageInit.live = function (sec) {
       w.colSpan = 2;
       r._v = [w, td('num c-t')];
     } else {
-      // down and up in one cell, each a span of one width: they line up
-      // down the column as two columns did, without the room between
-      const two = () => {
-        const c = td('num c-2'), d = document.createElement('span'), u = document.createElement('span');
-        c.append(d, u);
-        return [d, u];
-      };
-      r._v = [...two(), ...two(), td('num c-t')];
+      r._v = [td('num'), td('num'), td('num c-t')];
     }
     r._x = td('c-x');
     // the detector's own are not closed from here: that only breaks a check
@@ -320,11 +382,12 @@ pageInit.live = function (sec) {
       if (r._v[0].title !== t0) r._v[0].title = t0;
       if (r._v[1].title !== t1) r._v[1].title = t1;
     } else {
-      v = [arrow('↓', speed(r.ds)), arrow('↑', speed(r.us)), '↓ ' + size(r.down), '↑ ' + size(r.up), when(at(r))];
+      // one way at a time, the one its head's arrow picks
+      v = [speed(pref.sp === 'u' ? r.us : r.ds), size(pref.data === 'u' ? r.up : r.down), when(at(r))];
       // how long it lasted: in the hint, the column says when
       const t = fmt(W.openedAt, stamp(r.start)) + '\n' + (r.end ?
         fmt(W.closedAt, stamp(r.end)) + '\n' + fmt(W.lasted, dur(r.end - r.start)) : fmt(W.openFor, dur(now - r.start)));
-      if (r._v[4].title !== t) r._v[4].title = t;
+      if (r._v[2].title !== t) r._v[2].title = t;
     }
     for (let i = 0; i < v.length; i++) {
       if (r._last[i] !== v[i]) {
@@ -345,8 +408,8 @@ pageInit.live = function (sec) {
     let d;
     // the time column says when a row's event was: sorted by that
     if (k === 'start') d = at(a) - at(b);
-    else if (k === 'sp') d = (a.ds || 0) + (a.us || 0) - (b.ds || 0) - (b.us || 0);
-    else if (k === 'data') d = (a.down || 0) + (a.up || 0) - (b.down || 0) - (b.up || 0);
+    else if (k === 'sp') d = pref.sp === 'u' ? (a.us || 0) - (b.us || 0) : (a.ds || 0) - (b.ds || 0);
+    else if (k === 'data') d = pref.data === 'u' ? (a.up || 0) - (b.up || 0) : (a.down || 0) - (b.down || 0);
     else if (NUM[k]) d = (a[k] || 0) - (b[k] || 0);
     else {
       const x = k === 'route' ? label(a) : a[k] || '', y = k === 'route' ? label(b) : b[k] || '';
@@ -504,6 +567,22 @@ pageInit.live = function (sec) {
   const np = $('lnoprobe');
   np.checked = !!pref.noprobe;
   np.addEventListener('change', () => { pref.noprobe = np.checked; unpick(); save(); draw(true); });
+
+  // the speed and the bytes show one way, down or up: the arrows by the
+  // head pick which, and the column sorts by it
+  for (const g of root.querySelectorAll('th .dir')) {
+    const k = g.dataset.dir;
+    const mark = () => { for (const b of g.children) b.classList.toggle('on', b.dataset.v === pref[k]); };
+    if (pref[k] !== 'u') pref[k] = 'd';
+    mark();
+    g.addEventListener('click', e => {
+      e.stopPropagation();
+      const b = e.target.closest('button');
+      if (!b || b.dataset.v === pref[k]) return;
+      pref[k] = b.dataset.v;
+      mark(); save(); unpick(); draw(true);
+    });
+  }
 
   const heads = root.querySelectorAll('th[data-sort]');
   function arrows() {
