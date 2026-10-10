@@ -62,7 +62,14 @@ func showUI(url string) {
 			return
 		}
 	}
-	for end := time.Now().Add(10 * time.Second); uiWindow(tab) == 0 && time.Now().Before(end); {
+	// a tab is there within a second or two; one whose window is not found
+	// by its title -- a browser that writes it another way -- must not hold
+	// the next click off for long
+	wait := 10 * time.Second
+	if tab {
+		wait = 3 * time.Second
+	}
+	for end := time.Now().Add(wait); uiWindow(tab) == 0 && time.Now().Before(end); {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
@@ -74,11 +81,6 @@ const (
 	uiTitle   = "DPI Switch"
 	swRestore = 9
 )
-
-// a window whose tab shown is the UI: the page's title and the browser's
-// name, nothing between -- "DPI Switch - Поиск в Google - Google Chrome" is
-// another page
-var uiTabTitles = []string{uiTitle + " - Google Chrome", uiTitle + " — Mozilla Firefox", uiTitle + " - Mozilla Firefox"}
 
 // browser windows, by their class: a message box of this program is titled
 // "DPI Switch" too
@@ -134,10 +136,29 @@ func isUIWindow(h windows.HWND, tab bool) bool {
 	n, _, _ := pGetWindowTextW.Call(uintptr(h), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
 	title := windows.UTF16ToString(buf[:n])
 	if tab {
-		return slices.Contains(uiTabTitles, title)
+		return isUITabTitle(title)
 	}
 	return title == uiTitle
 }
+
+// isUITabTitle: a browser window's title while the tab shown is the UI --
+// the page's title, a dash, the browser's own name and nothing more: "DPI
+// Switch - Google Chrome", "DPI Switch — Mozilla Firefox", "DPI Switch -
+// Brave", "DPI Switch — Яндекс Браузер", "DPI Switch - Личный: Microsoft
+// Edge". A dash more is another page: "DPI Switch - Поиск в Google - Google
+// Chrome". Chrome's and Firefox's titles alone were known by heart: with
+// another browser the tab was never found, and every click opened one more.
+func isUITabTitle(title string) bool {
+	for _, sep := range tabSeps {
+		if rest, ok := strings.CutPrefix(title, uiTitle+sep); ok {
+			return rest != "" && !slices.ContainsFunc(tabSeps, func(s string) bool { return strings.Contains(rest, s) })
+		}
+	}
+	return false
+}
+
+// tabSeps: what a browser puts between the page's title and its own name
+var tabSeps = []string{" - ", " — ", " – "}
 
 // chromium: the default browsers that open an app window (--app), by their
 // file's name; Yandex's is "browser.exe", told by its folder

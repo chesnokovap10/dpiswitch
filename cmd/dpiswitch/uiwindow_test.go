@@ -24,3 +24,24 @@ func TestUIWindowLooksManyTimes(t *testing.T) {
 		uiWindow(false)
 	}
 }
+
+// The window whose tab shown is the UI, by its title: the page's own, a dash
+// and the browser's name -- whichever browser. A dash more is another page.
+func TestIsUITabTitle(t *testing.T) {
+	for title, want := range map[string]bool{
+		"DPI Switch - Google Chrome":          true,
+		"DPI Switch — Mozilla Firefox":        true,
+		"DPI Switch - Brave":                  true,
+		"DPI Switch — Яндекс Браузер":         true,
+		"DPI Switch - Личный: Microsoft Edge": true,
+		"DPI Switch":    false, // the app window's, not a tab's
+		"DPI Switch - ": false,
+		"DPI Switch - Поиск в Google - Google Chrome": false,
+		"DPI Switcher - Google Chrome":                false,
+		"About DPI Switch - Google Chrome":            false,
+	} {
+		if got := isUITabTitle(title); got != want {
+			t.Errorf("%q: %v, want %v", title, got, want)
+		}
+	}
+}
