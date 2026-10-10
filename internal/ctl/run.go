@@ -245,7 +245,15 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 // nodes just showed lending have their ranges looked up at once, not a
 // cycle later
 func learn(cfg Config, a *api, st *state, netID string) {
+	// a round runs beside the cycles, for minutes when RIPE is slow: the
+	// machine on another network by its end, the lists are that network's --
+	// written by this one's memory they sent its names direct there until
+	// the next cycle
+	here := func() bool { return st.current() == netID }
 	cfg.book.round(cfg.DirectAddr, st.unownedNodes(netID, cfg.book), func() {
+		if !here() {
+			return
+		}
 		syncList(cfg, a, st, netID, false)
 		learn(cfg, a, st, netID)
 	})
@@ -254,7 +262,11 @@ func learn(cfg Config, a *api, st *state, netID string) {
 		for _, c := range cfg.cdns.stale(st.cdnCandidates(netID)) {
 			hosts[c] = st.cdnHosts(netID, c)
 		}
-		cfg.cdns.round(cfg.TunnelAddr, hosts, func() { syncList(cfg, a, st, netID, false) })
+		cfg.cdns.round(cfg.TunnelAddr, hosts, func() {
+			if here() {
+				syncList(cfg, a, st, netID, false)
+			}
+		})
 	}
 }
 
@@ -1106,7 +1118,11 @@ func takeResetOne(cfg Config, a *api, st *state, req string) bool {
 		err = fmt.Errorf("state not saved: %w", err)
 	}
 	body := []byte("# verdicts reset -- everything goes through the tunnel\n")
-	for _, l := range [][2]string{{cfg.ListPath, cfg.Provider}, {cfg.AddrListPath, cfg.AddrProvider}, {cfg.SplitListPath, cfg.SplitProvider},
+	// the refusals too, and before the names they are of: left with the
+	// names gone, they refused a name's TCP or QUIC on 443 on its way through
+	// the tunnel until the next cycle's sync
+	for _, l := range [][2]string{{cfg.NoTCPListPath, cfg.NoTCPProvider}, {cfg.NoQUICListPath, cfg.NoQUICProvider},
+		{cfg.ListPath, cfg.Provider}, {cfg.AddrListPath, cfg.AddrProvider}, {cfg.SplitListPath, cfg.SplitProvider},
 		{cfg.InheritPath, InheritProvider}, {cfg.InheritIPPath, InheritIPProvider}, {cfg.HoldPath, HoldProvider}, {cfg.RefusePath, RefuseProvider},
 		{cfg.FamilyDirectPath, FamilyDirectProvider}, {cfg.FamilyTunnelPath, FamilyTunnelProvider}} {
 		path, provider := l[0], l[1]

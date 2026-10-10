@@ -1,6 +1,7 @@
 package ctl
 
 import (
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -471,5 +472,33 @@ func TestCycleQUICOnly(t *testing.T) {
 	syncList(s.cfg, s.api, s.st, "n", false)
 	if got := concat(listRules(s.cfg.SplitListPath), listRules(s.cfg.NoTCPListPath)); len(got) != 0 {
 		t.Fatalf("the decoy off, still direct: %v", got)
+	}
+}
+
+// A reset empties the refusals with the names they were of: left on disk,
+// they refused a name's TCP or QUIC on 443 after the name had gone back to
+// the tunnel, until the next cycle's sync.
+func TestResetEmptiesRefusals(t *testing.T) {
+	s, _ := splitScenario(t, nil)
+	dir := filepath.Dir(s.cfg.ListPath)
+	s.cfg.NoTCPProvider, s.cfg.NoTCPListPath = NoTCPProvider, filepath.Join(dir, "direct-split-notcp.txt")
+	s.cfg.NoQUICProvider, s.cfg.NoQUICListPath = NoQUICProvider, filepath.Join(dir, "direct-split-noquic.txt")
+	s.cfg.ResetPath = filepath.Join(t.TempDir(), "reset.request")
+	s.st.setCurrent("n")
+	for _, p := range []string{s.cfg.NoTCPListPath, s.cfg.NoQUICListPath} {
+		if err := os.WriteFile(p, []byte("rr14.example.org\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(s.cfg.ResetPath, []byte("now\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !takeReset(s.cfg, s.api, s.st) {
+		t.Fatal("the request was not taken")
+	}
+	for _, p := range []string{s.cfg.NoTCPListPath, s.cfg.NoQUICListPath} {
+		if got := listRules(p); len(got) != 0 {
+			t.Errorf("%s after the reset: %v", filepath.Base(p), got)
+		}
 	}
 }
