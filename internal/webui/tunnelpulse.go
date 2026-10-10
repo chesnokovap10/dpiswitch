@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"dpiswitch/internal/awgconf"
 	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/paths"
 )
@@ -40,6 +41,10 @@ type tunnelPulse struct {
 
 	health func(proxy string) (bool, string) // the core's last check
 	check  func(proxy string)                // the core checks now
+	// names: the tunnels the core's config has; nil, both. One it has not
+	// was asked after every second all the same -- a request the core
+	// answered with "not found", for as long as the UI ran
+	names func() []string
 }
 
 var pulseTunnels = []string{"awg1", "awg2"}
@@ -66,6 +71,8 @@ var pulse = newTunnelPulse(
 	func(p string) {
 		ctl.CheckTunnel(apiAddr, ctl.SecretFromConfig(paths.Config()), p, pulseTimeout)
 	})
+
+func init() { pulse.names = awgconf.Tunnels }
 
 // saw takes one tick's traffic -- the tunnels bytes came in through, and
 // those a dial failed through -- and looks at the tunnels again.
@@ -94,7 +101,11 @@ func (p *tunnelPulse) saw(now time.Time, recv, fail map[string]bool) {
 // look reads each tunnel's last check, and has the core check it again
 // when the traffic says otherwise
 func (p *tunnelPulse) look(now time.Time) {
-	for _, t := range pulseTunnels {
+	names := pulseTunnels
+	if p.names != nil {
+		names = p.names()
+	}
+	for _, t := range names {
 		alive, note := p.health(t)
 		p.mu.Lock()
 		recv := now.Sub(p.recv[t]) < pulseRecent

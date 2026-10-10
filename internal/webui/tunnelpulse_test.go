@@ -88,3 +88,18 @@ func TestTunnelsSayNetwork(t *testing.T) {
 		t.Fatalf("no network in %s", b)
 	}
 }
+
+// Only the tunnels the core's config has are asked after: one it has not
+// was asked every second all the same.
+func TestTunnelPulseAsksItsTunnels(t *testing.T) {
+	var asked []string
+	p := newTunnelPulse(func(x string) (bool, string) { asked = append(asked, x); return true, "note" }, func(string) {})
+	p.names = func() []string { return []string{"awg1"} }
+	p.look(time.Now())
+	if len(asked) != 1 || asked[0] != "awg1" {
+		t.Errorf("asked after %v, want awg1 alone", asked)
+	}
+	if _, ok := p.get("awg2"); ok {
+		t.Error("a state kept for a tunnel the config has not")
+	}
+}
