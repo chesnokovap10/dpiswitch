@@ -505,7 +505,7 @@ dpiswitch version    показать версию
 Обычный `go test` эти проверки пропускает; запускайте их всякий раз, когда меняете правила, группы,
 файлы списков или режимы.
 
-<p align="right"><a href="#readme">↑ наверх</a></p>
+<p align="right"><a href="#dpi-switch">↑ наверх</a></p>
 
 <br>
 
@@ -997,4 +997,4 @@ every list, with the tunnels going down one after the other: `go test -tags rout
 A plain `go test` leaves them out; run them whenever the rules, the groups, the lists' files or the modes
 change.
 
-<p align="right"><a href="#readme">↑ back to top</a> · <a href="#русский">Русский</a></p>
+<p align="right"><a href="#dpi-switch">↑ back to top</a> · <a href="#русский">Русский</a></p>
