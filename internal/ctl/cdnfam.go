@@ -3,6 +3,7 @@ package ctl
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -408,8 +409,19 @@ var fetchCert = func(tunnelAddr, pass, host string) ([]string, error) {
 		return nil, err
 	}
 	defer raw.Close()
-	// only the names are read, nothing is sent past the handshake
-	c := tls.Client(raw, &tls.Config{ServerName: host, InsecureSkipVerify: true})
+	return certNames(ctx, raw, host, nil)
+}
+
+// certNames: the names of the certificate the server on conn shows for host
+// -- one that is host's own: its chain, its term and its name are checked,
+// against roots, or the system's with none given. Any certificate was read:
+// a CDN node that does not know the name shows its default one
+// (3.tlu.dl.delivery.mp.microsoft.com, 10.10), and the names of whatever it
+// was, or of one put in on the way, would have made families -- sent a
+// page direct with a CDN it has nothing to do with. Only the names are
+// read, nothing is sent past the handshake.
+func certNames(ctx context.Context, conn net.Conn, host string, roots *x509.CertPool) ([]string, error) {
+	c := tls.Client(conn, &tls.Config{ServerName: host, RootCAs: roots})
 	if err := c.HandshakeContext(ctx); err != nil {
 		return nil, err
 	}
