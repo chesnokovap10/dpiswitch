@@ -426,13 +426,17 @@ func render(c *Conf) (string, error) {
 	w("  # through the tunnel at ~160 Mbit/s; system gives 230-250 at half the")
 	w("  # CPU. The core is built without gVisor, so no other stack is available.")
 	w("  stack: system")
-	if set.IPv6 {
-		// IPv6 inside the tunnel: the system needs an IPv6 address and route,
-		// otherwise programs don't even try IPv6. Kept with IPv6 found not
-		// getting through: the check at the next start probes by it
-		w("  inet6-address:")
-		w("    - 'fdfe:dcba:9876::1/126'")
-	}
+	// IPv6 inside the tunnel: the system needs an IPv6 address and route,
+	// otherwise programs don't even try IPv6. Kept with IPv6 found not
+	// getting through: the check at the next start probes by it. And kept
+	// with IPv6 off in the settings: the adapter had none then, and on a
+	// network with IPv6 of its own whatever learnt an IPv6 address past the
+	// core's DNS -- a browser's own DoH, an address dialled as it is -- left
+	// by the physical adapter, around the tunnel and the rules. Off is no
+	// IPv6 at all: the adapter takes it, and the rules refuse it (see the
+	// rule after the local networks).
+	w("  inet6-address:")
+	w("    - 'fdfe:dcba:9876::1/126'")
 	w("  auto-route: true")
 	w("  auto-detect-interface: true")
 	w("  dns-hijack:")
@@ -471,9 +475,11 @@ func render(c *Conf) (string, error) {
 	w("dns:")
 	w("  enable: true")
 	w("  listen: 127.0.0.1:1053")
-	if !ipv6 && set.IPv6 {
+	if !ipv6 {
 		// IPv6 found not reaching the adapter: no AAAA answers, or programs
-		// would dial real IPv6 addresses into it and hang
+		// would dial real IPv6 addresses into it and hang. Off in the
+		// settings, none either: not to the programs, and not to the core
+		// for the names it dials itself -- a direct site went out over IPv6
 		w("  ipv6: false")
 	} else {
 		w("  ipv6: true")
@@ -800,6 +806,14 @@ func render(c *Conf) (string, error) {
 	}
 	for _, d := range localExact {
 		w("  - DOMAIN,%s,DIRECT", d)
+	}
+	if !set.IPv6 {
+		w("")
+		w("  # 4a. IPv6 off in the settings: none leaves the machine. What is dialled")
+		w("  #     by an IPv6 address is refused -- the program falls back to IPv4 at")
+		w("  #     once; a connection whose name the sniffer read goes on by that")
+		w("  #     name, over IPv4. The local network's own addresses stay above.")
+		w("  - IP-CIDR6,::/0,REJECT,no-resolve")
 	}
 	w("")
 	w("  # 5. the user's always-tunnel list: programs, names, addresses -- above")

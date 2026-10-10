@@ -70,9 +70,10 @@ func (s *Supervisor) checkIPv6(ctx context.Context) {
 		}
 	}
 	if !ctl.LoadSettings(paths.Settings()).IPv6 {
-		// no IPv6 on the adapter now, so nothing to probe: the last answer is
-		// kept for the start with IPv6 back on -- lost, that start built the
-		// config with IPv6, found it blocked, and re-read every outbound
+		// the adapter takes IPv6 only to have it refused (see awgconf), so
+		// nothing is probed: the last answer is kept for the start with
+		// IPv6 back on -- lost, that start built the config with IPv6,
+		// found it blocked, and re-read every outbound
 		keepAdapterIPv6(old, found)
 		s.commitTun(ctx, old, found)
 		return // IPv6 is off altogether: both tunnels are already ipv4

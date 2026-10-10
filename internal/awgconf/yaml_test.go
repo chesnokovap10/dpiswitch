@@ -483,3 +483,45 @@ func TestRenderSecondOff(t *testing.T) {
 		t.Error("no switch in the settings yet, a .conf loaded: not the config with awg2")
 	}
 }
+
+// IPv6 off in the settings is no IPv6 at all: the adapter still takes it --
+// or on a network with IPv6 of its own it left by the physical adapter, past
+// the core -- no name gets an IPv6 address, and what is dialled by one is
+// refused. On, nothing of it is refused.
+func TestIPv6OffRefusesIPv6(t *testing.T) {
+	for _, on := range []bool{true, false} {
+		t.Setenv("ProgramData", t.TempDir())
+		if err := paths.EnsureDataDir(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ctl.UpdateSettings(paths.Settings(), func(s *ctl.Settings) error { s.IPv6 = on; return nil }); err != nil {
+			t.Fatal(err)
+		}
+		c, err := Parse("[Interface]\nPrivateKey = k\nAddress = 10.8.1.3/32\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.7:51820\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := c.Render()
+		if err != nil {
+			t.Fatal(err)
+		}
+		const refuse = "  - IP-CIDR6,::/0,REJECT,no-resolve\n"
+		if !strings.Contains(out, "  inet6-address:\n") {
+			t.Errorf("IPv6 %v: the adapter has no IPv6 address, and takes none of it", on)
+		}
+		if got := strings.Contains(out, refuse); got == on {
+			t.Errorf("IPv6 %v: IPv6 refused by the rules %v", on, got)
+		}
+		if got := strings.Contains(out, "  ipv6: false\n"); got == on {
+			t.Errorf("IPv6 %v: the DNS without AAAA answers %v", on, got)
+		}
+		if on {
+			continue
+		}
+		// below the local network's own addresses, above every list
+		local, lists := strings.Index(out, "  - IP-CIDR6,fc00::/7,DIRECT,no-resolve\n"), strings.Index(out, "  - RULE-SET,force-tunnel-apps,")
+		if at := strings.Index(out, refuse); local < 0 || lists < 0 || at < local || at > lists {
+			t.Errorf("the refusal stands at %d, the local networks at %d, the lists at %d", at, local, lists)
+		}
+	}
+}

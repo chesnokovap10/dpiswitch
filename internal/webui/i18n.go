@@ -298,7 +298,7 @@ var ru = map[string]string{
 	"Network":                  "Сеть",
 	"Through the tunnel":       "Через туннель",
 	"Off":                      "Выкл",
-	"Gives IPv6 even where the ISP has none. Changing it restarts the core.": "Даёт IPv6, даже если у провайдера его нет. Изменение перезапускает ядро.",
+	"Gives IPv6 even where the ISP has none. Off: no IPv6 at all -- what is dialled by an IPv6 address is refused, not let out past the tunnel. Changing it restarts the core.": "Даёт IPv6, даже если у провайдера его нет. Выкл: IPv6 нет совсем -- соединения по IPv6-адресу отклоняются, а не уходят мимо туннеля. Изменение перезапускает ядро.",
 	"Local DNS cache": "Локальный DNS-кэш",
 	"No server for direct sites is given by address: the cache cannot ask one, and the core asks them itself.": "Ни один сервер для прямых сайтов не задан адресом: кэшу некого спрашивать, ядро спрашивает их само.",
 	"Kept: %d names. Answered from the cache: %d%% of %d queries.":                                             "В кэше: %d имён. Из кэша отвечено: %d%% из %d запросов.",

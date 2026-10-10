@@ -5,6 +5,7 @@ package awgconf
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -22,10 +23,12 @@ import (
 // all: a real address answered then is one the program dials past the core,
 // out of the physical adapter, wherever the network has IPv6 of its own.
 //
-// The config says "dns: ipv6: true" either way, and with IPv6 off names no
-// stand-in range for it: the core then answers AAAA with no address at all
-// (10.10, core 8067c742), and the program takes IPv4. That is the core's
-// behaviour, not a promise of it -- this is what holds it to it.
+// With IPv6 off the config has the core's DNS give no AAAA and names no
+// stand-in range: the core answers AAAA with no address at all (10.10, core
+// 8067c742), and the program takes IPv4. The adapter takes IPv6 all the
+// same, and a connection made to an IPv6 address -- learnt past the core's
+// DNS -- is refused by the rules, not let out past the tunnel. Both are the
+// core's behaviour on that config -- this is what holds it to it.
 //
 //	go test -tags routing -run TestCoreAAAA -v ./internal/awgconf
 func TestCoreAAAA(t *testing.T) {
@@ -56,8 +59,9 @@ func TestCoreAAAA(t *testing.T) {
 				t.Fatal(err)
 			}
 			api, dns := freePort(t), freePort(t)
-			ls := fmt.Sprintf("listeners:\n  - name: in\n    type: socks\n    listen: 127.0.0.1\n    port: %d\n", freePort(t))
-			startCore(t, core, coreSafe(t, out, ls, api, dns), api)
+			socks := freePort(t)
+			ls := fmt.Sprintf("listeners:\n  - name: in\n    type: socks\n    listen: 127.0.0.1\n    port: %d\n", socks)
+			_, log := startCore(t, core, coreSafe(t, out, ls, api, dns), api)
 
 			a, rcA, err := askCore(dns, name, 1)
 			if err != nil {
@@ -84,6 +88,22 @@ func TestCoreAAAA(t *testing.T) {
 			}
 			if v6 && len(aaaa) == 0 {
 				t.Error("IPv6 on: no AAAA answer")
+			}
+			// and an address dialled as it is, through the rules: refused with
+			// IPv6 off, the rules' to route with it on
+			const literal = "2001:db8::1"
+			dialV6(socks, literal, 80)
+			refused := false
+			for end := time.Now().Add(5 * time.Second); time.Now().Before(end) && !refused; time.Sleep(100 * time.Millisecond) {
+				for _, l := range strings.Split(log.String(), "\n") {
+					refused = refused || strings.Contains(l, literal) && strings.Contains(l, "using REJECT")
+				}
+				if v6 && strings.Contains(log.String(), literal) {
+					break
+				}
+			}
+			if refused == v6 {
+				t.Errorf("IPv6 %v: a connection to an IPv6 address refused by the rules %v", v6, refused)
 			}
 		})
 	}
@@ -160,4 +180,20 @@ func askCore(port int, name string, qtype uint16) ([]net.IP, int, error) {
 		return ips, int(m[3] & 0x0f), nil
 	}
 	return nil, 0, lastErr
+}
+
+// dialV6: a SOCKS5 CONNECT to an IPv6 address through the listener on
+// socksPort. The outcome does not matter: the core's log says where it went.
+func dialV6(socksPort int, addr string, port int) {
+	c, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", socksPort), 2*time.Second)
+	if err != nil {
+		return
+	}
+	defer c.Close()
+	c.SetDeadline(time.Now().Add(3 * time.Second))
+	c.Write([]byte{5, 1, 0})
+	io.ReadFull(c, make([]byte, 2))
+	req := append([]byte{5, 1, 0, 4}, net.ParseIP(addr).To16()...)
+	c.Write(append(req, byte(port>>8), byte(port)))
+	io.ReadFull(c, make([]byte, 10))
 }

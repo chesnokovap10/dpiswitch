@@ -264,6 +264,9 @@ detector asks the same cache. Resolvers given by name, not by address, are not a
 <p>With IPv6 on, the computer gets IPv6 even where the ISP has none: it goes through the tunnel. Sites
 going direct use IPv4. If the tunnel's server has no working IPv6, the program finds out and resolves
 IPv4 only for it: the core restarts once, and that finding holds for a day before it is checked again.</p>
+<p>With IPv6 off there is none at all, the ISP's own included: programs get no IPv6 addresses for names, and a
+connection made to an IPv6 address is refused at once, so the program takes IPv4. Nothing leaves over IPv6 around
+the tunnel. The local network's own addresses -- the router's, a printer's -- work as before.</p>
 
 <h4 id="h-udpguard">UDP leak guard</h4>
 <p>A program that binds its UDP socket to the Wi-Fi or Ethernet adapter's own address leaves by that adapter
