@@ -105,7 +105,14 @@ func Defaults() Config {
 		// it. The probe sends a plain ClientHello, so its verdict would be
 		// about other traffic than the one it routes -- and while it was
 		// CLEAN, every ECH connection to Cloudflare went direct.
-		SkipSuffix:  []string{"in-addr.arpa", "local", "lan", "cloudflare-ech.com"},
+		//
+		// gvt2.com, gvt3.com: where Chrome reports its network errors to and
+		// measures against (beacons.gcp.gvt2.com, e2cNN.gcp.gvt2.com), no
+		// page of anyone's. The e2c servers answer one time in two on every
+		// path, a new name each time: 10-12.10 they took 334 checks of 931
+		// for some 250 connections, and went into the tunnel for an hour and
+		// back 13 times. Unchecked they go the default way.
+		SkipSuffix:  []string{"in-addr.arpa", "local", "lan", "cloudflare-ech.com", "gvt2.com", "gvt3.com"},
 		PinnedLists: pinnedLists(),
 		ResetPath:   paths.ResetRequests(),
 		ForgetPath:  paths.ForgetRequests(),
