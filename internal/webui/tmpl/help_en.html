@@ -293,7 +293,9 @@ multicast addresses: the router, a TV you cast to, printers, devices' discovery 
 on, not into Windows Firewall's rules: it holds with the firewall off or another one in charge. All it needs is
 the Base Filtering Engine service; with that stopped the settings page says so and nothing is blocked. Once the
 filters are in, the service sends a test packet out of each adapter by its own address and reads the
-engine's record of the packets it dropped: if it has them all, the page says it was checked.</p>
+engine's record of the packets it dropped: if it has them all, the page says it was checked. With no adapter
+leading out yet -- right after a sleep -- or another one come later, a cable or another network, the packet
+goes out when it is there.</p>
 <p>It can break what needs UDP out of the adapter itself: another VPN's (WireGuard, OpenVPN, IKEv2), a call or a
 game that binds to the adapter and has no other way. A device on the local network with a public address is
 cut off. The filters live in the service's own session: they go out when the core stops or restarts, when the

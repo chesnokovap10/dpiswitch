@@ -331,7 +331,8 @@ OpenVPN, IKEv2), звонок или игра, которым привязка �
 документационного диапазона (`192.0.2.1`), который никуда не маршрутизируется. Блокировка не даёт
 отправителю ошибки — пакет просто пропадает, — поэтому доказательство одно: журнал самого движка. Если в нём
 записан сброс каждого тестового пакета, страница пишет, что проверено. Нет записи — это не слово против
-защиты: пакет могли не отправить или сброс не записать.
+защиты: пакет могли не отправить или сброс не записать. Если адаптера наружу ещё нет (сразу после сна) или
+позже появился другой — кабель, другая сеть, — пакет уходит, когда адаптер есть.
 Состояние служба пишет в `%ProgramData%\dpiswitch\udp-guard.json`.
 
 ### Второй туннель
@@ -820,7 +821,8 @@ each adapter that leads out, from its own address, to an address of the document
 (`192.0.2.1`) that no network routes. A block gives the sender no error -- the packet just goes
 missing -- so the proof is the engine's own record: if it has every test packet dropped, the page says it
 was checked. No such record is no word against the guard: the packet may not have been sent, or its drop
-not recorded. The state is written to
+not recorded. With no adapter leading out yet -- right after a sleep -- or another one come later, a
+cable or another network, the packet goes out when it is there. The state is written to
 `%ProgramData%\dpiswitch\udp-guard.json`.
 
 ### The second tunnel

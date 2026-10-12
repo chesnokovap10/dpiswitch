@@ -122,6 +122,12 @@ func (w *guardWorld) env() guardEnv {
 	}
 }
 
+func (w *guardWorld) probed() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.probes
+}
+
 func (w *guardWorld) last() udpguard.Status {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -138,7 +144,7 @@ func (w *guardWorld) said() []udpguard.Status {
 }
 
 var (
-	tunOK      = tunState{known: true, up: true}
+	tunOK      = tunState{known: true, up: true, uplinks: "192.168.1.5"}
 	tunGone    = tunState{known: true}
 	tunCut     = tunState{known: true, up: true, blocked: true}
 	tunUnknown = tunState{}
@@ -550,36 +556,89 @@ func TestLeakDestinationIsNowhere(t *testing.T) {
 // what it found is in the file.
 func TestGuardProbesOnceAndSaysWhatItFound(t *testing.T) {
 	fastGuard(t)
-	for _, checked := range []bool{true, false} {
-		g, w := &fakeGuard{}, &guardWorld{}
-		w.checked = checked
-		w.set(true, tunOK)
-		end := hold(g, w)
-		waitFor(t, "on", func() bool { return w.last().State == udpguard.StateOn })
-		time.Sleep(40 * time.Millisecond) // many looks
-		if st := w.last(); st.Checked != checked {
-			t.Errorf("found %v, the file says %+v", checked, st)
-		}
-		w.mu.Lock()
-		n := w.probes
-		w.mu.Unlock()
-		if n != 1 {
-			t.Errorf("%d test packets for one installation", n)
-		}
-
-		// lifted and put in again: tried again
-		w.set(true, tunGone)
-		waitFor(t, "lifted", func() bool { return w.last().State == udpguard.StateWait })
-		w.set(true, tunOK)
-		waitFor(t, "on again", func() bool { return w.last().State == udpguard.StateOn })
-		w.mu.Lock()
-		n = w.probes
-		w.mu.Unlock()
-		if n != 2 {
-			t.Errorf("%d test packets for two installations", n)
-		}
-		end()
+	g, w := &fakeGuard{}, &guardWorld{}
+	w.checked = true
+	w.set(true, tunOK)
+	end := hold(g, w)
+	defer end()
+	waitFor(t, "on", func() bool { return w.last().State == udpguard.StateOn })
+	time.Sleep(40 * time.Millisecond) // many looks
+	if st := w.last(); !st.Checked {
+		t.Errorf("seen dropped, the file says %+v", st)
 	}
+	if n := w.probed(); n != 1 {
+		t.Errorf("%d test packets for one installation", n)
+	}
+
+	// lifted and put in again: tried again
+	w.set(true, tunGone)
+	waitFor(t, "lifted", func() bool { return w.last().State == udpguard.StateWait })
+	w.set(true, tunOK)
+	waitFor(t, "on again", func() bool { return w.last().State == udpguard.StateOn && w.last().Checked })
+	if n := w.probed(); n != 2 {
+		t.Errorf("%d test packets for two installations", n)
+	}
+}
+
+// A packet the engine does not record is sent a few times, not for ever.
+func TestGuardProbeGivesUp(t *testing.T) {
+	fastGuard(t)
+	g, w := &fakeGuard{}, &guardWorld{}
+	w.set(true, tunOK)
+	end := hold(g, w)
+	defer end()
+	waitFor(t, "the tries", func() bool { return w.probed() == guardProbeTries })
+	time.Sleep(3 * guardRetry)
+	if n := w.probed(); n != guardProbeTries {
+		t.Errorf("%d test packets, %d is the most", n, guardProbeTries)
+	}
+	if st := w.last(); st.State != udpguard.StateOn || st.Checked {
+		t.Errorf("not seen dropped, the file says %+v", st)
+	}
+}
+
+// After a sleep the guard is in before Wi-Fi is up (11.10, 12.10: 12 and 21
+// seconds): there was nothing to send the packet from, and it stood unchecked
+// until the core's next start. It is checked when an adapter comes -- and
+// again out of another one, a cable or another network, but not out of the
+// same one come back.
+func TestGuardChecksTheAdaptersThatCome(t *testing.T) {
+	fastGuard(t)
+	g, w := &fakeGuard{}, &guardWorld{}
+	w.checked = true
+	none, wifi, cable := tunOK, tunOK, tunOK
+	none.uplinks, cable.uplinks = "", "10.0.0.7,192.168.1.5"
+	w.set(true, none)
+	end := hold(g, w)
+	defer end()
+	waitFor(t, "on", func() bool { return w.last().State == udpguard.StateOn })
+	time.Sleep(40 * time.Millisecond)
+	if n, st := w.probed(), w.last(); n != 0 || st.Checked {
+		t.Fatalf("no adapter leads out: %d test packets, the file says %+v", n, st)
+	}
+	w.set(true, wifi)
+	waitFor(t, "checked", func() bool { return w.last().Checked })
+	w.set(true, cable)
+	waitFor(t, "the cable's packet", func() bool { return w.probed() == 2 })
+	for _, tun := range []tunState{none, cable, none, cable} {
+		w.set(true, tun)
+		time.Sleep(20 * time.Millisecond)
+	}
+	if n, st := w.probed(), w.last(); n != 2 || !st.Checked {
+		t.Errorf("the same adapters back: %d test packets, the file says %+v", n, st)
+	}
+	if in, ensures, lifts := g.look(); !in || lifts != 0 {
+		t.Errorf("the guard was touched for a check: in %v, %d ensures, %d lifts", in, ensures, lifts)
+	}
+
+	// another network's packet not seen dropped: the file no longer says checked
+	w.mu.Lock()
+	w.checked = false
+	w.mu.Unlock()
+	other := tunOK
+	other.uplinks = "172.20.10.3"
+	w.set(true, other)
+	waitFor(t, "unchecked", func() bool { return !w.last().Checked })
 }
 
 // At the service's start the UI is told what is so now -- waiting for the

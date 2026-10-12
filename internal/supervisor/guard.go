@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"net/netip"
+	"slices"
 	"strings"
 	"time"
 
@@ -32,6 +33,9 @@ const (
 	// guardRetryDefault: the pause before the next try after a refusal --
 	// the engine's service may be stopped for good, and the log not to fill
 	guardRetryDefault = 10 * time.Second
+	// guardProbeTries: how many test packets go out of one set of adapters
+	// before the engine is taken not to record them
+	guardProbeTries = 3
 )
 
 var (
@@ -55,6 +59,9 @@ type tunState struct {
 	// blocked: Windows keeps the programs' traffic from it, as the check at
 	// the core's start found (see ctl.TunnelIPv6.TrafficBlocked)
 	blocked bool
+	// uplinks: the addresses a test packet goes out from (see uplinkAddrs),
+	// in order, with commas; empty when no adapter leads out
+	uplinks string
 }
 
 // guardEnv: what holdGuard looks at and writes besides the filters
@@ -96,11 +103,35 @@ func readTun() tunState {
 	if err != nil {
 		return tunState{}
 	}
+	var ups []string
+	for _, ip := range uplinkAddrs(ads, routes) {
+		ups = append(ups, ip.String())
+	}
+	slices.Sort(ups)
 	return tunState{
 		known:   true,
 		up:      tunUp(ads, routes),
 		blocked: ctl.LoadTunnelIPv6(paths.TunnelIPv6()).TrafficBlocked(),
+		uplinks: strings.Join(ups, ","),
 	}
+}
+
+// uplinkAddrs: the addresses of the adapters that lead out, the core's own
+// aside -- what a program that binds its socket past the tunnel sends from
+func uplinkAddrs(ads []adapter, routes map[uint32]bool) []net.IP {
+	var out []net.IP
+	for _, a := range ads {
+		if !a.up || a.ours() || !routes[a.index] || !a.usable() {
+			continue
+		}
+		for _, ip := range a.v4 {
+			if ip = ip.To4(); ip == nil || ip.IsLoopback() || ip[0] == 169 && ip[1] == 254 || tunRange.Contains(ip) {
+				continue
+			}
+			out = append(out, ip)
+		}
+	}
+	return out
 }
 
 // tunUp: whether the core's adapter is up with a default route through it --
@@ -161,28 +192,20 @@ func readGuardHolds(ctx context.Context, g udpGuard) bool {
 // core does not wait for the record.
 func guardHolds(ctx context.Context, ads []adapter, routes map[uint32]bool, g udpGuard, send func(src net.IP) (netip.AddrPort, error), wait time.Duration) bool {
 	tried, seen := 0, 0
-	for _, a := range ads {
-		if !a.up || a.ours() || !routes[a.index] || !a.usable() {
+	for _, ip := range uplinkAddrs(ads, routes) {
+		since := time.Now().Add(-time.Second)
+		local, err := send(ip)
+		if err != nil {
 			continue
 		}
-		for _, ip := range a.v4 {
-			if ip = ip.To4(); ip == nil || ip.IsLoopback() || ip[0] == 169 && ip[1] == 254 || tunRange.Contains(ip) {
-				continue
+		tried++
+		for deadline := time.Now().Add(wait); ; {
+			if g.Dropped(local, leakDst, since) {
+				seen++
+				break
 			}
-			since := time.Now().Add(-time.Second)
-			local, err := send(ip)
-			if err != nil {
-				continue
-			}
-			tried++
-			for deadline := time.Now().Add(wait); ; {
-				if g.Dropped(local, leakDst, since) {
-					seen++
-					break
-				}
-				if time.Now().After(deadline) || !sleepCtx(ctx, 50*time.Millisecond) {
-					break
-				}
+			if time.Now().After(deadline) || !sleepCtx(ctx, 50*time.Millisecond) {
+				break
 			}
 		}
 	}
@@ -197,8 +220,22 @@ func holdGuard(ctx context.Context, g udpGuard, env guardEnv) {
 		cur    udpguard.Status
 		retry  time.Time // no new try before this, after a refusal
 		logged string    // the refusal last logged: one text is said once
-		// whether the test packet was seen dropped when the guard last went in
+		// The test packet: whether it was seen dropped, and out of which
+		// adapters (tunState.uplinks). It went out once, when the guard went
+		// in -- and after a sleep the guard is in before Wi-Fi is up: 11.10
+		// and 12.10 there was nothing to send it from, and the guard stood
+		// unchecked until the core's next start. An adapter that came later,
+		// a cable or another network, was never tried at all. So it goes out
+		// of each set of adapters the guard meets, until seen dropped there:
+		// asked, tries and next are the set being tried, guardProbeTries
+		// times at the most, guardRetry apart; waited, that the log has it
+		// that there is no adapter to try.
 		checked bool
+		proven  string
+		asked   string
+		tries   int
+		next    time.Time
+		waited  bool
 	)
 	say := func(st udpguard.Status) {
 		if !st.Same(cur) {
@@ -258,13 +295,34 @@ func holdGuard(ctx context.Context, g udpGuard, env guardEnv) {
 		case udpguard.Replaced:
 			log.Printf("UDP guard put in place again: the filtering engine had dropped it (%d filters)", g.Rules())
 		}
-		// tried once, when it goes in: not at every look
-		if ch != udpguard.Kept && env.probe != nil {
+		if ch != udpguard.Kept {
+			checked, proven, asked, tries, waited = false, "", "", 0, false
+		}
+		switch {
+		case env.probe == nil || tun.uplinks == proven:
+		case tun.uplinks == "":
+			// one seen dropped before stays so: nothing leads out to leak by
+			if proven == "" && !waited {
+				waited = true
+				log.Println("UDP guard not checked yet: no adapter leads out to send a test packet from -- checked when one does")
+			}
+		default:
+			if tun.uplinks != asked {
+				asked, tries, next = tun.uplinks, 0, time.Time{}
+			}
+			if tries >= guardProbeTries || time.Now().Before(next) {
+				break
+			}
+			tries++
 			if checked = env.probe(ctx, g); checked {
+				proven = tun.uplinks
 				log.Println("UDP guard checked: the engine dropped a test packet sent out of the adapter by its own address")
 			} else {
-				log.Println("UDP guard not checked: a test packet out of the adapter was not seen dropped " +
-					"(none could be tried, or the engine did not record it)")
+				next = time.Now().Add(guardRetry)
+				if tries == 1 {
+					log.Println("UDP guard not checked: a test packet out of the adapter was not seen dropped " +
+						"(none could be tried, or the engine did not record it)")
+				}
 			}
 		}
 		say(udpguard.Status{State: udpguard.StateOn, Rules: g.Rules(), Checked: checked})
