@@ -48,7 +48,8 @@ func init() {
 		"join":  strings.Join,
 		// tun: a tunnel's state for the "tunstate" template
 		"tun": func(v *view, name string, alive bool, note string) tunArg {
-			return tunArg{v, v.St, name, alive, note}
+			q, ok := quality(name)
+			return tunArg{v, v.St, name, alive, note, q, ok}
 		},
 		"dur": func(v *view, opts []durOpt, cur int) durArg { return durArg{v, opts, cur} },
 		// row: a verdict row with the page, for the templates that need both
@@ -79,6 +80,18 @@ type tunArg struct {
 	Name  string // awg1, awg2: what ui.js updates it by every second
 	Alive bool
 	Note  string
+	Q     tunnelQuality // see tunnelquality.go
+	HasQ  bool
+}
+
+func (a tunArg) Poor() bool { return a.HasQ && a.Q.Poor }
+
+// Quality: the line after the state; empty when there is nothing to say
+func (a tunArg) Quality() string {
+	if !a.HasQ {
+		return ""
+	}
+	return qualityText(a.V.Lang, a.Q)
 }
 
 type durArg struct {
@@ -135,6 +148,12 @@ func (v *view) PageList() string {
 
 // Note: a tunnel's state as the core said it, in the page's language
 func (v *view) Note(note string) string { return TunnelNote(v.Lang, note) }
+
+// Poor: a tunnel that answers and carries badly, for the header's dot
+func (v *view) Poor(name string) bool {
+	q, ok := quality(name)
+	return ok && q.Poor
+}
 
 // TH: a translated string that carries markup of its own (<code>, <b>).
 // The strings are the program's, never the user's.

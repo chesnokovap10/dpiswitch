@@ -735,7 +735,7 @@ setInterval(async () => {
     const s = st[c.dataset.tunnel];
     if (!s) continue;
     const dot = c.querySelector('.dot');
-    if (dot) dot.className = 'dot ' + (s.alive ? 'ok' : 'bad');
+    if (dot) dot.className = 'dot ' + (s.alive ? (s.slow ? 'warn' : 'ok') : 'bad');
     const text = c.dataset.tunnel + ' ' + s.text;
     if (c.lastChild && c.lastChild.nodeType === Node.TEXT_NODE) {
       if (c.lastChild.textContent !== text) c.lastChild.textContent = text;
@@ -745,17 +745,18 @@ setInterval(async () => {
   for (const c of document.querySelectorAll('[data-tstate]')) {
     const s = st[c.dataset.tstate];
     if (!s) continue;
-    const key = s.alive + '|' + s.pill + '|' + s.note;
+    const key = s.alive + '|' + s.pill + '|' + s.note + '|' + s.slow + '|' + s.detail;
     if (c.dataset.key === key) continue;
     c.dataset.key = key;
     const p = document.createElement('span');
-    p.className = 'pill ' + (s.alive ? 'ok' : 'bad');
+    p.className = 'pill ' + (s.alive ? (s.slow ? 'warn' : 'ok') : 'bad');
     p.textContent = s.pill;
     c.replaceChildren(p);
-    if (!s.alive && s.note) {
+    const after = s.alive ? s.detail : s.note;
+    if (after) {
       const m = document.createElement('span');
       m.className = 'muted';
-      m.textContent = s.note;
+      m.textContent = after;
       c.append(' ', m);
     }
   }

@@ -169,10 +169,19 @@ func (s *Server) handleTunnels(w http.ResponseWriter, r *http.Request) {
 		// pill says so, the note after it -- as the templates draw them
 		note := TunnelNote(l, st.Note)
 		text, pill := tr(l, "not responding"), tr(l, "not responding")
+		// answering and carrying badly: said by the colour and the line
+		// after the state, see tunnelquality.go
+		slow, detail := false, ""
 		if st.Alive {
 			text, pill = note, tr(l, "responding")+" · "+note
+			if q, ok := quality(t); ok {
+				detail = qualityText(l, q)
+				if slow = q.Poor; slow {
+					pill = tr(l, "responding slowly") + " · " + note
+				}
+			}
 		}
-		out[t] = map[string]any{"alive": st.Alive, "text": text, "pill": pill, "note": note}
+		out[t] = map[string]any{"alive": st.Alive, "text": text, "pill": pill, "note": note, "slow": slow, "detail": detail}
 	}
 	// the network the service works in: a page sees a change within a
 	// second and draws itself anew, not when its parts' periods come round
