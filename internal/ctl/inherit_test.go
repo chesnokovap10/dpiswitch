@@ -233,3 +233,42 @@ func TestRangesKeptThroughFailedRefresh(t *testing.T) {
 		t.Error("a lookup that just failed is asked again at once")
 	}
 }
+
+// A network too wide to lend is kept so for a week, not a day: Amazon's
+// 27,000 ranges were fetched daily to be thrown away -- and RIPE took longer
+// over them than the lookup waited.
+func TestWideNetworkKeptLonger(t *testing.T) {
+	oldPfx := ripePrefixes
+	t.Cleanup(func() { ripePrefixes = oldPfx })
+	asked := 0
+	ripePrefixes = func(*http.Client, string) ([]string, error) {
+		asked++
+		return make([]string, maxASNRanges+1), nil
+	}
+	b := &asnBook{path: filepath.Join(t.TempDir(), "book.json"), ASNs: map[string]*asnRanges{}}
+	round := func() {
+		t.Helper()
+		b.want([]string{"AS16509"})
+		b.round("127.0.0.1:1", nil, func() { t.Error("a network that lends nothing had the lists rewritten") })
+		for b.busy.Load() {
+			time.Sleep(time.Millisecond)
+		}
+	}
+	round()
+	if r, known := b.ranges("AS16509"); len(r) != 0 || !known || asked != 1 {
+		t.Fatalf("ranges %d, known %v, asked %d", len(r), known, asked)
+	}
+	b.ASNs["AS16509"].At = time.Now().Add(-2 * asnRangesTerm)
+	round()
+	if asked != 1 {
+		t.Errorf("asked again after two days: %d times", asked)
+	}
+	b.ASNs["AS16509"].At = time.Now().Add(-asnWideTerm - time.Hour)
+	round()
+	if asked != 2 {
+		t.Errorf("asked %d times, want again after its term", asked)
+	}
+	if asnRangesWait < 20*time.Second {
+		t.Errorf("RIPE is waited on %s for a network's ranges: AS16509 took 16 s", asnRangesWait)
+	}
+}

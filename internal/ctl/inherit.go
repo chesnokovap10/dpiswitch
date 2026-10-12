@@ -330,6 +330,9 @@ type asnRanges struct {
 	At       time.Time `json:"at"`
 	// the lookup failed: tried again after asnRetry, not asnRangesTerm
 	Failed bool `json:"failed,omitempty"`
+	// Wide: it announces more than maxASNRanges and lends nothing; kept for
+	// asnWideTerm
+	Wide bool `json:"wide,omitempty"`
 }
 
 const (
@@ -337,6 +340,15 @@ const (
 	asnNetTerm = 30 * 24 * time.Hour
 	// a network's ranges, after this -- an announcement changes now and then
 	asnRangesTerm = 24 * time.Hour
+	// one too wide to lend, after this: 27,000 ranges do not become 5,000
+	// in a day, and the answer was fetched daily to be thrown away
+	asnWideTerm = 7 * 24 * time.Hour
+	// how long RIPE is waited on for a network's ranges. The other lookups
+	// take a second; this one is computed for as long as the network is
+	// wide -- AS13335 6 s, AS16509 16 s (12.10) -- and at the client's own
+	// 8 s Amazon's never came: 42 failures of the log's 50, one every ten
+	// minutes for as long as the network was wanted
+	asnRangesWait = 30 * time.Second
 	// a lookup that failed waits this long
 	asnRetry = 10 * time.Minute
 	// networks whose ranges are looked up per round
@@ -419,6 +431,9 @@ func (b *asnBook) ranges(asn string) ([]string, bool) {
 		// what was known before the failure, if anything
 		return r.Prefixes, time.Since(r.At) < asnRetry
 	}
+	if r.Wide {
+		return nil, time.Since(r.At) < asnWideTerm
+	}
 	return r.Prefixes, time.Since(r.At) < asnRangesTerm
 }
 
@@ -486,8 +501,10 @@ func ripePrefixesGet(cl *http.Client, asn string) ([]string, error) {
 			} `json:"prefixes"`
 		} `json:"data"`
 	}
+	long := *cl
+	long.Timeout = asnRangesWait
 	// seen by few peers: a leak or a test, not the network's own
-	if err := getJSON(cl, "https://stat.ripe.net/data/announced-prefixes/data.json?min_peers_seeing=10&resource="+
+	if err := getJSON(&long, "https://stat.ripe.net/data/announced-prefixes/data.json?min_peers_seeing=10&resource="+
 		url.QueryEscape(asn), &r); err != nil {
 		return nil, err
 	}
@@ -559,10 +576,10 @@ func (b *asnBook) round(directAddr string, nodes []string, done func()) {
 					}
 					b.ASNs[asn] = failed
 				case len(p) > maxASNRanges:
-					// kept for its term with no ranges: it lends nothing
+					// kept for asnWideTerm with no ranges: it lends nothing
 					log.Printf("network %s announces %d ranges, more than %d: too wide to lend one service's way",
 						asn, len(p), maxASNRanges)
-					b.ASNs[asn] = &asnRanges{At: time.Now()}
+					b.ASNs[asn] = &asnRanges{At: time.Now(), Wide: true}
 					delete(b.wanted, asn)
 				default:
 					b.ASNs[asn] = &asnRanges{Prefixes: p, At: time.Now()}
