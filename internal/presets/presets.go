@@ -60,7 +60,7 @@ var shipped = []struct {
 	{"discord", "Discord", "site, apps, voice and video",
 		[]string{"discord.txt"}},
 	{"ai", "AI services", "ChatGPT, Claude, Gemini, Grok, Copilot, DeepL and more",
-		[]string{"ai-sni.txt", "ai-google.txt"}},
+		[]string{"ai.txt"}},
 	{"social", "Instagram, Facebook, X", "their media CDNs too -- without those the page loads but photos and video do not",
 		[]string{"social-meta.txt", "social-x.txt"}},
 }
