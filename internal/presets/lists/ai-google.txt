@@ -9,6 +9,7 @@
 +.appcatalyst.pa.googleapis.com
 +.assistant-s3-pa.googleapis.com
 +.bard.google.com
++.claude.com
 +.daily-cloudcode-pa.googleapis.com
 +.deepmind.com
 +.deepmind.google
