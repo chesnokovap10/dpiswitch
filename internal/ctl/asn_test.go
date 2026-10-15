@@ -49,6 +49,18 @@ func TestResolveNetworkUplinkChange(t *testing.T) {
 	if got := resolveNetwork(Config{}, st); got != "AS1" || lookups != 1 || ipChecks != 1 {
 		t.Fatalf("same address: %s, %d lookups, %d address checks", got, lookups, ipChecks)
 	}
+	// the same uplink answered by IPv6 (15.10): no change, nothing looked up
+	age()
+	v4 := ip
+	ip = "2001:db8::7"
+	if got := resolveNetwork(Config{}, st); got != "AS1" || lookups != 1 {
+		t.Fatalf("the other family: %s after %d lookups", got, lookups)
+	}
+	age()
+	if !ipStill(Config{}, st, "gw1") {
+		t.Error("an answer by IPv6 taken for a change mid-cycle")
+	}
+	ip = v4
 	// another uplink
 	age()
 	ip, asn = "198.51.100.7", "AS2"

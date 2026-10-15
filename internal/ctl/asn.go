@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"time"
 
@@ -208,7 +209,7 @@ func resolveNetwork(cfg Config, st *state) string {
 			// not known to have changed: asked again after ipBackoff, or at
 			// the next tick while the link is new
 			return cached.Net
-		case ip == cached.IP:
+		case sameAddr(ip, cached.IP):
 			netForce.Store(0)
 			st.sawIP(att)
 			return cached.Net
@@ -261,6 +262,22 @@ func resolveNetwork(cfg Config, st *state) string {
 	return asn
 }
 
+// sameAddr: whether the public address seen is the one the ISP was found
+// by. One of the other family says nothing either way: RIPE answers by
+// whichever of its addresses the direct path reached first, and with IPv6
+// direct (15.10) the address went from 94.241.233.43 to 2a00:1e88:… and
+// back -- the ISP looked up again each time, and a lookup failing then
+// would have left the gateway's memory in place of the ISP's.
+func sameAddr(seen, known string) bool {
+	a, errA := netip.ParseAddr(seen)
+	b, errB := netip.ParseAddr(known)
+	if errA != nil || errB != nil {
+		return seen == known
+	}
+	a, b = a.Unmap(), b.Unmap()
+	return a == b || a.Is4() != b.Is4()
+}
+
 // ipStillRecheck: how old the last look at the public address may be before
 // a cycle's results are filed without looking again.
 const ipStillRecheck = 15 * time.Second
@@ -284,7 +301,7 @@ func ipStill(cfg Config, st *state, att string) bool {
 	switch {
 	case err != nil:
 		return true // not known to have changed
-	case ip == cached.IP:
+	case sameAddr(ip, cached.IP):
 		st.sawIP(att)
 		return true
 	}
