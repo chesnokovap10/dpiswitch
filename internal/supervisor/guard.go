@@ -299,13 +299,16 @@ func holdGuard(ctx context.Context, g udpGuard, env guardEnv) {
 			checked, proven, asked, tries, waited = false, "", "", 0, false
 		}
 		switch {
-		case env.probe == nil || tun.uplinks == proven:
+		case env.probe == nil:
 		case tun.uplinks == "":
-			// one seen dropped before stays so: nothing leads out to leak by
+			// one seen dropped before stays so: nothing leads out to leak by.
+			// Asked before the set is compared with the one proven: both
+			// empty after the guard goes in, and this was never said
 			if proven == "" && !waited {
 				waited = true
 				log.Println("UDP guard not checked yet: no adapter leads out to send a test packet from -- checked when one does")
 			}
+		case tun.uplinks == proven:
 		default:
 			if tun.uplinks != asked {
 				asked, tries, next = tun.uplinks, 0, time.Time{}

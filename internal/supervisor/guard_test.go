@@ -3,8 +3,10 @@ package supervisor
 import (
 	"context"
 	"errors"
+	"log"
 	"net"
 	"net/netip"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -608,6 +610,9 @@ func TestGuardChecksTheAdaptersThatCome(t *testing.T) {
 	w.checked = true
 	none, wifi, cable := tunOK, tunOK, tunOK
 	none.uplinks, cable.uplinks = "", "10.0.0.7,192.168.1.5"
+	logs := &lockedLog{}
+	log.SetOutput(logs)
+	defer log.SetOutput(os.Stderr)
 	w.set(true, none)
 	end := hold(g, w)
 	defer end()
@@ -615,6 +620,10 @@ func TestGuardChecksTheAdaptersThatCome(t *testing.T) {
 	time.Sleep(40 * time.Millisecond)
 	if n, st := w.probed(), w.last(); n != 0 || st.Checked {
 		t.Fatalf("no adapter leads out: %d test packets, the file says %+v", n, st)
+	}
+	// said once: 13-15.10 it was never said at all
+	if n := strings.Count(logs.String(), "not checked yet"); n != 1 {
+		t.Errorf("no adapter to send from said %d times:\n%s", n, logs.String())
 	}
 	w.set(true, wifi)
 	waitFor(t, "checked", func() bool { return w.last().Checked })
@@ -664,4 +673,22 @@ func TestResetGuardStatus(t *testing.T) {
 	if st, ok := udpguard.Load(paths.UDPGuard()); !ok || st.State != udpguard.StateWait || st.Why != udpguard.WhyCore || st.Checked {
 		t.Fatalf("with the setting on: %+v, %v", st, ok)
 	}
+}
+
+// lockedLog: the log's output, read while the guard writes to it
+type lockedLog struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (l *lockedLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *lockedLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
 }
