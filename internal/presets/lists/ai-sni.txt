@@ -32,6 +32,7 @@
 +.chat.openai.com.cdn.cloudflare.net
 +.cici.com
 +.claude.ai
++.claude.com
 +.claudeusercontent.com
 +.codeium.com
 +.community.openai.com
