@@ -183,7 +183,15 @@ function dirty(el) {
     if (f.type === 'checkbox' || f.type === 'radio') {
       if (f.checked !== f.defaultChecked) return true;
     } else if (f.tagName === 'SELECT') {
-      for (const o of f.options) if (o.selected !== o.defaultSelected) return true;
+      // with no option marked selected the browser shows the first: that is
+      // the default, not an edit. A list's picker of programs online has
+      // none marked, and its part -- every list's -- was taken for edited
+      // and never drawn anew when its page came back: a site added from
+      // Live was not in the list until the page was reloaded
+      const marked = [...f.options].some(o => o.defaultSelected);
+      for (const [i, o] of [...f.options].entries()) {
+        if (o.selected !== (marked ? o.defaultSelected : i === 0 && !f.multiple)) return true;
+      }
     } else if (f.type !== 'hidden' && f.type !== 'file' && f.value !== f.defaultValue) return true;
   }
   return false;
