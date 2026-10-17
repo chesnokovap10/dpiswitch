@@ -254,7 +254,43 @@ func TestResolverQueryRefused(t *testing.T) {
 	if err := s.Validate(); err == nil {
 		t.Fatal("a DoH query accepted")
 	}
-	if got := cleanDNS(s.DirectDNS); len(got) != 1 {
-		t.Fatalf("a saved one dropped: %v", got)
+	if got := cleanDNS(s.DirectDNS); len(got) != 1 || got[0] != "https://dns.example/dns-query" {
+		t.Fatalf("a saved one: %v, want it kept without its query", got)
+	}
+}
+
+// A file saved with a DoH query before it was refused does not stop a save
+// of anything else: read back, the query is gone, as the core drops it.
+func TestOldResolverQueryDoesNotBlockSaves(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, []byte(`{"direct_dns":["https://dns.example/dns-query?ecs=0"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := UpdateSettings(path, func(s *Settings) error { s.IPv6 = !s.IPv6; return nil })
+	if err != nil {
+		t.Fatalf("an unrelated save refused: %v", err)
+	}
+	if len(s.DirectDNS) != 1 || s.DirectDNS[0] != "https://dns.example/dns-query" {
+		t.Fatalf("direct DNS %v", s.DirectDNS)
+	}
+}
+
+// One field of the wrong type in a hand-edited file: the others are read as
+// written, that one takes its default -- json goes on past a type error,
+// and a file that is no JSON at all is refused before anything is read.
+func TestSettingsFieldOfWrongType(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, []byte(`{"auto_switch": false, "tunnel_only": false, "ipv6": true, "attempts": "x"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := LoadSettings(path)
+	if s.AutoSwitch || s.TunnelOnly || !s.IPv6 || s.Attempts != DefaultSettings().Attempts {
+		t.Fatalf("read %+v", s)
+	}
+	if err := os.WriteFile(path, []byte(`{"auto_switch": false, "tunnel_only": false,`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if s := LoadSettings(path); s.Mode() != DefaultSettings().Mode() {
+		t.Fatalf("a broken file read as mode %s", s.Mode())
 	}
 }

@@ -440,9 +440,17 @@ func cleanDNS(in []string) []string {
 		if d == "" {
 			continue
 		}
-		if _, err := probe.ParseResolver(d); err == nil {
-			out = append(out, probe.CanonicalResolver(d))
+		r, err := probe.ParseResolver(d)
+		if err != nil {
+			continue
 		}
+		// a DoH query saved before Validate refused one: the core never
+		// sent it, and kept it stopped every save of the settings, whatever
+		// it changed. Dropped as the core drops it.
+		if r.Query {
+			d, _, _ = strings.Cut(d, "?")
+		}
+		out = append(out, probe.CanonicalResolver(d))
 	}
 	return out
 }
