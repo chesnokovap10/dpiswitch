@@ -126,7 +126,7 @@ func readTun() tunState {
 func uplinkAddrs(ads []adapter, routes4, routes6 map[uint32]bool) []net.IP {
 	var out []net.IP
 	for _, a := range ads {
-		if !a.up || a.ours() {
+		if !a.up || a.ours() || !a.guarded() {
 			continue
 		}
 		if routes4[a.index] && a.usable() {
@@ -143,6 +143,12 @@ func uplinkAddrs(ads []adapter, routes4, routes6 map[uint32]bool) []net.IP {
 	}
 	return out
 }
+
+// guarded: an adapter of a type the guard blocks UDP out of. Another
+// VPN's, with a default route of its own, is none: its test packet went
+// through, and the check failed for good with the Wi-Fi guarded beside it
+// (the review of 17.10). A type not known is taken, as before.
+func (a adapter) guarded() bool { return a.ifType == 0 || udpguard.Guards(a.ifType) }
 
 // tunUp: whether the core's adapter is up with a default route through it --
 // a core that runs with no adapter (it could not make it, or it was removed

@@ -16,6 +16,7 @@ type adapter struct {
 	name   string // "Wi-Fi", "Meta"
 	desc   string // the driver's description: "WireGuard Tunnel", "Meta Tunnel"
 	up     bool
+	ifType uint32 // IF_TYPE_*: 71 Wi-Fi, 6 cable; 0 not known
 	v4     []net.IP
 	v6     []net.IP // the global ones
 }
@@ -42,6 +43,7 @@ func adapters() ([]adapter, error) {
 				name:   windows.UTF16PtrToString(a.FriendlyName),
 				desc:   windows.UTF16PtrToString(a.Description),
 				up:     a.OperStatus == windows.IfOperStatusUp,
+				ifType: a.IfType,
 			}
 			for u := a.FirstUnicastAddress; u != nil; u = u.Next {
 				ip := u.Address.IP()

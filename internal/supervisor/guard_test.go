@@ -453,7 +453,10 @@ func TestGuardHolds(t *testing.T) {
 	meta := adapter{index: 34, name: "Meta", up: true, v4: []net.IP{net.IPv4(198, 18, 0, 1)}}
 	apipa := adapter{index: 13, name: "Dead", up: true, v4: []net.IP{net.IPv4(169, 254, 3, 3)}}
 	hyperv := adapter{index: 20, name: "Hyper-V", up: true, v4: []net.IP{net.IPv4(172, 20, 0, 1)}}
-	routes := map[uint32]bool{11: true, 12: true, 34: true, 13: true}
+	// another VPN, its default route its own: the guard does not block UDP
+	// out of it (IF_TYPE_PROP_VIRTUAL), and its packet is never dropped
+	vpn := adapter{index: 50, name: "OpenVPN", up: true, ifType: 53, v4: []net.IP{net.IPv4(10, 8, 0, 2)}}
+	routes := map[uint32]bool{11: true, 12: true, 34: true, 13: true, 50: true}
 	wifiPkt := netip.MustParseAddrPort("192.168.31.250:50001")
 	ethPkt := netip.MustParseAddrPort("10.0.0.5:50002")
 	unreachable := errors.New("network is unreachable")
@@ -476,6 +479,8 @@ func TestGuardHolds(t *testing.T) {
 		{"every send failed: nothing was tried", []adapter{wifi}, nil,
 			map[string]error{"192.168.31.250": unreachable}, false, []string{"192.168.31.250"}},
 		{"the TUN, a link-local address, an adapter with no route are not tried", []adapter{meta, apipa, hyperv, wifi},
+			[]netip.AddrPort{wifiPkt}, nil, true, []string{"192.168.31.250"}},
+		{"another VPN's adapter is not tried", []adapter{{index: 11, name: "Wi-Fi", up: true, ifType: 71, v4: wifi.v4}, vpn},
 			[]netip.AddrPort{wifiPkt}, nil, true, []string{"192.168.31.250"}},
 		{"an adapter that is down is not tried", []adapter{{index: 11, name: "Wi-Fi", v4: wifi.v4}}, nil, nil, false, nil},
 		{"no adapter", nil, nil, nil, false, nil},

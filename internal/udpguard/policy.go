@@ -3,6 +3,7 @@ package udpguard
 import (
 	"fmt"
 	"net/netip"
+	"slices"
 
 	"github.com/tailscale/wf"
 )
@@ -49,6 +50,10 @@ const (
 )
 
 var uplinkTypes = []uint32{ifEthernet, ifWiFi, ifMobile, ifMobile2}
+
+// Guards: whether UDP out of an adapter of the type is blocked -- the
+// adapters a check of the guard sends its test packet out of
+func Guards(ifType uint32) bool { return slices.Contains(uplinkTypes, ifType) }
 
 // the addresses UDP to which is not guarded: where a packet to them goes no
 // further than the local network. A device there with an address of another
