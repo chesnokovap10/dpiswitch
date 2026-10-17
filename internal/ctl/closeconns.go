@@ -82,23 +82,33 @@ func ReloadProviders(apiAddr, secret string, names ...string) error {
 
 // MatchDomainRule: whether host matches one line of a domain rule-provider,
 // as the core reads it -- "+.example.com" is the domain and every name under
-// it, ".example.com" only the names under it, "*.example.com" one level
-// down, anything else that exact name.
+// it, ".example.com" only the names under it, a "*" one whole label in its
+// place ("*.example.com" one level down, "+.example.*" example.com and
+// a.example.net, not example.co.uk), anything else that exact name.
 func MatchDomainRule(rule, host string) bool {
 	rule = strings.ToLower(strings.TrimSpace(rule))
 	host = strings.ToLower(host)
 	if rule == "" || host == "" {
 		return false
 	}
-	switch {
-	case strings.HasPrefix(rule, "+."):
-		d := rule[2:]
-		return host == d || strings.HasSuffix(host, "."+d)
-	case strings.HasPrefix(rule, "."):
-		return strings.HasSuffix(host, rule)
-	case strings.HasPrefix(rule, "*."):
-		d := rule[1:]
-		return strings.HasSuffix(host, d) && !strings.Contains(strings.TrimSuffix(host, d), ".")
+	pre := ""
+	for _, p := range []string{"+.", "."} {
+		if strings.HasPrefix(rule, p) {
+			pre, rule = p, rule[len(p):]
+			break
+		}
 	}
-	return host == rule
+	rl, hl := strings.Split(rule, "."), strings.Split(host, ".")
+	// the host's labels before the rule's own
+	extra := len(hl) - len(rl)
+	switch {
+	case extra < 0, pre == "" && extra != 0, pre == "." && extra < 1:
+		return false
+	}
+	for i, l := range rl {
+		if l != "*" && l != hl[extra+i] || hl[extra+i] == "" {
+			return false
+		}
+	}
+	return true
 }

@@ -18,13 +18,15 @@ type nameSet struct {
 	exact  map[string]bool
 	suffix map[string]bool // the name and everything under it
 	sub    map[string]bool // everything under the name, not the name itself
+	// lines with a "*" past a "*." at the start: matched as the core does
+	wild *[]string
 }
 
 // loadPinned reads rule-provider files in either format the config uses:
 // classical ("DOMAIN-SUFFIX,x", "DOMAIN,x") and domain ("x", "+.x", ".x",
 // "*.x"). A missing file pins nothing.
 func loadPinned(files []string) nameSet {
-	n := nameSet{exact: map[string]bool{}, suffix: map[string]bool{}, sub: map[string]bool{}}
+	n := nameSet{exact: map[string]bool{}, suffix: map[string]bool{}, sub: map[string]bool{}, wild: new([]string)}
 	for _, f := range files {
 		b, err := os.ReadFile(f)
 		if err != nil {
@@ -59,6 +61,12 @@ func (n nameSet) add(line string) {
 		}
 		return // IP ranges and other rules name no host
 	}
+	if strings.Contains(strings.TrimPrefix(l, "*."), "*") {
+		if n.wild != nil {
+			*n.wild = append(*n.wild, l)
+		}
+		return
+	}
 	switch {
 	case strings.HasPrefix(l, "+."):
 		n.suffix[l[2:]] = true
@@ -76,6 +84,13 @@ func (n nameSet) add(line string) {
 func (n nameSet) has(dom string) bool {
 	if n.exact[dom] || n.suffix[dom] {
 		return true
+	}
+	if n.wild != nil {
+		for _, l := range *n.wild {
+			if MatchDomainRule(l, dom) {
+				return true
+			}
+		}
 	}
 	for p := dom; ; {
 		_, rest, ok := strings.Cut(p, ".")

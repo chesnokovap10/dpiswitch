@@ -446,6 +446,9 @@ func liveOverlap(v string) func(line string) (over, in bool) {
 func nameOverlap(v, x string) (over, in bool) {
 	pv, dv := domainForm(v)
 	px, dx := domainForm(x)
+	if strings.Contains(dv, "*") || strings.Contains(dx, "*") {
+		return wildOverlap(v, x)
+	}
 	under := func(d, of string) bool { return strings.HasSuffix(d, "."+of) }
 	switch pv {
 	case "":
@@ -471,6 +474,48 @@ func nameOverlap(v, x string) (over, in bool) {
 		}
 	}
 	return false, false
+}
+
+// wildOverlap: nameOverlap of lines with a "*" past their start
+// ("+.example.*", "a.*.example.com"), by the names each stands for: its "*"
+// a label no line names, its "+." and "." none, one and two labels more.
+// in: every such name of x routes by v; over: one of either's by both.
+func wildOverlap(v, x string) (over, in bool) {
+	v, x = strings.ToLower(strings.TrimSpace(v)), strings.ToLower(strings.TrimSpace(x))
+	if v == x {
+		return true, true
+	}
+	names := func(line string) []string {
+		p, d := domainForm(line)
+		labels := strings.Split(d, ".")
+		for i, l := range labels {
+			if l == "*" {
+				labels[i] = "zq0"
+			}
+		}
+		d = strings.Join(labels, ".")
+		switch p {
+		case "+.":
+			return []string{d, "zq0." + d, "zq0.zq0." + d}
+		case ".":
+			return []string{"zq0." + d, "zq0.zq0." + d}
+		case "*.":
+			return []string{"zq0." + d}
+		}
+		return []string{d}
+	}
+	in = true
+	for _, h := range names(x) {
+		if !ctl.MatchDomainRule(v, h) {
+			in = false
+		} else if ctl.MatchDomainRule(x, h) {
+			over = true
+		}
+	}
+	for _, h := range names(v) {
+		over = over || ctl.MatchDomainRule(v, h) && ctl.MatchDomainRule(x, h)
+	}
+	return over || in, in
 }
 
 // domainForm: a site line's prefix ("", "+.", ".", "*.") and its name

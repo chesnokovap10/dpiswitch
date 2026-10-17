@@ -24,6 +24,11 @@ func TestParseEntry(t *testing.T) {
 		"https://example.com:8443?ref=1":    {EntryName, "example.com"},
 		"https://example.com#top":           {EntryName, "example.com"},
 		"example.com/?a=b#c":                {EntryName, "example.com"},
+		"+.Example.*":                       {EntryName, "+.example.*"},
+		"a.*.example.com":                   {EntryName, "a.*.example.com"},
+		".example.*":                        {EntryName, ".example.*"},
+		"*.*.example.com":                   {EntryName, "*.*.example.com"},
+		"+.пример.*":                        {EntryName, "+.xn--e1afmkfd.*"},
 		"1.2.3.4":                           {EntryIP, "1.2.3.4"},
 		"1.2.3.4/32":                        {EntryIP, "1.2.3.4"},
 		"192.168.12.0/16":                   {EntryIP, "192.168.0.0/16"},
@@ -47,7 +52,8 @@ func TestParseEntry(t *testing.T) {
 		}
 	}
 	for _, bad := range []string{"bad host", "MATCH,DIRECT", "a,b.exe", "300.1.1.1/8", "",
-		"example.com:abc", "example.com:", "example.com:0", "example.com:70000"} {
+		"example.com:abc", "example.com:", "example.com:0", "example.com:70000",
+		"*", "+.*", "*.*", "1.2.*", "ex*ample.com", "example.+", "a.+.com"} {
 		if _, _, err := ParseEntry(bad); err == nil {
 			t.Errorf("%q taken", bad)
 		}
@@ -183,6 +189,63 @@ func TestObserveFilesQUICDecoy(t *testing.T) {
 		}
 		if got := strings.Join(rules(cut), " "); got != c.cut {
 			t.Errorf("cut %v, decoy %v: cut %q, want %q", c.split, c.decoy, got, c.cut)
+		}
+	}
+}
+
+// A "*" is one whole label anywhere in a line, as the core reads it.
+func TestMatchDomainRuleWildcard(t *testing.T) {
+	for _, c := range []struct {
+		rule, host string
+		want       bool
+	}{
+		{"+.example.*", "example.com", true},
+		{"+.example.*", "a.b.example.net", true},
+		{"+.example.*", "example.co.uk", false},
+		{"+.example.*", "notexample.com", false},
+		{"example.*", "example.ru", true},
+		{"example.*", "a.example.ru", false},
+		{".example.*", "example.ru", false},
+		{".example.*", "a.example.ru", true},
+		{"a.*.example.com", "a.b.example.com", true},
+		{"a.*.example.com", "a.b.c.example.com", false},
+		{"*.example.com", "b.example.com", true},
+		{"*.example.com", "a.b.example.com", false},
+		{"+.example.com", "example.com", true},
+		{".example.com", "example.com", false},
+		{"example.com", "example.com", true},
+	} {
+		if got := MatchDomainRule(c.rule, c.host); got != c.want {
+			t.Errorf("%s ~ %s: %v", c.rule, c.host, got)
+		}
+	}
+	n := nameSet{exact: map[string]bool{}, suffix: map[string]bool{}, sub: map[string]bool{}, wild: new([]string)}
+	n.add("+.example.*")
+	n.add(nameRule("a.*.other.com"))
+	for dom, want := range map[string]bool{"x.example.com": true, "a.b.other.com": true, "example.co.uk": false, "b.b.other.com": false} {
+		if n.has(dom) != want {
+			t.Errorf("pinned %s: %v", dom, !want)
+		}
+	}
+}
+
+// A preset's line with a "*" past its start is a regex the core matches by
+// one label, read back as the line it was.
+func TestPresetWildcard(t *testing.T) {
+	for line, re := range map[string]string{
+		"+.example.*":     `DOMAIN-REGEX,^(.+\.)?example\.[^.]+$`,
+		".example.*":      `DOMAIN-REGEX,^.+\.example\.[^.]+$`,
+		"example.*":       `DOMAIN-REGEX,^example\.[^.]+$`,
+		"a.*.example.com": `DOMAIN-REGEX,^a\.[^.]+\.example\.com$`,
+		"*.example.com":   `DOMAIN-REGEX,^[^.]+\.example\.com$`,
+		".example.com":    `DOMAIN-REGEX,^.+\.example\.com$`,
+		"+.example.com":   `DOMAIN-SUFFIX,example.com`,
+	} {
+		if got := nameRule(line); got != re {
+			t.Errorf("%s: %s", line, got)
+		}
+		if back := PresetNameLine(re); back != line {
+			t.Errorf("%s read back as %q", re, back)
 		}
 	}
 }

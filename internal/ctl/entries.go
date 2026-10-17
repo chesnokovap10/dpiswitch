@@ -27,7 +27,8 @@ const (
 	EntryApp         // a program: telegram.exe, or C:\Games\x.exe for that copy only
 )
 
-// domainRule: a name, "+." / "." / "*." before one allowed
+// domainRule: a name, "+." / "." / "*." before one allowed -- a "*" in
+// another place is checked as a letter, see ParseEntry
 var domainRule = regexp.MustCompile(`^(\+\.|\.|\*\.)?[a-z0-9_]([a-z0-9_.-]*[a-z0-9])?$`)
 
 // ParseEntry reads one line of a user list, as the UI takes it and the
@@ -84,20 +85,43 @@ func ParseEntry(s string) (kind int, v string, err error) {
 	}
 	// a name as DNS writes it, with the root's dot
 	h = strings.TrimSuffix(h, ".")
-	// A name in its own letters -- пример.рф -- goes as DNS and the traffic
+	// The core's own forms of a name: "+." the name and all under it, "."
+	// all under it, and "*" one whole label anywhere -- "*.example.com",
+	// "+.example.*" (example.com, a.example.net, not example.co.uk). A
+	// label in its own letters -- пример.рф -- goes as DNS and the traffic
 	// carry it, in punycode: the core sees nothing else, and the rule never
-	// fired. The "+." before it stays as it is.
-	if strings.IndexFunc(h, func(r rune) bool { return r > unicode.MaxASCII }) >= 0 {
-		pre := h[:len(h)-len(strings.TrimLeft(h, "+.*"))]
-		a, err := idna.Lookup.ToASCII(h[len(pre):])
-		if err != nil {
-			return 0, "", fmt.Errorf("%q: neither a site, an address nor a program", s)
+	// fired.
+	pre := ""
+	for _, p := range []string{"+.", "."} {
+		if strings.HasPrefix(h, p) {
+			pre, h = p, h[len(p):]
+			break
 		}
-		h = pre + a
 	}
-	// digits and dots alone are an address gone wrong, not a name
-	if domainRule.MatchString(h) && strings.Trim(h, "0123456789.") != "" {
-		return EntryName, h, nil
+	labels := strings.Split(h, ".")
+	// checked with a letter for each "*", and without them for the digits
+	check := make([]string, len(labels))
+	var own []string
+	for i, l := range labels {
+		if l == "*" {
+			check[i] = "x"
+			continue
+		}
+		if strings.IndexFunc(l, func(r rune) bool { return r > unicode.MaxASCII }) >= 0 {
+			a, err := idna.Lookup.ToASCII(l)
+			if err != nil {
+				return 0, "", fmt.Errorf("%q: neither a site, an address nor a program", s)
+			}
+			labels[i] = a
+		}
+		check[i] = labels[i]
+		own = append(own, labels[i])
+	}
+	// a name of wildcards alone would take every site; digits and dots
+	// alone are an address gone wrong, not a name
+	if len(own) > 0 && domainRule.MatchString(pre+strings.Join(check, ".")) &&
+		strings.Trim(strings.Join(own, "."), "0123456789.") != "" {
+		return EntryName, pre + strings.Join(labels, "."), nil
 	}
 	return 0, "", fmt.Errorf("%q: neither a site, an address nor a program", s)
 }

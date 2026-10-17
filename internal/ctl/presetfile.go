@@ -74,15 +74,35 @@ func PresetRules(p presets.Preset) []string {
 // is a classical rule-provider, where these are rules of their own; its
 // DOMAIN-WILDCARD's * would take dots too, so the last two are regexes.
 func nameRule(v string) string {
+	pre, name := v, v
 	switch {
 	case strings.HasPrefix(v, "+."):
-		return "DOMAIN-SUFFIX," + v[2:]
-	case strings.HasPrefix(v, "*."):
-		return "DOMAIN-REGEX,^[^.]+" + regexp.QuoteMeta(v[1:]) + "$"
+		pre, name = "+.", v[2:]
 	case strings.HasPrefix(v, "."):
-		return "DOMAIN-REGEX,^.+" + regexp.QuoteMeta(v) + "$"
+		pre, name = ".", v[1:]
+	default:
+		pre = ""
 	}
-	return "DOMAIN," + v
+	if !strings.Contains(name, "*") {
+		switch pre {
+		case "+.":
+			return "DOMAIN-SUFFIX," + name
+		case "":
+			return "DOMAIN," + name
+		}
+	}
+	// the rest a regex, a "*" one label in it: the classical file has no
+	// wildcard of one label alone (DOMAIN-WILDCARD's "*" takes dots too)
+	head := map[string]string{"+.": `^(.+\.)?`, ".": `^.+\.`, "": "^"}[pre]
+	labels := strings.Split(name, ".")
+	for i, l := range labels {
+		if l == "*" {
+			labels[i] = `[^.]+`
+		} else {
+			labels[i] = regexp.QuoteMeta(l)
+		}
+	}
+	return "DOMAIN-REGEX," + head + strings.Join(labels, `\.`) + "$"
 }
 
 // PresetNameLine: a preset's rule on names as the lists write it -- the
@@ -100,15 +120,38 @@ func PresetNameLine(rule string) string {
 	case "DOMAIN-SUFFIX":
 		return "+." + v
 	case "DOMAIN-REGEX":
-		unq := func(s string) string { return strings.ReplaceAll(s, `\.`, ".") }
-		switch {
-		case strings.HasPrefix(v, "^[^.]+") && strings.HasSuffix(v, "$"):
-			return "*" + unq(strings.TrimSuffix(strings.TrimPrefix(v, "^[^.]+"), "$"))
-		case strings.HasPrefix(v, "^.+") && strings.HasSuffix(v, "$"):
-			return unq(strings.TrimSuffix(strings.TrimPrefix(v, "^.+"), "$"))
-		}
+		return regexLine(v)
 	}
 	return ""
+}
+
+// regexLine: a regex nameRule writes, as the line it was written for; ""
+// for any other
+func regexLine(re string) string {
+	s, ok := strings.CutPrefix(re, "^")
+	if !ok {
+		return ""
+	}
+	if s, ok = strings.CutSuffix(s, "$"); !ok {
+		return ""
+	}
+	pre := ""
+	for _, p := range []struct{ re, line string }{{`(.+\.)?`, "+."}, {`.+\.`, "."}} {
+		if rest, ok := strings.CutPrefix(s, p.re); ok {
+			pre, s = p.line, rest
+			break
+		}
+	}
+	labels := strings.Split(s, `\.`)
+	for i, l := range labels {
+		switch {
+		case l == `[^.]+`:
+			labels[i] = "*"
+		case l == "" || strings.ContainsAny(l, `^$()[]{}+*?|\.`):
+			return ""
+		}
+	}
+	return pre + strings.Join(labels, ".")
 }
 
 // presetsBody: the core's file for the presets switched on, a section to

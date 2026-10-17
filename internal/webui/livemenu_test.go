@@ -246,6 +246,15 @@ func TestLiveOverlap(t *testing.T) {
 		{"+.example.com", "*.example.com", true, true},
 		{"+.example.com", "+.com", true, false},
 		{"+.example.com", "badexample.com", false, false},
+		// a "*" past the start: one label
+		{"+.example.*", "a.example.com", true, true},
+		{"+.example.*", "+.example.net", true, true},
+		{"+.example.*", "example.co.uk", false, false},
+		{"+.example.*", "+.example.*", true, true},
+		{"example.*", "+.example.*", true, false},
+		{"+.example.com", "+.example.*", true, false},
+		{"+.example.com", "+.other.*", false, false},
+		{"a.*.example.com", "a.b.example.com", true, true},
 		// a wider line is never inside a narrower one
 		{"example.com", "+.example.com", true, false},
 		{"*.example.com", "+.example.com", true, false},
