@@ -144,6 +144,8 @@ function show(sec) {
     was.classList.add('away');
     // a plain form's result is said once, on the page it came back to
     for (const f of was.querySelectorAll('.pgflash')) f.remove();
+    // edits not saved go with the page: back on it, what is applied
+    for (const p of was.querySelectorAll('[data-fresh]')) revert(p);
     was.dispatchEvent(new Event('pg:hide'));
   }
   document.body.dataset.page = name;
@@ -196,6 +198,42 @@ function dirty(el) {
   }
   return false;
 }
+
+// revert: a part's edits not saved undone -- its fields as they were drawn,
+// what is applied. A list edited and left kept the edit on the page's
+// return, not applied, and looked as if it were.
+function revert(el) {
+  if (!dirty(el)) return false;
+  for (const f of el.querySelectorAll('textarea, input, select')) {
+    let was = false;
+    if (f.type === 'checkbox' || f.type === 'radio') {
+      was = f.checked !== f.defaultChecked;
+      f.checked = f.defaultChecked;
+    } else if (f.tagName === 'SELECT') {
+      const marked = [...f.options].some(o => o.defaultSelected);
+      for (const [i, o] of [...f.options].entries()) {
+        const want = marked ? o.defaultSelected : i === 0 && !f.multiple;
+        was = was || o.selected !== want;
+        o.selected = want;
+      }
+    } else if (f.type !== 'hidden' && f.type !== 'file') {
+      was = f.value !== f.defaultValue;
+      f.value = f.defaultValue;
+    }
+    if (was) f.dispatchEvent(new Event('input', {bubbles: true}));
+  }
+  return true;
+}
+
+// Esc in a part redrawn on its page's return undoes its edits, and draws
+// it as it stands now
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || e.defaultPrevented) return;
+  const p = e.target.closest && e.target.closest('[data-fresh]');
+  if (!p || !revert(p)) return;
+  e.preventDefault();
+  poll(p);
+});
 
 // setURL: the address bar follows what is shown; push for a new step back
 function setURL(u, push) {
