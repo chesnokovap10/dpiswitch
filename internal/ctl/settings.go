@@ -100,7 +100,11 @@ const (
 // 02.10, as Yandex's 30-49), and an answer for a blocked domain is not
 // rewritten. It was Yandex's DoH and DoT; Google's was asked for. By address:
 // the certificate names both, and nothing is resolved to find the resolver.
-var defaultDirectDNS = []string{"tls://8.8.8.8", "tls://8.8.4.4"}
+// Its IPv6 addresses too: on a network with IPv6 alone the IPv4 ones answer
+// nothing, and nothing direct was resolved -- the ISP not looked up, no site
+// opened direct (17.10, IPv4 switched off). Where IPv4 answers it answers
+// first; the certificate names these as well.
+var defaultDirectDNS = []string{"tls://8.8.8.8", "tls://8.8.4.4", "tls://[2001:4860:4860::8888]", "tls://[2001:4860:4860::8844]"}
 
 // SameCore: whether anything that goes into the core config changed (resolvers,
 // IPv6, the second tunnel). Such settings need a core restart; the rest

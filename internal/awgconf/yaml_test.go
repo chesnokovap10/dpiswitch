@@ -126,7 +126,7 @@ func TestRenderDNSCache(t *testing.T) {
 		}
 		return strings.Join(items, " ")
 	}
-	const direct = "'tls://8.8.8.8' 'tls://8.8.4.4'"
+	const direct = "'tls://8.8.8.8' 'tls://8.8.4.4' 'tls://[2001:4860:4860::8888]' 'tls://[2001:4860:4860::8844]'"
 	for _, tc := range []struct {
 		on      bool
 		serving string

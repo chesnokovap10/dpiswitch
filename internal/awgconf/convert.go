@@ -1181,7 +1181,7 @@ func bootstrapDNS(list []string) []string {
 	}
 	if len(out) == 0 {
 		// the direct path's default, see ctl.defaultDirectDNS
-		out = []string{"tls://8.8.8.8", "tls://8.8.4.4"}
+		out = []string{"tls://8.8.8.8", "tls://8.8.4.4", "tls://[2001:4860:4860::8888]", "tls://[2001:4860:4860::8844]"}
 	}
 	return out
 }
