@@ -245,3 +245,16 @@ func TestSecondTunnel(t *testing.T) {
 		t.Error("switched on with no .conf: the config is the same, the core restarted for nothing")
 	}
 }
+
+// A DoH address with a ?… query is refused on save -- the core drops it --
+// and one saved before stays, asked without it.
+func TestResolverQueryRefused(t *testing.T) {
+	s := DefaultSettings()
+	s.DirectDNS = []string{"https://dns.example/dns-query?token=abc"}
+	if err := s.Validate(); err == nil {
+		t.Fatal("a DoH query accepted")
+	}
+	if got := cleanDNS(s.DirectDNS); len(got) != 1 {
+		t.Fatalf("a saved one dropped: %v", got)
+	}
+}

@@ -31,7 +31,8 @@ type Resolver struct {
 	Scheme string // https, tls, tcp, udp
 	Host   string
 	Port   int
-	Path   string // and the query, if any
+	Path   string
+	Query  bool // a ?… was given, and dropped: see QueryDropped
 }
 
 // ResolverError: an address ParseResolver refuses. Why is one of a few
@@ -54,18 +55,7 @@ func ParseResolver(s string) (Resolver, error) {
 	if !strings.Contains(s, "://") {
 		s = "udp://" + s
 	}
-	// a bare IPv6 without brackets: otherwise the address's last colon
-	// is parsed as the port separator ("fd7a::" -> "fd7a:")
-	if scheme, rest, ok := strings.Cut(s, "://"); ok {
-		host, path, _ := strings.Cut(rest, "/")
-		if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
-			s = scheme + "://[" + host + "]"
-			if path != "" {
-				s += "/" + path
-			}
-		}
-	}
-	u, err := url.Parse(s)
+	u, err := url.Parse(bracketV6(s))
 	if err != nil {
 		return r, &ResolverError{r.Raw, "not a server address"}
 	}
@@ -89,13 +79,48 @@ func ParseResolver(s string) (Resolver, error) {
 		return r, &ResolverError{r.Raw, "a #… suffix is not allowed here"}
 	}
 	// a DoH path as given, none included: the core asks "/" then, and the
-	// test must ask what the core will -- its query too: one dropped had
-	// the test ask another URL than the core
+	// test must ask what the core will. Not its query: the core puts its own
+	// "?dns=" in its place, and a server that needs a token turned the core
+	// away while the test asked with it and passed. Settings refuse one, see
+	// QueryDropped; one saved before is asked without it, as the core does.
 	r.Path = u.EscapedPath()
-	if u.RawQuery != "" {
-		r.Path += "?" + u.RawQuery
-	}
+	r.Query = u.RawQuery != "" || u.ForceQuery
 	return r, nil
+}
+
+// QueryDropped: the error for a resolver with a ?… query, which the core
+// drops; nil for one without
+func (r Resolver) QueryDropped() error {
+	if !r.Query {
+		return nil
+	}
+	return &ResolverError{r.Raw, "a ?… query is not supported: the core drops it"}
+}
+
+// bracketV6: a bare IPv6 after the scheme put in brackets: otherwise the
+// address's last colon is parsed as the port separator ("fd7a::" ->
+// "fd7a:")
+func bracketV6(s string) string {
+	scheme, rest, ok := strings.Cut(s, "://")
+	if !ok {
+		return s
+	}
+	host, path, _ := strings.Cut(rest, "/")
+	if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
+		s = scheme + "://[" + host + "]"
+		if path != "" {
+			s += "/" + path
+		}
+	}
+	return s
+}
+
+// CanonicalResolver: a resolver's address as the core takes it --
+// "tls://2606:4700:4700::1111" passed here and broke the core's config,
+// whose parser wants the brackets. A bare address with no scheme the core
+// brackets itself.
+func CanonicalResolver(s string) string {
+	return bracketV6(strings.TrimSpace(s))
 }
 
 // DoHPathAlternative: the other spelling of a DoH address, for a server
@@ -144,7 +169,7 @@ func (r Resolver) LookupV6(d Dialer, name string) ([]string, error) {
 }
 
 func (r Resolver) lookup(d Dialer, name string, qtype uint16) ([]string, error) {
-	q, id := buildQuery(name, qtype)
+	q, _ := buildQuery(name, qtype)
 	var resp []byte
 	var err error
 	switch r.Scheme {
@@ -160,7 +185,7 @@ func (r Resolver) lookup(d Dialer, name string, qtype uint16) ([]string, error) 
 	if err != nil {
 		return nil, err
 	}
-	return parseAnswer(resp, id, qtype)
+	return parseAnswer(resp, q, qtype)
 }
 
 // resolverRoots: the certificates a resolver's chain is verified against;
@@ -336,12 +361,12 @@ func PingEither(d Dialer, s, name string) (ips []string, rtt time.Duration, used
 
 func (r Resolver) pingStream(d Dialer, name string) ([]string, time.Duration, error) {
 	ask := func(c net.Conn) ([]string, error) {
-		q, id := buildQuery(name, typeA)
+		q, _ := buildQuery(name, typeA)
 		resp, err := exchange(c, d, q)
 		if err != nil {
 			return nil, err
 		}
-		return parseAnswer(resp, id, typeA)
+		return parseAnswer(resp, q, typeA)
 	}
 	t := time.Now()
 	c, err := r.streamConn(d)
@@ -484,12 +509,25 @@ func buildQuery(name string, qtype uint16) ([]byte, uint16) {
 
 var rcodeText = map[int]string{2: "SERVFAIL", 3: "NXDOMAIN", 5: "REFUSED"}
 
-func parseAnswer(m []byte, id uint16, qtype uint16) ([]string, error) {
-	if len(m) < 12 {
+// parseAnswer: the addresses of qtype in m, the answer to the query q. Its
+// ID, and its question too: over a stream or DoH a 16-bit ID alone took a
+// response to another name for this one's -- the UDP path checked it
+// already, see datagramOn.
+func parseAnswer(m, q []byte, qtype uint16) ([]string, error) {
+	if len(m) < 12 || len(q) < 12 {
 		return nil, errors.New("short DNS response")
 	}
-	if binary.BigEndian.Uint16(m) != id {
+	if binary.BigEndian.Uint16(m) != binary.BigEndian.Uint16(q) {
 		return nil, errors.New("mismatched DNS response")
+	}
+	qend, ok := skipName(q, 12)
+	if !ok || qend+4 > len(q) {
+		return nil, errors.New("malformed DNS query")
+	}
+	qend += 4
+	if m[2]&0x80 == 0 || binary.BigEndian.Uint16(m[4:]) != 1 || len(m) < qend ||
+		!bytes.EqualFold(m[12:qend], q[12:qend]) {
+		return nil, errors.New("DNS response to another question")
 	}
 	if rc := int(m[3] & 0x0f); rc != 0 {
 		if t, ok := rcodeText[rc]; ok {

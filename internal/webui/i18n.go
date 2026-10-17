@@ -374,6 +374,7 @@ var ru = map[string]string{
 	"invalid port":                                           "неверный порт",
 	"no server specified":                                    "не указан сервер",
 	"a #… suffix is not allowed here":                        "окончание #… здесь не допускается",
+	"a ?… query is not supported: the core drops it":         "параметры ?… не поддерживаются: ядро их отбрасывает",
 
 	"this is the same config as the second tunnel: replace or delete that one first": "это тот же конфиг, что у второго туннеля: сначала замените или удалите его",
 	"this is the same config as the first tunnel":                                    "это тот же конфиг, что у первого туннеля",

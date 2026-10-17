@@ -356,7 +356,11 @@ func (s Settings) Validate() error {
 	}
 	for _, list := range [][]string{s.DirectDNS, s.TunnelDNS, s.TunnelDNS2} {
 		for _, d := range list {
-			if _, err := probe.ParseResolver(d); err != nil {
+			r, err := probe.ParseResolver(d)
+			if err == nil {
+				err = r.QueryDropped()
+			}
+			if err != nil {
 				return err
 			}
 		}
@@ -437,7 +441,7 @@ func cleanDNS(in []string) []string {
 			continue
 		}
 		if _, err := probe.ParseResolver(d); err == nil {
-			out = append(out, d)
+			out = append(out, probe.CanonicalResolver(d))
 		}
 	}
 	return out

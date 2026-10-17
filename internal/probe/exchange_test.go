@@ -19,12 +19,12 @@ func TestExchangeKeepsStream(t *testing.T) {
 		}
 		d := Dialer{Addr: socks.ln.Addr().String(), Timeout: 3 * time.Second}
 		for i := range 3 {
-			q, id := buildQuery("a.example.org", typeA)
+			q, _ := buildQuery("a.example.org", typeA)
 			resp, err := r.Exchange(d, q)
 			if err != nil {
 				t.Fatalf("once=%v, query %d: %v", once, i, err)
 			}
-			if ips, err := parseAnswer(resp, id, typeA); err != nil || len(ips) != 1 {
+			if ips, err := parseAnswer(resp, q, typeA); err != nil || len(ips) != 1 {
 				t.Fatalf("once=%v, query %d: %v %v", once, i, ips, err)
 			}
 		}
@@ -57,12 +57,12 @@ func TestExchangeKeepsAssociation(t *testing.T) {
 	}
 	d := Dialer{Addr: addr, Timeout: 3 * time.Second}
 	for i := range 3 {
-		q, id := buildQuery("example.com", typeA)
+		q, _ := buildQuery("example.com", typeA)
 		resp, err := r.Exchange(d, q)
 		if err != nil {
 			t.Fatalf("query %d: %v", i, err)
 		}
-		if ips, err := parseAnswer(resp, id, typeA); err != nil || len(ips) != 1 || ips[0] != "192.0.2.7" {
+		if ips, err := parseAnswer(resp, q, typeA); err != nil || len(ips) != 1 || ips[0] != "192.0.2.7" {
 			t.Fatalf("query %d: %v %v", i, ips, err)
 		}
 	}

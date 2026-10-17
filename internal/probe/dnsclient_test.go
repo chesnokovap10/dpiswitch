@@ -84,7 +84,7 @@ func TestDoHAsksPathGiven(t *testing.T) {
 	d := Dialer{Addr: socks.ln.Addr().String(), Timeout: 5 * time.Second}
 	base := "https://127.0.0.1:" + strconv.Itoa(srv.Listener.Addr().(*net.TCPAddr).Port)
 	for addr, want := range map[string]string{base: "/", base + "/dns-query": "/dns-query",
-		base + "/dns-query?ecs=0": "/dns-query?ecs=0"} {
+		base + "/dns-query?ecs=0": "/dns-query"} {
 		mu.Lock()
 		asked = nil
 		mu.Unlock()
@@ -118,7 +118,7 @@ func TestParseAnswerByType(t *testing.T) {
 	} {
 		q, id := buildQuery(name, tc.qtype)
 		resp := answerWith(q, id)
-		got, err := parseAnswer(resp, id, tc.qtype)
+		got, err := parseAnswer(resp, q, tc.qtype)
 		if err != nil {
 			t.Fatalf("type %d: %v", tc.qtype, err)
 		}
@@ -484,5 +484,27 @@ func TestPingEither(t *testing.T) {
 		case c.used != "" && (err != nil || used != c.used || len(ips) != 1):
 			t.Errorf("%s: %v %q %v, want %s", c.name, ips, used, err, c.used)
 		}
+	}
+}
+
+// An answer with the query's ID to another name's question is no answer:
+// over a stream or DoH the ID alone was checked.
+func TestParseAnswerOtherQuestion(t *testing.T) {
+	q, id := buildQuery("site.example.com", typeA)
+	other, _ := buildQuery("other.example.net", typeA)
+	binary.BigEndian.PutUint16(other, id)
+	if ips, err := parseAnswer(answerWith(other, id), q, typeA); err == nil {
+		t.Fatalf("another name's answer taken: %v", ips)
+	}
+	aaaa, _ := buildQuery("site.example.com", typeAAAA)
+	binary.BigEndian.PutUint16(aaaa, id)
+	if ips, err := parseAnswer(answerWith(aaaa, id), q, typeA); err == nil {
+		t.Fatalf("another type's answer taken: %v", ips)
+	}
+	// the name's case as the server wrote it is the same name
+	upper := append([]byte(nil), q...)
+	copy(upper[13:17], "SITE")
+	if _, err := parseAnswer(answerWith(upper, id), q, typeA); err != nil {
+		t.Fatalf("the same name in other case: %v", err)
 	}
 }
