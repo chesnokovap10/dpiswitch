@@ -556,3 +556,76 @@ func TestAnswerWithoutQuestion(t *testing.T) {
 		t.Errorf("another name's answer given: rcode %d, want SERVFAIL", rc)
 	}
 }
+
+// An answer at TTL 0 is used once, not kept: the next query asks a server,
+// not the old address back as a stale one.
+func TestZeroTTLNotKept(t *testing.T) {
+	srv := &fakeServer{answer: gives("192.0.2.1", 0)}
+	fakeServers(t, map[string]*fakeServer{"udp://192.0.2.53": srv})
+	s := newCache(t, "udp://192.0.2.53")
+	ask(t, s, "example.com", 1)
+	srv.answer = gives("192.0.2.2", 0)
+	if ip := firstIP(ask(t, s, "example.com", 2)); ip != "192.0.2.2" {
+		t.Fatalf("got %s, want the server's new answer", ip)
+	}
+	if n := srv.asked.Load(); n != 2 {
+		t.Errorf("the server was asked %d times, want 2", n)
+	}
+	if _, ok := keepable(answer(query("example.com", 1), net.ParseIP("192.0.2.1"), 0)); ok {
+		t.Error("TTL 0 keepable")
+	}
+}
+
+// nxdomain: q answered "no such name", with no SOA
+func nxdomain(q []byte) ([]byte, error) {
+	m := append([]byte(nil), q...)
+	m[2], m[3] = 0x81, 0x83
+	return m, nil
+}
+
+// nodata: q answered with no record
+func nodata(q []byte) ([]byte, error) {
+	m := append([]byte(nil), q...)
+	m[2], m[3] = 0x81, 0x80
+	return m, nil
+}
+
+// A "no such name" or an empty A answer from the fastest server waits for
+// the others: one that has the name wins. Given by every server, it stands.
+func TestNegativeWaitsForOthers(t *testing.T) {
+	for name, neg := range map[string]func([]byte) ([]byte, error){"NXDOMAIN": nxdomain, "NODATA": nodata} {
+		t.Run(name, func(t *testing.T) {
+			isp := &fakeServer{delay: time.Millisecond, answer: neg}
+			own := &fakeServer{delay: 30 * time.Millisecond, answer: gives("192.0.2.7", 60)}
+			fakeServers(t, map[string]*fakeServer{"udp://192.0.2.53": isp, "tls://192.0.2.54": own})
+			s := newCache(t, "udp://192.0.2.53", "tls://192.0.2.54")
+			if ip := firstIP(ask(t, s, "blocked.example", 1)); ip != "192.0.2.7" {
+				t.Fatalf("got %q, want the other server's", ip)
+			}
+			own.answer = neg
+			m := ask(t, s, "gone.example", 2)
+			if rc := m[3] & 0x0f; firstIP(m) != "" || (name == "NXDOMAIN") != (rc == rcodeNXDomain) {
+				t.Fatalf("every server negative: rcode %d, ip %q", rc, firstIP(m))
+			}
+		})
+	}
+}
+
+// One server negative, the other silent: the negative is given after
+// negativeWait, not at fetchTimeout.
+func TestNegativeNotWaitedLong(t *testing.T) {
+	block := make(chan struct{})
+	t.Cleanup(func() { close(block) })
+	isp := &fakeServer{answer: nxdomain}
+	dead := &fakeServer{block: block, answer: gives("192.0.2.7", 60)}
+	fakeServers(t, map[string]*fakeServer{"udp://192.0.2.53": isp, "udp://192.0.2.54": dead})
+	s := newCache(t, "udp://192.0.2.53", "udp://192.0.2.54")
+	start := time.Now()
+	m := ask(t, s, "gone.example", 1)
+	if m[3]&0x0f != rcodeNXDomain {
+		t.Fatalf("rcode %d", m[3]&0x0f)
+	}
+	if d := time.Since(start); d > negativeWait+time.Second {
+		t.Errorf("took %s", d)
+	}
+}

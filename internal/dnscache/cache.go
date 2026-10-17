@@ -18,6 +18,7 @@ package dnscache
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -48,6 +49,9 @@ const (
 	maxNames = 30000
 	// fetchTimeout: how long a name not kept is waited for
 	fetchTimeout = 4 * time.Second
+	// negativeWait: how long the other servers are waited for once one
+	// said the name does not exist, see negative
+	negativeWait = 500 * time.Millisecond
 	// raceEvery: how often a fetch goes to every server at once, their
 	// speed measured again -- the fastest one asked alone otherwise
 	raceEvery = 2 * time.Minute
@@ -310,7 +314,8 @@ func (s *Server) keepLocked(netID, key string, msg []byte, ttl uint32) {
 // A sinkhole -- loopback for a name the server blocks, see sinkhole -- is
 // no answer while another server may have one: the others are asked, and
 // the first real answer is taken. Only when none has one is the sinkhole
-// given (hole), for a name that does live on localhost.
+// given (hole), for a name that does live on localhost. A "no such name"
+// is held the same way, for negativeWait: a filtering resolver gives it.
 func (s *Server) ask(q []byte) (msg []byte, hole bool, err error) {
 	s.mu.Lock()
 	ups := slices.Clone(s.ups)
@@ -332,7 +337,8 @@ func (s *Server) ask(q []byte) (msg []byte, hole bool, err error) {
 	// an ID of its own: the asker's is put back in the answer (see reply)
 	uq := append([]byte(nil), q...)
 	_, _ = rand.Read(uq[:2])
-	asked, _, _ := question(uq)
+	asked, qend, _ := question(uq)
+	qtypeA := qend >= 16 && binary.BigEndian.Uint16(uq[qend-4:]) == typeA
 	type result struct {
 		u   *upstream
 		msg []byte
@@ -360,6 +366,8 @@ func (s *Server) ask(q []byte) (msg []byte, hole bool, err error) {
 	var errs []string
 	var holed []byte   // the first sinkhole, see above
 	var holedBy string // the server that gave it
+	var neg []byte     // the first negative answer, see negative
+	var negWait <-chan time.Time
 	for got := 0; ; {
 		select {
 		case r := <-ch:
@@ -374,7 +382,15 @@ func (s *Server) ask(q []byte) (msg []byte, hole bool, err error) {
 			}
 			if r.err == nil {
 				if rc := r.msg[3] & 0x0f; rc == rcodeOK || rc == rcodeNXDomain {
-					if !sinkhole(r.msg) {
+					if negative(r.msg, qtypeA) && len(ups) > 1 {
+						// another server may have the name: they are asked,
+						// and waited for a little
+						if neg == nil {
+							neg = r.msg
+							negWait = time.After(negativeWait)
+						}
+						r.err = errors.New("no such name or record")
+					} else if !sinkhole(r.msg) {
 						if holed != nil {
 							s.noteHole(holedBy, uq)
 						}
@@ -391,6 +407,9 @@ func (s *Server) ask(q []byte) (msg []byte, hole bool, err error) {
 			errs = append(errs, r.u.r.Raw+": "+r.err.Error())
 			sendNext(true)
 			if got == sent {
+				if neg != nil {
+					return neg, false, nil
+				}
 				if holed != nil {
 					return holed, true, nil
 				}
@@ -398,7 +417,12 @@ func (s *Server) ask(q []byte) (msg []byte, hole bool, err error) {
 			}
 		case <-ht.C:
 			sendNext(true)
+		case <-negWait:
+			return neg, false, nil
 		case <-dt.C:
+			if neg != nil {
+				return neg, false, nil
+			}
 			if holed != nil {
 				return holed, true, nil
 			}

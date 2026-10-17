@@ -128,6 +128,28 @@ func sinkhole(m []byte) bool {
 	return n > 0 && bad == n
 }
 
+// negative: "no such name", or an A query's "no such record" -- what a
+// resolver that blocks by filtering gives, where another server has the
+// name. No AAAA is no news: most names have none.
+func negative(m []byte, qtypeA bool) bool {
+	if len(m) < 12 {
+		return false
+	}
+	if m[3]&0x0f == rcodeNXDomain {
+		return true
+	}
+	if !qtypeA || m[3]&0x0f != rcodeOK {
+		return false
+	}
+	n := 0
+	records(m, func(sec int, typ uint16, _ int, _ []byte) {
+		if sec == 0 && typ == typeA {
+			n++
+		}
+	})
+	return n == 0
+}
+
 // negativeTTL: how long a "no such name" or "no such record" with no SOA to
 // say is kept
 const negativeTTL = 60
@@ -166,11 +188,13 @@ func keepable(m []byte) (uint32, bool) {
 	if !ok {
 		return 0, false
 	}
+	// a TTL of 0 is "use once": kept, it came back as a stale answer for a
+	// week while the server stayed silent
 	switch {
 	case have && rc == rcodeOK:
-		return ttl, true
+		return ttl, ttl > 0
 	case haveNeg:
-		return neg, true
+		return neg, neg > 0
 	}
 	return negativeTTL, true
 }
