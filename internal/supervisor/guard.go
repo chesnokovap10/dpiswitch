@@ -103,8 +103,9 @@ func readTun() tunState {
 	if err != nil {
 		return tunState{}
 	}
+	routes6, _ := defaultRoutes6() // none read: IPv4's alone are tried
 	var ups []string
-	for _, ip := range uplinkAddrs(ads, routes) {
+	for _, ip := range uplinkAddrs(ads, routes, routes6) {
 		ups = append(ups, ip.String())
 	}
 	slices.Sort(ups)
@@ -117,18 +118,27 @@ func readTun() tunState {
 }
 
 // uplinkAddrs: the addresses of the adapters that lead out, the core's own
-// aside -- what a program that binds its socket past the tunnel sends from
-func uplinkAddrs(ads []adapter, routes map[uint32]bool) []net.IP {
+// aside -- what a program that binds its socket past the tunnel sends from:
+// the IPv4 ones of an adapter with an IPv4 default route, and the global
+// IPv6 ones of one with an IPv6 default route. The guard has filters for
+// both; its check sent from IPv4 alone, and said nothing of the IPv6 ones
+// (the review of 17.10).
+func uplinkAddrs(ads []adapter, routes4, routes6 map[uint32]bool) []net.IP {
 	var out []net.IP
 	for _, a := range ads {
-		if !a.up || a.ours() || !routes[a.index] || !a.usable() {
+		if !a.up || a.ours() {
 			continue
 		}
-		for _, ip := range a.v4 {
-			if ip = ip.To4(); ip == nil || ip.IsLoopback() || ip[0] == 169 && ip[1] == 254 || tunRange.Contains(ip) {
-				continue
+		if routes4[a.index] && a.usable() {
+			for _, ip := range a.v4 {
+				if ip = ip.To4(); ip == nil || ip.IsLoopback() || ip[0] == 169 && ip[1] == 254 || tunRange.Contains(ip) {
+					continue
+				}
+				out = append(out, ip)
 			}
-			out = append(out, ip)
+		}
+		if routes6[a.index6] {
+			out = append(out, a.v6...)
 		}
 	}
 	return out
@@ -148,14 +158,30 @@ func tunUp(ads []adapter, routes map[uint32]bool) bool {
 }
 
 // leakDst: where the test packet goes -- the documentation range, which no
-// network routes and nothing answers; 9 is discard
-var leakDst = netip.MustParseAddrPort("192.0.2.1:9")
+// network routes and nothing answers; 9 is discard. leakDst6: the same for
+// IPv6
+var (
+	leakDst  = netip.MustParseAddrPort("192.0.2.1:9")
+	leakDst6 = netip.MustParseAddrPort("[2001:db8::1]:9")
+)
+
+// leakTo: the test packet's destination for a source address
+func leakTo(src net.IP) netip.AddrPort {
+	if src.To4() != nil {
+		return leakDst
+	}
+	return leakDst6
+}
 
 // sendFrom sends one byte out of the adapter that has the address given, as a
 // program that binds its socket to it does, and says the address and port the
 // packet had -- by which the engine's record of dropped packets has it
 var sendFrom = func(src net.IP) (netip.AddrPort, error) {
-	c, err := net.DialUDP("udp4", &net.UDPAddr{IP: src}, net.UDPAddrFromAddrPort(leakDst))
+	network := "udp4"
+	if src.To4() == nil {
+		network = "udp6"
+	}
+	c, err := net.DialUDP(network, &net.UDPAddr{IP: src}, net.UDPAddrFromAddrPort(leakTo(src)))
 	if err != nil {
 		return netip.AddrPort{}, err
 	}
@@ -178,7 +204,8 @@ func readGuardHolds(ctx context.Context, g udpGuard) bool {
 	if err != nil {
 		return false
 	}
-	return guardHolds(ctx, ads, routes, g, sendFrom, holdsWait)
+	routes6, _ := defaultRoutes6()
+	return guardHolds(ctx, ads, routes, routes6, g, sendFrom, holdsWait)
 }
 
 // guardHolds tries the guard the way what it is against does: a datagram out
@@ -190,9 +217,9 @@ func readGuardHolds(ctx context.Context, g udpGuard) bool {
 // recorded it -- and says nothing either way; an adapter whose send failed
 // is not counted. It ends with the context, which is the core's: a stop of the
 // core does not wait for the record.
-func guardHolds(ctx context.Context, ads []adapter, routes map[uint32]bool, g udpGuard, send func(src net.IP) (netip.AddrPort, error), wait time.Duration) bool {
+func guardHolds(ctx context.Context, ads []adapter, routes, routes6 map[uint32]bool, g udpGuard, send func(src net.IP) (netip.AddrPort, error), wait time.Duration) bool {
 	tried, seen := 0, 0
-	for _, ip := range uplinkAddrs(ads, routes) {
+	for _, ip := range uplinkAddrs(ads, routes, routes6) {
 		since := time.Now().Add(-time.Second)
 		local, err := send(ip)
 		if err != nil {
@@ -200,7 +227,7 @@ func guardHolds(ctx context.Context, ads []adapter, routes map[uint32]bool, g ud
 		}
 		tried++
 		for deadline := time.Now().Add(wait); ; {
-			if g.Dropped(local, leakDst, since) {
+			if g.Dropped(local, leakTo(ip), since) {
 				seen++
 				break
 			}

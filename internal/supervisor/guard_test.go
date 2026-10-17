@@ -67,7 +67,7 @@ func (f *fakeGuard) Rules() int {
 func (f *fakeGuard) Dropped(local, remote netip.AddrPort, since time.Time) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.in && remote == leakDst && f.drops[local]
+	return f.in && (remote == leakDst || remote == leakDst6) && f.drops[local]
 }
 
 func (f *fakeGuard) drop(local netip.AddrPort) {
@@ -493,7 +493,7 @@ func TestGuardHolds(t *testing.T) {
 			}
 			return ports[src.String()], nil
 		}
-		if got := guardHolds(context.Background(), c.ads, routes, g, send, 20*time.Millisecond); got != c.want {
+		if got := guardHolds(context.Background(), c.ads, routes, nil, g, send, 20*time.Millisecond); got != c.want {
 			t.Errorf("%s: %v, want %v", c.name, got, c.want)
 		}
 		if strings.Join(sent, ",") != strings.Join(c.wantSentTo, ",") {
@@ -513,7 +513,7 @@ func TestGuardHoldsWaitsForTheRecord(t *testing.T) {
 	g := &fakeGuard{in: true}
 	go func() { time.Sleep(80 * time.Millisecond); g.drop(pkt) }()
 	start := time.Now()
-	if !guardHolds(context.Background(), []adapter{wifi}, routes, g, send, 2*time.Second) {
+	if !guardHolds(context.Background(), []adapter{wifi}, routes, nil, g, send, 2*time.Second) {
 		t.Fatal("not shown to hold, with the drop in the record 80 ms late")
 	}
 	if time.Since(start) > time.Second {
@@ -523,7 +523,7 @@ func TestGuardHoldsWaitsForTheRecord(t *testing.T) {
 	// and the wait ends: a record that never has it is no reason to wait for good
 	g2 := &fakeGuard{in: true}
 	start = time.Now()
-	if guardHolds(context.Background(), []adapter{wifi}, routes, g2, send, 150*time.Millisecond) {
+	if guardHolds(context.Background(), []adapter{wifi}, routes, nil, g2, send, 150*time.Millisecond) {
 		t.Fatal("shown to hold with nothing in the record")
 	}
 	if d := time.Since(start); d < 100*time.Millisecond || d > time.Second {
@@ -539,7 +539,7 @@ func TestGuardHoldsEndsWithTheCore(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() { time.Sleep(40 * time.Millisecond); cancel() }()
 	start := time.Now()
-	if guardHolds(ctx, []adapter{wifi}, routes, &fakeGuard{in: true}, send, 30*time.Second) {
+	if guardHolds(ctx, []adapter{wifi}, routes, nil, &fakeGuard{in: true}, send, 30*time.Second) {
 		t.Fatal("shown to hold with nothing in the record")
 	}
 	if d := time.Since(start); d > 2*time.Second {
@@ -699,4 +699,53 @@ func (l *lockedLog) String() string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.buf.String()
+}
+
+// The guard has filters for IPv6 as for IPv4, and its check tries both: a
+// packet out of every global IPv6 address of an adapter with an IPv6 default
+// route, to the IPv6 documentation range. Checked only when every one is
+// seen dropped (the review of 17.10: IPv4's alone were tried).
+func TestGuardHoldsTriesIPv6(t *testing.T) {
+	v6 := net.ParseIP("2a00:1e88:13ca:cd00::470")
+	wifi := adapter{index: 11, index6: 21, name: "Wi-Fi", up: true,
+		v4: []net.IP{net.IPv4(192, 168, 31, 250)}, v6: []net.IP{v6}}
+	pkt4 := netip.MustParseAddrPort("192.168.31.250:50001")
+	pkt6 := netip.MustParseAddrPort("[2a00:1e88:13ca:cd00::470]:50002")
+	routes4, routes6 := map[uint32]bool{11: true}, map[uint32]bool{21: true}
+	for _, c := range []struct {
+		name    string
+		routes6 map[uint32]bool
+		dropped []netip.AddrPort
+		want    bool
+		sent    string
+	}{
+		{"both seen dropped", routes6, []netip.AddrPort{pkt4, pkt6}, true, "192.168.31.250,2a00:1e88:13ca:cd00::470"},
+		{"IPv6's not seen: not checked", routes6, []netip.AddrPort{pkt4}, false, "192.168.31.250,2a00:1e88:13ca:cd00::470"},
+		{"no IPv6 route: IPv6 not tried", nil, []netip.AddrPort{pkt4}, true, "192.168.31.250"},
+	} {
+		g := &fakeGuard{in: true}
+		for _, d := range c.dropped {
+			g.drop(d)
+		}
+		var sent []string
+		send := func(src net.IP) (netip.AddrPort, error) {
+			sent = append(sent, src.String())
+			if src.To4() == nil {
+				return pkt6, nil
+			}
+			return pkt4, nil
+		}
+		if got := guardHolds(context.Background(), []adapter{wifi}, routes4, c.routes6, g, send, 20*time.Millisecond); got != c.want {
+			t.Errorf("%s: %v, want %v", c.name, got, c.want)
+		}
+		if got := strings.Join(sent, ","); got != c.sent {
+			t.Errorf("%s: sent from %s, want %s", c.name, got, c.sent)
+		}
+	}
+	if leakTo(v6) != leakDst6 || leakTo(net.IPv4(192, 168, 31, 250)) != leakDst {
+		t.Error("a test packet's destination not of its source's family")
+	}
+	if !leakDst6.Addr().Is6() || !netip.MustParsePrefix("2001:db8::/32").Contains(leakDst6.Addr()) {
+		t.Errorf("%v is no address of the IPv6 documentation range", leakDst6)
+	}
 }
