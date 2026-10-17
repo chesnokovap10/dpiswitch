@@ -648,6 +648,14 @@ func TestGuardChecksTheAdaptersThatCome(t *testing.T) {
 	other.uplinks = "172.20.10.3"
 	w.set(true, other)
 	waitFor(t, "unchecked", func() bool { return !w.last().Checked })
+	// and back on the adapters checked before: checked again, nothing sent
+	// (the review of 17.10: it stayed unchecked)
+	n := w.probed()
+	w.set(true, cable)
+	waitFor(t, "checked again", func() bool { return w.last().Checked })
+	if w.probed() != n {
+		t.Errorf("a test packet sent again for adapters checked already")
+	}
 }
 
 // At the service's start the UI is told what is so now -- waiting for the

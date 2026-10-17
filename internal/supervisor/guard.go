@@ -309,6 +309,10 @@ func holdGuard(ctx context.Context, g udpGuard, env guardEnv) {
 				log.Println("UDP guard not checked yet: no adapter leads out to send a test packet from -- checked when one does")
 			}
 		case tun.uplinks == proven:
+			// back on adapters seen dropping the test packet under these
+			// filters: checked again. A failure on others in between left
+			// it unchecked for good -- this branch sends nothing
+			checked = true
 		default:
 			if tun.uplinks != asked {
 				asked, tries, next = tun.uplinks, 0, time.Time{}
