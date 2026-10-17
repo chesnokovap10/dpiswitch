@@ -178,3 +178,30 @@ func TestCycleNoIPv6CheckForQUIC(t *testing.T) {
 		t.Errorf("IPv6 node asked after %d times, want once: for TCP alone", len(got))
 	}
 }
+
+// An IPv6 node looked for while no resolver answered is not known to be
+// none: the name is not marked checked on IPv6, and unseenV6 brings it back.
+// One with no AAAA at all is checked as far as it goes.
+func TestCycleIPv6LookupFailedNotChecked(t *testing.T) {
+	s, _ := v6Scenario(t, true, nil)
+	checkProtoV6 = func(_, _ probe.Dialer, dom string, _, _ int, _ bool, _ probe.Verdict) (probe.Report, bool) {
+		if dom == "dnsfail.example.org" {
+			return probe.Report{Unmeasured: true, Reason: "IPv6 node: direct DNS did not answer"}, false
+		}
+		return probe.Report{}, false
+	}
+	for i, d := range []string{"dnsfail.example.org", "only4.example.org"} {
+		s.see(tunnelled(d, 443))
+		s.script(d+" tcp/443", clean("192.0.2."+string(rune('1'+i))))
+	}
+	s.cycle()
+	if e := s.entry("dnsfail.example.org"); e == nil || e.Verdict != probe.Clean || e.V6 {
+		t.Fatalf("AAAA lookup failed: %+v, want CLEAN and V6 unset", e)
+	}
+	if e := s.entry("only4.example.org"); e == nil || !e.V6 {
+		t.Fatalf("no AAAA: %+v, want V6 set", e)
+	}
+	if got := s.st.unseenV6("n", s.cfg.Idle); len(got) != 1 || got[0] != "dnsfail.example.org" {
+		t.Fatalf("unseenV6 %v", got)
+	}
+}

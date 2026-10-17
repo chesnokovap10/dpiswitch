@@ -407,6 +407,9 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 			// the TCP ports whose direct side failed -- see entry.DirectDown
 			var downs []probe.Report
 			noV6 := false // see probe.Report.DirectNoV6
+			// v6Unknown: an IPv6 node looked for and no resolver answered --
+			// the name is not marked checked on IPv6, see unseenV6
+			v6Unknown := false
 			reachedV6 := false
 			reps := make([]probe.Report, 0, len(eps))
 			// follow: what a port's check is followed by -- a name blocked by its
@@ -461,7 +464,9 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 				// is cut. TCP only: for UDP the core takes the IPv4 node of a name
 				// that has one, and QUIC to the IPv6 one is never sent direct.
 				if v6Too && !ep.udp && !r.Aborted && r.TestedIP != "" && net.ParseIP(r.TestedIP).To4() != nil {
-					if r6, ok := checkProtoV6(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp, was); ok {
+					r6, ok := checkProtoV6(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp, was)
+					v6Unknown = v6Unknown || !ok && r6.Unmeasured
+					if ok {
 						appendJSONL(cfg.JSONLPath, r6)
 						// slower there is no block: the core takes whichever node
 						// answers first, and the IPv4 one's speed is the name's.
@@ -548,7 +553,7 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 			mu.Unlock()
 
 			mu.Lock()
-			results = append(results, checked{dom, rep, eps, checkFacts{directDown, noV6, unprobed, noQUIC, noTCP, v6Too}})
+			results = append(results, checked{dom, rep, eps, checkFacts{directDown, noV6, unprobed, noQUIC, noTCP, v6Too && !v6Unknown}})
 			mu.Unlock()
 		}(dom)
 	}

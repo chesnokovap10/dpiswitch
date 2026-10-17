@@ -1,6 +1,7 @@
 package probe
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -402,6 +403,11 @@ func checkFamily(direct, tunnel Dialer, dom string, port, attempts int, udp bool
 		}
 		ips, err := askTwice(func() ([]string, error) { return LookupAnyV6(direct, direct.DNS, dom) })
 		if err != nil || len(ips) == 0 {
+			// no resolver answered: whether there is an IPv6 node is not
+			// known, and the name is not to count as checked on IPv6
+			if err != nil && !errors.Is(err, errNoRecords) {
+				rep.Unmeasured, rep.Reason = true, "IPv6 node: direct DNS did not answer: "+errText(err)
+			}
 			return rep, false
 		}
 		rep.DNSDirect = JoinIPs(ips)
