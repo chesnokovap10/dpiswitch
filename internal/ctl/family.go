@@ -76,6 +76,9 @@ func (s *state) families(id string) []family {
 		switch {
 		case badForFamily(e):
 			bad[f] = true
+		case dom == f:
+			// the domain itself is no subdomain: example.com and two of its
+			// own made a family of two
 		case e.Verdict == probe.Clean && !e.Alone && now.Before(e.ExpiresAt):
 			// an expired CLEAN is out of the list itself; counting it kept
 			// the family -- and so the host -- direct past its term

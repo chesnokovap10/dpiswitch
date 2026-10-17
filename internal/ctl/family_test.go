@@ -26,6 +26,10 @@ func TestFamilies(t *testing.T) {
 	if has("qms.ru") {
 		t.Fatal("two subdomains are not enough")
 	}
+	put("qms.ru", probe.Clean)
+	if has("qms.ru") {
+		t.Fatal("the domain itself counted as a third subdomain")
+	}
 	put("c.qms.ru", probe.Clean)
 	put("d.qms.ru", probe.Inconcl) // says nothing about blocking
 	if !has("qms.ru") {
