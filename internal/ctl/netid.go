@@ -29,6 +29,28 @@ const noNetwork = "unknown"
 // fake-ip range from the mihomo config: 198.18.0.1/16
 var _, fakeIPRange, _ = net.ParseCIDR("198.18.0.0/15")
 
+// the core's own IPv6: its adapter's address (fdfe:dcba:9876::1/126) and the
+// fake-ip range (2001:2::/48) -- see awgconf
+var (
+	_, tunRange6, _  = net.ParseCIDR("fdfe:dcba:9876::/48")
+	_, fakeRange6, _ = net.ParseCIDR("2001:2::/48")
+)
+
+func ownV6(ip net.IP) bool { return tunRange6.Contains(ip) || fakeRange6.Contains(ip) }
+
+// prefix64: an IPv6 address's network, no narrower than a /64. Windows
+// gives a temporary address and a DHCPv6 one as /128 (17.10), and the
+// temporary one is made anew every day: by its address the network would
+// change with it.
+func prefix64(n *net.IPNet) *net.IPNet {
+	ones, bits := n.Mask.Size()
+	if ones > 64 {
+		ones = 64
+	}
+	m := net.CIDRMask(ones, bits)
+	return &net.IPNet{IP: n.IP.Mask(m), Mask: m}
+}
+
 var (
 	netIDMu   sync.Mutex
 	netIDVal  string
@@ -80,6 +102,21 @@ func computeNetworkID() string {
 		}
 		if mac != "" {
 			// tells apart different networks with the same 192.168.1.x
+			parts = append(parts, "mac="+mac)
+		}
+		sum := sha256.Sum256([]byte(strings.Join(parts, "|")))
+		return hex.EncodeToString(sum[:])[:16]
+	}
+
+	// No IPv4 gateway: a network with IPv6 alone (a mobile one, NAT64) has
+	// its router's link-local address and MAC to tell it by, as the IPv4
+	// gateway does. It was taken for no network at all, and the detector
+	// stood while the tunnel ran over IPv6 (the review of 17.10). A network
+	// with both is told by its IPv4 gateway as before: memory filed under
+	// that stays its own.
+	if gw6, ifIndex, ok := gateway6FromTable(); ok && gw6 != "" {
+		parts := []string{"gw6=" + gw6}
+		if mac, _ := macFromTable6(gw6, ifIndex); mac != "" {
 			parts = append(parts, "mac="+mac)
 		}
 		sum := sha256.Sum256([]byte(strings.Join(parts, "|")))
@@ -173,6 +210,59 @@ func gatewayFromTable() (gw string, ifIndex uint32, ok bool) {
 	return gw, ifIndex, true
 }
 
+// gateway6FromTable: the IPv6 default route's gateway -- a router's
+// link-local address, as routers advertise themselves -- with its zone, the
+// lowest metric's, and the interface it leaves by. A next hop that is no
+// link-local one is none a router gave: the core's own adapter routes by
+// its ULA. ok false when the table cannot be read.
+func gateway6FromTable() (gw string, ifIndex uint32, ok bool) {
+	var t *windows.MibIpForwardTable2
+	if err := windows.GetIpForwardTable2(windows.AF_INET6, &t); err != nil {
+		return "", 0, false
+	}
+	defer windows.FreeMibTable(unsafe.Pointer(t))
+	var rows []route6
+	for _, r := range t.Rows() {
+		if r.DestinationPrefix.PrefixLength != 0 || r.NextHop.Family != windows.AF_INET6 {
+			continue
+		}
+		a := (*windows.RawSockaddrInet6)(unsafe.Pointer(&r.NextHop)).Addr
+		metric := int(r.Metric)
+		ifc := windows.MibIpInterfaceRow{Family: windows.AF_INET6, InterfaceIndex: r.InterfaceIndex}
+		if windows.GetIpInterfaceEntry(&ifc) == nil {
+			metric += int(ifc.Metric)
+		}
+		rows = append(rows, route6{net.IP(a[:]), r.InterfaceIndex, metric})
+	}
+	gw, ifIndex = pickGateway6(rows)
+	return gw, ifIndex, true
+}
+
+// route6: an IPv6 default route as pickGateway6 weighs it
+type route6 struct {
+	hop    net.IP
+	index  uint32
+	metric int
+}
+
+// pickGateway6: the router's link-local next hop of the lowest metric, the
+// same one at every look whatever order the table gives -- the network's
+// name hangs on it
+func pickGateway6(rows []route6) (gw string, ifIndex uint32) {
+	best := -1
+	for _, r := range rows {
+		if !r.hop.IsLinkLocalUnicast() {
+			continue
+		}
+		g := r.hop.String()
+		if best < 0 || r.metric < best || r.metric == best &&
+			(r.index < ifIndex || r.index == ifIndex && g < gw) {
+			best, gw, ifIndex = r.metric, g, r.index
+		}
+	}
+	return gw, ifIndex
+}
+
 // hasDirectV6: whether the direct path has IPv6 -- an adapter with a global
 // IPv6 address and an IPv6 default route out by it. The core's own adapter
 // has neither kind of address a network gave: its is a local one.
@@ -253,6 +343,36 @@ func macFromTable(ip string, ifIndex uint32) (mac string, read bool) {
 	return other, true
 }
 
+// macFromTable6: macFromTable for an IPv6 neighbour -- the router's
+// link-local address on the interface given, which is the only one it is
+// known by there
+func macFromTable6(ip string, ifIndex uint32) (mac string, read bool) {
+	want := net.ParseIP(ip)
+	if want == nil || want.To4() != nil || pGetIpNetTable2.Find() != nil {
+		return "", false
+	}
+	var table unsafe.Pointer
+	if r, _, _ := pGetIpNetTable2.Call(uintptr(windows.AF_INET6), uintptr(unsafe.Pointer(&table))); r != 0 || table == nil {
+		return "", false
+	}
+	defer windows.FreeMibTable(table)
+	n := int(*(*uint32)(table))
+	for i := 0; i < n; i++ {
+		row := unsafe.Add(table, ipNetRows+i*ipNetRowSize)
+		sa := (*windows.RawSockaddrInet6)(row)
+		if sa.Family != windows.AF_INET6 || !want.Equal(net.IP(sa.Addr[:])) ||
+			*(*uint32)(unsafe.Add(row, 28)) != ifIndex || *(*uint32)(unsafe.Add(row, 72)) != 6 {
+			continue
+		}
+		hw := (*[6]byte)(unsafe.Add(row, 40))
+		if *hw == ([6]byte{}) {
+			continue
+		}
+		return fmt.Sprintf("%02x-%02x-%02x-%02x-%02x-%02x", hw[0], hw[1], hw[2], hw[3], hw[4], hw[5]), true
+	}
+	return "", true
+}
+
 var macRe = regexp.MustCompile(`([0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}`)
 
 func arpMAC(ip string) string {
@@ -283,13 +403,18 @@ func localNets() []string {
 		addrs, _ := ifc.Addrs()
 		for _, a := range addrs {
 			n, ok := a.(*net.IPNet)
-			if !ok || n.IP.To4() == nil || n.IP.IsLinkLocalUnicast() {
+			if !ok || n.IP.IsLinkLocalUnicast() {
 				continue
 			}
 			// skip mihomo's own TUN: otherwise the id depends on whether the
 			// tunnel is up, and memory splits in two for one physical network
-			if fakeIPRange.Contains(n.IP) {
+			if fakeIPRange.Contains(n.IP) || ownV6(n.IP) {
 				continue
+			}
+			// an IPv6 network by its prefix: the address in it changes as
+			// Windows makes a new temporary one
+			if n.IP.To4() == nil {
+				n = prefix64(n)
 			}
 			out = append(out, "net="+n.String())
 		}
@@ -297,7 +422,8 @@ func localNets() []string {
 	return out
 }
 
-// localLink: the adapters up and their IPv4 addresses, as one string -- what
+// localLink: the adapters up and their addresses -- IPv4 ones, and IPv6 ones
+// by their prefixes -- as one string -- what
 // this machine sees of its network without asking anyone. It is no network's
 // identity (the ISP is, see resolveNetwork): it changes when the adapter
 // does, another Wi-Fi is joined, DHCP hands out another address, and then
@@ -320,8 +446,13 @@ func localLink() string {
 			n, ok := a.(*net.IPNet)
 			// link-local ones say nothing of the network: Bluetooth's and
 			// Wi-Fi Direct's adapters hold 169.254.x and come and go
-			if !ok || n.IP.To4() == nil || fakeIPRange.Contains(n.IP) || n.IP.IsLinkLocalUnicast() {
+			if !ok || fakeIPRange.Contains(n.IP) || ownV6(n.IP) || n.IP.IsLinkLocalUnicast() {
 				continue
+			}
+			// IPv6 by its prefix: a new temporary address is no new network,
+			// and on a network with IPv6 alone the prefix is all there is
+			if n.IP.To4() == nil {
+				n = prefix64(n)
 			}
 			out = append(out, strconv.Itoa(ifc.Index)+"="+n.String())
 		}
