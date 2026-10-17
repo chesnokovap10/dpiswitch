@@ -279,11 +279,15 @@ func (s *state) get(id, dom string) (*entry, bool) {
 	return &c, true
 }
 
+// put files a verdict under one lock: the map taken under one and written
+// under another may have been merged away in between (see mergeInto)
 func (s *state) put(id, dom string, e *entry) {
-	m := s.net(id)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	m[dom] = e
+	if s.Networks[id] == nil {
+		s.Networks[id] = map[string]*entry{}
+	}
+	s.Networks[id][dom] = e
 	delete(s.Pending[id], dom)
 }
 

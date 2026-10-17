@@ -77,6 +77,7 @@ func newScenario(t *testing.T) *scenario {
 		PinnedLists: []string{preset},
 	}
 	s.st = loadState(s.cfg.StatePath)
+	s.st.setCurrent("n")
 	s.w = &watcher{seen: map[string]map[endpoint]bool{}, bare: map[string]bool{},
 		live: map[string]bool{}, pinned: map[string]bool{},
 		addrPorts: map[string]map[endpoint]bool{}, addrCycles: map[string]int{}}
@@ -1084,5 +1085,32 @@ func TestCycleNewPortOfKnownName(t *testing.T) {
 	s.cycle()
 	if s.wasProbed("q.example.org quic/443") || s.wasProbed("p.example.net tcp/5228") {
 		t.Error("a port checked once was probed again the next cycle")
+	}
+}
+
+// The gateway's memory merged into its ISP's while a probe ran, the
+// attachment the same: the verdict is not filed under the gateway, where
+// nothing reads it, but the name comes back to be probed under the ISP.
+func TestCycleMemoryMovedDuringProbe(t *testing.T) {
+	s := newScenario(t)
+	s.see(tunnelled("m.example.org", 443))
+	s.script("m.example.org tcp/443", clean("192.0.2.9"))
+	inner := checkProto
+	checkProto = func(direct, tunnel probe.Dialer, dom string, port, attempts int, udp bool, prev probe.Verdict) probe.Report {
+		s.st.mergeInto("AS1")
+		s.st.setCurrent("AS1")
+		return inner(direct, tunnel, dom, port, attempts, udp, prev)
+	}
+	s.cycle()
+	s.st.mu.Lock()
+	_, filed := s.st.Networks["n"]["m.example.org"]
+	s.st.mu.Unlock()
+	if filed {
+		t.Fatal("filed under the gateway's memory after it moved")
+	}
+	checkProto = inner
+	cycle(s.cfg, s.api, s.st, "AS1", s.w)
+	if e, ok := s.st.get("AS1", "m.example.org"); !ok || e.Verdict != probe.Clean {
+		t.Fatalf("not probed again under the ISP: %v", e)
 	}
 }

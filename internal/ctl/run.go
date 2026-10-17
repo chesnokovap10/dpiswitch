@@ -583,6 +583,15 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 		retry(unfiled(), true)
 		return
 	}
+	// the gateway's memory merged into its ISP's while the probes ran, the
+	// network the same: filed under the gateway they came back to nothing
+	// the lists read, and its memory with them. Asked again under the ISP.
+	if st.current() != netID {
+		listMu.Unlock()
+		log.Printf("the network's memory moved to %s during the cycle: %d results dropped", st.current(), len(results))
+		retry(unfiled(), true)
+		return
+	}
 	changed := false
 	for _, r := range results {
 		if record(cfg, st, netID, r.dom, r.rep, r.eps, r.facts) {
