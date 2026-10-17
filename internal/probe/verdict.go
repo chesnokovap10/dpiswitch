@@ -261,6 +261,9 @@ func CheckAlone(direct, split Dialer, dom string, attempts int, prev Verdict) Re
 // lookupAnyFn: LookupAny; a var for the tests
 var lookupAnyFn = LookupAny
 
+// lookupAnyV6Fn: LookupAnyV6; a var for the tests
+var lookupAnyV6Fn = LookupAnyV6
+
 func checkAlone(direct, split Dialer, dom string, attempts int) Report {
 	rep := Report{Domain: dom, Port: 443, Proto: "tcp", Time: time.Now().Format(time.RFC3339), Attempts: attempts,
 		Note: "no tunnel to compare against"}
@@ -270,6 +273,20 @@ func checkAlone(direct, split Dialer, dom string, attempts int) Report {
 		ips, err = lookupAnyFn(direct, direct.DNS, dom)
 	} else {
 		ips, err = ResolveVia(direct, dom)
+	}
+	// a name with no A record may live on IPv6 alone, as in checkFamily:
+	// left INCONCLUSIVE it was never given the cut
+	if err != nil || len(ips) == 0 {
+		var v6 []string
+		var e6 error
+		if len(direct.DNS) > 0 {
+			v6, e6 = lookupAnyV6Fn(direct, direct.DNS, dom)
+		} else {
+			v6, e6 = ResolveViaV6(direct, dom)
+		}
+		if e6 == nil && len(v6) > 0 {
+			ips, err = v6, nil
+		}
 	}
 	if err != nil || len(ips) == 0 {
 		rep.Verdict, rep.Reason = Inconcl, "direct DNS did not answer: "+errText(err)

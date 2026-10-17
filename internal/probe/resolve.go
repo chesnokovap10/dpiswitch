@@ -34,9 +34,18 @@ type dnsAnswer struct {
 }
 
 func ResolveVia(d Dialer, host string) ([]string, error) {
+	return resolveVia(d, host, typeA)
+}
+
+// ResolveViaV6: ResolveVia for AAAA, for a name with no A record
+func ResolveViaV6(d Dialer, host string) ([]string, error) {
+	return resolveVia(d, host, typeAAAA)
+}
+
+func resolveVia(d Dialer, host string, qtype uint16) ([]string, error) {
 	var lastErr error
 	for _, r := range defaultResolvers {
-		ips, err := r.query(d, host)
+		ips, err := r.query(d, host, qtype)
 		if err == nil && len(ips) > 0 {
 			return ips, nil
 		}
@@ -50,7 +59,7 @@ func ResolveVia(d Dialer, host string) ([]string, error) {
 	return nil, lastErr
 }
 
-func (r dohResolver) query(d Dialer, host string) ([]string, error) {
+func (r dohResolver) query(d Dialer, host string, qtype uint16) ([]string, error) {
 	conn, err := d.dial(r.ip, 443)
 	if err != nil {
 		return nil, fmt.Errorf("doh dial: %w", err)
@@ -63,8 +72,12 @@ func (r dohResolver) query(d Dialer, host string) ([]string, error) {
 		return nil, fmt.Errorf("doh tls: %w", err)
 	}
 
-	req := fmt.Sprintf("GET %s?name=%s&type=A HTTP/1.1\r\nHost: %s\r\n"+
-		"Accept: application/dns-json\r\nConnection: close\r\n\r\n", r.path, host, r.sni)
+	typ := "A"
+	if qtype == typeAAAA {
+		typ = "AAAA"
+	}
+	req := fmt.Sprintf("GET %s?name=%s&type=%s HTTP/1.1\r\nHost: %s\r\n"+
+		"Accept: application/dns-json\r\nConnection: close\r\n\r\n", r.path, host, typ, r.sni)
 	if _, err := tc.Write([]byte(req)); err != nil {
 		return nil, fmt.Errorf("doh write: %w", err)
 	}
@@ -83,7 +96,7 @@ func (r dohResolver) query(d Dialer, host string) ([]string, error) {
 	}
 	var out []string
 	for _, ans := range a.Answer {
-		if ans.Type == 1 && net.ParseIP(ans.Data) != nil {
+		if ans.Type == int(qtype) && net.ParseIP(ans.Data) != nil {
 			out = append(out, ans.Data)
 		}
 	}

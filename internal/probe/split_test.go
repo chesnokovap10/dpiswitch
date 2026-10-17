@@ -2,6 +2,7 @@ package probe
 
 import (
 	"crypto/x509"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -36,6 +37,11 @@ func forwardStub(t *testing.T, target string, cut bool) string {
 				c.Write([]byte{5, 0})
 				if _, err := io.ReadFull(c, buf[:10]); err != nil { // VER CMD RSV ATYP=1 ADDR PORT
 					return
+				}
+				if buf[3] == 4 { // an IPv6 address: 12 bytes more
+					if _, err := io.ReadFull(c, buf[10:22]); err != nil {
+						return
+					}
 				}
 				c.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, 0, 0})
 				if cut {
@@ -120,6 +126,14 @@ func TestCheckAlone(t *testing.T) {
 	// may be anyone's
 	if r := CheckAlone(cut, open, "other.example", 2, ""); r.Verdict != BlockedTLS {
 		t.Errorf("a foreign certificate with the cut: %s (%s)", r.Verdict, r.Reason)
+	}
+	// a name on IPv6 alone is checked by its AAAA, not left INCONCLUSIVE
+	lookupAnyFn = func(Dialer, []Resolver, string) ([]string, error) { return nil, errors.New("no A record") }
+	oldV6 := lookupAnyV6Fn
+	lookupAnyV6Fn = func(Dialer, []Resolver, string) ([]string, error) { return []string{"2001:db8::10"}, nil }
+	defer func() { lookupAnyV6Fn = oldV6 }()
+	if r := CheckAlone(cut, open, "example.com", 2, ""); r.Verdict != CleanSplit || r.TestedIP != "2001:db8::10" {
+		t.Errorf("IPv6 alone, the cut works: %s (%s) %s", r.Verdict, r.Reason, r.TestedIP)
 	}
 }
 
