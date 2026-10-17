@@ -55,7 +55,10 @@ func ParseEntry(s string) (kind int, v string, err error) {
 	for _, p := range []string{"http://", "https://"} {
 		h = strings.TrimPrefix(h, p)
 	}
-	h, _, _ = strings.Cut(h, "/")
+	// the path, a query or a fragment: "https://example.com?ref=1" has no "/"
+	if i := strings.IndexAny(h, "/?#"); i >= 0 {
+		h = h[:i]
+	}
 	if ip, ok := parseIP(h); ok {
 		return EntryIP, ip, nil
 	}
