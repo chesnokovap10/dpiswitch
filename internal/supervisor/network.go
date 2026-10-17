@@ -68,7 +68,7 @@ func physicalNetwork() bool {
 	return anyAddress4()
 }
 
-// endpointsV6: whether a tunnel's server is given by an IPv6 address -- of
+// endpointsV6: whether a tunnel's server may be reached over IPv6 -- of
 // the tunnels the config is built with: a second one switched off or left
 // out (see awgconf.Second) brings nothing up
 var endpointsV6 = func() bool {
@@ -83,14 +83,21 @@ var endpointsV6 = func() bool {
 	return c2 != nil && endpointV6(c2.Peer["Endpoint"])
 }
 
-// endpointV6: an Endpoint whose host is an IPv6 address
+// endpointV6: an Endpoint whose host is an IPv6 address, or a name -- the
+// core resolves it (remote-dns-resolve), and its AAAA may be the way. Only
+// an IPv4 address says no: with the name taken for one, a network of IPv6
+// alone never started the core that could have resolved it. Not looked up
+// here: the ISP drops UDP/53, and a failed lookup said no for the same.
 func endpointV6(ep string) bool {
 	host, _, err := net.SplitHostPort(ep)
-	if err != nil {
+	if err != nil || host == "" {
 		return false
 	}
 	ip := net.ParseIP(host)
-	return ip != nil && ip.To4() == nil
+	if ip == nil {
+		return true
+	}
+	return ip.To4() == nil
 }
 
 // anyAddress4: an IPv4 address besides the TUN's and link-local ones.

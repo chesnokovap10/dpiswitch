@@ -5,10 +5,11 @@ import (
 	"testing"
 )
 
-// An IPv6 uplink counts only for a tunnel whose server is an IPv6 address
+// An IPv6 uplink counts only for a tunnel whose server is an IPv6 address,
+// or a name: its AAAA may be the way
 func TestEndpointV6(t *testing.T) {
 	for ep, want := range map[string]bool{
-		"[2001:db8::1]:51820": true, "198.51.100.7:51820": false, "vpn.example.org:51820": false,
+		"[2001:db8::1]:51820": true, "198.51.100.7:51820": false, "vpn.example.org:51820": true,
 		"[::ffff:198.51.100.7]:51820": false, "nonsense": false,
 	} {
 		if got := endpointV6(ep); got != want {
