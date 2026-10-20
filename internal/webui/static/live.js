@@ -61,6 +61,14 @@ pageInit.live = function (sec) {
   // --- words and numbers ---
   const fmt = (s, ...a) => { let i = 0; return s.replace(/%[ds]/g, () => a[i++]); };
   const dec = (x, d) => x.toLocaleString(locale, {minimumFractionDigits: d, maximumFractionDigits: d});
+  // a tab's count in four places at most -- 1.2K, 11K, 100K -- the exact one
+  // on hover: a count gaining a digit moved everything after the tabs
+  const tabCount = (id, n) => {
+    const el = $(id);
+    const t = n < 1000 ? String(n) : dec(Math.floor(n / (n < 10000 ? 100 : 1000)) / (n < 10000 ? 10 : 1), n < 10000 ? 1 : 0) + 'K';
+    if (el.textContent !== t) el.textContent = t;
+    el.parentElement.title = n < 1000 ? '' : n.toLocaleString(locale);
+  };
   function size(b) {
     if (b < 1024) return b + ' ' + W.B;
     const u = [W.KB, W.MB, W.GB];
@@ -550,10 +558,10 @@ pageInit.live = function (sec) {
     }
     while (tbody.children.length > n) tbody.lastChild.remove();
 
-    $('n-open').textContent = count.get(open);
-    $('n-closed').textContent = count.get(closed);
-    $('n-failed').textContent = count.get(failed);
-    $('n-blocked').textContent = count.get(blocked);
+    tabCount('n-open', count.get(open));
+    tabCount('n-closed', count.get(closed));
+    tabCount('n-failed', count.get(failed));
+    tabCount('n-blocked', count.get(blocked));
     let e = '';
     if (!ready) e = W.loading;
     else if (found > MAX) e = fmt(W.shown, MAX, found);
