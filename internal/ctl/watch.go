@@ -351,6 +351,10 @@ func (w *watcher) drain() (map[string][]endpoint, []string) {
 	}
 	w.seen = map[string]map[endpoint]bool{}
 	w.order = nil
+	// the cycle has the new names now, with their ports: the fast lane,
+	// taking them after this, found their ports gone, probed 443 alone and
+	// held the name -- the cycle's probe on the real port was left to it
+	w.fresh = nil
 	return out, order
 }
 

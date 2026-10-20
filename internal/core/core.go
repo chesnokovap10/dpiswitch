@@ -31,6 +31,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -143,11 +144,20 @@ func Ensure() (bool, error) {
 		os.Remove(tmp)
 		return false, fmt.Errorf("embedded core is corrupted (hash %s, want %s)", got, embeddedHash)
 	}
-	// the old file may still be held by a dying process for a moment
-	_ = os.Remove(target)
-	if err := os.Rename(tmp, target); err != nil {
+	// the old file may still be held by a dying process for a moment:
+	// tried for up to 3 s, not once -- the core's start waited out the
+	// supervisor's pause instead
+	var rerr error
+	for i := 0; i < 30; i++ {
+		_ = os.Remove(target)
+		if rerr = os.Rename(tmp, target); rerr == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if rerr != nil {
 		os.Remove(tmp)
-		return false, fmt.Errorf("installing the core: %w", err)
+		return false, fmt.Errorf("installing the core: %w", rerr)
 	}
 	return true, nil
 }

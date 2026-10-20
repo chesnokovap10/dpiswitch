@@ -53,8 +53,12 @@ type attachment struct {
 func directClient(directAddr string) *http.Client {
 	return &http.Client{
 		Timeout: 8 * time.Second,
+		// a client per call, one request or a few each: a connection kept
+		// alive outlived the client that would never use it again, with
+		// the goroutines that read and write it
 		Transport: &http.Transport{Proxy: http.ProxyURL(&url.URL{
-			Scheme: "socks5", Host: directAddr, User: url.UserPassword(probe.SocksUser, socksPass())})},
+			Scheme: "socks5", Host: directAddr, User: url.UserPassword(probe.SocksUser, socksPass())}),
+			DisableKeepAlives: true},
 	}
 }
 

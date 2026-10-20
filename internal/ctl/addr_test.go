@@ -97,3 +97,20 @@ func TestRequeueBound(t *testing.T) {
 		t.Fatalf("kept %d, first %s, seen %d", len(w.order), w.order[0], len(w.seen))
 	}
 }
+
+// A name the cycle drained is not left to the fast lane: its ports went
+// with the drain, and the fast lane probed 443 alone where the name was
+// seen on 20000 -- holding it, so the cycle's probe on 20000 never ran.
+func TestDrainTakesFresh(t *testing.T) {
+	w := &watcher{seen: map[string]map[endpoint]bool{}, bare: map[string]bool{},
+		live: map[string]bool{}, pinned: map[string]bool{},
+		addrPorts: map[string]map[endpoint]bool{}, addrCycles: map[string]int{}}
+	w.observe(Config{ProxyName: "awg1"}, []connection{tunnelled("speed.example", 20000)})
+	ports, _ := w.drain()
+	if eps := ports["speed.example"]; len(eps) != 1 || eps[0].port != 20000 {
+		t.Fatalf("drained %v", ports)
+	}
+	if doms, _ := w.takeFresh(); len(doms) != 0 {
+		t.Fatalf("the fast lane still takes %v, with no ports", doms)
+	}
+}
