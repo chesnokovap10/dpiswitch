@@ -329,6 +329,8 @@ var ru = map[string]string{
 	"For the sites that go through awg1. Empty: the DNS from its .conf":                                                          "Для сайтов, которые идут через awg1. Пусто — DNS из его .conf",
 	"For the sites that go through awg2 -- its own: the first server's may not answer through it. Empty: the DNS from its .conf": "Для сайтов, которые идут через awg2, — свой: DNS первого сервера через него может не отвечать. Пусто — DNS из его .conf",
 	"awg1 is not loaded.": "awg1 не загружен.",
+	"The core is not running: the tunnel cannot be tested. Start the service.": "Ядро не запущено: через туннель проверить нечем. Запустите службу.",
+	"The core is not running: tested straight, past it.":                       "Ядро не запущено: проверено напрямую, мимо него.",
 	"awg2 is not loaded.": "awg2 не загружен.",
 	"One per line: <code>https://IP/dns-query</code> (DoH), <code>tls://IP</code> (DoT), <code>IP</code> (plain DNS, often blocked by ISPs). An address, not a name, where possible. The test finds whether a DoH server wants <code>/dns-query</code> and fixes the address.": "По одному в строке: <code>https://IP/dns-query</code> (DoH), <code>tls://IP</code> (DoT), <code>IP</code> (обычный DNS, провайдеры его часто блокируют). По возможности адрес, а не имя. Проверка сама определяет, нужен ли DoH-серверу <code>/dns-query</code>, и исправляет адрес.",
 	"Save DNS": "Сохранить DNS",

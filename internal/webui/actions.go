@@ -876,7 +876,8 @@ func (s *Server) actDNSTest(w http.ResponseWriter, r *http.Request) {
 	if len(servers) == 0 && tun != nil {
 		servers, fromConf = tun.DNS(), true
 	}
-	t := dnsTest{Results: testDNS(path, servers), Field: field}
+	t := dnsTest{Field: field}
+	t.Results, t.Note = testDNS(path, servers)
 	if tun != nil {
 		if host, _, err := net.SplitHostPort(tun.Peer["Endpoint"]); err == nil {
 			caughtBy(host, t.Results)

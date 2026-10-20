@@ -211,7 +211,7 @@ const dohIdle = 90 * time.Second
 func (r Resolver) dohClient(d Dialer) *http.Client {
 	server := net.JoinHostPort(r.Host, strconv.Itoa(r.Port))
 	// the password too: a client dials with the dialer it was made with
-	key := d.Addr + "|" + d.Pass + "|" + d.Timeout.String() + "|" + server
+	key := d.via() + "|" + d.Pass + "|" + d.Timeout.String() + "|" + server
 	if c, ok := dohClients.Load(key); ok {
 		return c.(*http.Client)
 	}

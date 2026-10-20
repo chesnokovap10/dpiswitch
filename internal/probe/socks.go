@@ -28,6 +28,9 @@ type Dialer struct {
 	// Pass: the password of SocksUser on the listener, "" for a listener
 	// that asks none (the tests' stubs)
 	Pass string
+	// Direct: no listener, the connections go straight out -- for a test
+	// while the core is not running (nothing would be pulled into a tunnel)
+	Direct bool
 }
 
 // SocksUser: the user the prober's listeners take (see awgconf), with the
@@ -73,7 +76,18 @@ func (d Dialer) greet(c net.Conn) error {
 }
 
 // Alive: whether the core's listener itself accepts connections (not the site behind it)
+// via: what the dialer goes through, for the keys of kept connections
+func (d Dialer) via() string {
+	if d.Direct {
+		return "direct"
+	}
+	return d.Addr
+}
+
 func (d Dialer) Alive() bool {
+	if d.Direct {
+		return true
+	}
 	c, err := net.DialTimeout("tcp", d.Addr, time.Second)
 	if err != nil {
 		return false
@@ -83,6 +97,9 @@ func (d Dialer) Alive() bool {
 }
 
 func (d Dialer) dial(host string, port int) (net.Conn, error) {
+	if d.Direct {
+		return net.DialTimeout("tcp", net.JoinHostPort(strings.Trim(host, "[]"), strconv.Itoa(port)), d.Timeout)
+	}
 	c, err := net.DialTimeout("tcp", d.Addr, d.Timeout)
 	if err != nil {
 		return nil, fmt.Errorf("socks connect: %w", err)

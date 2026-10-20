@@ -114,7 +114,7 @@ var (
 )
 
 func (r Resolver) poolKey(d Dialer) string {
-	return d.Addr + "|" + r.Scheme + "|" + net.JoinHostPort(r.Host, strconv.Itoa(r.Port))
+	return d.via() + "|" + r.Scheme + "|" + net.JoinHostPort(r.Host, strconv.Itoa(r.Port))
 }
 
 // pooledStream: a query over a kept TCP or TLS connection (RFC 7766,

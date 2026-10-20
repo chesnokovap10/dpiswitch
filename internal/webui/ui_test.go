@@ -1021,6 +1021,9 @@ func TestDNSTestFixesPath(t *testing.T) {
 		return nil, 0, srv, errors.New("HTTP 404")
 	}
 	defer func() { pingEither = old }()
+	oldAlive := listenerAlive
+	listenerAlive = func(probe.Dialer) bool { return true }
+	defer func() { listenerAlive = oldAlive }()
 
 	lines := func(l ...string) string { return strings.Join(l, "\n") }
 	in := lines("https://a.test", "https://b.test", "https://c.test/dns-query",
@@ -1046,6 +1049,40 @@ func TestDNSTestFixesPath(t *testing.T) {
 	w = do(t, h, "POST", "/act/dnstest?path=direct", url.Values{"direct_dns": {lines("https://a.test", "https://c.test/dns-query")}}, nil)
 	if strings.Contains(w.Body.String(), "data-fill") {
 		t.Fatalf("a box with nothing to fix was refilled:\n%s", w.Body.String())
+	}
+}
+
+// With the core not running the direct servers are asked straight, past
+// it, and the tunnel's not at all: a column of "connection refused" said
+// the servers were down.
+func TestDNSTestCoreDown(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	ru := map[string]string{"Cookie": "lang=ru"}
+	oldAlive, oldPing := listenerAlive, pingEither
+	defer func() { listenerAlive, pingEither = oldAlive, oldPing }()
+	listenerAlive = func(probe.Dialer) bool { return false }
+	var direct []bool
+	pingEither = func(d probe.Dialer, srv, _ string) ([]string, time.Duration, string, error) {
+		direct = append(direct, d.Direct)
+		return []string{"192.0.2.1"}, time.Millisecond, srv, nil
+	}
+
+	w := do(t, h, "POST", "/act/dnstest?path=direct", url.Values{"direct_dns": {"tls://192.0.2.53"}}, ru)
+	if body := w.Body.String(); !strings.Contains(body, "pill ok") || !strings.Contains(body, "проверено напрямую") {
+		t.Fatalf("the direct test with the core down:\n%s", body)
+	}
+	if len(direct) != 1 || !direct[0] {
+		t.Fatalf("the direct server was not asked straight: %v", direct)
+	}
+
+	direct = nil
+	w = do(t, h, "POST", "/act/dnstest?path=tunnel", url.Values{"tunnel_dns": {"10.8.1.1"}}, ru)
+	if body := w.Body.String(); strings.Contains(body, "pill") || !strings.Contains(body, "Запустите службу") {
+		t.Fatalf("the tunnel test with the core down:\n%s", body)
+	}
+	if len(direct) != 0 {
+		t.Fatal("a tunnel server was asked with the core down")
 	}
 }
 

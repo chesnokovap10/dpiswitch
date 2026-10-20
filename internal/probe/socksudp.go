@@ -16,11 +16,18 @@ import (
 type udpConn struct {
 	ctrl  net.Conn // control TCP connection, kept open
 	relay *net.UDPConn
-	to    *net.UDPAddr // mihomo relay address
+	to    *net.UDPAddr // mihomo relay address; nil: a plain socket (Dialer.Direct)
 	once  sync.Once
 }
 
 func (d Dialer) DialUDP() (*udpConn, error) {
+	if d.Direct {
+		uc, err := net.ListenUDP("udp", nil)
+		if err != nil {
+			return nil, err
+		}
+		return &udpConn{relay: uc}, nil
+	}
 	c, err := net.DialTimeout("tcp", d.Addr, d.Timeout)
 	if err != nil {
 		return nil, fmt.Errorf("socks connect: %w", err)
@@ -120,6 +127,9 @@ func (u *udpConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	if !ok {
 		return 0, errors.New("*net.UDPAddr required")
 	}
+	if u.to == nil {
+		return u.relay.WriteToUDP(p, ua)
+	}
 	ip4 := ua.IP.To4()
 	var hdr []byte
 	if ip4 != nil {
@@ -135,6 +145,9 @@ func (u *udpConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 }
 
 func (u *udpConn) ReadFrom(p []byte) (int, net.Addr, error) {
+	if u.to == nil {
+		return u.relay.ReadFrom(p)
+	}
 	buf := make([]byte, len(p)+262) // headroom for the SOCKS header
 	n, _, err := u.relay.ReadFromUDP(buf)
 	if err != nil {
@@ -177,7 +190,9 @@ func (u *udpConn) ReadFrom(p []byte) (int, net.Addr, error) {
 func (u *udpConn) Close() error {
 	u.once.Do(func() {
 		u.relay.Close()
-		u.ctrl.Close() // closing the control connection tears down the association
+		if u.ctrl != nil {
+			u.ctrl.Close() // closing the control connection tears down the association
+		}
 	})
 	return nil
 }

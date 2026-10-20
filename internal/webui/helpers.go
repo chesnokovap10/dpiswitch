@@ -81,13 +81,19 @@ type dnsTest struct {
 	Results []dnsResult
 	Field   string
 	Fill    string
+	// Note: the core is not running -- the direct servers were asked past
+	// it, the tunnel's not at all
+	Note string
 }
 
 // testDNS checks resolvers over the same path the core will use: direct
 // ones through the prober's listener that bypasses the tunnel, tunnel ones
 // through awg1. whoami.akamai.net answers with the address of the recursive
 // server that asked it -- who actually resolves, not the domain's owner.
-func testDNS(path string, servers []string) []dnsResult {
+// With the core not running there is no tunnel to test through: the direct
+// servers are asked straight (nothing to pull them into a tunnel then), the
+// tunnel's not at all -- six "connection refused" said the servers were down.
+func testDNS(path string, servers []string) ([]dnsResult, string) {
 	cfg := ctl.Defaults()
 	// the prober's listeners take its user only, the API's secret the password
 	d := probe.Dialer{Addr: cfg.DirectAddr, Timeout: 6 * time.Second, Pass: ctl.SecretFromConfig(paths.Config())}
@@ -96,6 +102,14 @@ func testDNS(path string, servers []string) []dnsResult {
 		d.Addr = cfg.TunnelAddr
 	case "tunnel2":
 		d.Addr = cfg.Tunnel2Addr
+	}
+	note := ""
+	if len(servers) > 0 && !listenerAlive(d) {
+		if path != "direct" {
+			return nil, "The core is not running: the tunnel cannot be tested. Start the service."
+		}
+		d.Direct = true
+		note = "The core is not running: tested straight, past it."
 	}
 	out := make([]dnsResult, len(servers))
 	var wg sync.WaitGroup
@@ -107,8 +121,11 @@ func testDNS(path string, servers []string) []dnsResult {
 		}(i, srv)
 	}
 	wg.Wait()
-	return out
+	return out, note
 }
+
+// listenerAlive: probe.Dialer.Alive; the tests put a script here
+var listenerAlive = probe.Dialer.Alive
 
 // pingEither: probe.PingEither; the tests put a script here
 var pingEither = probe.PingEither
