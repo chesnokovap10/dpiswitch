@@ -56,6 +56,12 @@ select,input[type=number],input[type=search],input[type=text]{font:inherit;paddi
   border:1px solid var(--line);background:var(--panel);color:var(--fg)}
 input[type=checkbox]{margin:0;width:15px;height:15px;accent-color:var(--accent)}
 label.cb{display:flex;gap:7px;align-items:center;cursor:pointer}
+/* a filter in force is framed red: the table shows part of the rows, and a
+   query left in the box was easy to miss -- the search boxes with text, the
+   live page's route other than All, its "hide the detector's checks" */
+input[type=search]:not(:placeholder-shown),
+.tabs:has(button[data-route]:not([data-route=""]).on){border-color:var(--bad);box-shadow:0 0 0 1px var(--bad)}
+label.cb:has(#lnoprobe:checked){outline:2px solid var(--bad);outline-offset:3px;border-radius:4px}
 
 /* nav */
 /* the bottom keeps an empty line under the last text, on every page */
