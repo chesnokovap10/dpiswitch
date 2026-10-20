@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/windows/svc/mgr"
 
 	"dpiswitch/internal/core"
+	"dpiswitch/internal/nrpt"
 	"dpiswitch/internal/paths"
 	"dpiswitch/internal/supervisor"
 	"dpiswitch/internal/version"
@@ -233,6 +234,13 @@ func Uninstall() error {
 		if err := waitState(query(s), svc.Stopped, stopLimit+30*time.Second, 300*time.Millisecond); err != nil {
 			return fmt.Errorf("the service did not stop, it is not removed: %w", err)
 		}
+	}
+	// a DNS policy rule a service that died left behind would outlive the
+	// program, and no name would resolve again (see nrpt)
+	if removed, err := nrpt.Lift(); err != nil {
+		log.Printf("warning: DNS policy rule not removed: %v", err)
+	} else if removed {
+		log.Println("DNS policy rule left by the service removed")
 	}
 	return s.Delete()
 }

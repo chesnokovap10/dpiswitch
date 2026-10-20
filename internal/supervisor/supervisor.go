@@ -53,13 +53,18 @@ type Supervisor struct {
 	guard     udpGuard
 	guardStop context.CancelFunc
 	guardDone chan struct{}
+	// nrpt: the DNS policy rule, kept by holdNRPT while a core runs (see
+	// nrpt.go); nil in the tests' supervisors, which leave the registry be
+	nrpt     nrptRule
+	nrptStop context.CancelFunc
+	nrptDone chan struct{}
 }
 
 // apiAddr: the core's external controller, as awgconf writes it
 const apiAddr = "127.0.0.1:9090"
 
 func New() *Supervisor {
-	return &Supervisor{recheck: make(chan struct{}, 1), guard: udpguard.New()}
+	return &Supervisor{recheck: make(chan struct{}, 1), guard: udpguard.New(), nrpt: realNRPT{}}
 }
 
 // Run keeps the core alive until the context is cancelled and runs
@@ -81,6 +86,14 @@ func (s *Supervisor) Run(ctx context.Context, apply bool) {
 	// a guard that is still in place when this one ends is taken out
 	resetGuardStatus()
 	defer s.guard.Lift()
+	// a DNS policy rule a service that died left in place: no name resolves
+	// while it stands with no core; and this one's is taken out at its end
+	s.resetNRPT()
+	defer func() {
+		if s.nrpt != nil {
+			s.nrpt.Lift()
+		}
+	}()
 
 	// cores from a previous run (hard power-off, service crash)
 	// hold TUN and routes -- kill them before bringing up our own
@@ -301,6 +314,9 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 	// out when this core ends or is stopped (see stopCore)
 	s.startGuard(coreCtx)
 	defer s.stopGuard()
+	// the DNS policy the same way (see nrpt.go)
+	s.startNRPT(coreCtx)
+	defer s.stopNRPT()
 
 	go func() { waitErr = cmd.Wait(); close(done) }()
 
@@ -339,6 +355,9 @@ func (s *Supervisor) stopCore(cmd *exec.Cmd, done <-chan struct{}) {
 	// the UDP guard first: the adapter goes next, and filters left through
 	// that would cut every program's UDP off for the seconds it takes
 	s.stopGuard()
+	// and the DNS policy: names asked of the adapter while it goes would
+	// find nothing
+	s.stopNRPT()
 	if err := tunOff(); err != nil {
 		log.Printf("TUN not disabled via the API (%v) -- routes may need manual cleanup", err)
 	} else {

@@ -86,6 +86,13 @@ type Settings struct {
 	// calls -- and cuts off what needs that UDP: off by default. Not a core
 	// setting: the service puts the filters in and takes them out within seconds.
 	UDPGuard bool `json:"udp_guard"`
+	// NRPT: every name Windows asks goes to the core's DNS alone, by a rule
+	// of the Name Resolution Policy Table, while the core runs and its TUN
+	// adapter takes the traffic (see nrpt). Windows asks on every adapter
+	// at once without it, the router's DNS on Wi-Fi among them. Off by
+	// default: a service that dies leaves the rule, and nothing resolves
+	// until it starts again. Not a core setting either.
+	NRPT bool `json:"nrpt"`
 	// UIOpen: how the tray opens the UI -- UIWindow, an app window of the
 	// default browser, or UITab, a tab of the browser
 	UIOpen string `json:"ui_open"`

@@ -302,6 +302,24 @@ IPv4 only for it: the core restarts once, and that finding holds for a day befor
 connection made to an IPv6 address is refused at once, so the program takes IPv4. Nothing leaves over IPv6 around
 the tunnel. The local network's own addresses -- the router's, a printer's -- work as before.</p>
 
+<h4 id="h-nrpt">All DNS through the tunnel</h4>
+<p>Windows asks a name on every adapter at once: through the DPI Switch adapter, and at the same time of the Wi-Fi
+or Ethernet adapter's DNS -- the router's, the ISP's. The tunnel's answer comes first and Windows cancels the
+other query, but it has gone out: the router asks the ISP's resolver, which sees the sites you open. It does not
+affect how things work -- the connections go through the core all the same -- only privacy. The UDP leak guard
+lets such a query pass: the router is the local network.</p>
+<p><a href="/settings#nrpt"><b>All DNS through the tunnel</b></a> (off by default), while the core runs and its
+adapter takes the traffic, puts a rule into Windows' Name Resolution Policy Table (NRPT): every name is asked of
+the DNS inside the DPI Switch adapter alone. Windows asks the adapters' servers nothing at all, by the DoH
+Windows 11 can turn on for them neither. The rule goes when the core stops or restarts, when the setting is
+switched off, and when the service is removed.</p>
+<p>The rule is kept in the registry and does not go by itself. Should the service die without taking it out,
+names stop resolving until Windows starts it again (in 30 seconds): the first thing the service does at its
+start is take out a rule left from before. Names only the router knows (<code>miwifi.com</code>,
+<code>*.lan</code>) do not resolve: they are asked of the tunnel's DNS. Local devices' names by NetBIOS and
+LLMNR work -- they are not DNS. With NRPT rules of Group Policy in Windows (a computer in a domain), Windows
+reads those alone; the settings page says so, and the rule is not put in.</p>
+
 <h4 id="h-udpguard">UDP leak guard</h4>
 <p>A program that binds its UDP socket to the Wi-Fi or Ethernet adapter's own address leaves by that adapter
 whatever the routes say: around the tunnel, with your real address in the packet. A browser's WebRTC does it to

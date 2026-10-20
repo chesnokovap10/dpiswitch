@@ -306,8 +306,16 @@ var ru = map[string]string{
 	"Asked first: %s, %.0f ms.": "Спрашивается первым: %s, %.0f мс.",
 
 	// the UDP leak guard
-	"UDP leak guard": "Защита от утечки UDP",
-	"The service is stopped: nothing is blocked.": "Служба остановлена: ничего не блокируется.",
+	"UDP leak guard":             "Защита от утечки UDP",
+	"All DNS through the tunnel": "Весь DNS через туннель",
+	"While the core runs, Windows asks every name of the tunnel's DNS alone -- none goes to the Wi-Fi or Ethernet adapter's servers, the router's or the ISP's, around the tunnel.": "Пока ядро работает, Windows спрашивает каждое имя только у DNS туннеля: ни одно не уходит мимо туннеля к серверам адаптера Wi-Fi или Ethernet — роутера, провайдера.",
+	"Should the service die, names do not resolve until it starts again; names only the router knows do not resolve. Off by default.":                                               "Если служба погибнет, имена не разрешаются, пока она не запустится снова; имена, которые знает только роутер, не разрешаются. По умолчанию выключено.",
+	"The service is stopped: Windows asks names as usual.":                                                                                                                              "Служба остановлена: Windows спрашивает имена как обычно.",
+	"In place: every name goes to the tunnel's DNS.":                                                                                                                                    "Действует: каждое имя уходит к DNS туннеля.",
+	"Not in place: Windows keeps the programs' traffic from the DPI Switch adapter -- names sent there would find nothing.":                                                             "Не действует: Windows не пускает трафик программ в адаптер DPI Switch — имена, отправленные туда, остались бы без ответа.",
+	"Not in place: Group Policy has name resolution rules of its own, and Windows reads no other. Names are asked as usual.":                                                            "Не действует: в групповой политике есть свои правила разрешения имён, и других Windows не читает. Имена спрашиваются как обычно.",
+	"Not in place: Windows refused the rule (%s). Names are asked as usual; tried again every 2 seconds.":                                                                               "Не действует: Windows отклонила правило (%s). Имена спрашиваются как обычно; новая попытка каждые 2 секунды.",
+	"The service is stopped: nothing is blocked.":                                                                                                                                       "Служба остановлена: ничего не блокируется.",
 	"In place, and checked: the engine dropped a test packet sent out of the adapter by its own address. UDP leaves the physical adapters only from the core and to the local network.": "Работает, проверено: движок сбросил тестовый пакет, отправленный с адреса адаптера. UDP через физические адаптеры уходит только от ядра и в локальную сеть.",
 	"In place: UDP leaves the physical adapters only from the core and to the local network.":                                                                                           "Работает: UDP через физические адаптеры уходит только от ядра и в локальную сеть.",
 	"Waiting for the DPI Switch adapter: it is not up, or has no route out.":                                                                                                            "Ждёт адаптер DPI Switch: он не поднят или у него нет маршрута наружу.",

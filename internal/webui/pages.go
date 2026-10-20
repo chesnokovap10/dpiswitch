@@ -15,6 +15,7 @@ import (
 	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/dnscache"
 	"dpiswitch/internal/netprocs"
+	"dpiswitch/internal/nrpt"
 	"dpiswitch/internal/paths"
 	"dpiswitch/internal/presets"
 	"dpiswitch/internal/probe"
@@ -343,6 +344,8 @@ type settings struct {
 	// the UDP guard switched on: what the service last said of it, nil when
 	// it has said nothing (see udpguard)
 	Guard *udpguard.Status
+	// NRPT: the DNS policy rule's state, when the setting is on (see nrpt)
+	NRPT *nrpt.Status
 }
 
 // MsgFor: the result to show in a setting's row, if it was the one changed
@@ -374,6 +377,11 @@ func settingsData() settings {
 	if d.S.UDPGuard {
 		if st, ok := udpguard.Load(paths.UDPGuard()); ok {
 			d.Guard = &st
+		}
+	}
+	if d.S.NRPT {
+		if st, ok := nrpt.Load(paths.NRPT()); ok {
+			d.NRPT = &st
 		}
 	}
 	return d
