@@ -190,7 +190,9 @@ func lockChildren(dir, owner string, errs *[]error) {
 	}
 	for _, e := range ents {
 		p := filepath.Join(dir, e.Name())
-		if p == UserDir() {
+		// NTFS names are of any case: a "User" read back for "user" would
+		// lock the owner out of their own folder
+		if strings.EqualFold(p, UserDir()) {
 			continue
 		}
 		h, info, err := openNoFollow(p, windows.READ_CONTROL|windows.WRITE_DAC|windows.WRITE_OWNER)

@@ -547,16 +547,20 @@ func (b *asnBook) round(directAddr string, nodes []string, done func()) {
 		// hundred kilobytes
 		var wg sync.WaitGroup
 		sem := make(chan struct{}, asnRangeWorkers)
-		for i, asn := range wanted {
-			if i >= asnPerRound {
-				break
-			}
+		// the lookups are counted, not the names gone through: the ones
+		// known or held cost nothing
+		asked := 0
+		for _, asn := range wanted {
 			if _, ok := b.ranges(asn); ok {
 				b.mu.Lock()
 				delete(b.wanted, asn)
 				b.mu.Unlock()
 				continue
 			}
+			if asked >= asnPerRound {
+				break
+			}
+			asked++
 			sem <- struct{}{}
 			wg.Add(1)
 			go func(asn string) {
@@ -593,8 +597,11 @@ func (b *asnBook) round(directAddr string, nodes []string, done func()) {
 		// before inheritance holds hundreds, and a few a cycle kept the
 		// first minutes after an update on the old way
 		sem = make(chan struct{}, asnWorkers)
-		for i, ip := range nodes {
-			if i >= asnNodesPerRound {
+		// more than asnNodesPerRound held at the head of the list took the
+		// round's places, and no new node was asked until they came free
+		asked = 0
+		for _, ip := range nodes {
+			if asked >= asnNodesPerRound {
 				break
 			}
 			sem <- struct{}{}
@@ -603,6 +610,7 @@ func (b *asnBook) round(directAddr string, nodes []string, done func()) {
 				<-sem
 				continue
 			}
+			asked++
 			wg.Add(1)
 			go func(ip string) {
 				defer func() { <-sem; wg.Done() }()

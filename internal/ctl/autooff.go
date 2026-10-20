@@ -311,6 +311,9 @@ func watchSettings(ctx context.Context, cfg Config, a *api, st *state, last Sett
 		last, haveLast = ns, true
 		cfg.setMode(ns.Mode())
 		cfg.setCut(cutState{ns.SplitHello, ns.QUICFake})
+		// as the cycle has it: this copy's is the start's, and the lists of
+		// inheritance were written for a first tunnel there was none of
+		cfg.alone = noFirstTunnel()
 		switch now := ns.Mode(); {
 		case now != was:
 			// the settings as they are now: this copy may have started
