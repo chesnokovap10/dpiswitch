@@ -196,7 +196,10 @@ td small{display:block;color:var(--muted)}
   padding:5px 12px;color:var(--fg);cursor:pointer}
 .tabs button:last-child{border-right:0}
 .tabs button.on{background:var(--accent-bg);color:var(--accent);-webkit-text-stroke:.45px currentColor}
-.tabs .n{color:var(--muted);font-weight:400;font-size:12px;-webkit-text-stroke:0}
+/* room for three digits of one width: a count going 9 -> 10, or the
+   detector's checks hidden, moved everything after the tabs */
+.tabs .n{color:var(--muted);font-weight:400;font-size:12px;-webkit-text-stroke:0;
+  display:inline-block;min-width:3ch;font-variant-numeric:tabular-nums;text-align:left}
 .live .tile:hover{border-color:var(--line)}
 .live .tile b{font-size:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .live .tile span{font-size:12px}
