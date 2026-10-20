@@ -152,7 +152,10 @@ pre.fill{background:var(--bg);border:1px solid var(--line);border-radius:7px;pad
 .tabs{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:var(--panel)}
 .tabs a{padding:5px 12px;color:var(--fg);border-right:1px solid var(--line)}
 .tabs a:last-child{border-right:0}
-.tabs a.on{background:var(--accent-bg);color:var(--accent);font-weight:600}
+/* the tab chosen is drawn heavier by a stroke, not font-weight: a bold
+   label is wider, and everything after it in the bar moved a pixel with
+   each choice */
+.tabs a.on{background:var(--accent-bg);color:var(--accent);-webkit-text-stroke:.45px currentColor}
 .tablebox{background:var(--panel);border:1px solid var(--line);border-radius:9px;overflow:auto;flex:1;min-height:0}
 table{width:100%;border-collapse:collapse}
 th,td{text-align:left;padding:4px 10px;border-bottom:1px solid var(--line);vertical-align:top}
@@ -192,8 +195,8 @@ td small{display:block;color:var(--muted)}
 .tabs button{font:inherit;border:0;border-right:1px solid var(--line);border-radius:0;background:none;
   padding:5px 12px;color:var(--fg);cursor:pointer}
 .tabs button:last-child{border-right:0}
-.tabs button.on{background:var(--accent-bg);color:var(--accent);font-weight:600}
-.tabs .n{color:var(--muted);font-weight:400;font-size:12px}
+.tabs button.on{background:var(--accent-bg);color:var(--accent);-webkit-text-stroke:.45px currentColor}
+.tabs .n{color:var(--muted);font-weight:400;font-size:12px;-webkit-text-stroke:0}
 .live .tile:hover{border-color:var(--line)}
 .live .tile b{font-size:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .live .tile span{font-size:12px}
