@@ -387,6 +387,26 @@ func TestUDPByName(t *testing.T) {
 	}
 }
 
+// The cache's path, Exchange, takes udp:// by name over UDP the same way.
+func TestExchangeUDPByName(t *testing.T) {
+	addr, asked := udpSocksStub(t, 0)
+	r, err := ParseResolver("udp://dns2.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, _ := buildQuery("example.com", typeA)
+	resp, err := r.Exchange(Dialer{Addr: addr, Timeout: 3 * time.Second}, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := parseAnswer(resp, q, typeA); err != nil || len(got) != 1 || got[0] != "192.0.2.7" {
+		t.Fatalf("got %v, %v", got, err)
+	}
+	if n, name := asked.Load(), lastName.Load(); n != 1 || name != "dns2.example" {
+		t.Fatalf("%d datagrams to %v, want 1 to dns2.example", n, name)
+	}
+}
+
 // An answer counts only from the resolver asked, to the question asked: a
 // datagram that guessed the 16-bit ID was taken for the answer.
 func TestUDPAnswerForged(t *testing.T) {

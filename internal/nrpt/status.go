@@ -31,6 +31,7 @@ const (
 	WhyAdapter = "adapter" // its TUN adapter is down, or has no route out
 	WhyTraffic = "traffic" // Windows keeps the programs' traffic from the adapter
 	WhyPolicy  = "policy"  // Group Policy has rules of its own (see Overridden)
+	WhyIgnored = "ignored" // written, and the DNS client does not apply it (see Effective)
 	WhyOther   = "other"   // the registry refused
 )
 

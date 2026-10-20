@@ -16,6 +16,16 @@ type fakeNRPT struct {
 	in     bool
 	policy bool
 	putErr error
+	// ignored: the DNS client's table lacks the rule written; effErr: it
+	// cannot be read
+	ignored bool
+	effErr  error
+}
+
+func (f *fakeNRPT) Effective(context.Context) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.in && !f.ignored, f.effErr
 }
 
 func (f *fakeNRPT) Put() (bool, error) {
@@ -137,6 +147,38 @@ func TestHoldNRPT(t *testing.T) {
 	on = true
 	mu.Unlock()
 	waitFor("on again", func() bool { return r.isIn() })
+
+	// written, and the DNS client does not apply it: not said in place
+	// (the review of 20.10); once it does, it is
+	wasRecheck := nrptRecheck
+	nrptRecheck = 20 * time.Millisecond
+	defer func() { nrptRecheck = wasRecheck }()
+	r.set(func(f *fakeNRPT) { f.ignored = true })
+	mu.Lock()
+	on = false
+	mu.Unlock()
+	waitFor("off before the ignored one", func() bool { return last().State == nrpt.StateOff })
+	mu.Lock()
+	on = true
+	mu.Unlock()
+	waitFor("not applied", func() bool { s := last(); return r.isIn() && s.State == nrpt.StateFail && s.Why == nrpt.WhyIgnored })
+	r.set(func(f *fakeNRPT) { f.ignored = false })
+	waitFor("applied later", func() bool { return last().State == nrpt.StateOn })
+	// a table that cannot be read leaves the rule taken as written
+	r.set(func(f *fakeNRPT) { f.ignored, f.effErr = true, errors.New("no PowerShell") })
+	mu.Lock()
+	on = false
+	mu.Unlock()
+	waitFor("off before the unreadable one", func() bool { return last().State == nrpt.StateOff })
+	mu.Lock()
+	on = true
+	mu.Unlock()
+	waitFor("unreadable: in place", func() bool { return r.isIn() && last().State == nrpt.StateOn })
+	time.Sleep(50 * time.Millisecond)
+	if last().State != nrpt.StateOn {
+		t.Fatalf("unreadable table taken for not applied: %+v", last())
+	}
+	r.set(func(f *fakeNRPT) { f.ignored, f.effErr = false, nil })
 
 	// the core's end takes it out, and says the setting waits for a core
 	stop()

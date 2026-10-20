@@ -18,9 +18,14 @@
 package nrpt
 
 import (
+	"context"
 	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 
 	"golang.org/x/sys/windows/registry"
 )
@@ -106,4 +111,34 @@ func Overridden() bool {
 	}
 	k.Close()
 	return true
+}
+
+// Effective: whether the DNS client applies the rule -- the table it works
+// by, as Get-DnsClientNrptPolicy shows it, has "." sent to Servers. The key
+// written is no proof: Group Policy's table, or a client that did not take
+// the change, leaves it unread, and the UI said "in place" all the same
+// (the review of 20.10). The DNS client has no documented call for its
+// table; PowerShell's module asks it, a second or so -- asked once a rule
+// is written, not every round.
+func Effective(ctx context.Context) (bool, error) {
+	ps := filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+	cmd := exec.CommandContext(ctx, ps, "-NoProfile", "-NonInteractive", "-Command",
+		`Get-DnsClientNrptPolicy | Where-Object Namespace -eq '.' | ForEach-Object { $_.NameServers -join ';' }`)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	out, err := cmd.Output()
+	if err != nil {
+		return false, err
+	}
+	return effectiveIn(string(out)), nil
+}
+
+// effectiveIn: whether the lines Effective's command printed hold the rule
+func effectiveIn(out string) bool {
+	want := strings.Join(Servers, ";")
+	for _, l := range strings.Split(out, "\n") {
+		if strings.EqualFold(strings.TrimSpace(l), want) {
+			return true
+		}
+	}
+	return false
 }

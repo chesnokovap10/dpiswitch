@@ -98,6 +98,7 @@ func TestNRPTStates(t *testing.T) {
 		{nrpt.Status{State: nrpt.StateWait, Why: nrpt.WhyAdapter}, "Waiting for the DPI Switch adapter", "Ждёт адаптер DPI Switch", "muted"},
 		{nrpt.Status{State: nrpt.StateWait, Why: nrpt.WhyTraffic}, "names sent there would find nothing", "остались бы без ответа", "warn-t"},
 		{nrpt.Status{State: nrpt.StateFail, Why: nrpt.WhyPolicy}, "Group Policy has name resolution rules of its own", "в групповой политике есть свои правила", "bad-t"},
+		{nrpt.Status{State: nrpt.StateFail, Why: nrpt.WhyIgnored}, "Windows does not apply it", "Windows его не применяет", "bad-t"},
 		{nrpt.Status{State: nrpt.StateFail, Why: nrpt.WhyOther, Err: "Access is denied"}, "Windows refused the rule (Access is denied)", "Windows отклонила правило (Access is denied)", "bad-t"},
 	} {
 		if err := c.st.Save(paths.NRPT()); err != nil {

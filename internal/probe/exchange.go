@@ -54,7 +54,9 @@ func (r Resolver) Exchange(d Dialer, q []byte) ([]byte, error) {
 		resp, err = r.doh(d, q)
 	case r.Scheme == "local":
 		resp, err = askLocal(q)
-	case r.Scheme == "udp" && net.ParseIP(r.Host) != nil:
+	case r.Scheme == "udp" && (net.ParseIP(r.Host) != nil || !d.Direct):
+		// by name too, the listener resolving it (see datagram): it went
+		// over TCP, and a server whose UDP was cut served the cache
 		resp, err = r.pooledDatagram(d, q)
 	default:
 		resp, err = r.pooledStream(d, q)

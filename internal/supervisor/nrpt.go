@@ -3,6 +3,7 @@ package supervisor
 import (
 	"context"
 	"log"
+	"time"
 
 	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/nrpt"
@@ -24,6 +25,7 @@ type nrptRule interface {
 	Put() (bool, error)
 	Lift() (bool, error)
 	Overridden() bool
+	Effective(ctx context.Context) (bool, error)
 }
 
 type realNRPT struct{}
@@ -31,6 +33,19 @@ type realNRPT struct{}
 func (realNRPT) Put() (bool, error)  { return nrpt.Put() }
 func (realNRPT) Lift() (bool, error) { return nrpt.Lift() }
 func (realNRPT) Overridden() bool    { return nrpt.Overridden() }
+func (realNRPT) Effective(ctx context.Context) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	return nrpt.Effective(ctx)
+}
+
+// nrptConfirmTries: the DNS client's table is asked this many times, a round
+// apart, for the rule written before it is said not applied -- it takes the
+// key in half a second, measured; nrptRecheck: then asked again this often,
+// for one it takes later
+const nrptConfirmTries = 5
+
+var nrptRecheck = time.Minute
 
 // nrptEnv: what holdNRPT looks at and writes besides the rule
 type nrptEnv struct {
@@ -60,6 +75,11 @@ func holdNRPT(ctx context.Context, r nrptRule, env nrptEnv) {
 	var (
 		cur    nrpt.Status
 		logged string // the failure last logged: one text is said once
+		// whether the DNS client was seen to apply the rule written (see
+		// nrpt.Effective): tries and next are the asking until it is
+		confirmed bool
+		tries     int
+		next      time.Time
 	)
 	say := func(st nrpt.Status) {
 		if !st.Same(cur) {
@@ -74,6 +94,7 @@ func holdNRPT(ctx context.Context, r nrptRule, env nrptEnv) {
 		}
 	}
 	lift := func(why string) bool {
+		confirmed, tries, next = false, 0, time.Time{}
 		removed, err := r.Lift()
 		if err != nil {
 			once("DNS policy not taken out: " + err.Error())
@@ -130,9 +151,35 @@ func holdNRPT(ctx context.Context, r nrptRule, env nrptEnv) {
 			say(nrpt.Status{State: nrpt.StateFail, Why: nrpt.WhyOther, Err: errText(err)})
 			return
 		}
-		logged = ""
+		if changed || cur.State == nrpt.StateFail && cur.Why != nrpt.WhyIgnored {
+			logged = "" // a failure after this one is said again
+		}
 		if changed {
+			confirmed, tries, next = false, 0, time.Time{}
 			log.Println("DNS policy in place: every name is asked of the core's DNS, through the DPI Switch adapter alone")
+		}
+		if !confirmed && !time.Now().Before(next) {
+			tries++
+			ok, err := r.Effective(ctx)
+			switch {
+			case ctx.Err() != nil:
+				return
+			case err != nil:
+				// no way to ask: the rule is taken as written, as before
+				confirmed = true
+				once("DNS policy not confirmed: the DNS client's table could not be read: " + err.Error())
+			case ok:
+				confirmed = true
+				logged = ""
+				log.Println("DNS policy confirmed: the DNS client applies it")
+			case tries >= nrptConfirmTries:
+				next = time.Now().Add(nrptRecheck)
+				once("DNS policy not in effect: written, and the DNS client's table does not have it -- names are asked as usual")
+			}
+		}
+		if !confirmed && tries >= nrptConfirmTries {
+			say(nrpt.Status{State: nrpt.StateFail, Why: nrpt.WhyIgnored})
+			return
 		}
 		say(nrpt.Status{State: nrpt.StateOn})
 	}
