@@ -205,6 +205,10 @@ td small{display:block;color:var(--muted)}
 .live .tile b{font-size:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .live .tile span{font-size:12px}
 .live .bar{flex-wrap:wrap;row-gap:8px}
+/* the scrollbar's room kept with or without one: rows enough for it or not
+   -- the detector's checks hidden, a filter -- changed the width the columns
+   share, and every one of them moved */
+#ltable{scrollbar-gutter:stable}
 .live .bar > *{white-space:nowrap;flex:none}
 /* The columns' widths are live.js's: the box's width, shared by their
    weights. What is cut short says itself in full in its hint. */
