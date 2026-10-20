@@ -301,8 +301,25 @@ func learn(cfg Config, a *api, st *state, netID string) {
 // names, or one the fast lane took the moment it turned up (see fastLane).
 // A name another batch is probing is left to it.
 func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue []string, ports map[string][]endpoint) {
+	all := queue
 	queue = claim(queue)
 	defer release(queue)
+	// a name the other batch is probing goes back to the watcher with the
+	// ports this one had for it: the other batch probes the ports it took,
+	// and one seen meanwhile -- drained by a cycle while the fast lane
+	// probed the name -- was dropped here, and the name could go direct
+	// with it unchecked (the review of 20.10). The next cycle has it: a
+	// name without a verdict yet as a candidate, one going direct by its
+	// new port (see newPorts).
+	if w != nil && len(queue) < len(all) {
+		var back []string
+		for _, d := range all {
+			if !slices.Contains(queue, d) {
+				back = append(back, d)
+			}
+		}
+		w.requeue(back, ports)
+	}
 	if len(queue) == 0 {
 		return
 	}
@@ -1144,6 +1161,13 @@ var reloadPending = map[string]bool{}
 func retryReloads(a *api) {
 	for p := range reloadPending {
 		if err := a.reloadProvider(p); err != nil {
+			if notFound(err) {
+				// gone from the core's config -- the second tunnel's, after
+				// it was switched off or deleted: it was asked for again
+				// every sync for good
+				delete(reloadPending, p)
+				log.Printf("provider %s no longer in the core's config: not reloaded", p)
+			}
 			continue // the next sync tries again; logged when it first failed
 		}
 		delete(reloadPending, p)
@@ -1623,6 +1647,9 @@ func sameFinding(a, b probe.Verdict) bool {
 // does not have. The order used to be the ports' order: a SLOWER first held
 // on to its place against a BLOCKED_TLS after it, and a CLEAN kept once
 // before (see SlowOnce) sent the name direct with one of its ports blocked.
+// BLOCKED_DPI and BLOCKED_TCP are above BLOCKED_TLS: a 443 whose cut failed
+// lost to a BLOCKED_TLS on another port probed first, and the name was not
+// refusable (see refusable) -- the review of 20.10.
 var verdictRank = map[probe.Verdict]int{
 	probe.Inconcl:     0,
 	probe.Clean:       1,
@@ -1630,10 +1657,10 @@ var verdictRank = map[probe.Verdict]int{
 	probe.Slower:      3,
 	probe.BlockedQUIC: 4,
 	probe.ContentDiff: 5,
-	probe.BlockedTCP:  6,
 	probe.BlockedTLS:  6,
-	probe.BlockedDPI:  6,
-	probe.MITM:        7,
+	probe.BlockedTCP:  7,
+	probe.BlockedDPI:  7,
+	probe.MITM:        8,
 }
 
 // worse: whether a is worse than b; of two alike the first stays

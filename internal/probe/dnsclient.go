@@ -323,7 +323,7 @@ func exchange(c net.Conn, d Dialer, q []byte) ([]byte, error) {
 // asked again. A server that closes a stream after one answer is timed with
 // its handshake, the only way it can be used.
 func (r Resolver) Ping(d Dialer, name string) ([]string, time.Duration, error) {
-	if r.Scheme == "tls" || r.Scheme == "tcp" || (r.Scheme == "udp" && net.ParseIP(r.Host) == nil) {
+	if r.Scheme == "tls" || r.Scheme == "tcp" || (r.Scheme == "udp" && d.Direct && net.ParseIP(r.Host) == nil) {
 		return r.pingStream(d, name)
 	}
 	if _, err := r.Lookup(d, name); err != nil {
@@ -391,11 +391,14 @@ func (r Resolver) pingStream(d Dialer, name string) ([]string, time.Duration, er
 var udpResend = 2 * time.Second
 
 // datagram asks over UDP through the listener. A truncated answer is asked
-// again over TCP, as a resolver client does. A resolver given by name is
-// asked over TCP as before: a datagram goes to an address, and resolving the
-// name here would ask the system, not the path under test.
+// again over TCP, as a resolver client does. A resolver given by name goes
+// to the listener by name, which resolves it as the core does the servers
+// of its config: it was asked over TCP, and a server whose UDP was cut
+// showed working (the review of 20.10). With no listener (Direct) it is
+// still asked over TCP: resolving the name here would ask the system, not
+// the path under test.
 func (r Resolver) datagram(d Dialer, q []byte) ([]byte, error) {
-	if net.ParseIP(r.Host) == nil {
+	if net.ParseIP(r.Host) == nil && d.Direct {
 		return r.stream(d, q)
 	}
 	u, err := d.DialUDP()

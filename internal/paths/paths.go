@@ -4,6 +4,8 @@
 package paths
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -211,8 +213,15 @@ func TrayLog() string {
 func UILang() string { return filepath.Join(filepath.Dir(TrayLog()), "lang") }
 
 // ResetRequest: left by the tray to have the service drop every verdict
-func ResetRequest() string {
-	return User("reset-" + strconv.FormatInt(time.Now().UnixNano(), 10) + ".request")
+func ResetRequest() string { return User("reset-" + requestID() + ".request") }
+
+// requestID: a request file's own part of the name -- the time, which on
+// Windows moves in steps of up to 15.6 ms, and a random one: two asked in
+// one step had one name, and the second overwrote the first
+func requestID() string {
+	var rnd [4]byte
+	_, _ = rand.Read(rnd[:])
+	return strconv.FormatInt(time.Now().UnixNano(), 10) + "-" + hex.EncodeToString(rnd[:])
 }
 
 // ResetRequests: every reset request waiting -- a file each, so two asked
@@ -226,6 +235,4 @@ func ResetRequests() string { return User("reset-*.request") }
 func ForgetRequests() string { return User("forget-*.request") }
 
 // ForgetRequest: a new request's file, a name no other takes
-func ForgetRequest() string {
-	return User("forget-" + strconv.FormatInt(time.Now().UnixNano(), 10) + ".request")
-}
+func ForgetRequest() string { return User("forget-" + requestID() + ".request") }

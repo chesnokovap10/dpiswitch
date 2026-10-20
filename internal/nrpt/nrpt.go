@@ -94,14 +94,16 @@ func Lift() (removed bool, err error) {
 	return true, nil
 }
 
-// Overridden: Group Policy has rules of its own, and Windows reads no local
-// one then -- the rule would be written and do nothing.
+// Overridden: Group Policy has a rule table of its own, and Windows reads
+// no local rule then -- the rule would be written and do nothing. The key
+// itself decides, with no rule in it too: a domain's machine may have it
+// empty, and the local table is passed over all the same (the review of
+// 20.10; NetBird's look at the NRPT found the same).
 func Overridden() bool {
-	k, err := registry.OpenKey(registry.LOCAL_MACHINE, policyKey, registry.ENUMERATE_SUB_KEYS)
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, policyKey, registry.QUERY_VALUE)
 	if err != nil {
 		return false
 	}
-	defer k.Close()
-	names, _ := k.ReadSubKeyNames(1)
-	return len(names) > 0
+	k.Close()
+	return true
 }

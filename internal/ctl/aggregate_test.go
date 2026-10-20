@@ -29,6 +29,9 @@ func TestWorseOrderFree(t *testing.T) {
 		{[]probe.Verdict{probe.Clean, probe.Inconcl}, probe.Clean},
 		{[]probe.Verdict{probe.Inconcl, probe.Inconcl}, probe.Inconcl},
 		{[]probe.Verdict{probe.MITM, probe.BlockedTCP, probe.Clean}, probe.MITM},
+		// the cut failed on 443: refusable, whichever port came first
+		{[]probe.Verdict{probe.BlockedTLS, probe.BlockedDPI}, probe.BlockedDPI},
+		{[]probe.Verdict{probe.BlockedTLS, probe.BlockedTCP}, probe.BlockedTCP},
 	} {
 		rev := make([]probe.Verdict, len(tc.ports))
 		for i, v := range tc.ports {
@@ -40,7 +43,7 @@ func TestWorseOrderFree(t *testing.T) {
 	}
 	// every verdict has a rank: an unknown one would sink below INCONCLUSIVE
 	for _, v := range []probe.Verdict{probe.Clean, probe.BlockedTCP, probe.BlockedTLS, probe.MITM,
-		probe.ContentDiff, probe.BlockedQUIC, probe.Slower, probe.Inconcl} {
+		probe.ContentDiff, probe.BlockedQUIC, probe.Slower, probe.Inconcl, probe.BlockedDPI, probe.CleanSplit} {
 		if _, ok := verdictRank[v]; !ok {
 			t.Errorf("%s has no rank", v)
 		}

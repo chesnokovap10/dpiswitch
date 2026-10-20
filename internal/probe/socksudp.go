@@ -144,6 +144,20 @@ func (u *udpConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	return len(p), nil
 }
 
+// writeToName: a datagram to a host by name -- the listener resolves it,
+// as the core does a resolver given by name (ATYP 3). Over the listener only.
+func (u *udpConn) writeToName(p []byte, host string, port int) (int, error) {
+	if u.to == nil || len(host) == 0 || len(host) > 255 {
+		return 0, errors.New("a name is sent over the listener only")
+	}
+	hdr := append([]byte{0, 0, 0, 3, byte(len(host))}, host...)
+	hdr = append(hdr, byte(port>>8), byte(port))
+	if _, err := u.relay.WriteToUDP(append(hdr, p...), u.to); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
 func (u *udpConn) ReadFrom(p []byte) (int, net.Addr, error) {
 	if u.to == nil {
 		return u.relay.ReadFrom(p)

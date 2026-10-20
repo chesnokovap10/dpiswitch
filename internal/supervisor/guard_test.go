@@ -713,7 +713,8 @@ func (l *lockedLog) String() string {
 func TestGuardHoldsTriesIPv6(t *testing.T) {
 	v6 := net.ParseIP("2a00:1e88:13ca:cd00::470")
 	wifi := adapter{index: 11, index6: 21, name: "Wi-Fi", up: true,
-		v4: []net.IP{net.IPv4(192, 168, 31, 250)}, v6: []net.IP{v6}}
+		// a temporary address beside the stable one: one is tried, not each
+		v4: []net.IP{net.IPv4(192, 168, 31, 250)}, v6: []net.IP{v6, net.ParseIP("2a00:1e88:13ca:cd00:5d1e:77a0:1b2c:9")}}
 	pkt4 := netip.MustParseAddrPort("192.168.31.250:50001")
 	pkt6 := netip.MustParseAddrPort("[2a00:1e88:13ca:cd00::470]:50002")
 	routes4, routes6 := map[uint32]bool{11: true}, map[uint32]bool{21: true}

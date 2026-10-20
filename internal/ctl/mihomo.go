@@ -3,6 +3,7 @@ package ctl
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -77,6 +78,21 @@ func (a *api) do(method, path string, body io.Reader) ([]byte, error) {
 	return b, err
 }
 
+// statusError: a request the core answered with an error status
+type statusError struct {
+	code int
+	text string
+}
+
+func (e *statusError) Error() string { return e.text }
+
+// notFound: the core has no such thing -- a provider the config it runs
+// has not, say
+func notFound(err error) bool {
+	var se *statusError
+	return errors.As(err, &se) && se.code == http.StatusNotFound
+}
+
 // send: one request, and the status it was answered with (0 for none)
 func (a *api) send(method, path string, payload []byte) ([]byte, int, error) {
 	var body io.Reader
@@ -95,7 +111,7 @@ func (a *api) send(method, path string, payload []byte) ([]byte, int, error) {
 	defer resp.Body.Close()
 	b, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if resp.StatusCode >= 300 {
-		return b, resp.StatusCode, fmt.Errorf("%s %s: %s", method, path, resp.Status)
+		return b, resp.StatusCode, &statusError{code: resp.StatusCode, text: fmt.Sprintf("%s %s: %s", method, path, resp.Status)}
 	}
 	if err != nil {
 		return nil, resp.StatusCode, fmt.Errorf("%s %s: %w", method, path, err)

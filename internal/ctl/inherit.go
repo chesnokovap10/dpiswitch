@@ -230,6 +230,9 @@ func writeInherit(cfg Config, a *api, st *state, netID string, fams []family, fo
 				famTunnel = append(famTunnel, w.f.rules()...)
 			}
 		}
+		// two families may share a page (a SAN listed twice, or one site's
+		// two CDNs): its rule once
+		famDirect, famTunnel = dedupe(famDirect), dedupe(famTunnel)
 		refuse = dedupe(refuse)
 		sort.Strings(refuse)
 	}

@@ -302,10 +302,14 @@ func ipStill(cfg Config, st *state, att string) bool {
 		return true
 	}
 	ip, err := publicIPFn(cfg.DirectAddr)
-	switch {
-	case err != nil:
+	if err != nil {
 		return true // not known to have changed
-	case sameAddr(ip, cached.IP):
+	}
+	// the address answered: a failure of resolveNetwork's before no longer
+	// holds its check back -- it held a change found here for up to
+	// ipBackoff, the old ISP's verdicts in force (the review of 20.10)
+	st.ipDone(att, false)
+	if sameAddr(ip, cached.IP) {
 		st.sawIP(att)
 		return true
 	}

@@ -187,8 +187,14 @@ func TestIPStill(t *testing.T) {
 	}
 	st.staleIP("gw1")
 	ip = "198.51.100.7"
+	// resolveNetwork's check failed a moment ago: the change found here is
+	// looked up at once all the same, not after ipBackoff
+	st.ipDone("gw1", true)
 	if ipStill(Config{}, st, "gw1") {
 		t.Fatal("a changed address not seen")
+	}
+	if st.ipHeld("gw1") {
+		t.Fatal("the change held back by a failure before it")
 	}
 	if a, _ := st.attached("gw1"); !a.IPChecked.IsZero() {
 		t.Fatal("the change not left for the main loop to look up")

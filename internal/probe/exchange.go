@@ -185,11 +185,24 @@ func (truncated) Error() string { return "truncated" }
 // datagramOn: a query over the association u, sent again every udpResend
 // until the dialer's timeout; ID, question and sender of the answer checked
 func (r Resolver) datagramOn(u *udpConn, d Dialer, q []byte) ([]byte, error) {
+	// a resolver by name goes by name, to be resolved by the listener; its
+	// answer comes from the address it was resolved to, which is not known
+	// here -- the port, the ID and the question are checked
 	ip := net.ParseIP(r.Host)
-	if ip == nil {
+	byName := ip == nil
+	if byName && u.to == nil {
 		return nil, fmt.Errorf("%s: not an address", r.Host)
 	}
 	to := &net.UDPAddr{IP: ip, Port: r.Port}
+	send := func() error {
+		var err error
+		if byName {
+			_, err = u.writeToName(q, r.Host, r.Port)
+		} else {
+			_, err = u.WriteTo(q, to)
+		}
+		return err
+	}
 	id := binary.BigEndian.Uint16(q)
 	// the question, without what may follow it (EDNS)
 	qend, ok := skipName(q, 12)
@@ -200,7 +213,7 @@ func (r Resolver) datagramOn(u *udpConn, d Dialer, q []byte) ([]byte, error) {
 	deadline := time.Now().Add(d.Timeout)
 	buf := make([]byte, 64<<10)
 	for {
-		if _, err := u.WriteTo(q, to); err != nil {
+		if err := send(); err != nil {
 			return nil, err
 		}
 		_ = u.SetReadDeadline(minTime(time.Now().Add(udpResend), deadline))
@@ -217,7 +230,7 @@ func (r Resolver) datagramOn(u *udpConn, d Dialer, q []byte) ([]byte, error) {
 			// an answer is the resolver's, to this very question: a 16-bit ID
 			// alone let any datagram that guessed it pass for one. One to a
 			// query given up on earlier is passed over the same way.
-			if fa, ok := from.(*net.UDPAddr); !ok || !fa.IP.Equal(to.IP) || fa.Port != to.Port ||
+			if fa, ok := from.(*net.UDPAddr); !ok || !byName && !fa.IP.Equal(to.IP) || fa.Port != to.Port ||
 				len(m) < qend || binary.BigEndian.Uint16(m) != id || m[2]&0x80 == 0 ||
 				!bytes.EqualFold(m[12:qend], q[12:qend]) {
 				continue

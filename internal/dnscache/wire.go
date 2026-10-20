@@ -8,6 +8,11 @@ import (
 // Just enough of the DNS message format for a cache: a query's question,
 // the TTLs of an answer's records, and an answer made out of a kept one.
 
+// soaMinLen: an SOA's data at the least -- two names of the root (a byte
+// each) and the five numbers; a shorter one is cut, and its MINIMUM would be
+// read from the names
+const soaMinLen = 2 + 5*4
+
 const (
 	typeA    = 1
 	typeSOA  = 6
@@ -175,7 +180,7 @@ func keepable(m []byte) (uint32, bool) {
 			if !have || t < ttl {
 				ttl, have = t, true
 			}
-		case sec == 1 && typ == typeSOA && len(rdata) >= 4:
+		case sec == 1 && typ == typeSOA && len(rdata) >= soaMinLen:
 			// the smaller of the record's TTL and its MINIMUM, the last field
 			if min := binary.BigEndian.Uint32(rdata[len(rdata)-4:]); min < t {
 				t = min

@@ -290,6 +290,16 @@ func udpSocksStubForged(t *testing.T, drop int, forge bool) (addr string, asked 
 			if err != nil {
 				return
 			}
+			// a name (ATYP 3) is resolved to 192.0.2.53, and the answer
+			// comes from there, as the core's does
+			if n > 7 && buf[3] == 3 && n > 7+int(buf[4]) {
+				l := int(buf[4])
+				lastName.Store(string(buf[5 : 5+l]))
+				hdr := []byte{0, 0, 0, 1, 192, 0, 2, 53, buf[5+l], buf[6+l]}
+				m := copy(buf, hdr)
+				m += copy(buf[m:], buf[7+l:n])
+				n = m
+			}
 			if n < 10 || buf[3] != 1 || int(asked.Add(1)) <= drop {
 				continue
 			}
@@ -352,6 +362,28 @@ func TestLookupOverUDP(t *testing.T) {
 	}
 	if n := asked.Load(); n != 2 {
 		t.Fatalf("%d datagrams, want the lost one sent again", n)
+	}
+}
+
+// lastName: the name the UDP stub was last sent to by name
+var lastName atomic.Value
+
+// udp:// by name goes over UDP too, the name to the listener, which
+// resolves it as the core does: it was asked over TCP, and a server whose
+// UDP was cut showed working (the review of 20.10).
+func TestUDPByName(t *testing.T) {
+	addr, asked := udpSocksStub(t, 0)
+	r, err := ParseResolver("udp://dns.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := Dialer{Addr: addr, Timeout: 3 * time.Second}
+	got, _, err := r.Ping(d, "example.com")
+	if err != nil || len(got) != 1 || got[0] != "192.0.2.7" {
+		t.Fatalf("got %v, %v", got, err)
+	}
+	if n, name := asked.Load(), lastName.Load(); n != 2 || name != "dns.example" {
+		t.Fatalf("%d datagrams to %v, want 2 to dns.example", n, name)
 	}
 }
 

@@ -176,3 +176,24 @@ func TestSyncListRetriesReload(t *testing.T) {
 		t.Fatalf("%d reloads, want the reset's retried", got)
 	}
 }
+
+// A provider the core no longer has -- the second tunnel's, switched off
+// after its reload failed -- is not asked for again every sync for good.
+func TestRetryReloadsDropsGone(t *testing.T) {
+	var puts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		puts.Add(1)
+		http.Error(w, "resource not found", http.StatusNotFound)
+	}))
+	defer srv.Close()
+	a := newAPI(strings.TrimPrefix(srv.URL, "http://"), "")
+	reloadPending = map[string]bool{"awg2-hosts": true}
+	t.Cleanup(func() { reloadPending = map[string]bool{} })
+	listMu.Lock()
+	retryReloads(a)
+	retryReloads(a)
+	listMu.Unlock()
+	if len(reloadPending) != 0 || puts.Load() != 1 {
+		t.Errorf("pending %v after %d requests, want none after 1", reloadPending, puts.Load())
+	}
+}

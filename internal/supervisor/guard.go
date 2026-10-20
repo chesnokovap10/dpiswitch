@@ -137,8 +137,12 @@ func uplinkAddrs(ads []adapter, routes4, routes6 map[uint32]bool) []net.IP {
 				out = append(out, ip)
 			}
 		}
-		if routes6[a.index6] {
-			out = append(out, a.v6...)
+		// one IPv6 address an adapter: the filters match the adapter's
+		// type, not the address, and Windows keeps a few temporary ones
+		// beside the stable one -- each not seen dropped held the guard's
+		// loop for holdsWait, and their turnover asked for a new check
+		if routes6[a.index6] && len(a.v6) > 0 {
+			out = append(out, a.v6[0])
 		}
 	}
 	return out

@@ -78,3 +78,23 @@ func TestClaim(t *testing.T) {
 		release(b)
 	}
 }
+
+// A name the fast lane is probing, taken by a cycle with a port seen
+// meanwhile, goes back to the watcher with that port: it was dropped, and
+// the fast lane's check, on the ports it had, never looked at it.
+func TestBatchGivesBackClaimed(t *testing.T) {
+	w := &watcher{seen: map[string]map[endpoint]bool{}, bare: map[string]bool{},
+		live: map[string]bool{}, pinned: map[string]bool{},
+		addrPorts: map[string]map[endpoint]bool{}, addrCycles: map[string]int{}}
+	if got := claim([]string{"a.example"}); len(got) != 1 {
+		t.Fatal("not claimed")
+	}
+	defer release([]string{"a.example"})
+	late := endpoint{port: 20000}
+	probeBatch(Config{}, nil, nil, "n", w, []string{"a.example"},
+		map[string][]endpoint{"a.example": {{port: 443}, late}})
+	ports, order := w.drain()
+	if !slices.Equal(order, []string{"a.example"}) || !slices.Contains(ports["a.example"], late) {
+		t.Fatalf("watcher has %v %v, want a.example with port 20000", order, ports)
+	}
+}

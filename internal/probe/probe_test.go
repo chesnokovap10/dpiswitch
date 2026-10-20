@@ -3,6 +3,7 @@ package probe
 import (
 	"bufio"
 	"errors"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -65,11 +66,24 @@ func TestConfirmDial(t *testing.T) {
 	for _, tc := range cases {
 		client, server := pair(t)
 		go tc.server(server)
-		err := confirmDial(client, tc.established)
+		_, err := confirmDial(client, tc.established)
 		client.Close()
 		if (err == nil) != tc.ok {
 			t.Errorf("%s: err=%v, want ok=%v", tc.name, err, tc.ok)
 		}
+	}
+	// what a server says first is read whole after the check: its first
+	// byte was read by it and lost, and an HTTP reply began "TTP/1.1"
+	client, server := pair(t)
+	go func() { server.Write([]byte("HTTP/1.1 200 OK\r\n")); time.Sleep(time.Second); server.Close() }()
+	conn, err := confirmDial(client, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	got := make([]byte, len("HTTP/1.1"))
+	if _, err := io.ReadFull(conn, got); err != nil || string(got) != "HTTP/1.1" {
+		t.Errorf("read after the check: %q, %v", got, err)
 	}
 }
 

@@ -266,7 +266,8 @@ func dialConfirmed(d Dialer, ip string, port int) (net.Conn, PathResult) {
 		return nil, r
 	}
 	r.TCPTime = time.Since(t0)
-	if err := confirmDial(conn, d.Established); err != nil {
+	conn, err = confirmDial(conn, d.Established)
+	if err != nil {
 		conn.Close()
 		r.Err, r.ErrStage = err.Error(), "tcp"
 		return nil, r
@@ -311,7 +312,7 @@ var confirmPoll = 100 * time.Millisecond
 // between: seen by the core -> dialled; data from the server -> dialled;
 // closed without ever being seen -> the dial failed. Nothing is written: the
 // probe does not know the protocol behind the port.
-func confirmDial(conn net.Conn, established func(int) (bool, error)) error {
+func confirmDial(conn net.Conn, established func(int) (bool, error)) (net.Conn, error) {
 	port := 0
 	if a, ok := conn.LocalAddr().(*net.TCPAddr); ok {
 		port = a.Port
@@ -331,36 +332,56 @@ func confirmDial(conn net.Conn, established func(int) (bool, error)) error {
 		seen, usable := ask()
 		apiUsable = apiUsable || usable
 		if seen {
-			return nil
+			return conn, nil
 		}
 		_ = conn.SetReadDeadline(time.Now().Add(confirmPoll))
-		_, err := conn.Read(b[:])
+		n, err := conn.Read(b[:])
 		switch {
+		case n > 0:
+			// the server spoke first: its byte goes back in front of the
+			// rest, or the check that follows read the reply from its second
+			return &primedConn{Conn: conn, head: b[:n]}, nil
 		case err == nil:
-			return nil // the server spoke first
+			return conn, nil
 		case isTimeout(err):
 			continue
 		default:
 			if seen, _ := ask(); seen {
-				return nil
+				return conn, nil
 			}
-			return fmt.Errorf("closed by the proxy after CONNECT, the dial failed: %w", err)
+			return conn, fmt.Errorf("closed by the proxy after CONNECT, the dial failed: %w", err)
 		}
 	}
 	if apiUsable {
 		// the core answered all along and never had this connection
-		return errors.New("the core never established the connection")
+		return conn, errors.New("the core never established the connection")
 	}
 	if established != nil {
 		// the core was there to ask and never answered -- busy, or stuck.
 		// An open connection is no proof: the SOCKS reply comes before the
 		// dial. Taken as one, an overloaded core turned failed dials into
 		// CLEAN; a failure keeps the name in the tunnel, which is safe.
-		return errors.New("the dial could not be confirmed: the core's API did not answer")
+		return conn, errors.New("the dial could not be confirmed: the core's API did not answer")
 	}
 	// nothing to ask (no core behind the dialer): an open connection after
 	// the whole dial budget is the best evidence there is
-	return nil
+	return conn, nil
+}
+
+// primedConn: a connection whose first bytes were read ahead, given back
+// before the rest
+type primedConn struct {
+	net.Conn
+	head []byte
+}
+
+func (c *primedConn) Read(p []byte) (int, error) {
+	if len(c.head) > 0 {
+		n := copy(p, c.head)
+		c.head = c.head[n:]
+		return n, nil
+	}
+	return c.Conn.Read(p)
 }
 
 func isTimeout(err error) bool {
