@@ -36,14 +36,16 @@ type watcher struct {
 	addrPorts  map[string]map[endpoint]bool
 	addrCycles map[string]int
 	// fresh: the names first seen since the fast lane last looked, see
-	// takeFresh
+	// takeFresh; wake tells it there are some
 	fresh []string
+	wake  chan struct{}
 }
 
 func newWatcher(ctx context.Context, cfg Config, a *api) *watcher {
 	w := &watcher{seen: map[string]map[endpoint]bool{}, bare: map[string]bool{},
 		live: map[string]bool{}, pinned: map[string]bool{},
-		addrPorts: map[string]map[endpoint]bool{}, addrCycles: map[string]int{}}
+		addrPorts: map[string]map[endpoint]bool{}, addrCycles: map[string]int{},
+		wake: make(chan struct{}, 1)}
 	go w.loop(ctx, cfg, a)
 	return w
 }
@@ -156,6 +158,10 @@ func (w *watcher) observe(cfg Config, conns []connection) {
 			w.order = append(w.order, dom)
 			if len(w.fresh) < maxBacklog {
 				w.fresh = append(w.fresh, dom)
+				select {
+				case w.wake <- struct{}{}:
+				default: // already told, or no fast lane (a nil channel)
+				}
 			}
 		}
 		w.seen[dom][endpoint{udp: c.isUDP(), port: c.port()}] = true

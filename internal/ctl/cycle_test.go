@@ -827,6 +827,37 @@ func TestCyclePortsAtOnce(t *testing.T) {
 	}
 }
 
+// A name's verdict is filed the moment its own probes are done, not once
+// the slowest name of its batch is: habr.com waited 70 s on 21.10 for
+// another name's QUIC, its own probes done in two.
+func TestCycleFilesEachNameAtOnce(t *testing.T) {
+	s := newScenario(t)
+	release := make(chan struct{})
+	checkProto = func(direct, tunnel probe.Dialer, dom string, port, att int, udp bool, was probe.Verdict) probe.Report {
+		if dom == "slow.example.org" {
+			<-release
+		}
+		return s.check(direct, tunnel, dom, port, att, udp, was)
+	}
+	s.see(tunnelled("slow.example.org", 443), tunnelled("fast.example.org", 443))
+	s.script("slow.example.org tcp/443", clean("192.0.2.66"))
+	s.script("fast.example.org tcp/443", clean("192.0.2.67"))
+	done := make(chan struct{})
+	go func() { defer close(done); s.cycle() }()
+	defer func() { close(release); <-done }()
+	for deadline := time.Now().Add(5 * time.Second); s.st.current() == "n"; time.Sleep(5 * time.Millisecond) {
+		if e, ok := s.st.get("n", "fast.example.org"); ok && e.Verdict == probe.Clean {
+			if got := listRules(s.cfg.ListPath); !slices.Contains(got, "fast.example.org") {
+				t.Fatalf("filed, not in the list: %v", got)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the fast name waited for the slow one")
+		}
+	}
+}
+
 // A direct connection open with nothing come back makes its name a suspect
 // once: the check that follows answers for it, and the same connection --
 // a browser's QUIC the core keeps for a minute after the client gave up on

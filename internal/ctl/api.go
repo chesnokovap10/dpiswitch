@@ -201,6 +201,9 @@ func Run(ctx context.Context, cfg Config) {
 	}
 
 	w := newWatcher(ctx, cfg, a)
+	// and the connections the core logs as it makes them, see CoreLogLine
+	feed.Store(&logFeed{w: w, cfg: cfg})
+	defer feed.Store(nil)
 	// the config as the main loop has it now, for the goroutine that takes
 	// the requests from the UI: a copy of its own went stale with the first
 	// settings changed

@@ -2,6 +2,7 @@ package ctl
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -59,6 +60,57 @@ func TestFastLane(t *testing.T) {
 	}
 	if s.wasProbed("new.example.org tcp/443") {
 		t.Error("probed twice")
+	}
+}
+
+// More new names at once than the fast lane probes at once: each waits for
+// a place, none is left to the cycle (14 names on 21.10, 4 taken, the rest
+// filed by the cycle 70 s later).
+func TestFastLaneQueues(t *testing.T) {
+	s := newScenario(t)
+	s.st.setCurrent("n")
+	s.w.wake = make(chan struct{}, 1)
+	var allowed atomic.Bool
+	allowed.Store(true)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	checkProto = func(direct, tunnel probe.Dialer, dom string, port, att int, udp bool, was probe.Verdict) probe.Report {
+		time.Sleep(50 * time.Millisecond)
+		return s.check(direct, tunnel, dom, port, att, udp, was)
+	}
+	go fastLane(ctx, func() Config { return s.cfg }, s.api, s.st, &allowed, s.w)
+	var conns []connection
+	n := 3 * fastWorkers
+	for i := range n {
+		d := fmt.Sprintf("q%02d.example.org", i)
+		s.script(d+" tcp/443", clean(fmt.Sprintf("192.0.2.%d", 100+i)))
+		conns = append(conns, tunnelled(d, 443))
+	}
+	s.see(conns...)
+	deadline := time.Now().Add(5 * time.Second)
+	for i := 0; i < n; {
+		if s.entry(fmt.Sprintf("q%02d.example.org", i)) != nil {
+			i++
+			continue
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("q%02d.example.org left to the cycle", i)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// the last batches write their lists after the verdicts: they end
+	// before the test's folder goes
+	for {
+		probing.Lock()
+		busy := len(probing.names)
+		probing.Unlock()
+		if busy == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the fast lane did not finish")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 

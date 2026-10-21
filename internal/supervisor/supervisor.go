@@ -267,6 +267,9 @@ func (s *Supervisor) runCore(ctx context.Context) error {
 	// are collapsed; see logfilter.go. Closed after the process exits,
 	// when exec has finished copying its output.
 	out := newDedupWriter(logf, time.Minute)
+	// the connections it logs reach the detector the moment they are made:
+	// one shorter than the watcher's look at the table was never checked
+	out.onInfo = ctl.CoreLogLine
 	defer out.Close()
 	cmd.Stdout = out
 	cmd.Stderr = out

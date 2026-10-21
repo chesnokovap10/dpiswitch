@@ -21,9 +21,15 @@ import (
 //
 // It probes what the cycle would: names with no verdict, not skipped and
 // not pinned by a list, while the cycle's gate lets probes run.
+//
+// Every new name waits for a place here, in the order it came. One that
+// found them all busy was left to the cycle, and waited behind the cycle's
+// slowest probe: of 14 names opened at once on 21.10, the fast lane took 4,
+// and the cycle filed the rest 70 s later. And a name is taken the moment
+// the watcher has it, not at the next second.
 
 // fastWorkers: names probed at once by the fast lane, beside the cycle's
-const fastWorkers = 4
+const fastWorkers = 8
 
 func fastLane(ctx context.Context, cfgNow func() Config, a *api, st *state, allowed *atomic.Bool, w *watcher) {
 	sem := make(chan struct{}, fastWorkers)
@@ -34,6 +40,7 @@ func fastLane(ctx context.Context, cfgNow func() Config, a *api, st *state, allo
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		case <-w.wake:
 		}
 		doms, ports := w.takeFresh()
 		if len(doms) == 0 || !allowed.Load() {
@@ -51,14 +58,18 @@ func fastLane(ctx context.Context, cfgNow func() Config, a *api, st *state, allo
 			return had || skipped(cfg, d) || lists.has(d)
 		})
 		for _, d := range doms {
-			select {
-			case sem <- struct{}{}:
-			default:
-				// all busy: the cycle takes it, it is still in the watcher
-				continue
-			}
 			go func(d string) {
+				select {
+				case sem <- struct{}{}:
+				case <-ctx.Done():
+					return
+				}
 				defer func() { <-sem }()
+				// the cycle may have taken it while it waited: it is still in
+				// the watcher, and a cycle drains all
+				if _, had := st.get(id, d); had || cfg.stopping() {
+					return
+				}
 				probeBatch(cfg, a, st, id, w, []string{d}, map[string][]endpoint{d: ports[d]})
 			}(d)
 		}

@@ -32,6 +32,9 @@ type dedupWriter struct {
 	buf    []byte
 	seen   map[string]*dedupEntry
 	stop   chan struct{}
+	// onInfo: given every info line as it is written -- the connections the
+	// core makes, for the controller (see ctl.CoreLogLine)
+	onInfo func(string)
 }
 
 type dedupEntry struct {
@@ -77,6 +80,9 @@ func (d *dedupWriter) line(line string) {
 	// investigating a problem
 	if !strings.Contains(line, "level=warning") && !strings.Contains(line, "level=error") {
 		io.WriteString(d.out, line)
+		if d.onInfo != nil {
+			d.onInfo(line)
+		}
 		return
 	}
 	key := srcPort.ReplaceAllString(timeField.ReplaceAllString(line, ""), "${1}N")

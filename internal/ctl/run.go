@@ -356,11 +356,13 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 		wg  sync.WaitGroup
 		sem = make(chan struct{}, cfg.Workers)
 		mu  sync.Mutex
-		// filed only once every probe is done and the network is known to
-		// have stayed the same, see guardNetwork
-		results []checked
 		// names whose probes were cut short, see retry
 		cut []string
+		// names whose check was not filed, and why: the network or its
+		// public address changed, the verdicts were reset or moved
+		dropped []string
+		why     string
+		gone    bool // once one is dropped so, every one after it is
 		// what this cycle showed of IPv6 on the direct path, see learnV6
 		v6Missed  int
 		v6Reached bool
@@ -382,12 +384,69 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 			log.Printf("  candidate backlog full (%d): the %d oldest dropped", maxBacklog, n)
 		}
 	}
-	unfiled := func() []string {
-		out := append([]string(nil), cut...)
-		for _, r := range results {
-			out = append(out, r.dom)
+	// file: one name's check filed the moment its probes are done. They were
+	// filed once every name of the batch was done, and a clean name waited
+	// for the slowest of the others: habr.com, ria.ru and stackoverflow.com
+	// 70 s on 21.10, their own probes done in two -- held by the QUIC of a
+	// name whose tunnel did not answer. Each is filed only while the
+	// network, its public address and the memory are those the batch
+	// began with; past the first that is not, none is.
+	file := func(c checked) {
+		if cfg.stopping() {
+			// the service is stopping: its stop waits for this batch, and
+			// the core is going away under the probes
+			return
 		}
-		return out
+		drop := func(reason string) {
+			mu.Lock()
+			defer mu.Unlock()
+			dropped, gone = append(dropped, c.dom), true
+			if why == "" {
+				why = reason
+			}
+		}
+		mu.Lock()
+		over := gone
+		mu.Unlock()
+		switch {
+		case over:
+			drop("")
+			return
+		case guard.moved() || attachmentNow() != guard.start:
+			// the probes measured another network than the one their
+			// verdicts would be filed under; the main loop switches to the
+			// new one at its next tick, and the names come back there
+			drop("the network changed during the cycle")
+			return
+		case !ipStill(cfg, st, guard.start):
+			drop("the public address changed during the cycle")
+			return
+		}
+		// filed under listMu: a reset takes it too, so it comes wholly
+		// before this or wholly after
+		listMu.Lock()
+		switch {
+		case st.resetEpoch() != epoch:
+			listMu.Unlock()
+			drop("verdicts were reset during the cycle")
+			return
+		case st.current() != netID:
+			// the gateway's memory merged into its ISP's while the probes
+			// ran, the network the same: filed under the gateway it came back
+			// to nothing the lists read. Asked again under the ISP.
+			listMu.Unlock()
+			drop("the network's memory moved to " + st.current() + " during the cycle")
+			return
+		}
+		changed := record(cfg, st, netID, c.dom, c.rep, c.eps, c.facts)
+		listMu.Unlock()
+		if err := st.save(); err != nil {
+			log.Printf("state not saved: %v", err)
+		}
+		// not only when a verdict changed: a CLEAN re-confirmed after it
+		// dropped out must come back. With auto-switch off only the cut's
+		// list is written, and the rest logged when a verdict changed.
+		syncList(cfg, a, st, netID, changed && !cfg.Apply)
 	}
 	for _, dom := range queue {
 		wg.Add(1)
@@ -629,59 +688,20 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 			v6Reached = v6Reached || reachedV6
 			mu.Unlock()
 
-			mu.Lock()
-			results = append(results, checked{dom, rep, eps, checkFacts{directDown: directDown, noV6: noV6, unprobed: unprobed,
+			file(checked{dom, rep, eps, checkFacts{directDown: directDown, noV6: noV6, unprobed: unprobed,
 				noQUIC: noQUIC, noTCP: noTCP, v6: v6Too && !v6Unknown, v6Unknown: v6Too && v6Unknown}})
-			mu.Unlock()
 		}(dom)
 	}
 	wg.Wait()
+	guard.done()
 
 	if cfg.stopping() {
-		// the service is stopping: its stop waits for this cycle, and the
-		// core is going away under the probes
-		guard.done()
 		return
 	}
-	if !guard.done() {
-		// the probes measured another network than the one their verdicts
-		// would be filed under. Memory is left alone: the main loop
-		// switches to the new network at its next tick, and the names come
-		// back to be checked there.
-		log.Printf("the network changed during the cycle: %d results dropped", len(results))
-		retry(unfiled(), true)
-		return
+	if len(dropped) > 0 {
+		log.Printf("%s: %d results dropped", why, len(dropped))
+		retry(dropped, true)
 	}
-	if len(results) > 0 && !ipStill(cfg, st, guard.start) {
-		log.Printf("the public address changed during the cycle: %d results dropped", len(results))
-		retry(unfiled(), true)
-		return
-	}
-	// filed under listMu: a reset takes it too, so it comes wholly before
-	// this or wholly after
-	listMu.Lock()
-	if st.resetEpoch() != epoch {
-		listMu.Unlock()
-		log.Printf("verdicts were reset during the cycle: %d results dropped", len(results))
-		retry(unfiled(), true)
-		return
-	}
-	// the gateway's memory merged into its ISP's while the probes ran, the
-	// network the same: filed under the gateway they came back to nothing
-	// the lists read, and its memory with them. Asked again under the ISP.
-	if st.current() != netID {
-		listMu.Unlock()
-		log.Printf("the network's memory moved to %s during the cycle: %d results dropped", st.current(), len(results))
-		retry(unfiled(), true)
-		return
-	}
-	changed := false
-	for _, r := range results {
-		if record(cfg, st, netID, r.dom, r.rep, r.eps, r.facts) {
-			changed = true
-		}
-	}
-	listMu.Unlock()
 	retry(cut, false)
 
 	if until, now := st.learnV6(netID, v6Missed, v6Reached); now {
@@ -689,14 +709,8 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 			"their IPv6 node direct. IPv6 nodes are not probed until %s",
 			v6Misses, until.Format("02.01 15:04"))
 	}
-	if err := st.save(); err != nil {
-		log.Printf("state not saved: %v", err)
-	}
-	// not only when a verdict changed: a CLEAN expiring changes the list
-	// too, and one re-confirmed after it dropped out must come back. With
-	// auto-switch off only the cut's list is written, and the rest logged
-	// when a verdict changed.
-	syncList(cfg, a, st, netID, changed && !cfg.Apply)
+	// a CLEAN expiring changes the list too, with no name filed
+	syncList(cfg, a, st, netID, false)
 }
 
 // checksV6: IPv6 on in the settings, and the direct path has it: a name's
