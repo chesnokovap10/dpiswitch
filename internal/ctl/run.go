@@ -446,11 +446,17 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 			// follow: what a port's check is followed by -- a name blocked by its
 			// hello tried with the cut, a QUIC blocked tried through the decoy
 			follow := func(r probe.Report, ep endpoint) probe.Report {
-				if !cfg.alone && !r.Aborted && cfg.Split && !ep.udp && ep.port == 443 && r.Verdict == probe.BlockedTLS {
-					// blocked by its name: once more with the hello cut, on
-					// the same node. The cut path's verdict stands for the
-					// port when it got through -- clean, or merely slower;
-					// otherwise the block the plain path found does.
+				// Blocked by its name -- or by any hello: a node whose handshake
+				// fails direct with the name and with none (BLOCKED_TCP) may take
+				// one cut in two. rutracker.org (21.10, a Cloudflare node) failed
+				// both ways three passes in three and answered the cut each time
+				// in 0.12 s: it went through the tunnel as an address blocked.
+				if !cfg.alone && !r.Aborted && cfg.Split && !ep.udp && ep.port == 443 &&
+					(r.Verdict == probe.BlockedTLS || r.Verdict == probe.BlockedTCP) {
+					// once more with the hello cut, on the same node. The cut
+					// path's verdict stands for the port when it got through --
+					// clean, or merely slower; otherwise the block the plain path
+					// found does.
 					s := checkSplit(split, tunnel, r, cfg.Attempts, was)
 					appendJSONL(cfg.JSONLPath, s)
 					switch {
@@ -458,9 +464,11 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 						r = s
 					default:
 						r.Note = "ClientHello cut: " + string(s.Verdict) + " " + s.Reason
-						// blocked with the cut too: the DPI box beats it here.
-						// Re-checked like any block, the cut tried again each time
-						if isBlocked(s.Verdict) || s.Verdict == probe.MITM {
+						// blocked by the name with the cut too: the DPI box beats
+						// it here. Re-checked like any block, the cut tried again
+						// each time. One that takes no hello at all stays what it
+						// was: the address
+						if r.Verdict == probe.BlockedTLS && (isBlocked(s.Verdict) || s.Verdict == probe.MITM) {
 							r.Verdict = probe.BlockedDPI
 						}
 					}
@@ -872,7 +880,7 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 			e.ExpiresAt = time.Now().Add(cfg.FailTTL)
 			log.Printf("  %s inconclusive (%s), CLEAN not confirmed -- "+
 				"through the tunnel until the next check in %s", dom, rep.Reason, cfg.FailTTL)
-		} else if prev.Verdict == probe.CleanSplit && !cfg.Split && rep.Verdict == probe.BlockedTLS {
+		} else if prev.Verdict == probe.CleanSplit && !cfg.Split && (rep.Verdict == probe.BlockedTLS || rep.Verdict == probe.BlockedTCP) {
 			// the cut was switched off: the name lost nothing it was
 			// checked for, and is no revert
 		} else if goesDirect(prev.Verdict) && !goesDirect(rep.Verdict) {

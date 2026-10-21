@@ -393,16 +393,32 @@ type cdnBook struct {
 	path string
 	CDNs map[string]*cdnEntry `json:"cdns"`
 	busy atomic.Bool
+	// failedSaid: the CDNs the log last said were not read; the round's own
+	failedSaid string
 }
 
 type cdnEntry struct {
 	cdnFamily
 	At time.Time `json:"at"`
 	// Failed: the last round read no certificate; the family known before
-	// it stays -- it was dropped, and the family went with it for an hour
+	// it stays -- it was dropped, and the family went with it for an hour.
+	// Fails: rounds in a row that read none, see retryAfter
 	Failed bool `json:"failed,omitempty"`
+	Fails  int  `json:"fails,omitempty"`
 	// Certs: the certificates the CDN's hosts showed, see zonesOf
 	Certs []cdnCert `json:"certs,omitempty"`
+}
+
+// retryAfter: how long a failed entry waits for its next round -- cdnRetry,
+// doubled with each round in a row that read nothing, up to cdnTerm. A CDN
+// whose certificate is of an authority Windows does not know (qms.ru, 21.10)
+// is read nothing every time: it was asked every ten minutes for good.
+func (e *cdnEntry) retryAfter() time.Duration {
+	d := cdnRetry
+	for i := 1; i < e.Fails && d < cdnTerm; i++ {
+		d *= 2
+	}
+	return min(d, cdnTerm)
 }
 
 // cdnCert: one certificate's names, and when a host last showed it
@@ -422,7 +438,10 @@ func renewCDN(cdn string, old *cdnEntry, got [][]string, now time.Time) *cdnEntr
 	}
 	e.CDN = cdn
 	if len(got) == 0 {
-		e.Failed = true
+		e.Failed, e.Fails = true, 1
+		if old != nil && old.Failed {
+			e.Fails = old.Fails + 1
+		}
 		return e
 	}
 	for _, names := range got {
@@ -484,7 +503,7 @@ func (b *cdnBook) stale(cands []string) []string {
 		e := b.CDNs[c]
 		switch {
 		case e == nil:
-		case e.Failed && time.Since(e.At) >= cdnRetry:
+		case e.Failed && time.Since(e.At) >= e.retryAfter():
 		case !e.Failed && time.Since(e.At) >= cdnTerm:
 		case !e.Failed && len(e.Certs) == 0:
 			// read before the book kept certificates: one host's alone
@@ -583,13 +602,17 @@ func (b *cdnBook) round(tunnelAddr string, hosts map[string][]string, done func(
 			}
 			learnt = learnt || !e.Failed
 		}
-		if len(failed) > 0 {
-			sort.Strings(failed)
-			if why == nil {
-				why = errors.New("no names in the certificates")
+		sort.Strings(failed)
+		// said when the CDNs failing change, not every try of the same ones
+		if said := strings.Join(failed, ","); said != b.failedSaid {
+			b.failedSaid = said
+			if len(failed) > 0 {
+				if why == nil {
+					why = errors.New("no names in the certificates")
+				}
+				log.Printf("CDN certificates not read for %d of %d CDNs (%s), tried again in %s and later: %s",
+					len(failed), len(hosts), preview(failed), cdnRetry, probe.Truncate(why.Error(), 160))
 			}
-			log.Printf("CDN certificates not read for %d of %d CDNs (%s), tried again in %s: %s",
-				len(failed), len(hosts), preview(failed), cdnRetry, probe.Truncate(why.Error(), 160))
 		}
 		if learnt {
 			if err := b.save(); err != nil {

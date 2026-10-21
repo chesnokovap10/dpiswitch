@@ -96,6 +96,17 @@ func TestCDNCertsAddUp(t *testing.T) {
 	if !failed.Failed || !slices.Contains(failed.Pages, "youtube.com") {
 		t.Fatalf("a round that read nothing: failed %v, pages %v", failed.Failed, failed.Pages)
 	}
+	// failing round after round, it is asked less and less often
+	again := renewCDN("googlevideo.com", renewCDN("googlevideo.com", failed, nil, later), nil, later)
+	if failed.retryAfter() != cdnRetry || again.retryAfter() != 4*cdnRetry || again.Fails != 3 {
+		t.Fatalf("retry after %s, then %s (%d failures)", failed.retryAfter(), again.retryAfter(), again.Fails)
+	}
+	if far := (&cdnEntry{Fails: 40}).retryAfter(); far != cdnTerm {
+		t.Fatalf("retry after %s, past the term", far)
+	}
+	if ok := renewCDN("googlevideo.com", again, [][]string{sans(t, "san-googlevideo.txt")}, later); ok.Failed || ok.Fails != 0 {
+		t.Fatalf("read again: failed %v, %d failures", ok.Failed, ok.Fails)
+	}
 	b := loadCDNBook(filepath.Join(t.TempDir(), "b.json"))
 	b.CDNs["googlevideo.com"] = failed
 	if got := b.families(); len(got) != 1 || !slices.Contains(got[0].Pages, "youtube.com") {

@@ -88,8 +88,8 @@ func TestCycleSplitOff(t *testing.T) {
 
 // The cut does not get through either: BLOCKED_DPI, with what the cut
 // showed beside it, routed and re-checked like the block the plain path
-// found. Other verdicts are not tried with the cut: it hides the name, and
-// nothing else.
+// found. A node that takes no hello at all, with the name or without, is
+// tried with the cut too, and stays BLOCKED_TCP when that fails as well.
 func TestCycleSplitFails(t *testing.T) {
 	s, tried := splitScenario(t, map[string]probe.Verdict{"wa.example.org": probe.BlockedTLS})
 	s.see(tunnelled("wa.example.org", 443), tunnelled("tcp.example.org", 443))
@@ -107,10 +107,31 @@ func TestCycleSplitFails(t *testing.T) {
 	if got := s.entry("tcp.example.org").Verdict; got != probe.BlockedTCP {
 		t.Errorf("tcp.example.org: %s", got)
 	}
-	if !slices.Equal(*tried, []string{"wa.example.org"}) {
+	slices.Sort(*tried)
+	if !slices.Equal(*tried, []string{"tcp.example.org", "wa.example.org"}) {
 		t.Errorf("cut tried for %v", *tried)
 	}
 	if got := listRules(s.cfg.SplitListPath); len(got) != 0 {
+		t.Fatalf("cut list %v", got)
+	}
+}
+
+// rutracker.org (21.10): its Cloudflare node fails the handshake direct with
+// the name and with none -- BLOCKED_TCP -- and takes the cut every time. It
+// goes direct with the cut, not through the tunnel as an address blocked.
+func TestCycleCutPastAnyHelloBlocked(t *testing.T) {
+	s, tried := splitScenario(t, map[string]probe.Verdict{"rt.example.org": probe.CleanSplit})
+	s.see(tunnelled("rt.example.org", 443))
+	s.script("rt.example.org tcp/443", probe.Report{Verdict: probe.BlockedTCP, TestedIP: "192.0.2.13",
+		Direct: tlsCut, Tunnel: pathOK, Reason: "the address does not answer direct, with the name or without"})
+	s.cycle()
+	if !slices.Equal(*tried, []string{"rt.example.org"}) {
+		t.Fatalf("cut tried for %v", *tried)
+	}
+	if e := s.entry("rt.example.org"); e == nil || e.Verdict != probe.CleanSplit {
+		t.Fatalf("verdict %+v", e)
+	}
+	if got := listRules(s.cfg.SplitListPath); !slices.Equal(got, []string{"rt.example.org"}) {
 		t.Fatalf("cut list %v", got)
 	}
 }
@@ -482,11 +503,10 @@ func TestCycleQUICOnly(t *testing.T) {
 	}
 }
 
-// A node that takes no TCP on 443 direct, with the name or without, and whose
-// QUIC gets through the decoy: googlevideo.com hosts at home on 21.10, held
-// in the tunnel by their TCP. The cut cannot help a TCP the node does not
-// take: the name goes direct over QUIC, its TCP on 443 refused, as one
-// blocked even with the cut does.
+// A node that takes no TCP on 443 direct, with the name or without, nor
+// the cut, and whose QUIC gets through the decoy: googlevideo.com hosts at
+// home on 21.10, held in the tunnel by their TCP. The name goes direct over
+// QUIC, its TCP on 443 refused, as one blocked even with the cut does.
 func TestCycleQUICOnlyAddressBlocked(t *testing.T) {
 	s, tried := splitScenario(t, nil)
 	s.cfg.QUICFake = true
@@ -504,8 +524,8 @@ func TestCycleQUICOnlyAddressBlocked(t *testing.T) {
 		Reason: "the address does not answer direct, with the name or without"})
 	s.script(d+" quic/443", blockedQUIC("192.0.2.31"))
 	s.cycle()
-	if len(*tried) != 0 {
-		t.Errorf("the cut tried on a node that takes no TCP: %v", *tried)
+	if !slices.Equal(*tried, []string{d}) {
+		t.Errorf("the cut not tried on a node that takes no hello: %v", *tried)
 	}
 	e := s.entry(d)
 	if e == nil || e.Verdict != probe.CleanSplit || !e.NoTCP {
