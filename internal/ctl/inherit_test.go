@@ -80,6 +80,12 @@ func TestInheritCounts(t *testing.T) {
 	// direct way, so it is not held
 	s.st.put("n", "f.cut.org", &entry{Verdict: probe.Inconcl, ExpiresAt: time.Now().Add(time.Hour),
 		Reason: "tunnel path unavailable: silent drop (no reply) on the ClientHello (carries the name/SNI)"})
+	// nor one that failed alike on both paths: the server's doing
+	// (www.kommersant.ru, 21.10)
+	s.st.put("n", "g.cut.org", &entry{Verdict: probe.Inconcl, ExpiresAt: time.Now().Add(time.Hour),
+		Reason: "no HTTP answer on either path: silent drop (no reply) on the session after it opened"})
+	s.st.put("n", "h.cut.org", &entry{Verdict: probe.Inconcl, ExpiresAt: time.Now().Add(time.Hour),
+		Reason: "fails the same on both paths: the ClientHello (carries the name/SNI): EOF"})
 	syncList(s.cfg, s.api, s.st, "n", false)
 	if got := listRules(s.cfg.InheritPath); !slices.Equal(got, []string{"+.cut.org"}) {
 		t.Fatalf("inherit list %v: ex.com is a family already", got)

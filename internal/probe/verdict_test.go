@@ -25,6 +25,13 @@ func TestJudge(t *testing.T) {
 		r.RedirectHost, r.BodyLen = to, 150
 		return r
 	}
+	sized := func(r PathResult, n int) PathResult {
+		r.BodyLen = n
+		return r
+	}
+	// a handshake whose certificate does not check out -- on both paths, or
+	// it is MITM
+	unverified := func() PathResult { return PathResult{TCPOk: true, TLSTried: true, TLSOk: true} }
 
 	cases := []struct {
 		name string
@@ -51,6 +58,13 @@ func TestJudge(t *testing.T) {
 		{"http reset after the request", cut(plain(), "http_read"), answered(plain(), 200), ContentDiff},
 		{"http redirect to a block page", redirect(302, "warning.rt.ru"), redirect(302, "example.com"), ContentDiff},
 		{"http same redirect", redirect(301, "example.com"), redirect(301, "example.com"), Clean},
+		// a verified TLS answer is the server's own, whatever the tunnel got:
+		// hh.ru 302 here and 200 there, tass.ru its page here and a bot
+		// check there (21.10). The server refusing us is another matter.
+		{"verified tls, another status", answered(tls(true), 302), answered(tls(true), 200), Clean},
+		{"verified tls, another size", sized(answered(tls(true), 200), 65536), sized(answered(tls(true), 200), 1766), Clean},
+		{"verified tls, refused here", answered(tls(true), 403), answered(tls(true), 200), ContentDiff},
+		{"unverified tls, another size", sized(answered(unverified(), 200), 65536), sized(answered(unverified(), 200), 1766), ContentDiff},
 	}
 	for _, c := range cases {
 		if got, reason := Judge(c.d, c.t); got != c.want {

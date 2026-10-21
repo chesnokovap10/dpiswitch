@@ -581,6 +581,13 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 				if !v6Too || ep.udp || r.Aborted || r.TestedIP == "" || net.ParseIP(r.TestedIP).To4() == nil {
 					return r, false
 				}
+				// going with the cut: its outbound takes the IPv4 node first
+				// (see awgconf), and what the IPv6 one showed is of no
+				// connection. meduza.io and signal.org (21.10), cut through on
+				// IPv4 and dropped on IPv6, went through the tunnel for it.
+				if r.Verdict == probe.CleanSplit {
+					return r, false
+				}
 				// slower there is no block: the core takes whichever node
 				// answers first, and the IPv4 one's speed is the name's.
 				// Nor is a node that does not take the connection: the core

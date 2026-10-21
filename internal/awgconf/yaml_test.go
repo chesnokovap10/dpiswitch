@@ -360,10 +360,19 @@ func TestRenderIPv6Blocked(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, line := range []string{"  fake-ip-range6:", "    ip-version: ipv4-prefer", "  ipv6: true"} {
+		for _, line := range []string{"  fake-ip-range6:", "  ipv6: true"} {
 			if got := strings.Contains(out, line+"\n") || strings.Contains(out, line+" "); got == blocked {
 				t.Errorf("blocked %v: %q present %v", blocked, line, got)
 			}
+		}
+		// the tunnel's IPv4 first goes with IPv6; the cut's outbound has its
+		// own always
+		want := 2
+		if blocked {
+			want = 1
+		}
+		if got := strings.Count(out, "    ip-version: ipv4-prefer\n"); got != want {
+			t.Errorf("blocked %v: ip-version: ipv4-prefer %d times, want %d", blocked, got, want)
 		}
 		if got := strings.Contains(out, "  ipv6: false\n"); got != blocked {
 			t.Errorf("blocked %v: the DNS without AAAA answers %v", blocked, got)

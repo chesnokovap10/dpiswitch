@@ -761,6 +761,13 @@ func render(c *Conf) (string, error) {
 	w("    # and a decoy QUIC Initial for www.google.com ahead of the client's")
 	w("    # first one: DPI that reads the name off the Initial reads the decoy's")
 	w("    quic-fake: true")
+	// The cut gets through on IPv4 where it does not on IPv6, never the other
+	// way round: 24 names in 11 days to 21.10 -- www.youtube.com, i.ytimg.com,
+	// play.google.com, googlevideo.com hosts, meduza.io, signal.org -- were
+	// cut through on their IPv4 node and dropped on their IPv6 one, and went
+	// through the tunnel for it. IPv6 stays for a name with no IPv4 node.
+	w("    # IPv4 first: the cut gets through there where IPv6 drops it")
+	w("    ip-version: ipv4-prefer")
 	if c != nil {
 		c.writeProxy(w, "awg1", tunDNS, ipv6, tunV6.Dead("awg1"))
 	}

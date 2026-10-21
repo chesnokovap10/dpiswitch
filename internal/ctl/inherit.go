@@ -165,8 +165,11 @@ func (s *state) inheritance(id string, book *asnBook, fams []family) inheritance
 		// as before. An INCONCLUSIVE whose direct side worked and whose
 		// tunnel did not answer is not: the check said nothing against the
 		// direct way, and the name goes its relatives' way like one with no
-		// verdict.
-		if !d && !(e.Verdict == probe.Inconcl && probe.TunnelDown(e.Reason)) {
+		// verdict. Nor is one that failed alike on both paths -- the
+		// server's doing: www.kommersant.ru answered none of the probe's
+		// requests either way (21.10), opened in 5 s its relatives' way and
+		// timed out held in the tunnel.
+		if !d && !(e.Verdict == probe.Inconcl && !e.DirectDown && (probe.TunnelDown(e.Reason) || probe.BothFail(e.Reason))) {
 			hold = append(hold, dom)
 		}
 		add(byFam, familyOf(dom), d, a)

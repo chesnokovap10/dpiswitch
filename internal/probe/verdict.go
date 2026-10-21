@@ -158,6 +158,18 @@ func answered(r PathResult) bool {
 // -- the direct one did not
 func TunnelDown(reason string) bool { return strings.HasPrefix(reason, tunnelDown) }
 
+// bothFail, noAnswer: the reasons Judge gives when both paths failed alike
+const (
+	bothFail = "fails the same on both paths: "
+	noAnswer = "no HTTP answer on either path: "
+)
+
+// BothFail: whether an INCONCLUSIVE's reason is both paths failing alike --
+// the server's doing, nothing against the direct path
+func BothFail(reason string) bool {
+	return strings.HasPrefix(reason, bothFail) || strings.HasPrefix(reason, noAnswer)
+}
+
 func checkSplit(split, tunnel Dialer, plain Report, attempts int, prev Verdict, udp bool) Report {
 	proto, note, run := "tcp", "ClientHello cut", func(d Dialer) PathResult { return Run(d, plain.TestedIP, plain.Domain) }
 	if udp {
@@ -181,15 +193,12 @@ func checkSplit(split, tunnel Dialer, plain Report, attempts int, prev Verdict, 
 		// The cut got the site's own answer -- a certificate that passes
 		// the chain check, a whole HTTP answer -- and only the tunnel's
 		// differs: that is the server answering another country, not the
-		// ISP, which cannot forge a verified answer. music.youtube.com
-		// gives 200 here and 302 to the tunnel's country; it was called
-		// blocked with the cut, and the cut works.
-		if v == ContentDiff && d.CertValid && d.HTTPStatus != 0 && !d.HTTPFailed() {
-			v, reason = Clean, ""
+		// ISP, which cannot forge a verified answer (see Judge).
+		// music.youtube.com gives 200 here and 302 to the tunnel's country.
+		if v == Clean && d.CertValid && d.HTTPStatus != 0 && t.HTTPStatus != 0 && d.HTTPStatus != t.HTTPStatus &&
 			// once, not per pass: it read the same thing three times over
-			if !strings.Contains(rep.Note, serverOwn) {
-				rep.Note += serverOwn
-			}
+			!strings.Contains(rep.Note, serverOwn) {
+			rep.Note += serverOwn
 		}
 		// The cut got the site's own answer and only the tunnel failed: the
 		// tunnel is the yardstick for speed, not for whether the cut works.
@@ -664,7 +673,7 @@ func Judge(d, t PathResult) (Verdict, string) {
 		// into the tunnel. INCONCLUSIVE lets another port decide, and a host with
 		// no definite verdict at all does not go direct.
 		if !d.TLSOk && !t.TLSOk {
-			return Inconcl, "fails the same on both paths: " + ClassifyErr(d)
+			return Inconcl, bothFail + ClassifyErr(d)
 		}
 		// Only the direct path failing is blocking. A false "blocked" only
 		// costs a detour through the tunnel.
@@ -688,18 +697,27 @@ func Judge(d, t PathResult) (Verdict, string) {
 	// The same failure on both paths is the server's doing, as with TLS.
 	dh, th := d.HTTPFailed(), t.HTTPFailed()
 	if dh && th {
-		return Inconcl, "no HTTP answer on either path: " + ClassifyErr(d)
+		return Inconcl, noAnswer + ClassifyErr(d)
 	}
 	if dh {
 		return ContentDiff, "direct path cut after connecting: " + ClassifyErr(d)
 	}
+	// Over TLS whose chain checks out nobody in between can change the
+	// answer: a status or a size other than the tunnel's is the server's own
+	// -- a redirect to its region's page (hh.ru, www.cian.ru: 302 here, 200
+	// to the tunnel's address), a bot check served to the tunnel's data
+	// centre (tass.ru: the page here, 1.7 KB there). All three went through
+	// the tunnel as CONTENT_DIFF (21.10), Russian sites, the tunnel's answer
+	// the worse one. Only the server refusing us what it gives the tunnel
+	// sends the name there.
+	verified := d.TLSOk && d.CertValid
 	if d.HTTPStatus != 0 && t.HTTPStatus != 0 && d.HTTPStatus != t.HTTPStatus {
 		// the tunnel is not an absolute reference. Its exit is in a data centre,
 		// and Cloudflare serves such addresses a challenge instead of content.
 		// if the direct path gets a normal answer and the tunnel gets
 		// a blocking status, it is the tunnel that is broken, and moving the domain
 		// into it would pick a known-broken path.
-		if d.HTTPStatus < 400 && isChallenge(t.HTTPStatus) {
+		if d.HTTPStatus < 400 && (verified || isChallenge(t.HTTPStatus)) {
 			return Clean, ""
 		}
 		return ContentDiff, fmt.Sprintf("HTTP %d direct vs %d via tunnel", d.HTTPStatus, t.HTTPStatus)
@@ -711,8 +729,9 @@ func Judge(d, t PathResult) (Verdict, string) {
 	if !d.TLSTried && d.RedirectHost != "" && t.RedirectHost != "" && d.RedirectHost != t.RedirectHost {
 		return ContentDiff, "redirected to " + d.RedirectHost + " direct vs " + t.RedirectHost + " via tunnel"
 	}
-	// a body the tunnel failed to finish is no reference for its size
-	if !th && d.BodyLen > 0 && t.BodyLen > 0 && !isChallenge(t.HTTPStatus) {
+	// a body the tunnel failed to finish is no reference for its size, nor
+	// is one the server gave each path itself (see verified above)
+	if !verified && !th && d.BodyLen > 0 && t.BodyLen > 0 && !isChallenge(t.HTTPStatus) {
 		ratio := float64(d.BodyLen) / float64(t.BodyLen)
 		if ratio < 0.25 || ratio > 4 {
 			return ContentDiff, fmt.Sprintf("response size %d vs %d bytes", d.BodyLen, t.BodyLen)
