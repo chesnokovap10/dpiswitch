@@ -1330,14 +1330,16 @@ func TestForget(t *testing.T) {
 	}
 	os.Remove(reqs[0])
 
-	// running, and the request taken
+	// running, and the request taken. The stand-in for the service has
+	// seconds to take it: under the whole suite at once 300 ms was not
+	// always enough, and the answer said it was not taken
 	serviceRunning = func() bool { return true }
-	forgetWait = 300 * time.Millisecond
+	forgetWait = 3 * time.Second
 	t.Cleanup(func() { forgetWait = 5 * time.Second })
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for i := 0; i < 100; i++ {
+		for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); {
 			// on Windows a file still being written cannot go: the service
 			// tries again the next second
 			if reqs, _ := filepath.Glob(paths.ForgetRequests()); len(reqs) > 0 && os.Remove(reqs[0]) == nil {
@@ -1351,6 +1353,7 @@ func TestForget(t *testing.T) {
 	}
 	<-done
 	// running, and not taken
+	forgetWait = 300 * time.Millisecond
 	if b := ask("@192.0.2.1"); !strings.Contains(b, "as soon as its controller runs") {
 		t.Fatalf("not taken: %s", b)
 	}
