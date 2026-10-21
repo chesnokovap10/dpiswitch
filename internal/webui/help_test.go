@@ -4,6 +4,9 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"dpiswitch/internal/ctl"
+	"dpiswitch/internal/paths"
 )
 
 // A help link points at a part of a page, and that part blinks (see
@@ -67,5 +70,29 @@ func TestSettingsHelpLinks(t *testing.T) {
 				t.Errorf("%s: no %s row", l, id)
 			}
 		}
+	}
+}
+
+// The settings are six groups -- five of the form's and DNS -- each opened on
+// its title, all closed as the page comes; the header names the build's
+// commit beside the version.
+func TestSettingsGroups(t *testing.T) {
+	s, _ := testServer(t)
+	s.statusFn = func() status {
+		return status{Installed: true, PathOK: true, ServiceRun: true, Version: "1.12.0", Commit: "15ff252",
+			DataDir: paths.DataDir(), NetworkID: "AS1", Mode: ctl.ModeOn}
+	}
+	page := do(t, s.Handler(), "GET", "/settings", nil, nil).Body.String()
+	groups := regexp.MustCompile(`<details class="grp"[^>]*>`).FindAllString(page, -1)
+	if len(groups) != 6 {
+		t.Fatalf("%d groups, want 6", len(groups))
+	}
+	for _, g := range groups {
+		if strings.Contains(g, " open") {
+			t.Errorf("open as the page comes: %s", g)
+		}
+	}
+	if !strings.Contains(page, "<small>v1.12.0 #15ff252</small>") {
+		t.Error("no commit beside the version in the header")
 	}
 }

@@ -165,12 +165,24 @@ td small{display:block;color:var(--muted)}
 .empty{padding:14px;color:var(--muted)}
 
 /* settings */
-.form{display:grid;grid-template-columns:230px 200px minmax(0,1fr);background:var(--panel);
-  border:1px solid var(--line);border-radius:9px;overflow:hidden}
-.form > div{padding:7px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;min-height:40px}
-.form > div:nth-last-child(-n+3){border-bottom:0}
-.form .g{grid-column:1/-1;background:var(--bg);font-weight:600;color:var(--muted);font-size:12px;
-  text-transform:uppercase;letter-spacing:.04em;min-height:0;padding:6px 14px}
+/* one card of groups, each opened and closed on its title, all closed at
+   first; the rows of every group share the columns, so they line up */
+.sets{background:var(--panel);border:1px solid var(--line);border-radius:9px;overflow:hidden;flex:none}
+.sets .form{margin:0}
+.grp + .grp,.sets > .grp{border-top:1px solid var(--line)}
+.grp > summary{display:flex;align-items:center;gap:9px;cursor:pointer;list-style:none;user-select:none;
+  background:var(--bg);font-weight:600;color:var(--muted);font-size:12px;text-transform:uppercase;
+  letter-spacing:.04em;padding:0 14px;min-height:38px}
+.grp > summary::-webkit-details-marker{display:none}
+.grp > summary::before{content:"";border-left:5px solid currentColor;border-top:4px solid transparent;
+  border-bottom:4px solid transparent;transition:transform .12s}
+.grp[open] > summary::before{transform:rotate(90deg)}
+.grp > summary:hover{color:var(--fg)}
+.grp[open] > summary{border-bottom:1px solid var(--line)}
+.form .rows{display:grid;grid-template-columns:230px 200px minmax(0,1fr)}
+.form .rows > div{padding:7px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;min-height:40px}
+.form .rows > div:nth-last-child(-n+3){border-bottom:0}
+#dns > .body{padding:12px 14px}
 /* the hint, then what a row adds to it -- a warning, the result of a save --
    one under another: side by side they made columns of the hint, and the
    result, squeezed into 120px at the row's end, ran out of it */

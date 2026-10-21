@@ -91,6 +91,7 @@ function load(name) {
       sec.dataset.page = name;
       sec.dataset.url = '/' + name;
       sec.innerHTML = html;
+      regroup(sec);
       main.append(sec);
       sections.set(name, sec);
       // drawn just now: the first refresh is one period away
@@ -371,6 +372,7 @@ async function send(url, body, target, changed) {
       'value' in a ? {name: a.name, value: a.value, s: a.selectionStart, e: a.selectionEnd} : null;
     el.innerHTML = html;
     reblink(el);
+    regroup(el);
     el._html = undefined;
     // an answer may carry a new value for a field outside it: the DNS test
     // puts the address that answered in place of the one written
@@ -484,6 +486,7 @@ async function refresh(el, url) {
   if (current()) {
     el.innerHTML = html;
     reblink(el);
+    regroup(el);
     el._html = undefined;
   }
 }
@@ -565,6 +568,7 @@ async function poll(el) {
     const at = el.dataset.follow !== undefined && !follow ? readingAt(el) : null;
     el.innerHTML = html;
     reblink(el);
+    regroup(el);
     el._html = html;
     if (el.id === 'navitems') secondSeen(el);
     if (follow) el.scrollTop = el.scrollHeight;
@@ -697,6 +701,20 @@ function blinkOn(el, elapsed) {
   el.classList.add('blink');
   el.addEventListener('animationend', () => { el.classList.remove('blink'); el.style.animationDelay = ''; }, {once: true});
 }
+// --- the settings' groups ---
+// A group opens and closes on its title, all closed when the window opens.
+// The form is drawn anew after every change and every look at the service:
+// the groups open then are opened again, for as long as the window lives.
+const openGroups = new Set();
+document.addEventListener('toggle', e => {
+  const d = e.target;
+  if (!(d instanceof HTMLDetailsElement) || !d.dataset.grp) return;
+  if (d.open) openGroups.add(d.dataset.grp); else openGroups.delete(d.dataset.grp);
+}, true);
+function regroup(root) {
+  for (const d of root.querySelectorAll('details[data-grp]')) d.open = openGroups.has(d.dataset.grp);
+}
+
 // The part pointed at blinks on when the part around it is drawn anew: a
 // page shown has its parts refreshed right after (see freshen), and the
 // settings' fields, the DNS boxes and the second tunnel's switch were
@@ -717,6 +735,9 @@ function point(id) {
   id = id && decodeURIComponent(id);
   const el = id && blinkTarget(id);
   if (!el) return;
+  // a row of a group the settings keep closed: its group opens
+  const g = el.closest('details[data-grp]');
+  if (g && !g.open) g.open = true;
   el.scrollIntoView({block: 'center'});
   blinking = {id, at: performance.now()};
   blinkOn(el, 0);

@@ -1462,7 +1462,7 @@ func TestSecondTunnelHidden(t *testing.T) {
 	script := regexp.MustCompile(`(?s)<script[^>]*>.*?</script>`)
 	said := regexp.MustCompile(`(?i)awg2|second tunnel|second server|tunnel 2|втор(ой|ого|ому|ым|ом) (туннел|сервер)|туннель 2|preset|пресет`)
 	// the settings' row and the help's section on it: the one place it is named
-	row := regexp.MustCompile(`(?s)<div><a class="hl" href="/help#h-awg2">.*?<div class="g">|<h4 id="h-awg2">.*?</p>`)
+	row := regexp.MustCompile(`(?s)<div><a class="hl" href="/help#h-awg2">.*?<div><a class="hl" href="/help#h-ipv6">|<h4 id="h-awg2">.*?</p>`)
 	for _, lang := range []string{"en", "ru"} {
 		cookie := map[string]string{"Cookie": "lang=" + lang}
 		for _, p := range pageNames {

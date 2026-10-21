@@ -33,7 +33,7 @@
 </html>{{end}}
 
 {{define "header"}}{{$s := .St}}
-  <div class="brand">DPI Switch<small>v{{$s.Version}}</small></div>
+  <div class="brand">DPI Switch<small>v{{$s.Version}}{{with $s.Commit}} #{{.}}{{end}}</small></div>
   {{if not $s.Installed}}
     <span class="chip"><span class="dot"></span>{{.T "Service not installed"}}</span>
   {{else if $s.Pending}}

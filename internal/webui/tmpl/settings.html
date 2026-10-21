@@ -1,11 +1,15 @@
 {{define "content"}}
 <div class="page scroll">
+  {{/* the groups open and close on their titles, all closed at first: six
+     lines to pick from (see regroup in ui.js) */}}
+  <div class="sets">
   <div id="sform" data-sync="/frag/settings/form">{{template "form" .}}</div>
   {{/* the second tunnel's switch sends this form, a plain one: the page comes
      back whole, drawn with the second tunnel or without it. It cannot sit
      inside the settings' form, whose controls each save by themselves. */}}
   <form id="secondform" method="post" action="/act/second" hidden></form>
-  <div class="box" id="dns" data-fresh="/frag/settings/dns">{{template "dns" .}}</div>
+  <details class="grp" id="dns" data-grp="dns" data-fresh="/frag/settings/dns">{{template "dns" .}}</details>
+  </div>
   <div class="actions" style="padding-top:0">
     <form method="post" action="/act/defaults" data-confirm="{{if .St.Second}}{{.T "Put every setting on this page back to its default? DNS included, and the second tunnel switched off. Presets and lists are not touched."}}{{else}}{{.T "Put every setting on this page back to its default? DNS included. Lists are not touched."}}{{end}}">
       <button>{{.T "Reset to defaults…"}}</button>
@@ -19,7 +23,7 @@
 
 {{define "form"}}{{$d := .Data}}{{$s := $d.S}}{{$m := $s.Mode}}
 <form method="post" action="/act/set" data-swap="sform" data-instant="1" class="form" onsubmit="return false">
-  <div class="g">{{.T "Detector"}}</div>
+  <details class="grp" data-grp="detector"><summary>{{.T "Detector"}}</summary><div class="rows">
 
   <div><a class="hl" href="/help#h-modes">{{.T "Auto-switch"}}</a></div>
   <div><select id="auto_switch" name="auto_switch"><option value="on" {{if eq $m "on"}}selected{{end}}>{{.T "On"}}</option><option value="observe" {{if eq $m "observe"}}selected{{end}}>{{.T "Observe only"}}</option><option value="tunnel" {{if eq $m "tunnel"}}selected{{end}}>{{.T "Tunnel only"}}</option></select></div>
@@ -37,9 +41,10 @@
   <div><input type="number" id="attempts" name="attempts" min="1" max="10" value="{{$s.Attempts}}"></div>
   <div class="h"><span>{{.T "A site is clean only if every attempt is. More: surer verdicts, longer checks."}}</span>{{template "rowmsg" ($d.MsgFor "attempts")}}</div>
 
-  <div class="g"><a class="hl" href="/help#h-terms">{{.T "Terms"}}</a></div>
+  </div></details>
 
-  <div>{{.T "Keep direct for"}}</div>
+  <details class="grp" data-grp="terms"><summary>{{.T "Terms"}}</summary><div class="rows">
+  <div><a class="hl" href="/help#h-terms">{{.T "Keep direct for"}}</a></div>
   <div><select id="clean_ttl_min" name="clean_ttl_min">{{template "durs" (dur . ($d.DurOpts "clean_ttl_min" $s.CleanTTLMin) $s.CleanTTLMin)}}</select></div>
   <div class="h"><span>{{.T "How long a clean site goes direct before it is checked again."}}</span>{{template "rowmsg" ($d.MsgFor "clean_ttl_min")}}</div>
 
@@ -51,7 +56,9 @@
   <div><select name="max_backoff_min">{{template "durs" (dur . ($d.DurOpts "max_backoff_min" $s.MaxBackoffMin) $s.MaxBackoffMin)}}</select></div>
   <div class="h"><span>{{.T "The longest wait between checks of a site that keeps failing. Not less than the re-check above."}}</span>{{template "rowmsg" ($d.MsgFor "max_backoff_min")}}</div>
 
-  <div class="g">{{.T "DPI bypass"}}</div>
+  </div></details>
+
+  <details class="grp" data-grp="bypass"><summary>{{.T "DPI bypass"}}</summary><div class="rows">
 
   <div><a class="hl" href="/help#h-split">{{.T "Cut the ClientHello"}}</a></div>
   <div><select id="split_hello" name="split_hello"><option value="1" {{if $s.SplitHello}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.SplitHello}}selected{{end}}>{{.T "Off"}}</option></select></div>
@@ -61,7 +68,9 @@
   <div><select id="quic_fake" name="quic_fake"><option value="1" {{if $s.QUICFake}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.QUICFake}}selected{{end}}>{{.T "Off"}}</option></select></div>
   <div class="h"><span>{{.T "QUIC to the sites going direct with the cut goes direct too, a decoy first packet for www.google.com ahead of it; where that does not get through, QUIC is refused and the browser takes TCP. Off: their QUIC is always refused."}}</span>{{if and $s.QUICFake (not $s.SplitHello)}}<span class="warn-t">{{.T "Not working now: it works together with the ClientHello cut, which is off."}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "quic_fake")}}</div>
 
-  <div class="g">{{.T "Network"}}</div>
+  </div></details>
+
+  <details class="grp" data-grp="network"><summary>{{.T "Network"}}</summary><div class="rows">
 
   <div><a class="hl" href="/help#h-awg2">{{.T "Second tunnel"}}</a></div>
   <div><select id="second_tunnel" name="second_tunnel" form="secondform" data-submit><option value="1" {{if $s.SecondTunnel}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.SecondTunnel}}selected{{end}}>{{.T "Off"}}</option></select></div>
@@ -83,11 +92,14 @@
   <div><select id="udp_guard" name="udp_guard"><option value="1" {{if $s.UDPGuard}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.UDPGuard}}selected{{end}}>{{.T "Off"}}</option></select></div>
   <div class="h"><span>{{.T "While the core runs, UDP that programs send straight out of the Wi-Fi or Ethernet adapter, around the tunnel -- WebRTC, calls, games -- is blocked. The local network is not touched."}}</span><span class="warn-t">{{.T "Can break a VPN of its own, calls and games that need that UDP. Off by default."}}</span>{{if $s.UDPGuard}}<span id="udp_guard_state" data-poll="/frag/settings/guard" data-every="3">{{template "guard" .}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "udp_guard")}}</div>
 
-  <div class="g">{{.T "Program"}}</div>
+  </div></details>
+
+  <details class="grp" data-grp="program"><summary>{{.T "Program"}}</summary><div class="rows">
 
   <div>{{.T "Open the UI"}}</div>
   <div><select id="ui_open" name="ui_open"><option value="window" {{if ne $s.UIOpen "tab"}}selected{{end}}>{{.T "In its own window"}}</option><option value="tab" {{if eq $s.UIOpen "tab"}}selected{{end}}>{{.T "In a browser tab"}}</option></select></div>
   <div class="h"><span>{{.T "How the tray opens these pages. Chrome, Edge, Brave, Vivaldi and Yandex make a window of their own; another browser opens a tab either way."}}</span>{{template "rowmsg" ($d.MsgFor "ui_open")}}</div>
+  </div></details>
 </form>
 {{end}}
 
@@ -96,10 +108,11 @@
 {{define "guard"}}{{$d := .Data}}{{if $d.S.UDPGuard}}{{if not .St.ServiceRun}}<span class="muted">{{.T "The service is stopped: nothing is blocked."}}</span>{{else}}{{with $d.Guard}}{{if eq .State "on"}}{{if .Checked}}<span class="ok-t">{{$.T "In place, and checked: the engine dropped a test packet sent out of the adapter by its own address. UDP leaves the physical adapters only from the core and to the local network."}}</span>{{else}}<span class="ok-t">{{$.T "In place: UDP leaves the physical adapters only from the core and to the local network."}}</span>{{end}}{{else if eq .State "wait"}}{{if eq .Why "adapter"}}<span class="muted">{{$.T "Waiting for the DPI Switch adapter: it is not up, or has no route out."}}</span>{{else if eq .Why "traffic"}}<span class="warn-t">{{$.T "Not in place: Windows keeps the programs' traffic from the DPI Switch adapter -- something takes it first, a third-party network filter. Blocking UDP now would cut it off altogether."}}</span>{{else}}<span class="muted">{{$.T "Waiting for the core to run."}}</span>{{end}}{{else if eq .State "fail"}}{{if eq .Why "engine"}}<span class="bad-t">{{$.Tf "Not in place: the Windows Filtering Platform does not answer -- the Base Filtering Engine service is stopped, or refuses the program (%s). Nothing is blocked. Start the service in services.msc: the guard goes in by itself within seconds." .Err}}</span>{{else}}<span class="bad-t">{{$.Tf "Not in place: Windows refused a filter (%s). Nothing is blocked; tried again every 10 seconds." .Err}}</span>{{end}}{{else}}<span class="muted">{{$.T "Waiting for the core to run."}}</span>{{end}}{{else}}<span class="muted">{{$.T "The service has not reported yet. If it runs another build of the program, it does not know this setting."}}</span>{{end}}{{end}}{{end}}{{end}}
 
 {{define "dns"}}{{$d := .Data}}
-  <h3><a class="hl" href="/help#h-dns">DNS</a></h3>
+  <summary>DNS</summary>
+  <div class="body">
   <form method="post" action="/act/dns" data-swap="dns">
     <div class="dnsgrid{{if not .St.Second}} two{{end}}">
-      <b>{{.T "For direct sites"}}</b>
+      <b><a class="hl" href="/help#h-dns">{{.T "For direct sites"}}</a></b>
       <b>{{if .St.Second}}{{.T "Inside the first tunnel (awg1)"}}{{else}}{{.T "Inside the tunnel (awg1)"}}{{end}}</b>
       {{if .St.Second}}<b>{{.T "Inside the second tunnel (awg2)"}}</b>{{end}}
       <p class="hint">{{.T "Asked outside the tunnel, so CDNs pick nodes near your ISP. The detector asks it too: it tests the node the traffic will go to."}}</p>
@@ -118,6 +131,7 @@
     <p class="hint" style="margin-top:8px">{{.TH "One per line: <code>https://IP/dns-query</code> (DoH), <code>tls://IP</code> (DoT), <code>IP</code> (plain DNS, often blocked by ISPs). An address, not a name, where possible. The test finds whether a DoH server wants <code>/dns-query</code> and fixes the address."}}</p>
     <div class="actions"><button class="primary">{{.T "Save DNS"}}</button>{{template "msg" .}}<span class="muted">{{.T "Saving restarts the core: the tunnel drops for a couple of seconds."}}</span></div>
   </form>
+  </div>
 {{end}}
 
 {{define "dnsres"}}{{$v := .}}{{with .Data}}{{range .Results}}

@@ -422,7 +422,7 @@ func (h *handler) Execute(args []string, r <-chan svc.ChangeRequest, s chan<- sv
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel() // safety net: the supervisor must be cancelled on every exit path
-	log.Printf("service %s starting", version.Version)
+	log.Printf("service %s starting", version.Full())
 	sup := supervisor.New()
 	done := make(chan struct{})
 	go func() { defer close(done); sup.Run(ctx, h.apply) }()

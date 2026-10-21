@@ -57,7 +57,7 @@ func main() {
 	case "", "tray":
 		runTray()
 	case "version", "-v", "--version":
-		msgBox("DPI Switch", T("Version")+" "+version.Version, 0x40)
+		msgBox("DPI Switch", T("Version")+" "+version.Full(), 0x40)
 	default:
 		report("dpiswitch", fmt.Errorf(T("unknown command %q; valid: tray, service, install, uninstall, reinstall, remove, version"), cmd))
 	}
@@ -175,7 +175,7 @@ func runTray() {
 		}
 		_ = windows.SetStdHandle(windows.STD_ERROR_HANDLE, windows.Handle(f.Fd()))
 	}
-	log.Printf("tray %s starting: pid %d, args %v", version.Version, os.Getpid(), os.Args[1:])
+	log.Printf("tray %s starting: pid %d, args %v", version.Full(), os.Getpid(), os.Args[1:])
 
 	// the mutex is a kernel object: it is released when the process dies,
 	// so it cannot get "stuck" and needs no extra checks
@@ -226,7 +226,7 @@ func runTray() {
 		return
 	}
 
-	t, err := tray.New("DPI Switch " + version.Version)
+	t, err := tray.New("DPI Switch " + version.Full())
 	if err != nil {
 		report("dpiswitch", fmt.Errorf(T("the tray icon was not created: %w"), err))
 		return
