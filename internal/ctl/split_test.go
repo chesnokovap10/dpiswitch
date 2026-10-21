@@ -863,15 +863,21 @@ func TestCycleStaleSettingsNotFiled(t *testing.T) {
 // (www.newtimes.ru, 21.10). Through, the name goes with the cut; not, it is
 // as it was.
 func TestCycleCutPastBothFailing(t *testing.T) {
-	s, tried := splitScenario(t, map[string]probe.Verdict{"nt.example.org": probe.CleanSplit})
+	s, tried := splitScenario(t, map[string]probe.Verdict{"nt.example.org": probe.CleanSplit, "sr.example.org": probe.CleanSplit})
 	both := probe.Report{Verdict: probe.Inconcl, TestedIP: "192.0.2.15", Direct: tlsCut, Tunnel: tlsCut,
 		Reason: "fails the same on both paths: silent drop (no reply) on the ClientHello (carries the name/SNI)"}
 	s.script("nt.example.org tcp/443", both)
 	s.script("dead.example.org tcp/443", both)
-	s.see(tunnelled("nt.example.org", 443), tunnelled("dead.example.org", 443))
+	// "not a steady block", the tunnel answering now and then (sibreal.org)
+	s.script("sr.example.org tcp/443", probe.Report{Verdict: probe.Inconcl, TestedIP: "192.0.2.16", Direct: tlsCut, Tunnel: pathOK,
+		Reason: "not a steady block: of 3 passes direct got through 0 with the name and 0 without, the tunnel 1"})
+	// an IPv6 node on a network with no IPv6: nothing to cut
+	s.script("v6.example.org tcp/443", probe.Report{Verdict: probe.Inconcl, TestedIP: "2001:db8::1", Direct: tlsCut, Tunnel: pathOK,
+		DirectNoV6: true, Reason: "IPv6 node the direct path does not reach (no IPv6 here?)"})
+	s.see(tunnelled("nt.example.org", 443), tunnelled("dead.example.org", 443), tunnelled("sr.example.org", 443), tunnelled("v6.example.org", 443))
 	s.cycle()
 	slices.Sort(*tried)
-	if !slices.Equal(*tried, []string{"dead.example.org", "nt.example.org"}) {
+	if !slices.Equal(*tried, []string{"dead.example.org", "nt.example.org", "sr.example.org"}) {
 		t.Fatalf("cut tried for %v", *tried)
 	}
 	if e := s.entry("nt.example.org"); e == nil || e.Verdict != probe.CleanSplit {
@@ -879,5 +885,8 @@ func TestCycleCutPastBothFailing(t *testing.T) {
 	}
 	if e := s.entry("dead.example.org"); e == nil || e.Verdict != probe.Inconcl {
 		t.Fatalf("not through with the cut: %+v", e)
+	}
+	if e := s.entry("sr.example.org"); e == nil || e.Verdict != probe.CleanSplit {
+		t.Fatalf("not a steady block, through with the cut: %+v", e)
 	}
 }
