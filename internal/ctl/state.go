@@ -65,6 +65,9 @@ type entry struct {
 	// V6Unknown: when a check last looked for the name's IPv6 node and no
 	// resolver answered, see unseenV6
 	V6Unknown time.Time `json:"v6_unknown,omitempty"`
+	// RecheckAt: when a verdict that holds until ExpiresAt is checked again
+	// all the same, staying in force meanwhile -- see record
+	RecheckAt time.Time `json:"recheck_at,omitempty"`
 	// CheckedAt: when the name was last checked, whatever came of it -- a
 	// check that kept the verdict before it leaves DecidedAt as it was
 	CheckedAt time.Time `json:"checked_at,omitempty"`
@@ -888,7 +891,8 @@ func (s *state) expired(id string, idle time.Duration) []string {
 	now := time.Now()
 	fresh := now.Add(-idle)
 	for dom, e := range s.Networks[id] {
-		if now.After(e.ExpiresAt) && e.lastSeen().After(fresh) {
+		due := now.After(e.ExpiresAt) || !e.RecheckAt.IsZero() && now.After(e.RecheckAt)
+		if due && e.lastSeen().After(fresh) {
 			out = append(out, dom)
 		}
 	}

@@ -815,6 +815,7 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 		kept.Alone = cfg.alone
 		kept.V6, kept.V6Unknown = f.v6, v6UnknownAt(f)
 		kept.CheckedAt = time.Now()
+		kept.RecheckAt = time.Time{} // its term is the re-check's now
 		term := cfg.FailTTL
 		// A verdict the check measured and could not overturn -- the
 		// host fails the same on both paths, say -- backs off as a
@@ -844,6 +845,7 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 		kept.SlowOnce = true
 		kept.V6, kept.V6Unknown = f.v6, v6UnknownAt(f)
 		kept.CheckedAt = time.Now()
+		kept.RecheckAt = time.Time{}
 		kept.ExpiresAt = time.Now().Add(cfg.FailTTL)
 		kept.Endpoints = endpointStrings(eps)
 		st.put(netID, dom, &kept)
@@ -891,6 +893,17 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 		e.ExpiresAt = time.Now().Add(cfg.TTL)
 	} else {
 		e.ExpiresAt = time.Now().Add(failTerm(cfg, e.Streak, e.Reverts))
+	}
+	// Going direct over QUIC alone, its TCP refused, a name is checked again
+	// on a block's schedule, the refusal in force meanwhile: it is one. Made
+	// for a week, a refusal found by a node that came to answer -- i.ytimg.com,
+	// refused for the IPv6 node's cut failing (21.10) -- kept every program
+	// that does not speak QUIC off YouTube's thumbnails for that week.
+	if e.NoTCP {
+		if had && prev.NoTCP && prev.Verdict == probe.CleanSplit {
+			e.Streak = prev.Streak + 1
+		}
+		e.RecheckAt = time.Now().Add(failTerm(cfg, e.Streak, 0))
 	}
 	if had {
 		// the domain lost its direct path -- the more often this happens,

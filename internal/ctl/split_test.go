@@ -536,6 +536,47 @@ func TestCycleQUICOnlyAddressBlocked(t *testing.T) {
 	}
 }
 
+// A name going direct over QUIC alone, its TCP refused, is checked again on
+// a block's schedule -- an hour, two, four -- the refusal in force
+// meanwhile. Made for a week, i.ytimg.com's (21.10), found by an IPv6 node
+// that came to answer, kept programs without QUIC off its thumbnails.
+func TestQUICOnlyRecheckedLikeABlock(t *testing.T) {
+	s, _ := splitScenario(t, map[string]probe.Verdict{"rr4.example.org": probe.BlockedTLS})
+	s.cfg.QUICFake = true
+	s.cfg.NoTCPProvider = NoTCPProvider
+	s.cfg.NoTCPListPath = filepath.Join(filepath.Dir(s.cfg.ListPath), "direct-split-notcp.txt")
+	old := checkSplitQUIC
+	checkSplitQUIC = func(_, _ probe.Dialer, plain probe.Report, _ int, _ probe.Verdict) probe.Report {
+		return probe.Report{Domain: plain.Domain, Port: plain.Port, Proto: "quic", TestedIP: plain.TestedIP,
+			Verdict: probe.CleanSplit, Direct: pathOK, Tunnel: pathOK, Note: "QUIC decoy"}
+	}
+	t.Cleanup(func() { checkSplitQUIC = old })
+	d := "rr4.example.org"
+	s.script(d+" tcp/443", blockedTLS("192.0.2.32"))
+	s.script(d+" quic/443", blockedQUIC("192.0.2.32"))
+	s.see(tunnelled(d, 443), quic(d))
+	s.cycle()
+	e := s.entry(d)
+	if e == nil || !e.NoTCP || e.RecheckAt.IsZero() || e.RecheckAt.After(time.Now().Add(s.cfg.FailTTL+time.Minute)) {
+		t.Fatalf("QUIC only: %+v", e)
+	}
+	if got := s.st.expired("n", s.cfg.Idle); len(got) != 0 {
+		t.Fatalf("due before its re-check: %v", got)
+	}
+	e.RecheckAt = time.Now().Add(-time.Minute)
+	if got := s.st.expired("n", s.cfg.Idle); !slices.Equal(got, []string{d}) {
+		t.Fatalf("not due after its re-check time: %v", got)
+	}
+	if got := listRules(s.cfg.NoTCPListPath); !slices.Equal(got, []string{d}) {
+		t.Fatalf("the refusal not in force until the check: %v", got)
+	}
+	s.see(tunnelled(d, 443), quic(d))
+	s.cycle()
+	if e := s.entry(d); !e.NoTCP || e.RecheckAt.Before(time.Now().Add(2*s.cfg.FailTTL-time.Minute)) {
+		t.Fatalf("found again: re-checked in %s, want twice the hour", time.Until(e.RecheckAt).Round(time.Minute))
+	}
+}
+
 // A reset empties the refusals with the names they were of: left on disk,
 // they refused a name's TCP or QUIC on 443 after the name had gone back to
 // the tunnel, until the next cycle's sync.

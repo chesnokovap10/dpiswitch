@@ -100,9 +100,12 @@ func disableAuto(cfg Config, a *api, st *state, closeDirect bool) {
 	}
 	if !closeDirect {
 		// observe only: with the cut on the lists stay (see directLists)
-		if directLists(cfg) {
+		switch {
+		case cfg.modeNow() == ModeTunnel:
+			log.Printf("tunnel only: the detector's lists emptied")
+		case directLists(cfg):
 			log.Printf("observe only with the ClientHello cut: the detector's lists kept")
-		} else {
+		default:
 			log.Printf("observe only: the detector's lists emptied")
 		}
 		return

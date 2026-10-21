@@ -611,10 +611,12 @@ func (b *cdnBook) round(tunnelAddr string, hosts map[string][]string, done func(
 					why = errors.New("no names in the certificates")
 				}
 				log.Printf("CDN certificates not read for %d of %d CDNs (%s), tried again in %s and later: %s",
-					len(failed), len(hosts), preview(failed), cdnRetry, probe.Truncate(why.Error(), 160))
+					len(failed), len(hosts), preview(failed), cdnRetry,
+					probe.Truncate(strings.ReplaceAll(why.Error(), "\n", "; "), 200))
 			}
 		}
-		if learnt {
+		// a failure too: how many rounds in a row failed outlives a restart
+		if learnt || len(failed) > 0 {
 			if err := b.save(); err != nil {
 				log.Printf("CDN book not saved: %v", err)
 			}
