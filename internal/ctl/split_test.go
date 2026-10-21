@@ -116,6 +116,25 @@ func TestCycleSplitFails(t *testing.T) {
 	}
 }
 
+// The cut through the handshake and the session cut once data flows
+// (zona.media, 21.10): the cut does not get through -- BLOCKED_DPI, not the
+// plain path's BLOCKED_TLS.
+func TestCycleCutSessionCut(t *testing.T) {
+	s, _ := splitScenario(t, nil)
+	checkSplit = func(_, _ probe.Dialer, plain probe.Report, _ int, _ probe.Verdict) probe.Report {
+		return probe.Report{Domain: plain.Domain, Port: plain.Port, Proto: "tcp", TestedIP: plain.TestedIP,
+			Verdict: probe.ContentDiff, Reason: "direct path cut after connecting",
+			Direct: probe.PathResult{TCPOk: true, TLSTried: true, TLSOk: true, CertValid: true, Err: "i/o timeout", ErrStage: "http_read"},
+			Tunnel: pathOK, Note: "ClientHello cut"}
+	}
+	s.see(tunnelled("zm.example.org", 443))
+	s.script("zm.example.org tcp/443", blockedTLS("192.0.2.14"))
+	s.cycle()
+	if e := s.entry("zm.example.org"); e == nil || e.Verdict != probe.BlockedDPI {
+		t.Fatalf("verdict %+v", e)
+	}
+}
+
 // rutracker.org (21.10): its Cloudflare node fails the handshake direct with
 // the name and with none -- BLOCKED_TCP -- and takes the cut every time. It
 // goes direct with the cut, not through the tunnel as an address blocked.

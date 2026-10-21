@@ -524,10 +524,12 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 					default:
 						r.Note = "ClientHello cut: " + string(s.Verdict) + " " + s.Reason
 						// blocked by the name with the cut too: the DPI box beats
-						// it here. Re-checked like any block, the cut tried again
-						// each time. One that takes no hello at all stays what it
-						// was: the address
-						if r.Verdict == probe.BlockedTLS && (isBlocked(s.Verdict) || s.Verdict == probe.MITM) {
+						// it here -- before the handshake or after it, the session
+						// cut once data flows (zona.media, 21.10). Re-checked like
+						// any block, the cut tried again each time. One that takes
+						// no hello at all stays what it was: the address
+						cutAfter := s.Verdict == probe.ContentDiff && s.Direct.HTTPFailed()
+						if r.Verdict == probe.BlockedTLS && (isBlocked(s.Verdict) || s.Verdict == probe.MITM || cutAfter) {
 							r.Verdict = probe.BlockedDPI
 						}
 					}
