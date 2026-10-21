@@ -112,6 +112,12 @@ func TestCDNCertsAddUp(t *testing.T) {
 	if got := b.families(); len(got) != 1 || !slices.Contains(got[0].Pages, "youtube.com") {
 		t.Fatalf("a failed round lost the family: %v", got)
 	}
+	// a month of rounds that read nothing: the family goes with its
+	// certificates, as after rounds that read others
+	gone := renewCDN("googlevideo.com", e, nil, later.Add(cdnCertTerm))
+	if !gone.Failed || len(gone.Certs) != 0 || len(gone.Pages) != 0 {
+		t.Fatalf("failed rounds a month on: %d certificates, pages %v", len(gone.Certs), gone.Pages)
+	}
 	e = renewCDN("googlevideo.com", e, [][]string{sans(t, "san-googlevideo-ggc.txt")}, now.Add(32*24*time.Hour))
 	if slices.Contains(e.Pages, "youtube.com") || len(e.Certs) != 1 {
 		t.Fatalf("a certificate unseen for a month stays: pages %v, %d certificates", e.Pages, len(e.Certs))

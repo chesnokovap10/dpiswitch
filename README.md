@@ -57,6 +57,7 @@
 - [Авто-переключение: вкл, «только наблюдать», «только в туннель»](#авто-переключение-вкл-только-наблюдать-только-в-туннель)
 - [Сети](#сети)
 - [DNS](#dns)
+- [Весь DNS через туннель](#весь-dns-через-туннель)
 - [IPv6](#ipv6)
 - [Защита от утечки UDP](#защита-от-утечки-udp)
 - [Второй туннель](#второй-туннель)
@@ -138,6 +139,7 @@
 | DNS для прямых сайтов | `tls://8.8.8.8`, `tls://8.8.4.4`, `tls://[2001:4860:4860::8888]`, `tls://[2001:4860:4860::8844]` | DoT Google по IPv4 и IPv6, мимо туннеля |
 | DNS внутри туннеля | из `.conf` | Для сайтов, идущих через туннель |
 | Локальный DNS-кэш | Выкл | Имена прямых сайтов отвечаются из памяти компьютера, 7 дней, и после перезапусков; новое имя спрашивается у самого быстрого DNS для прямых сайтов |
+| Весь DNS через туннель | Выкл | Пока ядро работает, Windows спрашивает каждое имя только у DNS туннеля: ни роутер, ни провайдер запросов не видят. Если служба погибнет, имена не разрешаются, пока она не запустится снова |
 | Защита от утечки UDP | Выкл | Блокирует UDP, который ушёл бы через адаптер Wi-Fi, Ethernet или мобильной сети мимо туннеля (настоящий адрес в WebRTC, звонки, игры); пакеты ядра и локальной сети не трогает. Фильтры платформы фильтрации Windows, от брандмауэра не зависят |
 | Открывать интерфейс | В отдельном окне | Окно браузера без вкладок или вкладка браузера |
 
@@ -296,6 +298,33 @@ CDN, спидтестам, обновлениям.
 > [!NOTE]
 > Сохранение DNS перезапускает ядро: туннель пропадает на пару секунд.
 
+### Весь DNS через туннель
+
+Windows спрашивает имя сразу на всех адаптерах: через адаптер DPI Switch и одновременно у DNS адаптера
+Wi-Fi или Ethernet — роутера, провайдера. Ответ из туннеля приходит первым, и второй запрос Windows
+отменяет, но он уже ушёл: роутер спрашивает DNS провайдера, и тот видит, какие сайты вы открываете. На
+работу это не влияет — соединения всё равно идут через ядро, — только на приватность. Защита от утечки UDP
+такой запрос пропускает: роутер — локальная сеть.
+
+**Весь DNS через туннель** (в настройках, по умолчанию выключен), пока ядро работает и его адаптер
+принимает трафик, ставит в таблицу политик разрешения имён Windows (NRPT) правило: каждое имя
+спрашивается только у DNS внутри адаптера DPI Switch. Серверы адаптеров Windows больше не спрашивает
+совсем, в том числе по DoH, который Windows 11 умеет включать для них. Записав правило, служба проверяет,
+что DNS-клиент Windows его применил, и страница настроек показывает итог. Правило снимается, когда ядро
+останавливается или перезапускается, когда адаптер исчезает, когда настройку выключают и когда службу
+удаляют. Перезапуск ядра не нужен.
+
+Чего стоит:
+- правило хранится в реестре и само не исчезает. Если служба погибнет, не сняв его, имена перестанут
+  разрешаться, пока Windows не перезапустит её (через 30 секунд): первое, что служба делает при запуске, —
+  снимает правило, оставшееся от прошлого раза;
+- имена, которые знает только роутер (`miwifi.com`, `*.lan`), не разрешаются: их спрашивают у DNS
+  туннеля. Имена устройств в локальной сети по NetBIOS и LLMNR работают — это не DNS;
+- если в Windows есть правила NRPT групповой политики (компьютер в домене), Windows читает только их:
+  страница настроек так и говорит, и правило не ставится.
+
+Состояние служба пишет в `%ProgramData%\dpiswitch\nrpt.json`.
+
 ### IPv6
 
 С включённым IPv6 у компьютера есть IPv6, даже если у провайдера его нет: он идёт через туннель.
@@ -439,7 +468,7 @@ Claude, Gemini, Grok, Copilot, DeepL и др.), Instagram, Facebook, X и ваш
   программой, а не в папке данных: там ядро само создаёт файлы, которые называет его конфиг.
 - `%ProgramData%\dpiswitch` — данные службы: конфиг ядра, вердикты (`controller-state.json`), каждая
   проба (`reports.jsonl`), логи (`logs\service.log`, `logs\mihomo.log`), метка запуска ядра, по
-  которой Live узнаёт новый запуск (`core-run.txt`), DNS-кэш (`dns-cache.json`), состояние защиты от утечки UDP (`udp-guard.json`). Писать туда могут только SYSTEM и администраторы,
+  которой Live узнаёт новый запуск (`core-run.txt`), DNS-кэш (`dns-cache.json`), состояние защиты от утечки UDP (`udp-guard.json`) и правила «Весь DNS через туннель» (`nrpt.json`). Писать туда могут только SYSTEM и администраторы,
   читать — ещё вы: лог ядра и пробы называют каждый сайт, куда ходит компьютер, и другим учётным
   записям их видеть незачем.
 - `%ProgramData%\dpiswitch\user` — то, что вы меняете в интерфейсе: `.conf`, списки, настройки.
@@ -546,6 +575,7 @@ your real ISP. Everything else stays in the tunnel.
 - [Auto-switch: on, observe only, tunnel only](#auto-switch-on-observe-only-tunnel-only)
 - [Networks](#networks)
 - [DNS](#dns-1)
+- [All DNS through the tunnel](#all-dns-through-the-tunnel)
 - [IPv6](#ipv6-1)
 - [UDP leak guard](#udp-leak-guard)
 - [The second tunnel](#the-second-tunnel)
@@ -627,6 +657,7 @@ many are blocked.
 | DNS for direct sites | `tls://8.8.8.8`, `tls://8.8.4.4`, `tls://[2001:4860:4860::8888]`, `tls://[2001:4860:4860::8844]` | Google DoT over IPv4 and IPv6, outside the tunnel |
 | DNS inside the tunnel | from the `.conf` | For the sites that go through the tunnel |
 | Local DNS cache | Off | Direct sites' names answered from the computer's memory, for 7 days and across restarts; a new name is asked of the fastest resolver for direct sites |
+| All DNS through the tunnel | Off | While the core runs, Windows asks every name of the tunnel's DNS alone: neither the router nor the ISP sees the queries. Should the service die, names do not resolve until it starts again |
 | UDP leak guard | Off | Blocks UDP that would leave a cable, Wi-Fi or mobile adapter around the tunnel (the real address in WebRTC, calls, games); the core's packets and the local network are left alone. Windows Filtering Platform filters, independent of Windows Firewall |
 | Open the UI | In its own window | A browser window with no tabs, or a browser tab |
 
@@ -785,6 +816,33 @@ current network. The tray's reset is of the current network.
 > [!NOTE]
 > Saving the DNS restarts the core: the tunnel drops for a couple of seconds.
 
+### All DNS through the tunnel
+
+Windows asks a name on every adapter at once: through the DPI Switch adapter, and at the same time of
+the Wi-Fi or Ethernet adapter's DNS -- the router's, the ISP's. The tunnel's answer comes first and
+Windows cancels the other query, but it has gone out: the router asks the ISP's resolver, which sees the
+sites you open. It does not affect how things work -- the connections go through the core all the same --
+only privacy. The UDP leak guard lets such a query pass: the router is the local network.
+
+**All DNS through the tunnel** (in the settings, off by default), while the core runs and its adapter
+takes the traffic, puts a rule into Windows' Name Resolution Policy Table (NRPT): every name is asked of
+the DNS inside the DPI Switch adapter alone. Windows asks the adapters' servers nothing at all, by the
+DoH Windows 11 can turn on for them neither. Having written the rule, the service checks that Windows'
+DNS client applies it, and the settings page shows what it found. The rule goes when the core stops or
+restarts, when its adapter goes, when the setting is switched off, and when the service is removed. The
+core is not restarted for it.
+
+What it costs:
+- the rule is kept in the registry and does not go by itself. Should the service die without taking it
+  out, names stop resolving until Windows starts it again (in 30 seconds): the first thing the service
+  does at its start is take out a rule left from before;
+- names only the router knows (`miwifi.com`, `*.lan`) do not resolve: they are asked of the tunnel's
+  DNS. Local devices' names by NetBIOS and LLMNR work -- they are not DNS;
+- with NRPT rules of Group Policy in Windows (a computer in a domain), Windows reads those alone: the
+  settings page says so, and the rule is not put in.
+
+The service writes its state to `%ProgramData%\dpiswitch\nrpt.json`.
+
 ### IPv6
 
 With IPv6 on, the computer gets IPv6 even where the ISP has none: it goes through the tunnel. Where
@@ -927,7 +985,7 @@ state.
   beside the program, not in the data directory: there the core makes the files its config names.
 - `%ProgramData%\dpiswitch` — the service's own data: the core's config, the verdicts
   (`controller-state.json`), every probe (`reports.jsonl`), the logs (`logs\service.log`,
-  `logs\mihomo.log`), the name of the core's run Live tells a new run by (`core-run.txt`), the DNS cache (`dns-cache.json`), the state of the UDP leak guard (`udp-guard.json`). Writable by
+  `logs\mihomo.log`), the name of the core's run Live tells a new run by (`core-run.txt`), the DNS cache (`dns-cache.json`), the state of the UDP leak guard (`udp-guard.json`) and of the rule of "All DNS through the tunnel" (`nrpt.json`). Writable by
   SYSTEM and Administrators only, readable by you as well: the core's log and the probes name every
   site the computer goes to, and other accounts have no business seeing them.
 - `%ProgramData%\dpiswitch\user` — what you change in the UI: the `.conf` files, lists, settings.

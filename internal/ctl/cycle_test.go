@@ -85,6 +85,12 @@ func newScenario(t *testing.T) *scenario {
 	old := checkProto
 	checkProto = s.check
 	t.Cleanup(func() { checkProto = old })
+	// QUIC probed ahead changes when a verdict comes, not which: off in the
+	// scenarios, whose scripts have no QUIC for most names (see
+	// TestCycleQUICAhead)
+	oldAhead := quicAhead
+	quicAhead = make(chan struct{})
+	t.Cleanup(func() { quicAhead = oldAhead })
 	s.where.Store("wifi-a")
 	oldAt := attachmentNow
 	attachmentNow = func() string { return s.where.Load().(string) }

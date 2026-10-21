@@ -116,7 +116,15 @@ type Config struct {
 	cut *atomic.Value
 	// closed when the controller is stopping: a cycle starts no more probes
 	stop <-chan struct{}
+	// gen: the settings' generation now, shared by every copy; genAt: the one
+	// this copy was made in. A check made by another's settings is not filed,
+	// see probeBatch
+	gen   *atomic.Int64
+	genAt int64
 }
+
+// stale: the settings changed since this copy was made
+func (cfg Config) stale() bool { return cfg.gen != nil && cfg.gen.Load() != cfg.genAt }
 
 // stopping: the controller is being stopped.
 func (cfg Config) stopping() bool {
@@ -430,6 +438,14 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 			listMu.Unlock()
 			drop("verdicts were reset during the cycle")
 			return
+		case cfg.stale():
+			// checked by the settings before: the cut switched on meanwhile
+			// had the name's block marked for a check with it, and filed
+			// now the old check put that off by its whole term. Checked
+			// again by the new ones (the review of 21.10)
+			listMu.Unlock()
+			drop("the settings changed during the check")
+			return
 		case st.current() != netID:
 			// the gateway's memory merged into its ISP's while the probes
 			// ran, the network the same: filed under the gateway it came back
@@ -474,6 +490,10 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 				stored, was = prev.Endpoints, prev.Verdict
 			}
 			eps, unprobed := mergeEndpoints(ports[dom], stored)
+			// the ports the name was seen on, before withTCP adds the TCP
+			// twins of its QUIC ones: what the room for one more is counted
+			// by, see unseenQUIC
+			seen := len(eps)
 			if cfg.alone {
 				// with no tunnel only the cut is worth a check: its 443
 				eps = slices.DeleteFunc(eps, func(e endpoint) bool { return e.udp || e.port != 443 })
@@ -610,6 +630,26 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 				r         probe.Report
 				v6Unknown bool
 			}
+			// QUIC on 443, for a name that may go with the cut (see
+			// unseenQUIC): probed beside the ports when there is room for it,
+			// and waited for only when the name does go with the cut. After
+			// the ports it came on top of their timeouts: meduza.io's verdict
+			// took 44 s (21.10), 9 of them QUIC's after TCP's were over.
+			var ahead chan probe.Report
+			if slots := quicAhead; seen < maxEndpoints && mayCut(cfg, eps) {
+				select {
+				case slots <- struct{}{}:
+					ahead = make(chan probe.Report, 1)
+					go func() {
+						defer func() { <-slots }() // the place it took
+						q := endpoint{udp: true, port: 443}
+						r := checkProto(direct, tunnel, dom, q.port, cfg.Attempts, true, was)
+						appendJSONL(cfg.JSONLPath, r)
+						ahead <- follow(r, q)
+					}()
+				default: // all busy: probed after the ports, if wanted
+				}
+			}
 			checks := make([]portCheck, len(eps))
 			var pw sync.WaitGroup
 			for i, ep := range eps {
@@ -648,10 +688,22 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 			// refused). Only what the probe showed plainly is kept: through, or
 			// blocked with the tunnel answering -- a host with no QUIC at all
 			// is as it was.
-			if ep, ok := unseenQUIC(cfg, eps, reps); ok {
-				r := checkProto(direct, tunnel, dom, ep.port, cfg.Attempts, true, was)
-				appendJSONL(cfg.JSONLPath, r)
-				if r = follow(r, ep); r.Aborted {
+			if ep, ok := unseenQUIC(cfg, eps, reps); ok && seen >= maxEndpoints {
+				// no room for it: the name is on as many ports as a check
+				// takes, and its QUIC on 443 goes unchecked -- so it is not
+				// promised clean. Counted against the room withTCP's twins
+				// filled, it was skipped unsaid (the review of 21.10).
+				unprobed++
+			} else if ok {
+				var r probe.Report
+				if ahead != nil {
+					r = <-ahead
+				} else {
+					r = checkProto(direct, tunnel, dom, ep.port, cfg.Attempts, true, was)
+					appendJSONL(cfg.JSONLPath, r)
+					r = follow(r, ep)
+				}
+				if r.Aborted {
 					mu.Lock()
 					cut = append(cut, dom)
 					mu.Unlock()
@@ -1844,7 +1896,7 @@ func splitNoQUIC(eps []endpoint, reps []probe.Report) bool {
 // the decoy on only: off, QUIC to every name of the cut's is refused.
 func unseenQUIC(cfg Config, eps []endpoint, reps []probe.Report) (endpoint, bool) {
 	q := endpoint{udp: true, port: 443}
-	if cfg.alone || !cfg.Split || !cfg.QUICFake || len(eps) >= maxEndpoints {
+	if cfg.alone || !cfg.Split || !cfg.QUICFake {
 		return q, false
 	}
 	cut := false
@@ -1858,6 +1910,18 @@ func unseenQUIC(cfg Config, eps []endpoint, reps []probe.Report) (endpoint, bool
 	}
 	return q, cut
 }
+
+// mayCut: a name unseenQUIC may want QUIC on 443 probed for -- the cut and
+// the decoy on, its TCP on 443 among the ports, its QUIC on 443 not
+func mayCut(cfg Config, eps []endpoint) bool {
+	return !cfg.alone && cfg.Split && cfg.QUICFake &&
+		slices.Contains(eps, endpoint{port: 443}) && !slices.Contains(eps, endpoint{udp: true, port: 443})
+}
+
+// quicAhead: the QUIC probes made ahead at once, see probeBatch; a name past
+// it has its QUIC probed after its ports, as before. Most come to nothing --
+// a clean name is not waited on for them -- and are bounded so.
+var quicAhead = make(chan struct{}, 8)
 
 // splitNoTCP: the mirror of splitNoQUIC -- a name whose QUIC on 443 goes
 // direct, plain or through the decoy, while its TCP on 443 is blocked even

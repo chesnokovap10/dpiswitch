@@ -140,6 +140,7 @@ func Run(ctx context.Context, cfg Config) {
 	cfg.autoOff = new(atomic.Bool)
 	cfg.mode = new(atomic.Value)
 	cfg.cut = new(atomic.Value)
+	cfg.gen = new(atomic.Int64)
 	cfg.stop = ctx.Done()
 	if cfg.InheritPath != "" {
 		cfg.book = loadASNBook(paths.ASNBook())
@@ -554,11 +555,17 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 	// blocked are tried through it now
 	quicOn := cfg.Split && cfg.QUICFake && !(old.Split && old.QUICFake)
 	now := time.Now()
+	// a new generation: a check made by the old settings is not filed after
+	// the terms below are moved -- under listMu, as a check is filed
+	listMu.Lock()
+	if cfg.gen != nil {
+		cfg.genAt = cfg.gen.Add(1)
+	}
 	st.mu.Lock()
 	for _, m := range st.Networks {
 		for _, e := range m {
 			switch {
-			case splitOn && (e.Verdict == probe.BlockedTLS || e.Verdict == probe.BlockedDPI):
+			case splitOn && (e.Verdict == probe.BlockedTLS || e.Verdict == probe.BlockedDPI || e.Verdict == probe.BlockedTCP):
 				e.ExpiresAt = now
 			case quicOn && (e.Verdict == probe.BlockedQUIC || e.Verdict == probe.BlockedDPI || e.Verdict == probe.CleanSplit && e.NoQUIC):
 				e.ExpiresAt = now
@@ -572,6 +579,7 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 		}
 	}
 	st.mu.Unlock()
+	listMu.Unlock()
 	if err := st.save(); err != nil {
 		log.Printf("state not saved: %v", err)
 	}

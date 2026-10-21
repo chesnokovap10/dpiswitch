@@ -99,6 +99,22 @@ func (p *pool[T]) get() (T, bool) {
 	return none, false
 }
 
+// expire closes the connections kept longer than keptIdle
+func (p *pool[T]) expire() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	keep := p.idle[:0]
+	for _, k := range p.idle {
+		if time.Since(k.used) < keptIdle {
+			keep = append(keep, k)
+		} else {
+			k.c.Close()
+		}
+	}
+	clear(p.idle[len(keep):])
+	p.idle = keep
+}
+
 // put keeps c for the next query; a few at most, the rest are closed
 func (p *pool[T]) put(c T) {
 	p.mu.Lock()
@@ -113,7 +129,29 @@ func (p *pool[T]) put(c T) {
 var (
 	streamPools   sync.Map // poolKey -> *pool[net.Conn]
 	datagramPools sync.Map // poolKey -> *pool[*udpConn]
+	sweeping      sync.Once
 )
+
+// sweepPools closes what every pool kept past keptIdle. A pool's own get did
+// it, and only for the next query to its server: one asked no more -- the
+// servers changed in the settings -- kept its connections, and a UDP
+// association's socket and control connection with them, for as long as the
+// process ran (the review of 21.10).
+func sweepPools() {
+	streamPools.Range(func(_, v any) bool { v.(*pool[net.Conn]).expire(); return true })
+	datagramPools.Range(func(_, v any) bool { v.(*pool[*udpConn]).expire(); return true })
+}
+
+// startSweeping runs sweepPools every keptIdle from the first pool's use on
+func startSweeping() {
+	sweeping.Do(func() {
+		go func() {
+			for range time.Tick(keptIdle) {
+				sweepPools()
+			}
+		}()
+	})
+}
 
 func (r Resolver) poolKey(d Dialer) string {
 	return d.via() + "|" + r.Scheme + "|" + net.JoinHostPort(r.Host, strconv.Itoa(r.Port))
@@ -122,6 +160,7 @@ func (r Resolver) poolKey(d Dialer) string {
 // pooledStream: a query over a kept TCP or TLS connection (RFC 7766,
 // 7858), one query at a time on it
 func (r Resolver) pooledStream(d Dialer, q []byte) ([]byte, error) {
+	startSweeping()
 	v, _ := streamPools.LoadOrStore(r.poolKey(d), &pool[net.Conn]{})
 	p := v.(*pool[net.Conn])
 	for {
@@ -152,6 +191,7 @@ func (r Resolver) pooledStream(d Dialer, q []byte) ([]byte, error) {
 
 // pooledDatagram: a query over a kept UDP association of the listener
 func (r Resolver) pooledDatagram(d Dialer, q []byte) ([]byte, error) {
+	startSweeping()
 	v, _ := datagramPools.LoadOrStore(r.poolKey(d), &pool[*udpConn]{})
 	p := v.(*pool[*udpConn])
 	for {

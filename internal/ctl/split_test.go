@@ -1,10 +1,12 @@
 package ctl
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -721,5 +723,137 @@ func TestCycleQUICTunnelSilent(t *testing.T) {
 	}
 	if e := s.entry("none.example.net"); e == nil || e.Verdict != probe.CleanSplit || !e.NoQUIC {
 		t.Errorf("no QUIC on either path: %+v", e)
+	}
+}
+
+// QUIC on 443 of a name the cut may take is probed beside its TCP, not after
+// it: the two probes here wait for each other, and one after the other they
+// would wait out the timeout. A clean name is not held for it.
+func TestCycleQUICAhead(t *testing.T) {
+	s, _ := quicScenario(t, map[string]probe.Verdict{"yt.example.org": probe.CleanSplit},
+		map[string]probe.Verdict{"yt.example.org": probe.CleanSplit})
+	slots := make(chan struct{}, 8)
+	quicAhead = slots
+	var met sync.WaitGroup
+	met.Add(2)
+	together := make(chan struct{})
+	go func() { met.Wait(); close(together) }()
+	release := make(chan struct{})
+	checkProto = func(direct, tunnel probe.Dialer, dom string, port, att int, udp bool, was probe.Verdict) probe.Report {
+		switch {
+		case dom == "yt.example.org":
+			met.Done()
+			select {
+			case <-together:
+			case <-time.After(5 * time.Second):
+				t.Errorf("%s udp %v checked alone", dom, udp)
+			}
+		case dom == "clean.example.org" && udp:
+			<-release // a host with no QUIC: its timeout
+		}
+		return s.check(direct, tunnel, dom, port, att, udp, was)
+	}
+	s.script("yt.example.org tcp/443", blockedTLS("192.0.2.40"))
+	s.script("yt.example.org quic/443", blockedQUIC("192.0.2.40"))
+	s.script("clean.example.org tcp/443", clean("192.0.2.41"))
+	s.script("clean.example.org quic/443", probe.Report{Verdict: probe.Inconcl, Reason: "fails the same on both paths"})
+	s.see(tunnelled("yt.example.org", 443), tunnelled("clean.example.org", 443))
+	done := make(chan struct{})
+	go func() { defer close(done); s.cycle() }()
+	defer func() {
+		close(release)
+		<-done
+		// the clean name's QUIC ends before the test: every place taken back
+		for range cap(slots) {
+			slots <- struct{}{}
+		}
+	}()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if e, ok := s.st.get("n", "clean.example.org"); ok && e.Verdict == probe.Clean {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the clean name waited for its QUIC")
+		}
+	}
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if e, ok := s.st.get("n", "yt.example.org"); ok {
+			if e.Verdict != probe.CleanSplit || !slices.Contains(e.Endpoints, "quic/443") {
+				t.Fatalf("the cut's name: %+v", e)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no verdict for the cut's name")
+		}
+	}
+}
+
+// The room for QUIC on 443 is counted by the ports the name was seen on, not
+// with the TCP twins withTCP adds: TCP on 443 and QUIC on four other ports
+// are five, nine with the twins, and QUIC on 443 went unchecked (the review
+// of 21.10). With no room at all it is not promised clean.
+func TestCycleQUICRoom(t *testing.T) {
+	s, _ := quicScenario(t, map[string]probe.Verdict{"many.example.org": probe.CleanSplit, "full.example.org": probe.CleanSplit},
+		map[string]probe.Verdict{"many.example.org": probe.CleanSplit, "full.example.org": probe.CleanSplit})
+	conns := []connection{tunnelled("many.example.org", 443)}
+	s.script("many.example.org tcp/443", blockedTLS("192.0.2.42"))
+	s.script("many.example.org quic/443", blockedQUIC("192.0.2.42"))
+	for p := 1001; p <= 1004; p++ {
+		c := tunnelled("many.example.org", p)
+		c.Metadata.Network = "udp"
+		conns = append(conns, c)
+		s.script(fmt.Sprintf("many.example.org quic/%d", p), clean("192.0.2.42"))
+		s.script(fmt.Sprintf("many.example.org tcp/%d", p), cleanTCP("192.0.2.42"))
+	}
+	// and one seen on eight ports, TCP on 443 among them: no room
+	conns = append(conns, tunnelled("full.example.org", 443))
+	s.script("full.example.org tcp/443", blockedTLS("192.0.2.43"))
+	for p := 2001; p <= 2007; p++ {
+		conns = append(conns, tunnelled("full.example.org", p))
+		s.script(fmt.Sprintf("full.example.org tcp/%d", p), cleanTCP("192.0.2.43"))
+	}
+	s.see(conns...)
+	s.cycle()
+	if !s.wasProbed("many.example.org quic/443") {
+		t.Fatal("QUIC on 443 not checked with room for it")
+	}
+	if e := s.entry("many.example.org"); e == nil || e.Verdict != probe.CleanSplit {
+		t.Fatalf("many: %+v", e)
+	}
+	if s.wasProbed("full.example.org quic/443") {
+		t.Fatal("QUIC on 443 checked past the room")
+	}
+	if e := s.entry("full.example.org"); e == nil || goesDirect(e.Verdict) {
+		t.Fatalf("its QUIC unchecked, promised direct: %+v", e)
+	}
+}
+
+// A check made by the settings before a change is not filed: the cut
+// switched on marks the names it blocked for a check with it, and a check
+// begun before, filed after, put that off by its whole term (the review of
+// 21.10). It is made again by the new settings.
+func TestCycleStaleSettingsNotFiled(t *testing.T) {
+	s, _ := splitScenario(t, nil)
+	s.cfg.gen = new(atomic.Int64)
+	started, release := make(chan struct{}), make(chan struct{})
+	checkProto = func(direct, tunnel probe.Dialer, dom string, port, att int, udp bool, was probe.Verdict) probe.Report {
+		close(started)
+		<-release
+		return s.check(direct, tunnel, dom, port, att, udp, was)
+	}
+	s.script("old.example.org tcp/443", clean("192.0.2.44"))
+	s.see(tunnelled("old.example.org", 443))
+	done := make(chan struct{})
+	go func() { defer close(done); s.cycle() }()
+	<-started
+	s.cfg.gen.Add(1) // the settings change while it runs
+	close(release)
+	<-done
+	if e := s.entry("old.example.org"); e != nil {
+		t.Fatalf("filed by the old settings: %+v", e)
+	}
+	if _, order := s.w.drain(); !slices.Contains(order, "old.example.org") {
+		t.Fatalf("not given back to be checked again: %v", order)
 	}
 }

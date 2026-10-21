@@ -442,7 +442,6 @@ func renewCDN(cdn string, old *cdnEntry, got [][]string, now time.Time) *cdnEntr
 		if old != nil && old.Failed {
 			e.Fails = old.Fails + 1
 		}
-		return e
 	}
 	for _, names := range got {
 		names = sortedSet(names)
@@ -452,8 +451,15 @@ func renewCDN(cdn string, old *cdnEntry, got [][]string, now time.Time) *cdnEntr
 			e.Certs = append(e.Certs, cdnCert{Names: names, Seen: now})
 		}
 	}
-	e.Certs = slices.DeleteFunc(e.Certs, func(c cdnCert) bool { return now.Sub(c.Seen) >= cdnCertTerm })
-	e.cdnFamily = zonesOf(cdn, e.Certs)
+	// A certificate unseen for the term goes, a round that read nothing or
+	// not: one that failed kept what it had for good, and a family no host
+	// had shown for months stayed in force (the review of 21.10). An entry
+	// made before the book kept certificates has nothing to date it by: it
+	// keeps its family until a round reads one.
+	if len(e.Certs) > 0 || len(got) > 0 {
+		e.Certs = slices.DeleteFunc(e.Certs, func(c cdnCert) bool { return now.Sub(c.Seen) >= cdnCertTerm })
+		e.cdnFamily = zonesOf(cdn, e.Certs)
+	}
 	return e
 }
 

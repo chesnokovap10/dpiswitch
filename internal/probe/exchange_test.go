@@ -74,3 +74,23 @@ func TestExchangeKeepsAssociation(t *testing.T) {
 		t.Errorf("%d associations kept, want 1", len(p.idle))
 	}
 }
+
+// closeCounter: a connection that counts its closes
+type closeCounter struct{ n *int }
+
+func (c closeCounter) Close() error { *c.n++; return nil }
+
+// A pool its server is asked no more of has what it kept closed past
+// keptIdle all the same: its get did it alone, at the next query.
+func TestSweepPools(t *testing.T) {
+	closed := 0
+	p := &pool[closeCounter]{}
+	p.idle = []kept[closeCounter]{
+		{closeCounter{&closed}, time.Now().Add(-2 * keptIdle)},
+		{closeCounter{&closed}, time.Now()},
+	}
+	p.expire()
+	if closed != 1 || len(p.idle) != 1 {
+		t.Fatalf("closed %d, kept %d: want the old one closed and the fresh one kept", closed, len(p.idle))
+	}
+}
