@@ -800,6 +800,64 @@ func TestCycleProbeIsNoUse(t *testing.T) {
 	}
 }
 
+// A name's ports are checked at once: one after another, a name blocked by
+// its name took close to a minute. The probes here wait for each other: one
+// after another they would wait out the timeout.
+func TestCyclePortsAtOnce(t *testing.T) {
+	s := newScenario(t)
+	var arrived sync.WaitGroup
+	arrived.Add(2)
+	together := make(chan struct{})
+	go func() { arrived.Wait(); close(together) }()
+	checkProto = func(direct, tunnel probe.Dialer, dom string, port, att int, udp bool, was probe.Verdict) probe.Report {
+		arrived.Done()
+		select {
+		case <-together:
+		case <-time.After(5 * time.Second):
+			t.Errorf("port %d checked alone", port)
+		}
+		return s.check(direct, tunnel, dom, port, att, udp, was)
+	}
+	s.see(tunnelled("two.example.org", 443), tunnelled("two.example.org", 5228))
+	s.script("two.example.org tcp/443", clean("192.0.2.65"))
+	s.script("two.example.org tcp/5228", cleanTCP("192.0.2.65"))
+	s.cycle()
+	if e := s.entry("two.example.org"); e == nil || e.Verdict != probe.Clean || len(e.Endpoints) != 2 {
+		t.Fatalf("verdict %+v", e)
+	}
+}
+
+// A direct connection open with nothing come back makes its name a suspect
+// once: the check that follows answers for it, and the same connection --
+// a browser's QUIC the core keeps for a minute after the client gave up on
+// it -- had the name checked again every cycle it stayed open
+// (cloudflare-dns.com six times in 50 s on 18.10).
+func TestCycleSuspectOnce(t *testing.T) {
+	s := newScenario(t)
+	s.see(tunnelled("dead.example.org", 443))
+	s.script("dead.example.org tcp/443", clean("192.0.2.64"))
+	s.script("dead.example.org quic/443", clean("192.0.2.64"))
+	s.cycle()
+	e := s.entry("dead.example.org")
+	if e == nil || e.Verdict != probe.Clean {
+		t.Fatalf("setup: %+v", e)
+	}
+	e.DecidedAt = time.Now().Add(-10 * time.Minute)
+	e.CheckedAt = e.DecidedAt
+	c := via("dead.example.org", 443, "udp", "DIRECT", "RuleSet", s.cfg.Provider)
+	c.Download = 0
+	s.see(c)
+	s.cycle()
+	if !s.wasProbed("dead.example.org tcp/443") {
+		t.Fatal("a direct connection with nothing back was no suspect")
+	}
+	s.see(c)
+	s.cycle()
+	if s.wasProbed("dead.example.org tcp/443") {
+		t.Fatal("the same connection made its name a suspect again")
+	}
+}
+
 // The controller is stopping: a cycle starts no more probes, and files
 // nothing -- the service's stop waits for it.
 func TestCycleStopping(t *testing.T) {

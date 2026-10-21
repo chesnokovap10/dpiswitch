@@ -219,7 +219,7 @@ func cycle(cfg Config, a *api, st *state, netID string, w *watcher) {
 	// room a cycle has left, and hold up nothing
 	var unseenV6 []string
 	if checksV6(cfg, st, netID) {
-		unseenV6 = st.unseenV6(netID, cfg.Idle)
+		unseenV6 = st.unseenV6(netID, cfg.Idle, cfg.FailTTL)
 	}
 	// and the names going direct seen on a port their check did not take:
 	// the rule sends the whole name direct, and the port went so unchecked
@@ -466,8 +466,29 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 				}
 				return r
 			}
-			for _, ep := range eps {
-				var r probe.Report
+			// checkPort: one port's check, followed as above, and the name's
+			// IPv6 node too, where the direct path has IPv6: the core dials
+			// either, and the worse of the two is the port's verdict. A check
+			// of the IPv4 node alone called a name clean whose IPv6 one is
+			// cut. TCP only: for UDP the core takes the IPv4 node of a name
+			// that has one, and QUIC to the IPv6 one is never sent direct.
+			checkPort := func(ep endpoint) (r probe.Report, v6Unknown bool) {
+				// the IPv6 node's check runs beside the IPv4 one's, and counts
+				// once that one tested an IPv4 node -- a name with no A record
+				// was tested on its IPv6 node already
+				var r6 probe.Report
+				ok6 := false
+				var v6wg sync.WaitGroup
+				if v6Too && !ep.udp {
+					v6wg.Add(1)
+					go func() {
+						defer v6wg.Done()
+						if r6, ok6 = checkProtoV6(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp, was); ok6 {
+							appendJSONL(cfg.JSONLPath, r6)
+							r6 = follow(r6, ep)
+						}
+					}()
+				}
 				if cfg.alone {
 					r = checkAlone(direct, split, dom, cfg.Attempts, was)
 				} else {
@@ -475,27 +496,43 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 				}
 				appendJSONL(cfg.JSONLPath, r)
 				r = follow(r, ep)
-				// the name's IPv6 node too, where the direct path has IPv6: the core
-				// dials either, and the worse of the two is the port's verdict. A
-				// check of the IPv4 node alone called a name clean whose IPv6 one
-				// is cut. TCP only: for UDP the core takes the IPv4 node of a name
-				// that has one, and QUIC to the IPv6 one is never sent direct.
-				if v6Too && !ep.udp && !r.Aborted && r.TestedIP != "" && net.ParseIP(r.TestedIP).To4() != nil {
-					r6, ok := checkProtoV6(direct, tunnel, dom, ep.port, cfg.Attempts, ep.udp, was)
-					v6Unknown = v6Unknown || !ok && r6.Unmeasured
-					if ok {
-						appendJSONL(cfg.JSONLPath, r6)
-						// slower there is no block: the core takes whichever node
-						// answers first, and the IPv4 one's speed is the name's.
-						// Nor is a node that does not take the connection: the core
-						// dials both and goes on with the IPv4 one. On the first day
-						// (10.10) download.windowsupdate.com and cloudflare-dns.com
-						// were reverted for IPv6 nodes nothing direct ever went to.
-						if r6 = follow(r6, ep); r6.Aborted || r6.Verdict != probe.Slower && r6.Verdict != probe.BlockedTCP && worse(r6.Verdict, r.Verdict) {
-							r = r6
-						}
-					}
+				v6wg.Wait()
+				if !v6Too || ep.udp || r.Aborted || r.TestedIP == "" || net.ParseIP(r.TestedIP).To4() == nil {
+					return r, false
 				}
+				// slower there is no block: the core takes whichever node
+				// answers first, and the IPv4 one's speed is the name's.
+				// Nor is a node that does not take the connection: the core
+				// dials both and goes on with the IPv4 one. On the first day
+				// (10.10) download.windowsupdate.com and cloudflare-dns.com
+				// were reverted for IPv6 nodes nothing direct ever went to.
+				if ok6 && (r6.Aborted || r6.Verdict != probe.Slower && r6.Verdict != probe.BlockedTCP && worse(r6.Verdict, r.Verdict)) {
+					r = r6
+				}
+				return r, !ok6 && r6.Unmeasured
+			}
+			// The ports at once: one after another, a name blocked by its
+			// name took a timeout and its confirmation on TCP, the same on
+			// its IPv6 node, and a timeout on QUIC with the decoy after it --
+			// close to a minute (googlevideo.com hosts, 14-21.10), and the
+			// next name waited behind it.
+			type portCheck struct {
+				r         probe.Report
+				v6Unknown bool
+			}
+			checks := make([]portCheck, len(eps))
+			var pw sync.WaitGroup
+			for i, ep := range eps {
+				pw.Add(1)
+				go func() {
+					defer pw.Done()
+					checks[i].r, checks[i].v6Unknown = checkPort(ep)
+				}()
+			}
+			pw.Wait()
+			for i, ep := range eps {
+				r := checks[i].r
+				v6Unknown = v6Unknown || checks[i].v6Unknown
 				if r.Aborted {
 					// leave memory alone: the name goes back to the
 					// watcher and is checked once the core is back
@@ -541,9 +578,10 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 			// refused one, not a dead direct path
 			noTCP := splitNoTCP(cfg, eps, reps)
 			if noTCP {
+				note := noTCPNote(eps, reps)
 				rep = quicReport(eps, reps)
 				rep.Verdict = probe.CleanSplit
-				rep.Note = strings.TrimPrefix(rep.Note+"; TCP blocked even with the ClientHello cut: refused", "; ")
+				rep.Note = strings.TrimPrefix(rep.Note+"; "+note, "; ")
 				downs = slices.DeleteFunc(downs, func(r probe.Report) bool { return r.Port == 443 })
 			}
 			directDown := len(downs) > 0
@@ -570,7 +608,8 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 			mu.Unlock()
 
 			mu.Lock()
-			results = append(results, checked{dom, rep, eps, checkFacts{directDown, noV6, unprobed, noQUIC, noTCP, v6Too && !v6Unknown}})
+			results = append(results, checked{dom, rep, eps, checkFacts{directDown: directDown, noV6: noV6, unprobed: unprobed,
+				noQUIC: noQUIC, noTCP: noTCP, v6: v6Too && !v6Unknown, v6Unknown: v6Too && v6Unknown}})
 			mu.Unlock()
 		}(dom)
 	}
@@ -691,6 +730,7 @@ type checkFacts struct {
 	noQUIC     bool // see entry.NoQUIC
 	noTCP      bool // see entry.NoTCP
 	v6         bool // see entry.V6
+	v6Unknown  bool // see entry.V6Unknown
 }
 
 // record files one name's check in memory and reports whether its verdict
@@ -730,7 +770,8 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 	if had && rep.Verdict == probe.Inconcl && prev.Verdict != probe.Inconcl && !dropClean && !noV6 {
 		kept := *prev
 		kept.Alone = cfg.alone
-		kept.V6 = f.v6
+		kept.V6, kept.V6Unknown = f.v6, v6UnknownAt(f)
+		kept.CheckedAt = time.Now()
 		term := cfg.FailTTL
 		// A verdict the check measured and could not overturn -- the
 		// host fails the same on both paths, say -- backs off as a
@@ -758,7 +799,8 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 	if had && goesDirect(prev.Verdict) && rep.Verdict == probe.Slower && !prev.SlowOnce && !directDown {
 		kept := *prev
 		kept.SlowOnce = true
-		kept.V6 = f.v6
+		kept.V6, kept.V6Unknown = f.v6, v6UnknownAt(f)
+		kept.CheckedAt = time.Now()
 		kept.ExpiresAt = time.Now().Add(cfg.FailTTL)
 		kept.Endpoints = endpointStrings(eps)
 		st.put(netID, dom, &kept)
@@ -767,10 +809,12 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 		return false
 	}
 
+	now := time.Now()
 	e := &entry{
 		Verdict:    rep.Verdict,
 		Reason:     rep.Reason,
-		DecidedAt:  time.Now(),
+		DecidedAt:  now,
+		CheckedAt:  now,
 		TestedIP:   rep.TestedIP,
 		Endpoints:  endpointStrings(eps),
 		DirectDown: rep.Verdict == probe.Inconcl && directDown,
@@ -778,6 +822,7 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 		NoQUIC:     rep.Verdict == probe.CleanSplit && f.noQUIC,
 		NoTCP:      rep.Verdict == probe.CleanSplit && f.noTCP,
 		V6:         f.v6,
+		V6Unknown:  v6UnknownAt(f),
 	}
 	// A new name was just seen by the watcher. A known one keeps its
 	// own mark: the probe is not a use. It used to count as one, and
@@ -841,6 +886,14 @@ func record(cfg Config, st *state, netID, dom string, rep probe.Report, eps []en
 	return true
 }
 
+// v6UnknownAt: entry.V6Unknown as a check that showed f leaves it
+func v6UnknownAt(f checkFacts) time.Time {
+	if f.v6Unknown {
+		return time.Now()
+	}
+	return time.Time{}
+}
+
 // candidates: what the watcher accumulated and we have not decided yet, in
 // the order it turned up. protocol and route filters were already applied
 // while collecting.
@@ -859,7 +912,14 @@ func pickCandidates(cfg Config, st *state, netID string, order []string) []strin
 }
 
 // direct domains whose connection is open but nothing arrived:
-// looks like a cut -- re-check without waiting for the TTL
+// looks like a cut -- re-check without waiting for the TTL.
+//
+// Once for a connection: one that opened before the name's last check is
+// what that check already answered -- the same dead connection, a browser's
+// QUIC the core keeps for a minute after the client gave up on it, had its
+// name checked again every cycle it stayed open (cloudflare-dns.com six
+// times in 50 s after a wake on 18.10, clients2.google.com eight in two
+// minutes on 13.10), clean every time.
 func suspectDirect(cfg Config, st *state, netID string, conns []connection) []string {
 	var out []string
 	fams := map[string]bool{}
@@ -873,7 +933,8 @@ func suspectDirect(cfg Config, st *state, netID string, conns []connection) []st
 		if !c.viaDirect() || c.Download > 0 || c.fromProbe() {
 			continue
 		}
-		if ts, err := time.Parse(time.RFC3339, c.Start); err != nil || time.Since(ts) <= 10*time.Second {
+		ts, err := time.Parse(time.RFC3339, c.Start)
+		if err != nil || time.Since(ts) <= 10*time.Second {
 			continue
 		}
 		dom := c.domain()
@@ -882,11 +943,18 @@ func suspectDirect(cfg Config, st *state, netID string, conns []connection) []st
 			// verdicts behind that node and port. They used to wait out
 			// their whole term, however dead the direct path went
 			if c.byProvider(cfg.AddrProvider) {
-				out = append(out, st.onNode(netID, c.Metadata.DestinationIP, c.port())...)
+				for _, d := range st.onNode(netID, c.Metadata.DestinationIP, c.port()) {
+					if e, ok := st.get(netID, d); ok && ts.After(e.checkedAt()) {
+						out = append(out, d)
+					}
+				}
 			}
 			continue
 		}
 		e, had := st.get(netID, dom)
+		if had && !ts.After(e.checkedAt()) {
+			continue // checked since it opened
+		}
 		switch {
 		case had && goesDirect(e.Verdict):
 		case !had && (fams[familyOf(dom)] || c.inherited()):
@@ -1741,6 +1809,12 @@ func unseenQUIC(cfg Config, eps []endpoint, reps []probe.Report) (endpoint, bool
 // held in the tunnel, where the service refused it the address its page
 // came from. It goes direct now, its TCP on 443 refused so the browser does
 // not wait on it; only with the decoy on, which its QUIC needs.
+//
+// A TCP on 443 the node does not take at all, with the name or without
+// (BLOCKED_TCP), is the same: the cut has nothing to cut there. On 21.10
+// 38 googlevideo.com hosts at home were held in the tunnel so, their QUIC
+// through the decoy in 70-80 ms -- under the tunnel's -- and their TCP dead
+// direct with the name, with none and with the cut alike.
 func splitNoTCP(cfg Config, eps []endpoint, reps []probe.Report) bool {
 	if !cfg.Split || !cfg.QUICFake {
 		return false
@@ -1751,12 +1825,22 @@ func splitNoTCP(cfg Config, eps []endpoint, reps []probe.Report) bool {
 		case eps[i].udp && eps[i].port == 443:
 			quicOK = goesDirect(r.Verdict)
 		case !eps[i].udp && eps[i].port == 443:
-			tcpCut = r.Verdict == probe.BlockedDPI
+			tcpCut = r.Verdict == probe.BlockedDPI || r.Verdict == probe.BlockedTCP
 		case !goesDirect(r.Verdict):
 			return false
 		}
 	}
 	return quicOK && tcpCut
+}
+
+// noTCPNote: why a name going direct over QUIC alone has its TCP refused
+func noTCPNote(eps []endpoint, reps []probe.Report) string {
+	for i, r := range reps {
+		if !eps[i].udp && eps[i].port == 443 && r.Verdict == probe.BlockedTCP {
+			return "TCP on 443 not taken direct, with the name or without: refused"
+		}
+	}
+	return "TCP blocked even with the ClientHello cut: refused"
 }
 
 // quicReport: the report of the QUIC port on 443

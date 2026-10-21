@@ -213,6 +213,13 @@ func TestSplitSuspect(t *testing.T) {
 	s.cycle()
 	c := via("ig.example.org", 443, "tcp", SplitOutbound, "RuleSet", SplitProvider)
 	c.Download = 0
+	// opened before the check: the check answered for it
+	if got := suspectDirect(s.cfg, s.st, "n", []connection{c}); len(got) != 0 {
+		t.Fatalf("a connection older than the check: suspects %v", got)
+	}
+	e := s.entry("ig.example.org")
+	e.DecidedAt = e.DecidedAt.Add(-5 * time.Minute)
+	e.CheckedAt = e.DecidedAt
 	got := suspectDirect(s.cfg, s.st, "n", []connection{c})
 	if !slices.Equal(got, []string{"ig.example.org"}) {
 		t.Fatalf("suspects %v", got)
@@ -472,6 +479,40 @@ func TestCycleQUICOnly(t *testing.T) {
 	syncList(s.cfg, s.api, s.st, "n", false)
 	if got := concat(listRules(s.cfg.SplitListPath), listRules(s.cfg.NoTCPListPath)); len(got) != 0 {
 		t.Fatalf("the decoy off, still direct: %v", got)
+	}
+}
+
+// A node that takes no TCP on 443 direct, with the name or without, and whose
+// QUIC gets through the decoy: googlevideo.com hosts at home on 21.10, held
+// in the tunnel by their TCP. The cut cannot help a TCP the node does not
+// take: the name goes direct over QUIC, its TCP on 443 refused, as one
+// blocked even with the cut does.
+func TestCycleQUICOnlyAddressBlocked(t *testing.T) {
+	s, tried := splitScenario(t, nil)
+	s.cfg.QUICFake = true
+	s.cfg.NoTCPProvider = NoTCPProvider
+	s.cfg.NoTCPListPath = filepath.Join(filepath.Dir(s.cfg.ListPath), "direct-split-notcp.txt")
+	old := checkSplitQUIC
+	checkSplitQUIC = func(_, _ probe.Dialer, plain probe.Report, _ int, _ probe.Verdict) probe.Report {
+		return probe.Report{Domain: plain.Domain, Port: plain.Port, Proto: "quic", TestedIP: plain.TestedIP,
+			Verdict: probe.CleanSplit, Direct: pathOK, Tunnel: pathOK, Note: "QUIC decoy"}
+	}
+	t.Cleanup(func() { checkSplitQUIC = old })
+	d := "rr4.example.org"
+	s.see(tunnelled(d, 443), quic(d))
+	s.script(d+" tcp/443", probe.Report{Verdict: probe.BlockedTCP, TestedIP: "192.0.2.31", Direct: tlsCut, Tunnel: pathOK,
+		Reason: "the address does not answer direct, with the name or without"})
+	s.script(d+" quic/443", blockedQUIC("192.0.2.31"))
+	s.cycle()
+	if len(*tried) != 0 {
+		t.Errorf("the cut tried on a node that takes no TCP: %v", *tried)
+	}
+	e := s.entry(d)
+	if e == nil || e.Verdict != probe.CleanSplit || !e.NoTCP {
+		t.Fatalf("QUIC through the decoy, TCP not taken: %+v", e)
+	}
+	if got := listRules(s.cfg.NoTCPListPath); !slices.Equal(got, []string{d}) {
+		t.Fatalf("TCP refused for %v", got)
 	}
 }
 

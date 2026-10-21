@@ -73,6 +73,11 @@ const (
 	// one never used again would hold its family in the tunnel forever
 	pendingTerm = time.Hour
 	cdnRetry    = time.Hour
+	// cdnCertHosts: how many of a CDN's names have their certificate read in
+	// a round, spread over its names; cdnCertTerm: a certificate no host has
+	// shown for this long is dropped
+	cdnCertHosts = 5
+	cdnCertTerm  = 30 * 24 * time.Hour
 )
 
 // cdnFamily: one CDN, the zones of its own and the pages it serves
@@ -138,16 +143,52 @@ func clientZones(cdn string, sans []string) cdnFamily {
 	sort.Strings(f.Own)
 	sort.Strings(f.Bases)
 	sort.Strings(f.Pages)
-	// a page under another page is that page's already
-	f.Pages = slices.DeleteFunc(f.Pages, func(p string) bool {
-		for _, q := range f.Pages {
+	f.Pages = dropNested(f.Pages)
+	return f
+}
+
+// dropNested: a page under another page is that page's already
+func dropNested(pages []string) []string {
+	return slices.DeleteFunc(pages, func(p string) bool {
+		for _, q := range pages {
 			if q != p && strings.HasSuffix(p, "."+q) {
 				return true
 			}
 		}
 		return false
 	})
+}
+
+// zonesOf: the family a CDN's certificates make together, each read on its
+// own (see clientZones). A CDN shows more than one: googlevideo.com's nodes
+// in an ISP's network (r1---sn-...) show one with no "*.c.youtube.com" in
+// it, Google's own (rr1---sn-...) one with it -- the book read the first by
+// the alphabet on 16.10, and YouTube's family was gone. A domain one of
+// them serves whole is the CDN's own in all of them.
+func zonesOf(cdn string, certs []cdnCert) cdnFamily {
+	f := cdnFamily{CDN: cdn}
+	for _, c := range certs {
+		z := clientZones(cdn, c.Names)
+		f.Own = append(f.Own, z.Own...)
+		f.Bases = append(f.Bases, z.Bases...)
+		f.Pages = append(f.Pages, z.Pages...)
+	}
+	own := map[string]bool{}
+	for _, o := range f.Own {
+		own[o] = true
+	}
+	isOwn := func(z string) bool { return own[familyOf(z)] }
+	f.Own = sortedSet(f.Own)
+	f.Bases = slices.DeleteFunc(sortedSet(f.Bases), isOwn)
+	f.Pages = dropNested(slices.DeleteFunc(sortedSet(f.Pages), isOwn))
 	return f
+}
+
+// sortedSet: s sorted, once each
+func sortedSet(s []string) []string {
+	s = slices.Clone(s)
+	sort.Strings(s)
+	return slices.Compact(s)
 }
 
 // under: name is zone or below it
@@ -313,19 +354,31 @@ func (s *state) cdnCandidates(id string) []string {
 }
 
 // cdnHosts: a few of the domain's names checked here, to fetch its
-// certificate from
+// certificates from -- spread over the names in their order, not the first
+// few: those are alike (r1---sn-..., r2---sn-...), and so are the
+// certificates they show (see zonesOf)
 func (s *state) cdnHosts(id, cdn string) []string {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	var out []string
 	for dom := range s.Networks[id] {
 		if familyOf(dom) == cdn {
 			out = append(out, dom)
 		}
 	}
+	s.mu.Unlock()
 	sort.Strings(out)
-	if len(out) > 3 {
-		out = out[:3]
+	return spread(out, cdnCertHosts)
+}
+
+// spread: n of the names, evenly apart from the first to the last; all of
+// them when there are no more
+func spread(names []string, n int) []string {
+	if len(names) <= n || n < 2 {
+		return names[:min(len(names), max(n, 0))]
+	}
+	out := make([]string, n)
+	for i := range n {
+		out[i] = names[i*(len(names)-1)/(n-1)]
 	}
 	return out
 }
@@ -341,8 +394,45 @@ type cdnBook struct {
 
 type cdnEntry struct {
 	cdnFamily
-	At     time.Time `json:"at"`
-	Failed bool      `json:"failed,omitempty"`
+	At time.Time `json:"at"`
+	// Failed: the last round read no certificate; the family known before
+	// it stays -- it was dropped, and the family went with it for an hour
+	Failed bool `json:"failed,omitempty"`
+	// Certs: the certificates the CDN's hosts showed, see zonesOf
+	Certs []cdnCert `json:"certs,omitempty"`
+}
+
+// cdnCert: one certificate's names, and when a host last showed it
+type cdnCert struct {
+	Names []string  `json:"names"`
+	Seen  time.Time `json:"seen"`
+}
+
+// renewCDN: the CDN's entry after a round that read the certificates got --
+// none, a round that failed. What the hosts showed is added to what they
+// showed before; a certificate unseen for cdnCertTerm goes.
+func renewCDN(cdn string, old *cdnEntry, got [][]string, now time.Time) *cdnEntry {
+	e := &cdnEntry{At: now}
+	if old != nil {
+		e.cdnFamily = old.cdnFamily
+		e.Certs = slices.Clone(old.Certs)
+	}
+	e.CDN = cdn
+	if len(got) == 0 {
+		e.Failed = true
+		return e
+	}
+	for _, names := range got {
+		names = sortedSet(names)
+		if i := slices.IndexFunc(e.Certs, func(c cdnCert) bool { return slices.Equal(c.Names, names) }); i >= 0 {
+			e.Certs[i].Seen = now
+		} else {
+			e.Certs = append(e.Certs, cdnCert{Names: names, Seen: now})
+		}
+	}
+	e.Certs = slices.DeleteFunc(e.Certs, func(c cdnCert) bool { return now.Sub(c.Seen) >= cdnCertTerm })
+	e.cdnFamily = zonesOf(cdn, e.Certs)
+	return e
 }
 
 func loadCDNBook(path string) *cdnBook {
@@ -368,7 +458,8 @@ func (b *cdnBook) families() []cdnFamily {
 	var out []cdnFamily
 	pageSide := map[string]bool{}
 	for _, e := range b.CDNs {
-		if !e.Failed && len(e.Pages) > 0 {
+		// a round that failed keeps what the one before it found
+		if len(e.Pages) > 0 {
 			out = append(out, e.cdnFamily)
 			for _, p := range e.Pages {
 				pageSide[familyOf(p)] = true
@@ -392,6 +483,8 @@ func (b *cdnBook) stale(cands []string) []string {
 		case e == nil:
 		case e.Failed && time.Since(e.At) >= cdnRetry:
 		case !e.Failed && time.Since(e.At) >= cdnTerm:
+		case !e.Failed && len(e.Certs) == 0:
+			// read before the book kept certificates: one host's alone
 		default:
 			continue
 		}
@@ -450,26 +543,28 @@ func (b *cdnBook) round(tunnelAddr string, hosts map[string][]string, done func(
 		}()
 		pass := socksPass()
 		for cdn, list := range hosts {
-			var sans []string
-			var err error
-			for _, h := range list {
-				if sans, err = fetchCert(tunnelAddr, pass, h); err == nil {
-					break
-				}
+			// every host given, at once: each may show another certificate
+			got := make([][]string, len(list))
+			var wg sync.WaitGroup
+			for i, h := range list {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					if sans, err := fetchCert(tunnelAddr, pass, h); err == nil && len(sans) > 0 {
+						got[i] = sans
+					}
+				}()
 			}
-			e := &cdnEntry{At: time.Now()}
-			if err != nil || len(sans) == 0 {
-				e.Failed = true
-				e.CDN = cdn
-			} else {
-				e.cdnFamily = clientZones(cdn, sans)
-				if len(e.Pages) > 0 {
-					log.Printf("CDN %s serves %s", cdn, strings.Join(e.Pages, ", "))
-				}
-			}
+			wg.Wait()
+			got = slices.DeleteFunc(got, func(s []string) bool { return s == nil })
 			b.mu.Lock()
+			old := b.CDNs[cdn]
+			e := renewCDN(cdn, old, got, time.Now())
 			b.CDNs[cdn] = e
 			b.mu.Unlock()
+			if len(e.Pages) > 0 && (old == nil || !slices.Equal(old.Pages, e.Pages)) {
+				log.Printf("CDN %s serves %s", cdn, strings.Join(e.Pages, ", "))
+			}
 			learnt = learnt || !e.Failed
 		}
 		if learnt {

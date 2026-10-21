@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"runtime"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -278,23 +279,73 @@ func hasDirectV6() bool {
 		}
 	}
 	windows.FreeMibTable(unsafe.Pointer(t))
-	ifaces, err := net.Interfaces()
+	ifaces, err := interfaces()
 	if err != nil {
 		return false
 	}
 	for _, ifc := range ifaces {
-		if ifc.Flags&net.FlagUp == 0 || !routed[ifc.Index] {
+		if !ifc.up || !routed[int(ifc.index6)] && !routed[int(ifc.index)] {
 			continue
 		}
-		addrs, _ := ifc.Addrs()
-		for _, a := range addrs {
-			n, ok := a.(*net.IPNet)
-			if ok && n.IP.To4() == nil && n.IP.IsGlobalUnicast() && n.IP[0]&0xfe != 0xfc {
+		for _, n := range ifc.nets {
+			if n.IP.To4() == nil && n.IP.IsGlobalUnicast() && n.IP[0]&0xfe != 0xfc {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// ifNet: an interface as the checks here read it
+type ifNet struct {
+	index, index6 uint32 // its IPv4 index (the IPv6 one with no IPv4), its IPv6 one
+	up, loopback  bool
+	nets          []*net.IPNet // its unicast addresses with their prefixes
+}
+
+// interfaces: the interfaces and their addresses, in one read of Windows'
+// adapter table. net.Interfaces and an Addrs for each read the whole table
+// once each: 4.7 ms a look on this machine (21.10), and localLink looks
+// every two seconds -- one read is 1 ms. What it gives is what those give:
+// the same index, up and loopback, and the addresses with their prefixes.
+func interfaces() ([]ifNet, error) {
+	size := uint32(16 << 10)
+	for range 4 {
+		buf := make([]byte, size)
+		first := (*windows.IpAdapterAddresses)(unsafe.Pointer(&buf[0]))
+		err := windows.GetAdaptersAddresses(windows.AF_UNSPEC,
+			windows.GAA_FLAG_SKIP_ANYCAST|windows.GAA_FLAG_SKIP_MULTICAST|windows.GAA_FLAG_SKIP_DNS_SERVER,
+			0, first, &size)
+		if err == windows.ERROR_BUFFER_OVERFLOW {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		var out []ifNet
+		for a := first; a != nil; a = a.Next {
+			f := ifNet{index: a.IfIndex, index6: a.Ipv6IfIndex, up: a.OperStatus == windows.IfOperStatusUp,
+				loopback: a.IfType == windows.IF_TYPE_SOFTWARE_LOOPBACK}
+			if f.index == 0 {
+				f.index = f.index6
+			}
+			for u := a.FirstUnicastAddress; u != nil; u = u.Next {
+				ip := u.Address.IP()
+				if ip == nil {
+					continue
+				}
+				bits := 8 * net.IPv6len
+				if v4 := ip.To4(); v4 != nil {
+					ip, bits = v4, 8*net.IPv4len
+				}
+				f.nets = append(f.nets, &net.IPNet{IP: ip, Mask: net.CIDRMask(int(u.OnLinkPrefixLength), bits)})
+			}
+			out = append(out, f)
+		}
+		runtime.KeepAlive(buf)
+		return out, nil
+	}
+	return nil, windows.ERROR_BUFFER_OVERFLOW
 }
 
 var pGetIpNetTable2 = windows.NewLazySystemDLL("iphlpapi.dll").NewProc("GetIpNetTable2")
@@ -392,18 +443,16 @@ func arpMAC(ip string) string {
 
 func localNets() []string {
 	var out []string
-	ifaces, err := net.Interfaces()
+	ifaces, err := interfaces()
 	if err != nil {
 		return out
 	}
 	for _, ifc := range ifaces {
-		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 {
+		if !ifc.up || ifc.loopback {
 			continue
 		}
-		addrs, _ := ifc.Addrs()
-		for _, a := range addrs {
-			n, ok := a.(*net.IPNet)
-			if !ok || n.IP.IsLinkLocalUnicast() {
+		for _, n := range ifc.nets {
+			if n.IP.IsLinkLocalUnicast() {
 				continue
 			}
 			// skip mihomo's own TUN: otherwise the id depends on whether the
@@ -432,21 +481,19 @@ func localNets() []string {
 // only when its recheck was due (09.10: a minute). No process is started:
 // it is asked every two seconds.
 func localLink() string {
-	ifaces, err := net.Interfaces()
+	ifaces, err := interfaces()
 	if err != nil {
 		return ""
 	}
 	var out []string
 	for _, ifc := range ifaces {
-		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 {
+		if !ifc.up || ifc.loopback {
 			continue
 		}
-		addrs, _ := ifc.Addrs()
-		for _, a := range addrs {
-			n, ok := a.(*net.IPNet)
+		for _, n := range ifc.nets {
 			// link-local ones say nothing of the network: Bluetooth's and
 			// Wi-Fi Direct's adapters hold 169.254.x and come and go
-			if !ok || fakeIPRange.Contains(n.IP) || ownV6(n.IP) || n.IP.IsLinkLocalUnicast() {
+			if fakeIPRange.Contains(n.IP) || ownV6(n.IP) || n.IP.IsLinkLocalUnicast() {
 				continue
 			}
 			// IPv6 by its prefix: a new temporary address is no new network,
@@ -454,7 +501,7 @@ func localLink() string {
 			if n.IP.To4() == nil {
 				n = prefix64(n)
 			}
-			out = append(out, strconv.Itoa(ifc.Index)+"="+n.String())
+			out = append(out, strconv.Itoa(int(ifc.index))+"="+n.String())
 		}
 	}
 	sort.Strings(out)

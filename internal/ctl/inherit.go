@@ -184,20 +184,16 @@ func (s *state) inheritance(id string, book *asnBook, fams []family) inheritance
 			continue
 		}
 		out.asns = append(out.asns, asn)
-		r, ok := book.ranges(asn)
-		if !ok {
+		if _, ok := book.ranges(asn); !ok {
 			out.missing = append(out.missing, asn)
 		}
-		out.ranges = append(out.ranges, r...)
 	}
 	sort.Strings(out.families)
 	sort.Strings(out.asns)
 	sort.Strings(out.missing)
 	sort.Strings(hold)
 	out.hold = hold
-	// the ranges as the file holds them: sorted, once each
-	out.ranges = dedupe(out.ranges)
-	sort.Strings(out.ranges)
+	out.ranges = book.union(out.asns)
 	return out
 }
 
@@ -320,7 +316,30 @@ type asnBook struct {
 	failed map[string]time.Time
 	busy   atomic.Bool
 	parsed map[string]netip.Prefix
+	// memo: asnOf's answers by address, good while Nets is as it was (ver).
+	// Every sync asks it for every verdict's node, and it went through Nets
+	// for each: 10 ms of the lists' 12 on a cycle with 979 names and 538
+	// prefixes (21.10), every ten seconds, under the state's lock
+	memo map[string]asnMemo
+	ver  int
+	// asnVer: changes with ASNs; unionOf, unionVer, unionVal: the last
+	// union asked, see union
+	asnVer   int
+	unionOf  string
+	unionVer int
+	unionVal []string
 }
+
+// asnMemo: one of asnOf's answers -- the network, the time the prefix it
+// came from was learnt, and the version of Nets it came from
+type asnMemo struct {
+	asn string
+	at  time.Time
+	ver int
+}
+
+// asnMemoMax bounds the memo: it is emptied past it
+const asnMemoMax = 4096
 
 type asnNet struct {
 	Prefix string    `json:"prefix"`
@@ -385,21 +404,31 @@ func (b *asnBook) asnOf(ip string) string {
 	if b == nil || ip == "" {
 		return ""
 	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	now := time.Now()
+	if m, ok := b.memo[ip]; ok && m.ver == b.ver && (m.asn == "" || now.Sub(m.at) < asnNetTerm) {
+		return m.asn
+	}
 	a, err := netip.ParseAddr(ip)
 	if err != nil {
 		return ""
 	}
 	a = a.Unmap()
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	now := time.Now()
+	var found asnMemo
 	for _, n := range b.Nets {
 		p, ok := b.prefix(n.Prefix)
 		if ok && p.Contains(a) && now.Sub(n.At) < asnNetTerm {
-			return n.ASN
+			found = asnMemo{asn: n.ASN, at: n.At}
+			break
 		}
 	}
-	return ""
+	found.ver = b.ver
+	if b.memo == nil || len(b.memo) >= asnMemoMax {
+		b.memo = map[string]asnMemo{}
+	}
+	b.memo[ip] = found
+	return found.asn
 }
 
 // prefix: n parsed, kept; b.mu held
@@ -438,6 +467,32 @@ func (b *asnBook) ranges(asn string) ([]string, bool) {
 		return nil, time.Since(r.At) < asnWideTerm
 	}
 	return r.Prefixes, time.Since(r.At) < asnRangesTerm
+}
+
+// union: the ranges of these networks as the file holds them -- sorted,
+// once each; nil-safe. Kept for the networks asked last: they change once a
+// day, and sorting and joining their 22,000 ranges was 8 ms of every sync
+// (21.10). The slice is shared: not to be changed.
+func (b *asnBook) union(asns []string) []string {
+	if b == nil || len(asns) == 0 {
+		return nil
+	}
+	key := strings.Join(asns, ",")
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.unionOf == key && b.unionVer == b.asnVer {
+		return b.unionVal
+	}
+	var out []string
+	for _, a := range asns {
+		if r := b.ASNs[a]; r != nil && !r.Wide {
+			out = append(out, r.Prefixes...)
+		}
+	}
+	out = dedupe(out)
+	sort.Strings(out)
+	b.unionOf, b.unionVer, b.unionVal = key, b.asnVer, out
+	return out
 }
 
 // want: networks whose ranges are to be looked up; nil-safe
@@ -582,14 +637,17 @@ func (b *asnBook) round(directAddr string, nodes []string, done func()) {
 						failed.Prefixes = old.Prefixes
 					}
 					b.ASNs[asn] = failed
+					b.asnVer++
 				case len(p) > maxASNRanges:
 					// kept for asnWideTerm with no ranges: it lends nothing
 					log.Printf("network %s announces %d ranges, more than %d: too wide to lend one service's way",
 						asn, len(p), maxASNRanges)
 					b.ASNs[asn] = &asnRanges{At: time.Now(), Wide: true}
+					b.asnVer++
 					delete(b.wanted, asn)
 				default:
 					b.ASNs[asn] = &asnRanges{Prefixes: p, At: time.Now()}
+					b.asnVer++
 					delete(b.wanted, asn)
 					learnt = true
 				}
@@ -624,6 +682,7 @@ func (b *asnBook) round(directAddr string, nodes []string, done func()) {
 					b.fail(ip)
 				} else if p, perr := netip.ParsePrefix(prefix); perr == nil {
 					b.Nets = append(b.Nets, asnNet{Prefix: p.Masked().String(), ASN: asn, At: time.Now()})
+					b.ver++
 					learnt = true
 				}
 			}(ip)
@@ -659,6 +718,7 @@ func (b *asnBook) save() error {
 	// a node looked up long ago is looked up again: dropped here
 	now := time.Now()
 	b.Nets = slices.DeleteFunc(b.Nets, func(n asnNet) bool { return now.Sub(n.At) >= asnNetTerm })
+	b.ver++
 	raw, err := json.Marshal(b)
 	b.mu.Unlock()
 	if err != nil {

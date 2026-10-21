@@ -201,7 +201,11 @@ func TestCycleIPv6LookupFailedNotChecked(t *testing.T) {
 	if e := s.entry("only4.example.org"); e == nil || !e.V6 {
 		t.Fatalf("no AAAA: %+v, want V6 set", e)
 	}
-	if got := s.st.unseenV6("n", s.cfg.Idle); len(got) != 1 || got[0] != "dnsfail.example.org" {
+	if got := s.st.unseenV6("n", s.cfg.Idle, 0); len(got) != 1 || got[0] != "dnsfail.example.org" {
 		t.Fatalf("unseenV6 %v", got)
+	}
+	// not every cycle, though: the next would only ask the same
+	if got := s.st.unseenV6("n", s.cfg.Idle, s.cfg.FailTTL); len(got) != 0 {
+		t.Fatalf("asked again within the hour: %v", got)
 	}
 }

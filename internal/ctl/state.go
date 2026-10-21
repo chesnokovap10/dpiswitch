@@ -62,6 +62,21 @@ type entry struct {
 	// V6: the check looked for the name's IPv6 node too (see probeBatch). One
 	// going direct without it was judged by its IPv4 node alone, see unseenV6
 	V6 bool `json:"v6,omitempty"`
+	// V6Unknown: when a check last looked for the name's IPv6 node and no
+	// resolver answered, see unseenV6
+	V6Unknown time.Time `json:"v6_unknown,omitempty"`
+	// CheckedAt: when the name was last checked, whatever came of it -- a
+	// check that kept the verdict before it leaves DecidedAt as it was
+	CheckedAt time.Time `json:"checked_at,omitempty"`
+}
+
+// checkedAt: when the name was last checked; DecidedAt for an entry made
+// before the field was
+func (e *entry) checkedAt() time.Time {
+	if e.CheckedAt.After(e.DecidedAt) {
+		return e.CheckedAt
+	}
+	return e.DecidedAt
 }
 
 // state is split per network: the key is the ISP (AS...), see asn.go;
@@ -664,14 +679,19 @@ func (s *state) newPorts(id string, seen map[string][]endpoint, order []string) 
 // their IPv6 node -- made before it did, or while the direct path had no
 // IPv6. They are checked now, not when their term runs out a week later: the
 // core dials either node, and one cut on IPv6 alone breaks whenever that
-// node answers first.
-func (s *state) unseenV6(id string, idle time.Duration) []string {
+// node answers first. One whose check looked for its IPv6 node and had no
+// resolver answer waits retry: the next cycle's would only ask the same
+// again -- every ten seconds for as long as the name is used.
+func (s *state) unseenV6(id string, idle, retry time.Duration) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []string
 	now := time.Now()
 	for dom, e := range s.Networks[id] {
 		if e.V6 || e.Alone || !goesDirect(e.Verdict) || !now.Before(e.ExpiresAt) || !e.lastSeen().After(now.Add(-idle)) {
+			continue
+		}
+		if now.Sub(e.V6Unknown) < retry {
 			continue
 		}
 		if _, addr := probe.AddrKey(dom); !addr {

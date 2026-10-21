@@ -62,6 +62,69 @@ func TestClientZones(t *testing.T) {
 	}
 }
 
+// googlevideo.com's nodes in the ISP's network show a certificate with no
+// zone of YouTube's in it, Google's own nodes one with them. The book read
+// one host's -- the first by the alphabet, an ISP's node on 16.10 -- and
+// YouTube's family was gone. The certificates read add up: a round that saw
+// the ISP's alone keeps YouTube; one unseen for a month goes; a round that
+// read nothing keeps the family it had.
+func TestCDNCertsAddUp(t *testing.T) {
+	now := time.Now()
+	e := renewCDN("googlevideo.com", nil, [][]string{sans(t, "san-googlevideo-ggc.txt")}, now)
+	if slices.Contains(e.Pages, "youtube.com") {
+		t.Fatalf("the ISP's node names no zone of YouTube's: pages %v", e.Pages)
+	}
+	e = renewCDN("googlevideo.com", e, [][]string{sans(t, "san-googlevideo-ggc.txt"), sans(t, "san-googlevideo.txt")}, now.Add(time.Hour))
+	for _, p := range []string{"youtube.com", "drive.google.com", "2mdn-cn.net"} {
+		if !slices.Contains(e.Pages, p) {
+			t.Errorf("both certificates: %s missing from %v", p, e.Pages)
+		}
+	}
+	if slices.ContainsFunc(e.Pages, func(p string) bool { return familyOf(p) == "gvt1.com" }) {
+		t.Errorf("gvt1.com is the CDN's own: pages %v", e.Pages)
+	}
+	if len(e.Certs) != 2 {
+		t.Fatalf("certificates kept: %d", len(e.Certs))
+	}
+	later := now.Add(8 * 24 * time.Hour)
+	e = renewCDN("googlevideo.com", e, [][]string{sans(t, "san-googlevideo-ggc.txt")}, later)
+	if !slices.Contains(e.Pages, "youtube.com") {
+		t.Fatalf("a round that met the ISP's nodes alone dropped YouTube: %v", e.Pages)
+	}
+	failed := renewCDN("googlevideo.com", e, nil, later.Add(time.Hour))
+	if !failed.Failed || !slices.Contains(failed.Pages, "youtube.com") {
+		t.Fatalf("a round that read nothing: failed %v, pages %v", failed.Failed, failed.Pages)
+	}
+	b := loadCDNBook(filepath.Join(t.TempDir(), "b.json"))
+	b.CDNs["googlevideo.com"] = failed
+	if got := b.families(); len(got) != 1 || !slices.Contains(got[0].Pages, "youtube.com") {
+		t.Fatalf("a failed round lost the family: %v", got)
+	}
+	e = renewCDN("googlevideo.com", e, [][]string{sans(t, "san-googlevideo-ggc.txt")}, now.Add(32*24*time.Hour))
+	if slices.Contains(e.Pages, "youtube.com") || len(e.Certs) != 1 {
+		t.Fatalf("a certificate unseen for a month stays: pages %v, %d certificates", e.Pages, len(e.Certs))
+	}
+	// read before the book kept certificates: read again at once
+	b.CDNs["old.example"] = &cdnEntry{cdnFamily: cdnFamily{CDN: "old.example"}, At: now}
+	if got := b.stale([]string{"old.example"}); !slices.Equal(got, []string{"old.example"}) {
+		t.Fatalf("an entry of one host's certificate is not read again: %v", got)
+	}
+}
+
+// The hosts read are spread over the names, the last among them.
+func TestCDNHostsSpread(t *testing.T) {
+	var names []string
+	for i := range 20 {
+		names = append(names, fmt.Sprintf("h%02d", i))
+	}
+	if got := spread(names, 5); !slices.Equal(got, []string{"h00", "h04", "h09", "h14", "h19"}) {
+		t.Fatalf("spread %v", got)
+	}
+	if got := spread(names[:3], 5); len(got) != 3 {
+		t.Fatalf("fewer than asked: %v", got)
+	}
+}
+
 func familyScenario(t *testing.T) *scenario {
 	s := inheritScenario(t)
 	dir := filepath.Dir(s.cfg.ListPath)
