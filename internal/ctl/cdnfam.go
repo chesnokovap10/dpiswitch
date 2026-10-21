@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -72,7 +73,9 @@ const (
 	// a name dropped from the UI counts as not passed this long at most:
 	// one never used again would hold its family in the tunnel forever
 	pendingTerm = time.Hour
-	cdnRetry    = time.Hour
+	// a round that read nothing for a CDN keeps the family it had, and tries
+	// again after this
+	cdnRetry = 10 * time.Minute
 	// cdnCertHosts: how many of a CDN's names have their certificate read in
 	// a round, spread over its names; cdnCertTerm: a certificate no host has
 	// shown for this long is dropped
@@ -542,21 +545,34 @@ func (b *cdnBook) round(tunnelAddr string, hosts map[string][]string, done func(
 			}
 		}()
 		pass := socksPass()
+		// the CDNs nothing was read for, and why: said once a round -- it was
+		// said nowhere, and a round that read nothing looked like none at all
+		var failed []string
+		var why error
 		for cdn, list := range hosts {
 			// every host given, at once: each may show another certificate
 			got := make([][]string, len(list))
+			errs := make([]error, len(list))
 			var wg sync.WaitGroup
 			for i, h := range list {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					if sans, err := fetchCert(tunnelAddr, pass, h); err == nil && len(sans) > 0 {
+					sans, err := fetchCert(tunnelAddr, pass, h)
+					if err == nil && len(sans) > 0 {
 						got[i] = sans
 					}
+					errs[i] = err
 				}()
 			}
 			wg.Wait()
 			got = slices.DeleteFunc(got, func(s []string) bool { return s == nil })
+			if len(got) == 0 {
+				failed = append(failed, cdn)
+				if why == nil {
+					why = errors.Join(errs...)
+				}
+			}
 			b.mu.Lock()
 			old := b.CDNs[cdn]
 			e := renewCDN(cdn, old, got, time.Now())
@@ -566,6 +582,14 @@ func (b *cdnBook) round(tunnelAddr string, hosts map[string][]string, done func(
 				log.Printf("CDN %s serves %s", cdn, strings.Join(e.Pages, ", "))
 			}
 			learnt = learnt || !e.Failed
+		}
+		if len(failed) > 0 {
+			sort.Strings(failed)
+			if why == nil {
+				why = errors.New("no names in the certificates")
+			}
+			log.Printf("CDN certificates not read for %d of %d CDNs (%s), tried again in %s: %s",
+				len(failed), len(hosts), preview(failed), cdnRetry, probe.Truncate(why.Error(), 160))
 		}
 		if learnt {
 			if err := b.save(); err != nil {

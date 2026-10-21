@@ -289,12 +289,26 @@ func learn(cfg Config, a *api, st *state, netID string) {
 		for _, c := range cfg.cdns.stale(st.cdnCandidates(netID)) {
 			hosts[c] = st.cdnHosts(netID, c)
 		}
+		// the certificates come through the tunnel: not before the core has
+		// seen it answer. The first cycle runs the moment the core is up, and
+		// a round then read nothing (21.10 18:25): every CDN was marked failed
+		// and waited for its next try
+		if len(hosts) == 0 || !tunnelReady(a, cfg.ProxyName) {
+			return
+		}
 		cfg.cdns.round(cfg.TunnelAddr, hosts, func() {
 			if here() {
 				syncList(cfg, a, st, netID, false)
 			}
 		})
 	}
+}
+
+// tunnelReady: whether the core's last check of the tunnel found it
+// answering -- one not checked yet is not; a var for the tests
+var tunnelReady = func(a *api, proxy string) bool {
+	ok, note, err := a.tunnelHealth(proxy)
+	return err == nil && ok && note != notChecked
 }
 
 // probeBatch probes queue's names and files what they showed: a cycle's

@@ -225,6 +225,10 @@ type delayHistory []struct {
 	Delay int       `json:"delay"`
 }
 
+// notChecked: the note of a core that has not checked the proxy yet -- one
+// just started, which counts as up
+const notChecked = "not checked yet"
+
 // TunnelCheck: the core's last check of a proxy against HealthURL.
 type TunnelCheck struct {
 	OK    bool
@@ -270,7 +274,7 @@ func (a *api) lastCheck(proxy string) (TunnelCheck, error) {
 		h = x.History
 	}
 	if len(h) == 0 {
-		return TunnelCheck{OK: true, Note: "not checked yet"}, nil
+		return TunnelCheck{OK: true, Note: notChecked}, nil
 	}
 	last := h[len(h)-1]
 	c := TunnelCheck{At: last.Time}

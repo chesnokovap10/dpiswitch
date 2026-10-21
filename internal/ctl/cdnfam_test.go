@@ -1,6 +1,7 @@
 package ctl
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -108,6 +109,48 @@ func TestCDNCertsAddUp(t *testing.T) {
 	b.CDNs["old.example"] = &cdnEntry{cdnFamily: cdnFamily{CDN: "old.example"}, At: now}
 	if got := b.stale([]string{"old.example"}); !slices.Equal(got, []string{"old.example"}) {
 		t.Fatalf("an entry of one host's certificate is not read again: %v", got)
+	}
+}
+
+// The certificates come through the tunnel: no round before the core has seen
+// it answer. On 21.10 the first cycle ran the moment the core was up, the
+// round read nothing, and every CDN waited for its next try.
+func TestCDNRoundWaitsForTunnel(t *testing.T) {
+	s := familyScenario(t)
+	for i := range 12 {
+		s.st.put("n", fmt.Sprintf("rr%d---sn-x.googlevideo.com", i),
+			&entry{Verdict: probe.CleanSplit, ExpiresAt: time.Now().Add(time.Hour), LastSeen: time.Now()})
+	}
+	fetched := make(chan string, 16)
+	oldFetch, oldReady := fetchCert, tunnelReady
+	// read and failed: a round that learnt nothing writes no lists after
+	// it, and the test's folder is left alone once it ends
+	fetchCert = func(_, _, host string) ([]string, error) {
+		fetched <- host
+		return nil, errors.New("test")
+	}
+	ready := false
+	tunnelReady = func(*api, string) bool { return ready }
+	t.Cleanup(func() { fetchCert, tunnelReady = oldFetch, oldReady })
+	learn(s.cfg, s.api, s.st, "n")
+	select {
+	case h := <-fetched:
+		t.Fatalf("%s read before the tunnel answered", h)
+	case <-time.After(100 * time.Millisecond):
+	}
+	ready = true
+	learn(s.cfg, s.api, s.st, "n")
+	select {
+	case <-fetched:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no round once the tunnel answered")
+	}
+	// the round ends before the test does: it would read on with the
+	// next test's stand-ins
+	for deadline := time.Now().Add(5 * time.Second); s.cfg.cdns.busy.Load(); time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the round did not end")
+		}
 	}
 }
 
