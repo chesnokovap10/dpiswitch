@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -15,6 +16,40 @@ import (
 // forwardStub: a SOCKS5 listener with no password that takes a CONNECT to
 // anywhere to target. cut: it drops the connection once the client sends
 // anything -- the DPI box on a path that does not let the hello through.
+// muteStub: a SOCKS listener that answers the request, takes what comes
+// and says nothing until the client goes; dials counts its connections
+func muteStub(t *testing.T, dials *atomic.Int32) string {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			dials.Add(1)
+			go func() {
+				defer c.Close()
+				buf := make([]byte, 512)
+				if _, err := io.ReadFull(c, buf[:2]); err != nil {
+					return
+				}
+				io.ReadFull(c, buf[:buf[1]])
+				c.Write([]byte{5, 0})
+				if _, err := io.ReadFull(c, buf[:10]); err != nil {
+					return
+				}
+				c.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, 0, 0})
+				io.Copy(io.Discard, c)
+			}()
+		}
+	}()
+	return ln.Addr().String()
+}
+
 func forwardStub(t *testing.T, target string, cut bool) string {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -189,6 +224,13 @@ func TestCheckSplitTunnelSilent(t *testing.T) {
 	split := Dialer{Addr: forwardStub(t, target, false), Timeout: 2 * time.Second}
 	silent := Dialer{Addr: forwardStub(t, target, true), Timeout: 2 * time.Second}
 	plain := Report{Domain: "example.com", Port: 443, Verdict: BlockedTLS, TestedIP: "192.0.2.10"}
+	// a tunnel that takes the hello and says nothing, as a dead node does:
+	// its timeout is waited out once, not each pass (protonvpn.com, 21.10)
+	var dials atomic.Int32
+	mute := Dialer{Addr: muteStub(t, &dials), Timeout: 300 * time.Millisecond}
+	if r := CheckSplit(split, mute, plain, 3, BlockedTLS); r.Verdict != CleanSplit || dials.Load() != 1 {
+		t.Errorf("silent tunnel: %s (%s), dialled %d times in three passes", r.Verdict, r.Reason, dials.Load())
+	}
 	r := CheckSplit(split, silent, plain, 2, BlockedTLS)
 	if r.Verdict != CleanSplit || strings.Count(r.Note, tunnelSilent) != 1 || r.Unmeasured {
 		t.Fatalf("cut answers, tunnel silent: %s (%s), note %q", r.Verdict, r.Reason, r.Note)

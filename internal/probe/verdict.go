@@ -186,8 +186,19 @@ func checkSplit(split, tunnel Dialer, plain Report, attempts int, prev Verdict, 
 	}
 	var bestDirect, bestTunnel time.Duration
 	measured := false
+	// silent: the tunnel did not answer a pass the cut got through (see
+	// below); the passes after it do not wait out its timeout again -- it is
+	// the yardstick for speed alone, and there is none. protonvpn.com's cut
+	// (21.10) waited for it three passes over, 8 s each.
+	var silent *PathResult
 	for i := 0; i < attempts; i++ {
-		d, t := run(split), run(tunnel)
+		d := run(split)
+		var t PathResult
+		if silent != nil {
+			t = *silent
+		} else {
+			t = run(tunnel)
+		}
 		rep.Direct, rep.Tunnel = d, t
 		v, reason := Judge(d, t)
 		// The cut got the site's own answer -- a certificate that passes
@@ -212,6 +223,7 @@ func checkSplit(split, tunnel Dialer, plain Report, attempts int, prev Verdict, 
 			if !strings.Contains(rep.Note, tunnelSilent) {
 				rep.Note += tunnelSilent
 			}
+			silent = &t
 		}
 		// as in checkProto: QUIC's handshake is one step, and what fails in
 		// it is QUIC's alone

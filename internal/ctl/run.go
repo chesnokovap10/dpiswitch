@@ -530,8 +530,14 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 				// one cut in two. rutracker.org (21.10, a Cloudflare node) failed
 				// both ways three passes in three and answered the cut each time
 				// in 0.12 s: it went through the tunnel as an address blocked.
+				// And a handshake failing alike on both paths: the tunnel's
+				// node may be out of its reach while the cut gets through --
+				// www.newtimes.ru (21.10) took the cut three passes in three,
+				// its tunnel silent, and went nowhere. The cut is filed only on
+				// the site's own verified answer (see probe.CheckSplit).
+				bothHello := r.Verdict == probe.Inconcl && probe.BothFail(r.Reason) && r.Direct.TLSTried && !r.Direct.TLSOk
 				if !cfg.alone && !r.Aborted && cfg.Split && !ep.udp && ep.port == 443 &&
-					(r.Verdict == probe.BlockedTLS || r.Verdict == probe.BlockedTCP) {
+					(r.Verdict == probe.BlockedTLS || r.Verdict == probe.BlockedTCP || bothHello) {
 					// once more with the hello cut, on the same node. The cut
 					// path's verdict stands for the port when it got through --
 					// clean, or merely slower; otherwise the block the plain path

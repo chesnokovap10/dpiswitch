@@ -857,3 +857,27 @@ func TestCycleStaleSettingsNotFiled(t *testing.T) {
 		t.Fatalf("not given back to be checked again: %v", order)
 	}
 }
+
+// A handshake failing alike on both paths is tried with the cut too: the
+// tunnel's node may be out of its reach while the cut gets through
+// (www.newtimes.ru, 21.10). Through, the name goes with the cut; not, it is
+// as it was.
+func TestCycleCutPastBothFailing(t *testing.T) {
+	s, tried := splitScenario(t, map[string]probe.Verdict{"nt.example.org": probe.CleanSplit})
+	both := probe.Report{Verdict: probe.Inconcl, TestedIP: "192.0.2.15", Direct: tlsCut, Tunnel: tlsCut,
+		Reason: "fails the same on both paths: silent drop (no reply) on the ClientHello (carries the name/SNI)"}
+	s.script("nt.example.org tcp/443", both)
+	s.script("dead.example.org tcp/443", both)
+	s.see(tunnelled("nt.example.org", 443), tunnelled("dead.example.org", 443))
+	s.cycle()
+	slices.Sort(*tried)
+	if !slices.Equal(*tried, []string{"dead.example.org", "nt.example.org"}) {
+		t.Fatalf("cut tried for %v", *tried)
+	}
+	if e := s.entry("nt.example.org"); e == nil || e.Verdict != probe.CleanSplit {
+		t.Fatalf("through with the cut: %+v", e)
+	}
+	if e := s.entry("dead.example.org"); e == nil || e.Verdict != probe.Inconcl {
+		t.Fatalf("not through with the cut: %+v", e)
+	}
+}
