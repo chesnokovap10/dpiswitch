@@ -26,10 +26,11 @@ import (
 // found them all busy was left to the cycle, and waited behind the cycle's
 // slowest probe: of 14 names opened at once on 21.10, the fast lane took 4,
 // and the cycle filed the rest 70 s later. And a name is taken the moment
-// the watcher has it, not at the next second.
+// the watcher has it, not at the next second. Twelve places: of 10 blocked
+// names opened at once, with 8 the last two waited 7 s for one.
 
 // fastWorkers: names probed at once by the fast lane, beside the cycle's
-const fastWorkers = 8
+const fastWorkers = 12
 
 func fastLane(ctx context.Context, cfgNow func() Config, a *api, st *state, allowed *atomic.Bool, w *watcher) {
 	sem := make(chan struct{}, fastWorkers)

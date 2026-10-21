@@ -1920,8 +1920,10 @@ func mayCut(cfg Config, eps []endpoint) bool {
 
 // quicAhead: the QUIC probes made ahead at once, see probeBatch; a name past
 // it has its QUIC probed after its ports, as before. Most come to nothing --
-// a clean name is not waited on for them -- and are bounded so.
-var quicAhead = make(chan struct{}, 8)
+// a clean name is not waited on for them -- and are bounded so; with 8, the
+// ninth of 10 blocked names opened at once had its QUIC after its TCP, 17 s
+// on top (proton.me, 21.10).
+var quicAhead = make(chan struct{}, 16)
 
 // splitNoTCP: the mirror of splitNoQUIC -- a name whose QUIC on 443 goes
 // direct, plain or through the decoy, while its TCP on 443 is blocked even
