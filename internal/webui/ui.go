@@ -16,7 +16,6 @@ import (
 	"golang.org/x/sys/windows/svc"
 
 	"dpiswitch/internal/autostart"
-	"dpiswitch/internal/awgconf"
 	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/netprocs"
 	"dpiswitch/internal/paths"
@@ -232,6 +231,14 @@ func render(w http.ResponseWriter, v *view, name string) {
 	}
 }
 
+// drawn: one of the layout's templates as text, for an answer that carries
+// several parts -- every page's set holds the layout's
+func drawn(name string, data any) (string, error) {
+	var b strings.Builder
+	err := pageTmpl["overview"].ExecuteTemplate(&b, name, data)
+	return b.String(), err
+}
+
 func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	page := strings.Trim(r.URL.Path, "/")
 	if page == "" {
@@ -406,7 +413,18 @@ type status struct {
 // the live core -- saving a list there would close real connections
 var apiAddr = "127.0.0.1:9090"
 
+// collectStatus: the whole status, gathered now
 func collectStatus() status {
+	st := collectSystem()
+	filesInto(&st)
+	return st
+}
+
+// collectSystem: what Windows and the service say -- the service's state,
+// the build it runs, autostart, the network, the tunnels' health. The
+// service manager, the registry and the adapters take a few milliseconds
+// each; the tunnels' health may be a call to the core.
+func collectSystem() status {
 	st := status{
 		Installed:  winsvc.Installed(),
 		ExePath:    paths.Exe(),
@@ -425,28 +443,15 @@ func collectStatus() status {
 			st.ServiceText = winsvc.StateText(state)
 		}
 	}
-	// a config is loaded when the user's .conf is there: config.yaml, which
-	// this used to look for, is built by the service -- one stopped when a
-	// .conf was loaded, or not started yet, left the overview saying "No
-	// config loaded yet" over the one just loaded
-	first, err := awgconf.ParseFile(paths.SourceConf())
-	if err == nil {
-		st.HasConfig, st.Endpoint = true, first.Peer["Endpoint"]
-	}
-	// attached is what the service attaches: a .conf it leaves out is said so
-	if c, err := awgconf.Second(first); c != nil {
-		st.Awg2, st.Endpoint2 = true, c.Peer["Endpoint"]
-	} else if err != nil {
-		st.Awg2Err = err.Error()
-	}
-	set := ctl.LoadSettings(paths.Settings())
-	st.Mode, st.Second, st.Awg2On = set.Mode(), set.SecondTunnel, set.Awg2Active()
 	tunV6 := ctl.LoadTunnelIPv6(paths.TunnelIPv6())
 	st.IPv6Blocked = st.ServiceRun && tunV6.SystemBlocked()
 	st.TunBlocked = st.ServiceRun && tunV6.TrafficBlocked()
 	// a running service and a working tunnel are different things: TUN may
 	// be up with a dead peer, and then traffic goes nowhere. With no first
 	// tunnel's config the core runs without it: there is no awg1 to ask.
+	// The second is asked whenever it is attached, whatever the mode: which
+	// of them the pages show is the files' (see filesInto), and one switched
+	// on shows its health at once, not after the next gathering.
 	if st.ServiceRun {
 		secret := ctl.SecretFromConfig(paths.Config())
 		// as the traffic keeps it (see tunnelpulse.go), the core asked only
@@ -457,14 +462,47 @@ func collectStatus() status {
 			}
 			return ctl.TunnelHealth(apiAddr, secret, t)
 		}
-		if st.HasConfig {
+		c := loadConfs()
+		if c.FirstErr == nil {
 			st.TunnelAlive, st.TunnelNote = health("awg1")
 		}
-		if st.Awg2 && st.Awg2On {
+		if c.Second != nil {
 			st.Awg2Alive, st.Awg2Note = health("awg2")
 		}
 	}
 	st.NetworkUp = supervisor.NetworkUp()
+	return st
+}
+
+// filesInto: what the files say -- the settings, the .conf files, the lists,
+// the detector's verdicts. Kept in memory (see mem.go), and so always
+// current: a setting saved is in the very answer to its save.
+func filesInto(st *status) {
+	// a config is loaded when the user's .conf is there: config.yaml, which
+	// this used to look for, is built by the service -- one stopped when a
+	// .conf was loaded, or not started yet, left the overview saying "No
+	// config loaded yet" over the one just loaded
+	c := loadConfs()
+	st.HasConfig, st.Endpoint = false, ""
+	if c.FirstErr == nil {
+		st.HasConfig, st.Endpoint = true, c.First.Peer["Endpoint"]
+	}
+	// attached is what the service attaches: a .conf it leaves out is said so
+	st.Awg2, st.Endpoint2, st.Awg2Err = false, "", ""
+	if c.Second != nil {
+		st.Awg2, st.Endpoint2 = true, c.Second.Peer["Endpoint"]
+	} else if c.SecondErr != nil {
+		st.Awg2Err = c.SecondErr.Error()
+	}
+	set := loadSettings()
+	st.Mode, st.Second, st.Awg2On = set.Mode(), set.SecondTunnel, set.Awg2Active()
+	// a tunnel not to be asked of is not alive: no config, or switched off
+	if !st.HasConfig {
+		st.TunnelAlive, st.TunnelNote = false, ""
+	}
+	if !st.Awg2 || !st.Awg2On {
+		st.Awg2Alive, st.Awg2Note = false, ""
+	}
 	st.Presets = len(set.Awg2Presets)
 	st.Awg2Hosts = len(readEntries(paths.Awg2List))
 
@@ -476,34 +514,58 @@ func collectStatus() status {
 	st.Slower = snap.Counts["SLOWER"]
 	st.Unverified = snap.Counts["INCONCLUSIVE"]
 	st.Families = len(snap.Families)
-	return st
 }
 
-// statusCache: the header refreshes every five seconds and a page load
-// gathers the same; the tunnels' health is not worth asking twice a second.
-var statusCache struct {
+// sysCache: Windows' part of the status, gathered in the background. A
+// request waits for it only the first time and after an action on the
+// service: it takes the last one gathered, a second old at most, and an
+// older one starts the next gathering. Every page, refresh and save used
+// to wait for it once its second was over.
+var sysCache struct {
 	sync.Mutex
-	at time.Time
-	st status
+	st   status
+	at   time.Time
+	have bool
+	busy bool
+	gen  int // bumped by fresh: a gathering begun before it is not kept
 }
 
 func (s *Server) status() status {
 	if s.statusFn != nil {
 		return s.statusFn()
 	}
-	statusCache.Lock()
-	defer statusCache.Unlock()
-	if time.Since(statusCache.at) > time.Second {
-		statusCache.st, statusCache.at = collectStatus(), time.Now()
+	c := &sysCache
+	c.Lock()
+	if !c.have {
+		c.st, c.at, c.have = collectSystem(), time.Now(), true
+	} else if time.Since(c.at) > time.Second && !c.busy {
+		c.busy = true
+		gen := c.gen
+		go func() {
+			st := collectSystem()
+			c.Lock()
+			defer c.Unlock()
+			c.busy = false
+			if gen == c.gen {
+				c.st, c.at = st, time.Now()
+			}
+		}()
 	}
-	return statusCache.st
+	st := c.st
+	c.Unlock()
+	filesInto(&st)
+	return st
 }
 
-// fresh drops the cached status: after an action it must show its result.
+// fresh drops Windows' part of the status: the next one shows what an
+// action on the service did. A setting or a list saved needs none of it:
+// the files' part is always current.
 func (s *Server) fresh() {
-	statusCache.Lock()
-	statusCache.at = time.Time{}
-	statusCache.Unlock()
+	c := &sysCache
+	c.Lock()
+	c.have = false
+	c.gen++
+	c.Unlock()
 }
 
 // guard refuses what did not come from this UI's own pages. The server

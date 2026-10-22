@@ -11,7 +11,6 @@ import (
 
 	"golang.org/x/net/idna"
 
-	"dpiswitch/internal/awgconf"
 	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/dnscache"
 	"dpiswitch/internal/netprocs"
@@ -36,10 +35,10 @@ var logDate = regexp.MustCompile(`^\d{4}/\d\d/\d\d `)
 
 func overviewData(v *view) overview {
 	o := overview{}
-	if set := ctl.LoadSettings(paths.Settings()); len(set.TunnelDNS) > 0 {
+	if set := loadSettings(); len(set.TunnelDNS) > 0 {
 		o.DNS, o.DNSSet = strings.Join(set.TunnelDNS, ", "), true
-	} else if c, err := awgconf.ParseFile(paths.SourceConf()); err == nil {
-		o.DNS = strings.Join(c.DNS(), ", ")
+	} else if c := loadConfs(); c.FirstErr == nil {
+		o.DNS = strings.Join(c.First.DNS(), ", ")
 	}
 	if t, err := tail(paths.ServiceLog(), 16); err == nil && t != "" {
 		for _, l := range strings.Split(t, "\n") {
@@ -305,7 +304,7 @@ type awg2 struct {
 
 func awg2Data() awg2 {
 	on := map[string]bool{}
-	for _, id := range ctl.LoadSettings(paths.Settings()).Awg2Presets {
+	for _, id := range loadSettings().Awg2Presets {
 		on[id] = true
 	}
 	d := awg2{Hosts: readEntries(paths.Awg2List)}
@@ -360,13 +359,13 @@ var durs = []durOpt{{10, "10 min"}, {30, "30 min"}, {60, "1 h"}, {180, "3 h"}, {
 	{480, "8 h"}, {720, "12 h"}, {1440, "1 day"}, {4320, "3 days"}, {10080, "7 days"}, {43200, "30 days"}}
 
 func settingsData() settings {
-	d := settings{S: ctl.LoadSettings(paths.Settings()), Durs: durs}
-	first, err := awgconf.ParseFile(paths.SourceConf())
-	if err == nil {
-		d.ConfDNS, d.First = strings.Join(first.DNS(), ", "), true
+	d := settings{S: loadSettings(), Durs: durs}
+	c := loadConfs()
+	if c.FirstErr == nil {
+		d.ConfDNS, d.First = strings.Join(c.First.DNS(), ", "), true
 	}
-	if c2, _ := awgconf.Second(first); c2 != nil {
-		d.ConfDNS2, d.Second = strings.Join(c2.DNS(), ", "), true
+	if c.Second != nil {
+		d.ConfDNS2, d.Second = strings.Join(c.Second.DNS(), ", "), true
 	}
 	if d.S.DNSCache {
 		d.CacheUsable = len(dnscache.Usable(d.S.DirectDNS)) > 0

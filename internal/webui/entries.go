@@ -32,10 +32,11 @@ type entryList struct {
 	Online            []netprocs.Proc
 }
 
-// readEntries: a user list as the box shows it -- each line written the one
-// way, once, sites first, then addresses, then programs. The direct list
+// readEntriesFile: a user list as the box shows it -- each line written the
+// one way, once, sites first, then addresses, then programs. The direct list
 // takes in the programs' list of its own from before, until it is saved.
-func readEntries(name string) []string {
+// Read through readEntries, which keeps it in memory.
+func readEntriesFile(name string) []string {
 	lines := readList(paths.User(name))
 	if name == paths.DirectList {
 		for _, l := range readList(paths.User(paths.AppsList)) {
@@ -231,7 +232,6 @@ func (s *Server) actList(w http.ResponseWriter, r *http.Request) {
 // refuse: the block again with what was sent still in the box -- the saved
 // list in its place lost what the user had typed -- and why it was not saved
 func (s *Server) refuse(w http.ResponseWriter, r *http.Request, page, kind string, lines []string, msg string) {
-	s.fresh()
 	v := &view{Lang: lang(r), Page: page, Path: back(r), St: s.status(), Msg: &flash{false, msg}}
 	switch d := s.pageData(r, page, v).(type) {
 	case lists:

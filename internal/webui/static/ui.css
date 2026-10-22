@@ -186,7 +186,11 @@ td small{display:block;color:var(--muted)}
 /* the hint, then what a row adds to it -- a warning, the result of a save --
    one under another: side by side they made columns of the hint, and the
    result, squeezed into 120px at the row's end, ran out of it */
-.form .h{color:var(--muted);flex-direction:column;align-items:flex-start;justify-content:center;gap:2px}
+/* every hint starts at the column's left edge: "align-items:center" of the
+   rows above outweighed this rule, and in a column it centres -- a short
+   hint stood in the middle, a long one at the left */
+.form .rows > div.h{color:var(--muted);font-size:12px;flex-direction:column;align-items:flex-start;
+  justify-content:center;gap:2px;text-align:left}
 .form .h .msg{max-width:none}
 .form select,.form input{width:100%}
 /* a preset per row: its switch and name, then its buttons; many scroll */

@@ -185,7 +185,7 @@ func (s *Server) actLiveAdd(w http.ResponseWriter, r *http.Request) {
 		msg += tr(l, ". The preset is off: it routes nothing until it is switched on")
 	}
 	// the auto-switch mode stands above the lists: said, not left to find
-	switch set := ctl.LoadSettings(paths.Settings()); {
+	switch set := loadSettings(); {
 	case (to == "awg2" || to == "preset") && !ctl.Awg2Attached():
 		msg += tr(l, ". The second tunnel is not loaded: this routes nothing until it is")
 	case (to == "awg2" || to == "preset") && !set.Awg2Active():
@@ -226,7 +226,7 @@ func (s *Server) actLiveAdd(w http.ResponseWriter, r *http.Request) {
 // the presets' change, and a file failing to write puts back the ones
 // written before it.
 func (s *Server) moveLines(to, id string, vs []string) (mvs []liveMove, movedConns int, closeErr error, err error) {
-	on := ctl.LoadSettings(paths.Settings()).Awg2Presets
+	on := loadSettings().Awg2Presets
 	mvs = make([]liveMove, len(vs))
 	var (
 		lists   = map[string][]string{} // the lists that change, as they will be
@@ -595,7 +595,7 @@ func (s *Server) handleLivePresets(w http.ResponseWriter, r *http.Request) {
 		Title string `json:"title"`
 		On    bool   `json:"on"`
 	}
-	on := ctl.LoadSettings(paths.Settings()).Awg2Presets
+	on := loadSettings().Awg2Presets
 	out := []item{}
 	for _, p := range presets.Load() {
 		out = append(out, item{p.ID, tr(lang(r), p.Title), slices.Contains(on, p.ID)})

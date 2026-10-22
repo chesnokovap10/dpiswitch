@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -101,5 +102,36 @@ func TestTunnelPulseAsksItsTunnels(t *testing.T) {
 	}
 	if _, ok := p.get("awg2"); ok {
 		t.Error("a state kept for a tunnel the config has not")
+	}
+}
+
+// The tunnels' answer carries the header's chip and the overview's pill
+// drawn by the templates the pages are drawn by: ui.js only puts them in.
+func TestTunnelsDrawn(t *testing.T) {
+	s, _ := testServer(t)
+	pulse.mu.Lock()
+	was := pulse.state
+	pulse.state = map[string]tunnelState{
+		"awg1": {Alive: true, Note: "42 ms", at: time.Now()},
+		"awg2": {Alive: false, Note: "", at: time.Now()},
+	}
+	pulse.mu.Unlock()
+	t.Cleanup(func() { pulse.mu.Lock(); pulse.state = was; pulse.mu.Unlock() })
+	var got struct{ Awg1, Awg2 struct{ Chip, Pill string } }
+	b := do(t, s.Handler(), "GET", "/api/tunnels", nil, nil).Body.Bytes()
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("%v: %s", err, b)
+	}
+	if c := got.Awg1.Chip; !strings.Contains(c, `class="dot ok"`) || !strings.Contains(c, "awg1 42 ms") {
+		t.Fatalf("awg1's chip: %q", c)
+	}
+	if p := got.Awg1.Pill; !strings.Contains(p, `class="pill ok"`) || !strings.Contains(p, "responding · 42 ms") {
+		t.Fatalf("awg1's pill: %q", p)
+	}
+	if c := got.Awg2.Chip; !strings.Contains(c, `class="dot bad"`) || !strings.Contains(c, "not responding") {
+		t.Fatalf("awg2's chip: %q", c)
+	}
+	if p := got.Awg2.Pill; !strings.Contains(p, `class="pill bad"`) {
+		t.Fatalf("awg2's pill: %q", p)
 	}
 }

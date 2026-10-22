@@ -40,9 +40,10 @@ func post(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// part renders a fragment of a page after an action, with its message.
+// part renders a fragment of a page after an action, with its message. What
+// the files say is current already; an action on the service calls fresh
+// first, for what Windows says.
 func (s *Server) part(w http.ResponseWriter, r *http.Request, page, name string, ok bool, msg string) {
-	s.fresh()
 	v := &view{Lang: lang(r), Page: page, Path: back(r), St: s.status()}
 	if msg != "" {
 		v.Msg = &flash{ok, msg}
@@ -137,12 +138,14 @@ func (s *Server) actService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok, msg := done(r, err, "")
+	s.fresh()
 	s.part(w, r, pageOf(back(r)), "header", ok, msg)
 }
 
 func (s *Server) actAutostart(w http.ResponseWriter, r *http.Request) {
 	err := autostart.Set(r.FormValue("value") == "1")
 	ok, msg := done(r, err, "")
+	s.fresh()
 	s.part(w, r, pageOf(back(r)), "svcbox", ok, msg)
 }
 
@@ -776,7 +779,6 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 
 // partField: the settings table with the message beside the row it is about
 func (s *Server) partField(w http.ResponseWriter, r *http.Request, field string, ok bool, msg string) {
-	s.fresh()
 	v := &view{Lang: lang(r), Page: "settings", Path: back(r), St: s.status()}
 	d := settingsData()
 	d.Field, d.Res = field, &flash{ok, msg}
@@ -812,7 +814,6 @@ func (s *Server) actDNS(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	ok, msg := done(r, err, s.coreNote(restart))
-	s.fresh()
 	v := &view{Lang: lang(r), Page: "settings", Path: back(r), St: s.status(), Msg: &flash{ok, msg}}
 	d := settingsData()
 	if err != nil {
@@ -869,13 +870,12 @@ func (s *Server) actDNSTest(w http.ResponseWriter, r *http.Request) {
 	servers := splitLines(r.FormValue(field))
 	fromConf := false
 	// an empty box is the tunnel's .conf: those are tested
-	first, _ := awgconf.ParseFile(paths.SourceConf())
 	var tun *awgconf.Conf
-	switch path {
+	switch c := loadConfs(); path {
 	case "tunnel":
-		tun = first
+		tun = c.First
 	case "tunnel2":
-		tun, _ = awgconf.Second(first)
+		tun = c.Second
 	}
 	if len(servers) == 0 && tun != nil {
 		servers, fromConf = tun.DNS(), true

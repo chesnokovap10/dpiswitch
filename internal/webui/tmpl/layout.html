@@ -43,9 +43,9 @@
     {{if not $s.HasConfig}}
     <span class="chip" title="{{.T "Without it what the lists do not name goes direct"}}"><span class="dot warn"></span>awg1 {{.T "no config loaded"}}</span>
     {{else}}
-    <span class="chip" data-tunnel="awg1" title="{{$s.Endpoint}}"><span class="dot {{if not $s.TunnelAlive}}bad{{else if .Poor "awg1"}}warn{{else}}ok{{end}}"></span>awg1 {{if $s.TunnelAlive}}{{.Note $s.TunnelNote}}{{else}}{{.T "not responding"}}{{end}}</span>
+    <span class="chip" data-tunnel="awg1" title="{{$s.Endpoint}}">{{template "tunchip" (tun . "awg1" $s.TunnelAlive $s.TunnelNote)}}</span>
     {{end}}
-    {{if $s.Awg2}}{{if $s.Awg2On}}<span class="chip" data-tunnel="awg2" title="{{$s.Endpoint2}}"><span class="dot {{if $s.Awg2Alive}}ok{{else}}bad{{end}}"></span>awg2 {{if $s.Awg2Alive}}{{.Note $s.Awg2Note}}{{else}}{{.T "not responding"}}{{end}}</span>
+    {{if $s.Awg2}}{{if $s.Awg2On}}<span class="chip" data-tunnel="awg2" title="{{$s.Endpoint2}}">{{template "tunchip" (tun . "awg2" $s.Awg2Alive $s.Awg2Note)}}</span>
     {{- else}}<span class="chip" title="{{$s.Endpoint2}}"><span class="dot"></span>awg2 {{.T "switched off"}}</span>{{end}}{{end}}
   {{else}}
     <span class="chip"><span class="dot"></span>{{.T "Service stopped"}}</span>
@@ -161,7 +161,13 @@
 {{end}}
 
 {{/* "service stopped" was said of one not installed, and of one starting */}}
-{{define "tunstate"}}{{$v := .V}}{{with .S}}{{if not .Installed}}<span class="pill">{{$v.T "service not installed"}}</span>{{else if .Pending}}<span class="pill warn">{{$v.T .ServiceText}}…</span>{{else if not .ServiceRun}}<span class="pill">{{$v.T "service stopped"}}</span>{{else}}<span data-tstate="{{$.Name}}">{{if $.Alive}}<span class="pill {{if $.Poor}}warn{{else}}ok{{end}}">{{if $.Poor}}{{$v.T "responding slowly"}}{{else}}{{$v.T "responding"}}{{end}} · {{$v.Note $.Note}}</span>{{with $.Quality}} <span class="muted">{{.}}</span>{{end}}{{else}}<span class="pill bad">{{$v.T "not responding"}}</span> <span class="muted">{{$v.Note $.Note}}</span>{{end}}</span>{{end}}{{end}}{{end}}
+{{define "tunstate"}}{{$v := .V}}{{with .S}}{{if not .Installed}}<span class="pill">{{$v.T "service not installed"}}</span>{{else if .Pending}}<span class="pill warn">{{$v.T .ServiceText}}…</span>{{else if not .ServiceRun}}<span class="pill">{{$v.T "service stopped"}}</span>{{else}}<span data-tstate="{{$.Name}}">{{template "tunpill" $}}</span>{{end}}{{end}}{{end}}
+
+{{/* a tunnel's health: in the overview's and the second tunnel's state, and
+   in the header's chip. Drawn here alone -- /api/tunnels sends them drawn
+   every second (see tunnelpulse.go), and ui.js only puts them in place */}}
+{{define "tunpill"}}{{$v := .V}}{{if .Alive}}<span class="pill {{if .Poor}}warn{{else}}ok{{end}}">{{if .Poor}}{{$v.T "responding slowly"}}{{else}}{{$v.T "responding"}}{{end}} · {{$v.Note .Note}}</span>{{with .Quality}} <span class="muted">{{.}}</span>{{end}}{{else}}<span class="pill bad">{{$v.T "not responding"}}</span> <span class="muted">{{$v.Note .Note}}</span>{{end}}{{end}}
+{{define "tunchip"}}<span class="dot {{if not .Alive}}bad{{else if .Poor}}warn{{else}}ok{{end}}"></span>{{.Name}} {{if .Alive}}{{.V.Note .Note}}{{else}}{{.V.T "not responding"}}{{end}}{{end}}
 
 {{/* the second tunnel's state: switched off in this mode, or its health */}}
 {{define "awg2pill"}}{{$s := .St}}{{if not $s.Awg2On}}<span class="pill">{{.T "switched off"}}</span>

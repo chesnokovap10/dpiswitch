@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"dpiswitch/internal/paths"
 	"dpiswitch/internal/session"
 )
 
@@ -80,10 +81,24 @@ func (s *Server) Start() error {
 	// which never Start: it asks the core the service runs
 	s.live.pulse = pulse
 	go http.Serve(ln, h)
+	go warm(s)
 	// the live page's history is of the core's whole run: gathered from the
 	// start, not from the first time the page is opened
 	s.live.start()
 	return nil
+}
+
+// warm pays ahead what the first page and the first save would wait for.
+// The first file a process creates costs it 130-550 ms on Windows -- the
+// first setting changed took over half a second, every later one 10 ms --
+// and the first status hashes both builds of the program (see
+// winsvc.SameBuild).
+func warm(s *Server) {
+	s.status()
+	if f, err := os.CreateTemp(paths.UserDir(), "warm.*.tmp"); err == nil {
+		f.Close()
+		os.Remove(f.Name())
+	}
 }
 
 // Handler: every page, fragment and action of the UI.

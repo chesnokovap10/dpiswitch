@@ -153,7 +153,7 @@ func (s *Server) actPresetSave(w http.ResponseWriter, r *http.Request) {
 		}
 		on = err == nil
 	default:
-		on = slices.Contains(ctl.LoadSettings(paths.Settings()).Awg2Presets, p.ID)
+		on = slices.Contains(loadSettings().Awg2Presets, p.ID)
 	}
 	// a preset switched off routes nothing: nothing moves
 	n := 0
@@ -172,7 +172,6 @@ func (s *Server) actPresetSave(w http.ResponseWriter, r *http.Request) {
 // refusePreset: the presets again, the dialog open on what was sent, with
 // why it was not saved -- the list in its place lost what had been typed
 func (s *Server) refusePreset(w http.ResponseWriter, r *http.Request, d presetDraft) {
-	s.fresh()
 	v := &view{Lang: lang(r), Page: "awg2", Path: back(r), St: s.status()}
 	a := awg2Data()
 	if _, ok := findPreset(presetsOf(a), d.ID); d.ID != "" && !ok {
@@ -198,7 +197,7 @@ func (s *Server) actPresetDel(w http.ResponseWriter, r *http.Request) {
 	id := r.FormValue("id")
 	// asked before the preset goes: the settings forget a preset that is
 	// not there
-	on := slices.Contains(ctl.LoadSettings(paths.Settings()).Awg2Presets, id)
+	on := slices.Contains(loadSettings().Awg2Presets, id)
 	var old presets.Preset
 	at := -1
 	err := paths.UserReady()
@@ -259,7 +258,7 @@ func (s *Server) actPresetRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	var on []string
 	if err == nil {
-		on = ctl.LoadSettings(paths.Settings()).Awg2Presets
+		on = loadSettings().Awg2Presets
 		if slices.ContainsFunc(on, func(id string) bool { return slices.Contains(back, id) }) {
 			var set ctl.Settings
 			set, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {

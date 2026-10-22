@@ -895,7 +895,7 @@ type liveData struct {
 }
 
 func liveWords(v *view) liveData {
-	split := ctl.LoadSettings(paths.Settings()).SplitHello
+	split := loadSettings().SplitHello
 	on := ""
 	if split {
 		on = "1"

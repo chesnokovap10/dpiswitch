@@ -2,6 +2,8 @@ package webui
 
 import (
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -158,30 +160,24 @@ func TunnelChanged() <-chan struct{} { return pulse.changed }
 // handleTunnels: the tunnels' state for the header's chips and the
 // overview's, every second (see ui.js)
 func (s *Server) handleTunnels(w http.ResponseWriter, r *http.Request) {
-	l := lang(r)
+	v := &view{Lang: lang(r)}
 	out := map[string]any{}
 	for _, t := range pulseTunnels {
 		st, ok := pulse.get(t)
 		if !ok {
 			continue
 		}
-		// the header's chip says the note alone when alive; the overview's
-		// pill says so, the note after it -- as the templates draw them
-		note := TunnelNote(l, st.Note)
-		text, pill := tr(l, "not responding"), tr(l, "not responding")
-		// answering and carrying badly: said by the colour and the line
-		// after the state, see tunnelquality.go
-		slow, detail := false, ""
-		if st.Alive {
-			text, pill = note, tr(l, "responding")+" · "+note
-			if q, ok := quality(t); ok {
-				detail = qualityText(l, q)
-				if slow = q.Poor; slow {
-					pill = tr(l, "responding slowly") + " · " + note
-				}
-			}
+		// drawn by the templates the pages are drawn by: the header's chip,
+		// and the pill with the line after it (see tunnelquality.go)
+		q, hasQ := quality(t)
+		a := tunArg{V: v, Name: t, Alive: st.Alive, Note: st.Note, Q: q, HasQ: hasQ}
+		chip, err1 := drawn("tunchip", a)
+		pill, err2 := drawn("tunpill", a)
+		if err := errors.Join(err1, err2); err != nil {
+			log.Printf("ui: tunnels: %v", err)
+			continue
 		}
-		out[t] = map[string]any{"alive": st.Alive, "text": text, "pill": pill, "note": note, "slow": slow, "detail": detail}
+		out[t] = map[string]string{"chip": chip, "pill": pill}
 	}
 	// the network the service works in: a page sees a change within a
 	// second and draws itself anew, not when its parts' periods come round

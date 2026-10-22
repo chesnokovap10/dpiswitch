@@ -385,12 +385,16 @@ async function send(url, body, target, changed) {
     for (const d of el.querySelectorAll('dialog[data-show]')) d.showModal();
     // an action may change what other parts show: the mode is in the header
     // and in the settings, and one changed in either left the other showing
-    // the old one. The rest are drawn afresh now, not in five seconds or
-    // never -- those of a page not shown when it is; those with no period
-    // of their own are data-sync.
+    // the old one. The rest are drawn afresh now -- the server keeps what
+    // they are drawn from in memory, a part costs it a millisecond -- not
+    // at the next turn of the timer; those of a page not shown when it is.
+    // Those with no period of their own are data-sync.
+    const now = Date.now();
     for (const p of document.querySelectorAll('[data-poll],[data-sync]')) {
       if (p === el || p.contains(el) || el.contains(p)) continue;
-      if (p.dataset.poll) due.set(p, 0); else poll(p);
+      if (!p.dataset.poll) poll(p);
+      else if (away(p)) due.set(p, 0);
+      else { due.set(p, now + period(p)); poll(p); }
     }
     if (keep) {
       const b = el.querySelector('[name="' + CSS.escape(keep.name) + '"]');
@@ -798,33 +802,14 @@ setInterval(async () => {
       }
     }
   }
-  for (const c of document.querySelectorAll('[data-tunnel]')) {
-    const s = st[c.dataset.tunnel];
-    if (!s) continue;
-    const dot = c.querySelector('.dot');
-    if (dot) dot.className = 'dot ' + (s.alive ? (s.slow ? 'warn' : 'ok') : 'bad');
-    const text = c.dataset.tunnel + ' ' + s.text;
-    if (c.lastChild && c.lastChild.nodeType === Node.TEXT_NODE) {
-      if (c.lastChild.textContent !== text) c.lastChild.textContent = text;
+  // the header's chips and the overview's and second tunnel's state come
+  // drawn by the server's templates: put in place when they changed
+  const put = (sel, key, part) => {
+    for (const c of document.querySelectorAll(sel)) {
+      const html = (st[c.dataset[key]] || {})[part];
+      if (html !== undefined && c._html !== html) { c.innerHTML = html; c._html = html; }
     }
-  }
-  // the overview's and the second tunnel's state, drawn as the template does
-  for (const c of document.querySelectorAll('[data-tstate]')) {
-    const s = st[c.dataset.tstate];
-    if (!s) continue;
-    const key = s.alive + '|' + s.pill + '|' + s.note + '|' + s.slow + '|' + s.detail;
-    if (c.dataset.key === key) continue;
-    c.dataset.key = key;
-    const p = document.createElement('span');
-    p.className = 'pill ' + (s.alive ? (s.slow ? 'warn' : 'ok') : 'bad');
-    p.textContent = s.pill;
-    c.replaceChildren(p);
-    const after = s.alive ? s.detail : s.note;
-    if (after) {
-      const m = document.createElement('span');
-      m.className = 'muted';
-      m.textContent = after;
-      c.append(' ', m);
-    }
-  }
+  };
+  put('[data-tunnel]', 'tunnel', 'chip');
+  put('[data-tstate]', 'tstate', 'pill');
 }, 1000);
