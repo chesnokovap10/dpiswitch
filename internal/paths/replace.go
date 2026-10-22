@@ -1,6 +1,8 @@
 package paths
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -29,6 +31,22 @@ func ReplaceFile(path string, data []byte) error {
 		return err
 	}
 	return renameRetry(f.Name(), path)
+}
+
+// RemoveRetry removes a file, trying again while Windows refuses it for a
+// moment. A name of a file with other names, just opened and closed, is
+// refused for a millisecond or two ("Access is denied"): a refused request
+// the service had read stayed until the next second. One gone already is no
+// error.
+func RemoveRetry(path string) error {
+	var err error
+	for i := 0; i < 20; i++ {
+		if err = os.Remove(path); err == nil || errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return err
 }
 
 // renameRetry: Windows refuses to replace a file someone has open, and the

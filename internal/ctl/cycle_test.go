@@ -851,15 +851,19 @@ func TestCycleFilesEachNameAtOnce(t *testing.T) {
 	done := make(chan struct{})
 	go func() { defer close(done); s.cycle() }()
 	defer func() { close(release); <-done }()
-	for deadline := time.Now().Add(5 * time.Second); s.st.current() == "n"; time.Sleep(5 * time.Millisecond) {
-		if e, ok := s.st.get("n", "fast.example.org"); ok && e.Verdict == probe.Clean {
-			if got := listRules(s.cfg.ListPath); !slices.Contains(got, "fast.example.org") {
-				t.Fatalf("filed, not in the list: %v", got)
+	// the slow name's probe is held until the test ends: the fast one in the
+	// list meanwhile is filed without waiting for it. Its verdict alone is
+	// not enough -- memory takes it a moment before the list is written, and
+	// the list was looked at in between.
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if slices.Contains(listRules(s.cfg.ListPath), "fast.example.org") {
+			if e, ok := s.st.get("n", "fast.example.org"); !ok || e.Verdict != probe.Clean {
+				t.Fatalf("in the list, filed as %+v", e)
 			}
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("the fast name waited for the slow one")
+			t.Fatalf("the fast name waited for the slow one: list %v", listRules(s.cfg.ListPath))
 		}
 	}
 }

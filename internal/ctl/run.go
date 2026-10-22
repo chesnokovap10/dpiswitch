@@ -1508,7 +1508,7 @@ func takeForget(cfg Config, a *api, st *state) {
 		case errors.Is(err, paths.ErrRefused):
 			// no request the UI writes, and never one: it goes, unread
 			log.Printf("request %s not taken: %v", r, err)
-			if err := os.Remove(r); err != nil {
+			if err := paths.RemoveRetry(r); err != nil {
 				log.Printf("request %s not removed: %v", r, err)
 			}
 			continue
@@ -1547,7 +1547,7 @@ func takeForget(cfg Config, a *api, st *state) {
 		syncList(cfg, a, st, netID, false)
 	}
 	for _, r := range taken {
-		if err := os.Remove(r); err != nil {
+		if err := paths.RemoveRetry(r); err != nil {
 			log.Printf("request %s not removed: %v", r, err)
 		}
 	}
