@@ -20,8 +20,9 @@
 # then drops their code. Build tags drop the embedded Tailscale, ZeroTier and
 # EasyTier stacks and Hysteria's fake-TCP; -s -w strips debug symbols.
 param(
-    # pinned commit of the fork: upstream Alpha 9f053c49 (its mipstack has
-    # the ICMP fix), the cut, vendor/, the WireGuard outbound reading the
+    # pinned commit of the fork: upstream v1.19.33 (Alpha 3f27ef39; its
+    # mipstack 9a80a07e has the ICMP fix and 18 TCP fixes since the last
+    # pin), the cut, vendor/, the WireGuard outbound reading the
     # stack one packet at a time (the first DNS queries after a start went
     # unanswered on half the starts), the API narrowed to what DPI Switch
     # calls, and UDP on a SOCKS listener with users only through an
@@ -29,7 +30,7 @@ param(
     # (tls-split), cutting the name inside the registered domain's label,
     # and a decoy QUIC Initial ahead of the first one (quic-fake);
     # see DPISWITCH.md there
-    [string]$Commit = "8067c742845cacda61529b7e8e5bd790efe33650",
+    [string]$Commit = "6027ebb8aa45d32f9cada08067f5a670828037c2",
     [string]$Repo = "https://github.com/chesnokovap10/mihomo-dpiswitch.git"
 )
 
