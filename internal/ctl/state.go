@@ -114,6 +114,9 @@ type state struct {
 	// ipFailed: when the public address behind a gateway last could not be
 	// checked, see ipBackoff; not kept across starts
 	ipFailed map[string]time.Time
+	// quick: names refused by a quick pass, by network, and until when --
+	// see quickrefuse.go; not kept across starts
+	quick map[string]map[string]time.Time
 }
 
 type v6Memo struct {

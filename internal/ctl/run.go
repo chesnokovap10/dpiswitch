@@ -454,6 +454,8 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 			drop("the network's memory moved to " + st.current() + " during the cycle")
 			return
 		}
+		// the verdict decides now, not a quick pass's refusal
+		st.unquick(netID, c.dom)
 		changed := record(cfg, st, netID, c.dom, c.rep, c.eps, c.facts)
 		listMu.Unlock()
 		if err := st.save(); err != nil {
@@ -513,6 +515,20 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 					eps = []endpoint{{port: 443}}
 				}
 			}
+			// a CDN host its family sends direct, with no verdict yet: a
+			// quick pass beside the check, refusing it at once if its node
+			// answers neither direct way (see quickrefuse.go). Waited for
+			// before the verdict is filed, which then decides.
+			quickDone := make(chan struct{})
+			if quickWanted(cfg, st, netID, dom, eps) {
+				go func() {
+					defer close(quickDone)
+					quickCheck(cfg, a, st, netID, dom, direct, split, tunnel)
+				}()
+			} else {
+				close(quickDone)
+			}
+			defer func() { <-quickDone }() // the returns before filing
 			var rep probe.Report
 			// the TCP ports whose direct side failed -- see entry.DirectDown
 			var downs []probe.Report
@@ -759,6 +775,7 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 			v6Reached = v6Reached || reachedV6
 			mu.Unlock()
 
+			<-quickDone
 			file(checked{dom, rep, eps, checkFacts{directDown: directDown, noV6: noV6, unprobed: unprobed,
 				noQUIC: noQUIC, noTCP: noTCP, v6: v6Too && !v6Unknown, v6Unknown: v6Too && v6Unknown}})
 		}(dom)

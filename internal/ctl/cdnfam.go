@@ -316,6 +316,15 @@ func (s *state) familyWays(id string, book *cdnBook, wasDirect map[string]bool) 
 			}
 		}
 	}
+	// a CDN host refused by a quick pass, its check not done: refused as
+	// its verdict would have it (see quickrefuse.go), counted for nothing
+	for _, dom := range s.quickRefusedLocked(id, now) {
+		for i := range ways {
+			if cdn, _ := ways[i].f.cdnOf(dom); cdn && !slices.Contains(ways[i].refuse, dom) {
+				ways[i].refuse = append(ways[i].refuse, dom)
+			}
+		}
+	}
 	s.mu.Unlock()
 	for i := range ways {
 		w := &ways[i]
