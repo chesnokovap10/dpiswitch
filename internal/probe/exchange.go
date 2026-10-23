@@ -63,6 +63,8 @@ func (r Resolver) Exchange(d Dialer, q []byte) ([]byte, error) {
 	}
 	if err == nil && (len(resp) < 12 || !bytes.Equal(resp[:2], q[:2])) {
 		err = errors.New("mismatched DNS response")
+	} else if err == nil && resp[2]&0x80 == 0 {
+		err = errors.New("not a DNS response: QR clear")
 	}
 	return resp, err
 }

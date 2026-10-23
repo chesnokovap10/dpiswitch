@@ -729,7 +729,10 @@ func Judge(d, t PathResult) (Verdict, string) {
 		// if the direct path gets a normal answer and the tunnel gets
 		// a blocking status, it is the tunnel that is broken, and moving the domain
 		// into it would pick a known-broken path.
-		if d.HTTPStatus < 400 && (verified || isChallenge(t.HTTPStatus)) {
+		// Not when the direct answer over plain HTTP sends us off the site:
+		// that is an ISP's block page (302 to warning.rt.ru), and the tunnel's
+		// challenge leaves nothing to compare it with.
+		if d.HTTPStatus < 400 && (verified || (isChallenge(t.HTTPStatus) && !d.RedirectAway)) {
 			return Clean, ""
 		}
 		return ContentDiff, fmt.Sprintf("HTTP %d direct vs %d via tunnel", d.HTTPStatus, t.HTTPStatus)

@@ -18,6 +18,7 @@ type nameSet struct {
 	exact  map[string]bool
 	suffix map[string]bool // the name and everything under it
 	sub    map[string]bool // everything under the name, not the name itself
+	one    map[string]bool // a name one level under it, as "*." is in the core
 	// lines with a "*" past a "*." at the start: matched as the core does
 	wild *[]string
 }
@@ -26,7 +27,7 @@ type nameSet struct {
 // classical ("DOMAIN-SUFFIX,x", "DOMAIN,x") and domain ("x", "+.x", ".x",
 // "*.x"). A missing file pins nothing.
 func loadPinned(files []string) nameSet {
-	n := nameSet{exact: map[string]bool{}, suffix: map[string]bool{}, sub: map[string]bool{}, wild: new([]string)}
+	n := nameSet{exact: map[string]bool{}, suffix: map[string]bool{}, sub: map[string]bool{}, one: map[string]bool{}, wild: new([]string)}
 	for _, f := range files {
 		b, err := os.ReadFile(f)
 		if err != nil {
@@ -73,9 +74,9 @@ func (n nameSet) add(line string) {
 	case strings.HasPrefix(l, "."):
 		n.sub[l[1:]] = true
 	case strings.HasPrefix(l, "*."):
-		// one level in the core; any depth here -- leaving a deeper name
-		// unprobed only keeps it in the tunnel
-		n.sub[l[2:]] = true
+		// one level, as in the core. Any depth here left a deeper name
+		// unprobed, and the family's rule sent it direct all the same
+		n.one[l[2:]] = true
 	default:
 		n.exact[l] = true
 	}
@@ -92,12 +93,12 @@ func (n nameSet) has(dom string) bool {
 			}
 		}
 	}
-	for p := dom; ; {
+	for p, first := dom, true; ; first = false {
 		_, rest, ok := strings.Cut(p, ".")
 		if !ok || rest == "" {
 			return false
 		}
-		if n.suffix[rest] || n.sub[rest] {
+		if n.suffix[rest] || n.sub[rest] || first && n.one[rest] {
 			return true
 		}
 		p = rest

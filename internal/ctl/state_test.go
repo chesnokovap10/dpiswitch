@@ -131,6 +131,8 @@ func TestVerifiedAddrs(t *testing.T) {
 		"stale.ru":   {Verdict: probe.Clean, ExpiresAt: now.Add(-time.Hour), TestedIP: "192.0.2.2", Endpoints: []string{"tcp/20000"}},
 		"noip.ru":    {Verdict: probe.Clean, ExpiresAt: live, Endpoints: []string{"tcp/20000"}},
 		"legacy.ru":  {Verdict: probe.Clean, ExpiresAt: live, TestedIP: "192.0.2.5"}, // probed on 443 before ports were kept
+		// made with no tunnel to compare: not direct once there is one
+		"alone.ru": {Verdict: probe.Clean, Alone: true, ExpiresAt: live, TestedIP: "192.0.2.6", Endpoints: []string{"tcp/20000"}},
 	}}}
 	got := st.verifiedAddrs("net")
 	nameless := ",(NOT,((DOMAIN-REGEX,.))))"
@@ -218,6 +220,9 @@ func TestDropPinnedAndSkipped(t *testing.T) {
 	st.forgetVerdicts("n", []string{"a.ex.com"})
 	if _, ok := st.Parked["n"]["a.ex.com"]; ok {
 		t.Error("a.ex.com forgotten from the UI, still set aside")
+	}
+	if _, ok := st.Pending["n"]["a.ex.com"]; !ok {
+		t.Error("a.ex.com forgotten while set aside does not wait for its check")
 	}
 	st.resetVerdicts("n")
 	if len(st.Parked["n"]) != 0 {
@@ -341,5 +346,27 @@ func TestResetAndMergeCarryTheRest(t *testing.T) {
 	got.Verdict = probe.BlockedTLS
 	if again, _ := st.get("AS1", "c.ex.com"); again.Verdict != probe.Clean {
 		t.Error("a verdict read was memory's own, not a copy")
+	}
+}
+
+// Of one name set aside under two gateways of an ISP the newer verdict is
+// kept, whichever gateway is folded in first.
+func TestMergeKeepsNewerParked(t *testing.T) {
+	now := time.Now()
+	for _, newerFirst := range []bool{true, false} {
+		st := &state{Networks: map[string]map[string]*entry{}}
+		older := &entry{Verdict: probe.Clean, DecidedAt: now.Add(-time.Hour)}
+		newer := &entry{Verdict: probe.BlockedTLS, DecidedAt: now}
+		a, b := older, newer
+		if newerFirst {
+			a, b = newer, older
+		}
+		st.Parked = map[string]map[string]*entry{"gw1": {"x.ex.com": a}, "gw2": {"x.ex.com": b}}
+		st.attach("gw1", "AS1", "192.0.2.1")
+		st.attach("gw2", "AS1", "192.0.2.2")
+		st.mergeInto("AS1")
+		if got := st.Parked["AS1"]["x.ex.com"]; got != newer {
+			t.Errorf("newer first %v: kept %v", newerFirst, got.Verdict)
+		}
 	}
 }

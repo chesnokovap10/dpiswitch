@@ -247,12 +247,25 @@ func appBrowser() string {
 }
 
 // commandExe: the program of a command line as the registry keeps it --
-// quoted, or up to the first space
+// quoted, or up to the ".exe" and the space after it: unquoted, a path with
+// spaces ("C:\Program Files\...\browser.exe %1") was cut at "C:\Program"
 func commandExe(cmd string) string {
 	cmd = strings.TrimSpace(cmd)
 	if rest, ok := strings.CutPrefix(cmd, `"`); ok {
 		exe, _, _ := strings.Cut(rest, `"`)
 		return exe
+	}
+	low := strings.ToLower(cmd)
+	for from := 0; ; {
+		i := strings.Index(low[from:], ".exe")
+		if i < 0 {
+			break
+		}
+		end := from + i + len(".exe")
+		if end == len(cmd) || cmd[end] == ' ' {
+			return cmd[:end]
+		}
+		from = end
 	}
 	exe, _, _ := strings.Cut(cmd, " ")
 	return exe

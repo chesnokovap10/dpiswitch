@@ -2,6 +2,7 @@ package ctl
 
 import (
 	"net"
+	"net/netip"
 	"regexp"
 	"strings"
 	"sync/atomic"
@@ -65,8 +66,10 @@ func parseConnLine(line string) (connection, bool) {
 		return connection{}, false
 	}
 	c.Metadata.DestinationPort = port
-	if net.ParseIP(host) != nil {
-		c.Metadata.DestinationIP = host
+	// netip, not net.ParseIP: an address with its zone ("fe80::1%12") was
+	// taken for a name and probed as one
+	if a, err := netip.ParseAddr(host); err == nil {
+		c.Metadata.DestinationIP = a.WithZone("").String()
 	} else {
 		c.Metadata.Host = host
 	}

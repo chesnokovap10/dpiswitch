@@ -151,22 +151,33 @@ func (s *Server) actAutostart(w http.ResponseWriter, r *http.Request) {
 
 // --- configs ---
 
+// confMax: the largest .conf taken. A longer one is refused, not cut: cut,
+// its first part could check out and be saved with the peers past it gone.
+const confMax = 256 << 10
+
 // confText: a .conf from the form -- the file picked, else the text pasted
 func confText(r *http.Request) (string, error) {
 	if err := r.ParseMultipartForm(1 << 20); err != nil && !errors.Is(err, http.ErrNotMultipart) {
 		return "", err
 	}
+	tooBig := errors.New(tr(lang(r), "The .conf is too large"))
 	if f, _, err := r.FormFile("file"); err == nil {
 		defer f.Close()
-		b, err := io.ReadAll(io.LimitReader(f, 256<<10))
+		b, err := io.ReadAll(io.LimitReader(f, confMax+1))
 		if err != nil {
 			return "", err
+		}
+		if len(b) > confMax {
+			return "", tooBig
 		}
 		if t := strings.TrimSpace(string(b)); t != "" {
 			return t, nil
 		}
 	}
 	if t := strings.TrimSpace(r.FormValue("text")); t != "" {
+		if len(t) > confMax {
+			return "", tooBig
+		}
 		return t, nil
 	}
 	return "", errors.New(tr(lang(r), "Paste a .conf or pick the file"))

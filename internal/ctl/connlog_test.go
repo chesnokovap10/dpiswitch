@@ -24,6 +24,9 @@ func TestParseConnLine(t *testing.T) {
 			"udp", "rr1---sn-x.googlevideo.com", "", "443", "198.18.0.1", "Code - Insiders.exe", "RuleSet", "family-direct", []string{"direct-split"}},
 		{`time="2026-10-21T18:28:46.420964900+03:00" level=info msg="[TCP] 127.0.0.1:53699 --> r1---sn-c5niuxaxjvh-045l.googlevideo.com:443 using awg1"`,
 			"tcp", "r1---sn-c5niuxaxjvh-045l.googlevideo.com", "", "443", "127.0.0.1", "", "", "", []string{"awg1"}},
+		// an address with its zone is no name to probe
+		{`time="2026-10-23T18:00:00.0+03:00" level=info msg="[UDP] 198.18.0.1:5353(svchost.exe) --> [fe80::1%12]:443 match IPCIDR(fe80::/10) using DIRECT"`,
+			"udp", "", "fe80::1", "443", "198.18.0.1", "svchost.exe", "IPCIDR", "fe80::/10", []string{"DIRECT"}},
 	} {
 		c, ok := parseConnLine(tc.line)
 		if !ok {

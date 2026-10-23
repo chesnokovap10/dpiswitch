@@ -117,6 +117,7 @@ var ru = map[string]string{
 	"Main tunnel config (awg1)":                             "Конфиг основного туннеля (awg1)",
 	"Second tunnel config (awg2)":                           "Конфиг второго туннеля (awg2)",
 	"Paste a .conf or pick the file":                        "Вставьте .conf или выберите файл",
+	"The .conf is too large":                                "Файл .conf слишком большой",
 	"Config saved. Install the service to start the tunnel": "Конфиг сохранён. Установите службу, чтобы запустить туннель",
 	"Config applied: the service restarted":                 "Конфиг применён: служба перезапущена",
 	"Config saved. Start the service to use it":             "Конфиг сохранён. Запустите службу, чтобы он заработал",

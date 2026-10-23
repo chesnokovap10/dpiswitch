@@ -8,6 +8,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"dpiswitch/internal/paths"
 )
@@ -79,18 +80,32 @@ func RouteChoice(s Settings) map[string]string {
 // routesSet: the member last chosen in the core, by group; listMu held. A
 // core started since chose the one its config lists first, which is the
 // one the settings asked for when the config was written.
-var routesSet = map[string]string{}
+//
+// Not always: a core started on the old config, when it could not be
+// rebuilt, lists first what the settings asked for back then. So what is
+// remembered is forgotten every routesRecheck, and the core asked again.
+var (
+	routesSet     = map[string]string{}
+	routesChecked time.Time
+	routesRecheck = 30 * time.Second
+)
 
 // syncRoutes has the core's select groups take the members the settings
 // ask for; listMu held.
 func syncRoutes(a *api) {
+	if time.Since(routesChecked) >= routesRecheck {
+		clear(routesSet)
+		routesChecked = time.Now()
+	}
 	for group, want := range RouteChoice(LoadSettings(paths.Settings())) {
 		if routesSet[group] == want {
 			continue
 		}
 		b, err := a.do("GET", "/proxies/"+url.PathEscape(group), nil)
 		if err != nil {
-			return // no core yet: its config lists the choice first
+			// no core yet -- its config lists the choice first -- or this
+			// group failed: the others are still asked
+			continue
 		}
 		var g struct {
 			All []string `json:"all"`

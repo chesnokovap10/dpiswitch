@@ -249,13 +249,16 @@ func oldSecond(path string, b []byte, s *Settings) {
 // sends everything direct. Every file those versions wrote lacks
 // tunnel_only, and one with auto-switch off read as observe only would have
 // taken a user's traffic out of the tunnel on update. Such a file is read
-// as tunnel only; the next save writes tunnel_only.
+// as tunnel only; the next save writes tunnel_only. So is one whose
+// tunnel_only is no true or false ("true" typed by hand): read as off, it
+// sent everything direct.
 func oldObserve(b []byte, s *Settings) {
 	var raw map[string]json.RawMessage
 	if json.Unmarshal(b, &raw) != nil {
 		return
 	}
-	if _, has := raw["tunnel_only"]; !has && !s.AutoSwitch {
+	var on bool
+	if v, has := raw["tunnel_only"]; (!has || json.Unmarshal(v, &on) != nil) && !s.AutoSwitch {
 		s.TunnelOnly = true
 	}
 }

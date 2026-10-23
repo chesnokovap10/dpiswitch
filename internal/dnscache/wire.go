@@ -19,6 +19,8 @@ const (
 	typeAAAA = 28
 	typeOPT  = 41
 
+	optECS = 8 // EDNS client subnet
+
 	rcodeOK       = 0
 	rcodeFormErr  = 1
 	rcodeServFail = 2
@@ -113,6 +115,32 @@ func records(m []byte, f func(sec int, typ uint16, ttlOff int, rdata []byte)) bo
 		}
 	}
 	return true
+}
+
+// special: a query whose answer is not the one kept for its question -- one
+// asking for DNSSEC records (DO) or naming a client subnet (ECS). The core
+// passes an app's query on as it came; the key holds the question alone.
+func special(q []byte) bool {
+	sp := false
+	records(q, func(sec int, typ uint16, ttlOff int, rdata []byte) {
+		if sec != 2 || typ != typeOPT {
+			return
+		}
+		if q[ttlOff+2]&0x80 != 0 { // DO, the top bit of the flags
+			sp = true
+		}
+		for len(rdata) >= 4 {
+			code, l := binary.BigEndian.Uint16(rdata), int(binary.BigEndian.Uint16(rdata[2:]))
+			if code == optECS {
+				sp = true
+			}
+			if 4+l > len(rdata) {
+				break
+			}
+			rdata = rdata[4+l:]
+		}
+	})
+	return sp
 }
 
 // sinkhole: an answer whose every address is a loopback or unspecified one

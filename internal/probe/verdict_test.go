@@ -25,6 +25,10 @@ func TestJudge(t *testing.T) {
 		r.RedirectHost, r.BodyLen = to, 150
 		return r
 	}
+	away := func(r PathResult) PathResult {
+		r.RedirectAway = true
+		return r
+	}
 	sized := func(r PathResult, n int) PathResult {
 		r.BodyLen = n
 		return r
@@ -58,6 +62,10 @@ func TestJudge(t *testing.T) {
 		{"http reset after the request", cut(plain(), "http_read"), answered(plain(), 200), ContentDiff},
 		{"http redirect to a block page", redirect(302, "warning.rt.ru"), redirect(302, "example.com"), ContentDiff},
 		{"http same redirect", redirect(301, "example.com"), redirect(301, "example.com"), Clean},
+		// the tunnel's bot check leaves nothing to compare the redirect with:
+		// off the site it is the ISP's page, to https on the site it is not
+		{"http block page vs a challenge", away(redirect(302, "warning.rt.ru")), answered(plain(), 403), ContentDiff},
+		{"http to https vs a challenge", redirect(301, "www.example.com"), answered(plain(), 403), Clean},
 		// a verified TLS answer is the server's own, whatever the tunnel got:
 		// hh.ru 302 here and 200 there, tass.ru its page here and a bot
 		// check there (21.10). The server refusing us is another matter.
@@ -173,5 +181,28 @@ func TestTunnelDownReason(t *testing.T) {
 	both := PathResult{TCPOk: true, TLSTried: true, Err: "EOF", ErrStage: "tls"}
 	if _, reason := Judge(both, both); strings.HasPrefix(reason, tunnelDown) {
 		t.Errorf("both paths failing read as the tunnel's: %q", reason)
+	}
+}
+
+func TestSite(t *testing.T) {
+	for _, c := range []struct{ a, b string }{
+		{"example.com", "www.example.com"},
+		{"Shop.Example.co.uk.", "example.co.uk"},
+		{"192.0.2.1", "192.0.2.1"},
+	} {
+		if site(c.a) != site(c.b) {
+			t.Errorf("%s and %s: %s vs %s", c.a, c.b, site(c.a), site(c.b))
+		}
+	}
+	if site("example.com") == site("warning.rt.ru") {
+		t.Error("another site taken for the same")
+	}
+}
+
+// A cut falls at a character's start: half a Russian letter is no text.
+func TestTruncateAtRune(t *testing.T) {
+	s := strings.Repeat("я", 10) // two bytes each
+	if got := Truncate(s, 5); got != "яя..." {
+		t.Errorf("%q", got)
 	}
 }

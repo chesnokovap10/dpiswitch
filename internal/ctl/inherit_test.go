@@ -113,6 +113,8 @@ func TestInheritByNetwork(t *testing.T) {
 			return "AS15169", "74.125.0.0/16", nil
 		case "172.253.1.1":
 			return "AS15169", "172.253.0.0/16", nil
+		case "198.51.100.1":
+			return "AS64500", "", nil // an answer with no prefix in it
 		}
 		return "", "", errors.New("unknown")
 	}
@@ -122,6 +124,7 @@ func TestInheritByNetwork(t *testing.T) {
 	s.put("music.youtube.com", probe.CleanSplit, "172.253.1.1")
 	s.put("rr1---a.googlevideo.com", probe.CleanSplit, "74.125.1.1")
 	s.put("rr7---c.googlevideo.com", probe.BlockedDPI, "74.125.1.1")
+	s.put("odd.example.com", probe.CleanSplit, "198.51.100.1")
 
 	// the nodes' networks, then the ranges of the one that lends its way;
 	// a node turning up later in a prefix known by then is not asked about
@@ -137,6 +140,10 @@ func TestInheritByNetwork(t *testing.T) {
 	}
 	if slices.Contains(asked, "74.125.1.2") {
 		t.Errorf("a node in a known prefix looked up again: %v", asked)
+	}
+	// an answer with no prefix waits as a failure does, not the next round
+	if n := len(slices.DeleteFunc(slices.Clone(asked), func(ip string) bool { return ip != "198.51.100.1" })); n != 1 {
+		t.Errorf("a node RIPE gave no prefix for asked %d times, want once", n)
 	}
 	if got := listRules(s.cfg.InheritIPPath); !slices.Equal(got, []string{"172.253.0.0/16", "2a00:1450::/32", "74.125.0.0/16"}) {
 		t.Fatalf("inherit-ip %v", got)

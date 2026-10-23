@@ -249,7 +249,9 @@ func (s *state) mergeInto(asn string) int {
 			if s.Parked[asn] == nil {
 				s.Parked[asn] = map[string]*entry{}
 			}
-			if _, ok := s.Parked[asn][dom]; !ok {
+			// the newer, as above: the older restored by unpark would
+			// stand for one that came after it
+			if old, ok := s.Parked[asn][dom]; !ok || e.DecidedAt.After(old.DecidedAt) {
 				s.Parked[asn][dom] = e
 			}
 		}
@@ -423,7 +425,7 @@ func (s *state) verifiedAddrs(id string) []string {
 	now := time.Now()
 	ports := map[string]map[int]bool{}
 	for dom, e := range s.Networks[id] {
-		if e.Verdict != probe.Clean || !now.Before(e.ExpiresAt) {
+		if e.Verdict != probe.Clean || e.Alone || !now.Before(e.ExpiresAt) { // Alone: see verified
 			continue
 		}
 		ip := net.ParseIP(e.TestedIP)
@@ -514,9 +516,9 @@ func addrRule(ip net.IP, ports map[int]bool) string {
 
 // touch marks names seen in the core's connections right now.
 func (s *state) touch(id string, doms []string) {
-	m := s.net(id)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	m := s.Networks[id] // under the lock: a reset meanwhile replaces it
 	now := time.Now()
 	for _, d := range doms {
 		if e, ok := m[d]; ok {
@@ -797,15 +799,17 @@ func (s *state) forgetVerdicts(id string, keys []string) int {
 					drop(dom)
 				}
 			}
+			// a verdict set aside is dropped as one in use: waiting for
+			// its check, it counts against its CDN family as well
 			for dom := range s.Parked[id] {
 				if dom == base || strings.HasSuffix(dom, "."+base) {
-					delete(s.Parked[id], dom)
+					drop(dom)
 				}
 			}
 			continue
 		}
-		delete(s.Parked[id], k)
-		if _, ok := s.Networks[id][k]; ok {
+		_, used := s.Networks[id][k]
+		if _, parked := s.Parked[id][k]; used || parked {
 			drop(k)
 		}
 	}

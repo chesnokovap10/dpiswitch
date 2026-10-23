@@ -103,6 +103,10 @@ func ParseEntry(s string) (kind int, v string, err error) {
 	check := make([]string, len(labels))
 	var own []string
 	for i, l := range labels {
+		// "site..com": no name, and no rule the core reads as one
+		if l == "" {
+			return 0, "", fmt.Errorf("%q: neither a site, an address nor a program", s)
+		}
 		if l == "*" {
 			check[i] = "x"
 			continue

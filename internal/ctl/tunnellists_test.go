@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"dpiswitch/internal/paths"
 )
@@ -87,4 +88,12 @@ func TestSyncRoutes(t *testing.T) {
 	now[TunnelRestGroup] = "tunnel"
 	mu.Unlock()
 	check(map[string]string{TunnelRestGroup: TunnelOneGroup}, 6)
+	// a core started on an old config took another member: remembered as
+	// made, it is put right once the memory is checked again
+	mu.Lock()
+	now[TunnelRestGroup] = TunnelSoftGroup
+	mu.Unlock()
+	check(map[string]string{TunnelRestGroup: TunnelSoftGroup}, 6)
+	routesChecked = time.Time{}
+	check(map[string]string{TunnelRestGroup: TunnelOneGroup}, 7)
 }

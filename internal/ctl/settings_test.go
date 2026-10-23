@@ -293,4 +293,12 @@ func TestSettingsFieldOfWrongType(t *testing.T) {
 	if s := LoadSettings(path); s.Mode() != DefaultSettings().Mode() {
 		t.Fatalf("a broken file read as mode %s", s.Mode())
 	}
+	// tunnel_only of the wrong type is not "off": with auto-switch off that
+	// sent everything direct
+	if err := os.WriteFile(path, []byte(`{"auto_switch": false, "tunnel_only": "true"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if s := LoadSettings(path); !s.TunnelOnly {
+		t.Fatalf("tunnel_only of the wrong type read as mode %s", s.Mode())
+	}
 }

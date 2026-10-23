@@ -15,6 +15,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 // result of one pass over one path (direct or tunnel)
@@ -36,7 +39,10 @@ type PathResult struct {
 	HTTPStatus int           `json:"http_status,omitempty"`
 	// RedirectHost: where a redirect points, the request's own host for a
 	// relative one. Plain HTTP only is judged by it -- see Judge.
-	RedirectHost string        `json:"redirect_host,omitempty"`
+	RedirectHost string `json:"redirect_host,omitempty"`
+	// RedirectAway: the redirect leaves the requested site (another
+	// registrable domain) -- what an ISP's block page looks like
+	RedirectAway bool          `json:"redirect_away,omitempty"`
 	BodySHA256   string        `json:"body_sha256,omitempty"`
 	BodyLen      int           `json:"body_len"`
 	TTFB         time.Duration `json:"ttfb_ns"`
@@ -198,6 +204,16 @@ func probeRequest(host string) *http.Request {
 	return req
 }
 
+// site: the registrable domain of a host, the host itself when it has none
+// (an address, a bare name)
+func site(host string) string {
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	if s, err := publicsuffix.EffectiveTLDPlusOne(host); err == nil {
+		return s
+	}
+	return host
+}
+
 // readResponse records an answer: status, redirect, and the body, read up
 // to bodyLimit.
 func readResponse(r *PathResult, resp *http.Response, host string, t2 time.Time) {
@@ -208,6 +224,7 @@ func readResponse(r *PathResult, resp *http.Response, host string, t2 time.Time)
 		if r.RedirectHost == "" {
 			r.RedirectHost = strings.ToLower(host) // relative: the same host
 		}
+		r.RedirectAway = site(r.RedirectHost) != site(host)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, bodyLimit))
 	resp.Body.Close()
@@ -450,9 +467,19 @@ func where(stage string) string {
 	return stage
 }
 
+// Truncate: s cut to n bytes at most, at a character's start -- a Russian
+// error from Windows cut mid-letter reached the log and the UI broken
 func Truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n] + "..."
+	return s[:runeStart(s, n)] + "..."
+}
+
+// runeStart: n, or the start of the character n falls inside; n < len(s)
+func runeStart(s string, n int) int {
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return n
 }

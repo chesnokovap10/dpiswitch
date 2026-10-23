@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // dedupWriter collapses repeated core log messages.
@@ -117,7 +118,11 @@ func trimMsg(s string) string {
 	}
 	s = string(bytes.TrimSuffix([]byte(s), []byte(`"`)))
 	if len(s) > 160 {
-		s = s[:160] + "…"
+		n := 160 // at a character's start, not inside one
+		for n > 0 && !utf8.RuneStart(s[n]) {
+			n--
+		}
+		s = s[:n] + "…"
 	}
 	return s
 }

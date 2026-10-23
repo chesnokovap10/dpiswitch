@@ -776,3 +776,11 @@ func TestGroupChain(t *testing.T) {
 		t.Errorf("no choices known: %s", r)
 	}
 }
+
+// The menu's "file location" finds a failed row's program too.
+func TestPathOfFailedRow(t *testing.T) {
+	h := &liveHub{open: map[string]*liveRow{}, failed: []*liveRow{{ID: "f1", Path: "dpiswitch.exe"}}}
+	if got := h.pathOf("f1"); got != "dpiswitch.exe" {
+		t.Errorf("a failed row's program: %q", got)
+	}
+}

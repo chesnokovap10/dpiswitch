@@ -52,7 +52,7 @@ func TestParseEntry(t *testing.T) {
 		}
 	}
 	for _, bad := range []string{"bad host", "MATCH,DIRECT", "a,b.exe", "300.1.1.1/8", "",
-		"example.com:abc", "example.com:", "example.com:0", "example.com:70000",
+		"example.com:abc", "site..com", ".example..com", "example.com:", "example.com:0", "example.com:70000",
 		"*", "+.*", "*.*", "1.2.*", "ex*ample.com", "example.+", "a.+.com"} {
 		if _, _, err := ParseEntry(bad); err == nil {
 			t.Errorf("%q taken", bad)
@@ -219,10 +219,14 @@ func TestMatchDomainRuleWildcard(t *testing.T) {
 			t.Errorf("%s ~ %s: %v", c.rule, c.host, got)
 		}
 	}
-	n := nameSet{exact: map[string]bool{}, suffix: map[string]bool{}, sub: map[string]bool{}, wild: new([]string)}
+	n := loadPinned(nil)
 	n.add("+.example.*")
 	n.add(nameRule("a.*.other.com"))
-	for dom, want := range map[string]bool{"x.example.com": true, "a.b.other.com": true, "example.co.uk": false, "b.b.other.com": false} {
+	// "*." one level deep, as the core has it: a deeper name is not pinned,
+	// and is probed -- unprobed, a family's rule sent it direct
+	n.add(nameRule("*.third.com"))
+	for dom, want := range map[string]bool{"x.example.com": true, "a.b.other.com": true, "example.co.uk": false, "b.b.other.com": false,
+		"a.third.com": true, "b.a.third.com": false, "third.com": false} {
 		if n.has(dom) != want {
 			t.Errorf("pinned %s: %v", dom, !want)
 		}

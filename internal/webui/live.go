@@ -645,16 +645,19 @@ func (h *liveHub) keepFailed(kept []*liveRow) {
 	})
 }
 
-// pathOf: the file of the program behind a connection, open or closed
+// pathOf: the file of the program behind a connection -- open, closed, or
+// one that failed (the failures' rows were not looked through)
 func (h *liveHub) pathOf(id string) string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if r := h.open[id]; r != nil {
 		return r.Path
 	}
-	for _, r := range h.closed {
-		if r.ID == id {
-			return r.Path
+	for _, rows := range [][]*liveRow{h.closed, h.failed} {
+		for _, r := range rows {
+			if r.ID == id {
+				return r.Path
+			}
 		}
 	}
 	return ""

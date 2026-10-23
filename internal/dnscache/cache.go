@@ -217,6 +217,21 @@ func (s *Server) Exchange(q []byte) ([]byte, error) {
 	if op := q[2] >> 3 & 0x0f; op != 0 {
 		return failure(q, qend, rcodeNotImp), nil
 	}
+	if special(q) {
+		// asked of a server and not kept: see special
+		s.mu.Lock()
+		s.counts.Missed++
+		s.changed = true
+		s.mu.Unlock()
+		msg, _, err := s.ask(q)
+		if err != nil {
+			s.mu.Lock()
+			s.counts.Failed++
+			s.mu.Unlock()
+			return failure(q, qend, rcodeServFail), nil
+		}
+		return reply(q, qend, msg, func(t uint32) uint32 { return t }), nil
+	}
 	now := time.Now()
 	s.mu.Lock()
 	e := s.nets[s.net][key]
@@ -694,9 +709,10 @@ func (s *Server) load() {
 }
 
 // answerQuestion: the key of an answer's question, as question gives a
-// query's
+// query's; ok is false for a message that is no answer (QR clear) -- a
+// server giving the query back
 func answerQuestion(m []byte) (string, int, bool) {
-	if len(m) < 12 {
+	if len(m) < 12 || m[2]&0x80 == 0 {
 		return "", 0, false
 	}
 	q := append([]byte(nil), m...)
@@ -763,6 +779,10 @@ func (s *Server) save(always bool) {
 		err = paths.ReplaceFile(s.file, b)
 	}
 	if err != nil {
+		// written next time: left clean, the file waited for a new answer
+		s.mu.Lock()
+		s.dirty = true
+		s.mu.Unlock()
 		log.Printf("DNS cache: %s not written: %v", s.file, err)
 	}
 }

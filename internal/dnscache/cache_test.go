@@ -351,6 +351,12 @@ func TestKeepable(t *testing.T) {
 	if ttl, ok := keepable(nx); !ok || ttl != 30 {
 		t.Errorf("NXDOMAIN with a SOA: %d %v, want 30 from its MINIMUM", ttl, ok)
 	}
+	// a MINIMUM of 0 is "keep it not at all", not "no SOA, keep a minute"
+	zero := append([]byte(nil), nx...)
+	clear(zero[len(zero)-4:])
+	if _, ok := keepable(zero); ok {
+		t.Error("NXDOMAIN with a SOA's MINIMUM 0 kept")
+	}
 	fail := answer(q, net.ParseIP("192.0.2.1"), 60)
 	fail[3] = 0x82
 	if _, ok := keepable(fail); ok {
@@ -627,5 +633,76 @@ func TestNegativeNotWaitedLong(t *testing.T) {
 	}
 	if d := time.Since(start); d > negativeWait+time.Second {
 		t.Errorf("took %s", d)
+	}
+}
+
+// withOPT: q with an OPT record whose flags and options are given
+func withOPT(q []byte, flags uint16, opts []byte) []byte {
+	m := append([]byte(nil), q...)
+	binary.BigEndian.PutUint16(m[10:], 1)
+	m = append(m, 0, 0, typeOPT, 0x04, 0xd0, 0, 0)
+	m = binary.BigEndian.AppendUint16(m, flags)
+	m = binary.BigEndian.AppendUint16(m, uint16(len(opts)))
+	return append(m, opts...)
+}
+
+// A query asking for DNSSEC records or naming a client subnet is asked of a
+// server every time: the answer kept for the plain question is not its.
+func TestSpecialQueryNotKept(t *testing.T) {
+	srv := &fakeServer{answer: gives("192.0.2.1", 300)}
+	fakeServers(t, map[string]*fakeServer{"udp://192.0.2.53": srv})
+	s := newCache(t, "udp://192.0.2.53")
+	ask(t, s, "example.com", 1)
+
+	ecs := []byte{0, optECS, 0, 7, 0, 1, 24, 0, 198, 51, 100}
+	for i, q := range [][]byte{
+		withOPT(query("example.com", 2), 0x8000, nil),
+		withOPT(query("example.com", 3), 0, ecs),
+	} {
+		if !special(q) {
+			t.Fatalf("query %d not special", i)
+		}
+		if _, err := s.Exchange(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := srv.asked.Load(); n != 3 {
+		t.Errorf("the server was asked %d times, want 3", n)
+	}
+	if special(withOPT(query("example.com", 4), 0, nil)) {
+		t.Error("a plain EDNS query taken for a special one")
+	}
+	ask(t, s, "example.com", 5)
+	if n := srv.asked.Load(); n != 3 {
+		t.Errorf("the plain question was not answered from memory: %d asks", n)
+	}
+}
+
+// A server giving the query back -- QR clear -- has not answered: the asker
+// gets a SERVFAIL, not its own query.
+func TestQueryBackIsNoAnswer(t *testing.T) {
+	echo := &fakeServer{answer: func(q []byte) ([]byte, error) { return append([]byte(nil), q...), nil }}
+	fakeServers(t, map[string]*fakeServer{"udp://192.0.2.53": echo})
+	s := newCache(t, "udp://192.0.2.53")
+	resp := ask(t, s, "example.com", 1)
+	if resp[2]&0x80 == 0 || resp[3]&0x0f != rcodeServFail {
+		t.Fatalf("flags %02x %02x, want an answer with SERVFAIL", resp[2], resp[3])
+	}
+}
+
+// A file that could not be written is written at the next save, not only
+// once a new answer comes.
+func TestSaveFailedStaysDirty(t *testing.T) {
+	srv := &fakeServer{answer: gives("192.0.2.1", 60)}
+	fakeServers(t, map[string]*fakeServer{"udp://192.0.2.53": srv})
+	s := New(filepath.Join(t.TempDir(), "no such folder", "cache.json"), "")
+	s.Configure([]string{"udp://192.0.2.53"}, probe.Dialer{})
+	s.SetNetwork("AS1")
+	ask(t, s, "example.com", 1)
+	s.save(false)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.dirty {
+		t.Error("the answers taken for written after the file failed")
 	}
 }

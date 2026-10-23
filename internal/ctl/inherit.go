@@ -681,9 +681,11 @@ func (b *asnBook) round(directAddr string, nodes []string, done func()) {
 				asn, prefix, err := ripeNetInfo(cl, ip)
 				b.mu.Lock()
 				defer b.mu.Unlock()
-				if err != nil {
+				// an answer with no prefix to read is a failure too: taken
+				// as none, the address was asked again every round
+				if p, perr := netip.ParsePrefix(prefix); err != nil || perr != nil {
 					b.fail(ip)
-				} else if p, perr := netip.ParsePrefix(prefix); perr == nil {
+				} else {
 					b.Nets = append(b.Nets, asnNet{Prefix: p.Masked().String(), ASN: asn, At: time.Now()})
 					b.ver++
 					learnt = true
