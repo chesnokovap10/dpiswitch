@@ -89,9 +89,8 @@ func inGlyph(p pt) bool {
 	return false
 }
 
-// background shapes
-func inRoundRect(p pt, r float64) bool {
-	m := 0.02 // margin
+// background shapes; m: the margin to the edge
+func inRoundRect(p pt, r, m float64) bool {
 	x := math.Max(math.Abs(p.x-0.5)-(0.5-m-r), 0)
 	y := math.Max(math.Abs(p.y-0.5)-(0.5-m-r), 0)
 	return math.Hypot(x, y) <= r
@@ -100,9 +99,19 @@ func inRoundRect(p pt, r float64) bool {
 func inCircle(p pt) bool { return math.Hypot(p.x-0.5, p.y-0.5) <= 0.48 }
 
 type style struct {
-	circle   bool // tray: circle, app: rounded square
+	circle   bool // a circle, else a rounded square
 	top, bot rgb  // vertical gradient
+	// tray: no margin, the glyph larger -- the tray draws every icon in the
+	// same cell, and the square's arrow looked smaller than the next icon's
+	// drawing, which runs to the cell's edge
+	tray bool
 }
+
+// the glyph's scale and centre in the tray's icons
+const (
+	trayGlyph   = 1.14
+	glyphMiddle = 0.52
+)
 
 func render(size int, st style) *image.NRGBA {
 	img := image.NewNRGBA(image.Rect(0, 0, size, size))
@@ -115,14 +124,21 @@ func render(size int, st style) *image.NRGBA {
 					p := pt{(float64(x) + (float64(sx)+0.5)/ss) / float64(size),
 						(float64(y) + (float64(sy)+0.5)/ss) / float64(size)}
 					in := false
-					if st.circle {
+					switch {
+					case st.circle:
 						in = inCircle(p)
-					} else {
-						in = inRoundRect(p, 0.22)
+					case st.tray:
+						in = inRoundRect(p, 0.2, 0)
+					default:
+						in = inRoundRect(p, 0.22, 0.02)
+					}
+					q := p
+					if st.tray {
+						q = pt{0.5 + (p.x-0.5)/trayGlyph, glyphMiddle + (p.y-glyphMiddle)/trayGlyph}
 					}
 					if in {
 						bg++
-						if inGlyph(p) {
+						if inGlyph(q) {
 							gl++
 						}
 					}
@@ -225,7 +241,7 @@ func main() {
 	// tray loader) -- on in its own colours, off and error in grey and red
 	tray := []int{16, 20, 24, 32}
 	bmp := func(int) bool { return false }
-	writeICO("internal/tray/icons/on.ico", tray, style{top: rgb{38, 196, 133}, bot: rgb{30, 110, 220}}, bmp)
-	writeICO("internal/tray/icons/off.ico", tray, style{top: rgb{150, 156, 166}, bot: rgb{100, 106, 118}}, bmp)
-	writeICO("internal/tray/icons/error.ico", tray, style{top: rgb{240, 96, 80}, bot: rgb{190, 40, 50}}, bmp)
+	writeICO("internal/tray/icons/on.ico", tray, style{tray: true, top: rgb{38, 196, 133}, bot: rgb{30, 110, 220}}, bmp)
+	writeICO("internal/tray/icons/off.ico", tray, style{tray: true, top: rgb{150, 156, 166}, bot: rgb{100, 106, 118}}, bmp)
+	writeICO("internal/tray/icons/error.ico", tray, style{tray: true, top: rgb{240, 96, 80}, bot: rgb{190, 40, 50}}, bmp)
 }
