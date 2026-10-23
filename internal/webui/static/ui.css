@@ -175,7 +175,7 @@ td small{display:block;color:var(--muted)}
   letter-spacing:.04em;padding:0 14px;min-height:38px}
 .grp > summary::-webkit-details-marker{display:none}
 .grp > summary::before{content:"";border-left:5px solid currentColor;border-top:4px solid transparent;
-  border-bottom:4px solid transparent}
+  border-bottom:4px solid transparent;transition:transform .12s}
 .grp[open] > summary::before{transform:rotate(90deg)}
 .grp > summary:hover{color:var(--fg)}
 .grp[open] > summary{border-bottom:1px solid var(--line)}
