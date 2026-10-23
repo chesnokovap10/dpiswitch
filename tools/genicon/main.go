@@ -221,10 +221,11 @@ func main() {
 		style{top: rgb{38, 196, 133}, bot: rgb{30, 110, 220}},
 		func(s int) bool { return s >= 64 })
 
-	// tray icons: state-coloured circles, BMP entries (read by the tray loader)
+	// tray icons: the application's rounded square, BMP entries (read by the
+	// tray loader) -- on in its own colours, off and error in grey and red
 	tray := []int{16, 20, 24, 32}
 	bmp := func(int) bool { return false }
-	writeICO("internal/tray/icons/on.ico", tray, style{circle: true, top: rgb{52, 190, 110}, bot: rgb{30, 150, 85}}, bmp)
-	writeICO("internal/tray/icons/off.ico", tray, style{circle: true, top: rgb{150, 156, 166}, bot: rgb{110, 116, 126}}, bmp)
-	writeICO("internal/tray/icons/error.ico", tray, style{circle: true, top: rgb{235, 90, 75}, bot: rgb{195, 50, 45}}, bmp)
+	writeICO("internal/tray/icons/on.ico", tray, style{top: rgb{38, 196, 133}, bot: rgb{30, 110, 220}}, bmp)
+	writeICO("internal/tray/icons/off.ico", tray, style{top: rgb{150, 156, 166}, bot: rgb{100, 106, 118}}, bmp)
+	writeICO("internal/tray/icons/error.ico", tray, style{top: rgb{240, 96, 80}, bot: rgb{190, 40, 50}}, bmp)
 }
