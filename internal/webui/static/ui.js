@@ -715,6 +715,24 @@ document.addEventListener('toggle', e => {
   if (!(d instanceof HTMLDetailsElement) || !d.dataset.grp) return;
   if (d.open) openGroups.add(d.dataset.grp); else openGroups.delete(d.dataset.grp);
 }, true);
+// A group's title answers the press, not the release, as the menu and the
+// tabs do: on click it lagged by the time the button was held. The click
+// that follows is the browser's own toggle, it would undo ours; the keys
+// (Enter, Space) still toggle through it.
+let pressed = null;
+document.addEventListener('pointerdown', e => {
+  pressed = null;
+  if (e.pointerType !== 'mouse' || e.button !== 0) return;
+  const s = e.target.closest('details[data-grp] > summary');
+  if (!s) return;
+  e.preventDefault(); // no focus ring, no text selected on a double press
+  s.parentElement.open = !s.parentElement.open;
+  pressed = s;
+});
+document.addEventListener('click', e => {
+  if (pressed && e.detail && e.target.closest('summary') === pressed) e.preventDefault();
+  pressed = null;
+}, true);
 function regroup(root) {
   for (const d of root.querySelectorAll('details[data-grp]')) d.open = openGroups.has(d.dataset.grp);
 }
