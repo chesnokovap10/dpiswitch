@@ -37,7 +37,9 @@ func TestQuickRefuse(t *testing.T) {
 
 	old := quickDead
 	t.Cleanup(func() { quickDead = old })
-	quickDead = func(_, _, _ probe.Dialer, dom string, _ time.Duration) (string, bool) { return "192.0.2.9", dom == dead }
+	quickDead = func(_, _, _ probe.Dialer, dom string, _ time.Duration) (string, bool) {
+		return "192.0.2.9", dom == dead
+	}
 	quickCheck(s.cfg, s.api, s.st, "n", "rr51---sn-alive.googlevideo.com", probe.Dialer{}, probe.Dialer{}, probe.Dialer{})
 	quickCheck(s.cfg, s.api, s.st, "n", dead, probe.Dialer{}, probe.Dialer{}, probe.Dialer{})
 	if got := listRules(s.cfg.RefusePath); !slices.Equal(got, []string{dead}) {
