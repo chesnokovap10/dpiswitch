@@ -278,6 +278,13 @@ CDN, спидтестам, обновлениям.
   провайдером. Детектор пользуется теми же серверами, так что проверяет тот узел, куда пойдёт трафик.
   Надёжнее всего DoH или DoT по адресу (`https://IP/dns-query`, `tls://IP`): многие провайдеры
   блокируют или подменяют обычный DNS. Кнопка «Проверить» в настройках опрашивает каждый сервер.
+  Для `https://…` при доступности выбирается **DoH3 (HTTP/3)**, иначе — обычный DoH.
+  В пинге показывается **DoH3**, только если измеряемый запрос действительно прошёл через HTTP/3.
+  Go-клиент, локальный DNS-кэш и ядро предпочитают HTTP/3; при недоступном UDP есть откат на обычный DoH.
+- **DoQ (DNS over QUIC)**: `quic://IP` или `quic://имя:порт`, по умолчанию UDP 853.
+  Поддерживается в ядре, детекторе и локальном DNS-кэше; в проверке пинга показывается **DoQ**.
+  Соединение переиспользуется, каждый запрос идёт в своём QUIC-потоке. Для DoQ нет неявной подмены на DoH/DoT:
+  при необходимости другие серверы указываются в том же списке DNS.
 - **Сайты через туннель** резолвятся внутри того туннеля, через который идут, его собственным DNS: у awg1 и awg2 они задаются отдельно, каждый — из своего `.conf`, если не задан свой. Если в `.conf` нет `DNS =` и ничего не задано, имена резолвятся DNS для прямых сайтов, мимо туннеля.
 - Программы получают от ядра подставные адреса (fake-ip: `198.18.0.0/16`, `2001:2::/48`), а настоящий
   ядро узнаёт уже на выбранном маршруте. Поэтому маршрут решает имя, а не адрес. Диапазон IPv6
@@ -802,6 +809,13 @@ current network. The tray's reset is of the current network.
   the traffic will go to. DoH or DoT by address (`https://IP/dns-query`, `tls://IP`) is the safe
   choice: many ISPs block or tamper with plain DNS. The "Test" button in the settings asks each
   server.
+  For `https://…`, **DoH3 (HTTP/3)** is preferred when available, with regular DoH as fallback.
+  The ping test shows **DoH3** only when the timed query actually used HTTP/3.
+  The Go client, local DNS cache and core prefer HTTP/3, with regular DoH available when UDP fails.
+- **DoQ (DNS over QUIC)**: `quic://IP` or `quic://host:port`, using UDP 853 by default.
+  Supported by the core, detector and local DNS cache; the ping test shows **DoQ**.
+  Connections are reused, with one QUIC stream per query. DoQ does not silently switch to a DoH/DoT endpoint;
+  other resolvers can be added to the same DNS list as alternatives.
 - **Tunnelled sites** are resolved inside the tunnel they go through, by that tunnel's own DNS: awg1's and awg2's are set apart, each from its `.conf` unless set. A `.conf` with no `DNS =` and nothing set: the names are resolved by the resolvers for direct sites, outside the tunnel.
 - Programs get stand-in addresses from the core (fake-ip: `198.18.0.0/16`, `2001:2::/48`) and the
   core resolves the real one on the chosen route. That is why a name, not an address, decides the

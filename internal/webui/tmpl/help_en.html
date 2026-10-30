@@ -278,7 +278,12 @@ current network. The tray's reset is of the current network.</p>
 <ul>
 <li><b>Direct sites</b> are resolved by the resolvers for direct sites, asked outside the tunnel: CDNs
 then answer with nodes near your ISP. The detector uses the same resolvers, so it tests the node the
-traffic will go to. DoH or DoT by address is the safe choice: many ISPs block or tamper with plain DNS.</li>
+traffic will go to. DoH or DoT by address is the safe choice: many ISPs block or tamper with plain DNS.
+For <code>https://…</code>, DoH3 (HTTP/3) is preferred when available; otherwise regular DoH is used.
+The ping test shows <b>DoH3</b> only when the timed query actually used HTTP/3.</li>
+<li><b>DoQ (DNS over QUIC)</b> uses <code>quic://IP</code> or <code>quic://host:port</code>, with UDP 853 as the default port.
+The test shows <b>DoQ</b>. An unavailable DoQ endpoint is not silently replaced with a DoH or DoT endpoint;
+other DNS servers can be listed as alternatives.</li>
 {{if .St.Second}}<li><b>Tunnelled sites</b> are resolved inside the tunnel they go through, by that tunnel's own DNS: <a href="/settings#tunnel_dns">awg1's</a> and <a href="/settings#tunnel_dns2">awg2's</a> are set apart, each from its <code>.conf</code> unless set. A <code>.conf</code> with no <code>DNS =</code> and nothing set: the names are resolved by the resolvers for direct sites, outside the tunnel.</li>{{else}}<li><b>Tunnelled sites</b> are resolved inside the tunnel, by its own DNS: the one <a href="/settings#tunnel_dns">set here</a>, or with none set the one from its <code>.conf</code>. A <code>.conf</code> with no <code>DNS =</code> and nothing set: the names are resolved by the resolvers for direct sites, outside the tunnel.</li>{{end}}
 <li>Programs get stand-in addresses from the core (<code>198.18.0.0/16</code>, <code>2001:2::/48</code>) and
 the core resolves the real one on the chosen route. That is why a name, not an address, decides the route.</li>
@@ -474,6 +479,6 @@ this program: the service, the block detector, the tray and this interface.</li>
 <li><b><a href="https://github.com/chesnokovap10/mihomo-dpiswitch" target="_blank" rel="noopener">mihomo-dpiswitch</a></b> —
 the fork of mihomo for DPI Switch: only what the program uses, and its fixes; the embedded core is built from it.</li>
 </ul>
-<p>This code was made by the artificial intelligence Claude Opus, for people.</p>
+<p>This code was made by the artificial intelligence Codex/Claude, for people.</p>
 </div>
 {{end}}

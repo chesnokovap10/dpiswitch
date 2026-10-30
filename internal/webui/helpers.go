@@ -28,7 +28,7 @@ func (n *netPrefix) contains(ip string) bool {
 
 type dnsResult struct {
 	Server string
-	Kind   string // DoH, DoT, DNS
+	Kind   string // DoH3, DoH, DoQ, DoT, DNS
 	OK     bool
 	Ms     int64
 	IPs    []string
@@ -128,7 +128,7 @@ func testDNS(path string, servers []string) ([]dnsResult, string) {
 var listenerAlive = probe.Dialer.Alive
 
 // pingEither: probe.PingEither; the tests put a script here
-var pingEither = probe.PingEither
+var pingEither = probe.PingEitherProtocol
 
 // pingDNS: one resolver asked, over d -- a DoH server that answers the other
 // spelling of its address only is taken on that one (see probe.PingEither)
@@ -141,13 +141,19 @@ func pingDNS(d probe.Dialer, srv string) dnsResult {
 			res.Kind = "DoH"
 		case "tls":
 			res.Kind = "DoT"
+		case "quic":
+			res.Kind = "DoQ"
 		}
 		// the time of a query on a connection already up: the first
 		// one's handshake is paid once, and showed a server two or
 		// three times slower than it answers
 		var rtt time.Duration
 		var used string
-		res.IPs, rtt, used, err = pingEither(d, srv, "whoami.akamai.net")
+		var protocol string
+		res.IPs, rtt, used, protocol, err = pingEither(d, srv, "whoami.akamai.net")
+		if err == nil {
+			res.Kind = protocol
+		}
 		res.Ms = rtt.Milliseconds()
 		if err == nil && used != srv {
 			res.Server, res.Fixed, res.Was = used, used, srv

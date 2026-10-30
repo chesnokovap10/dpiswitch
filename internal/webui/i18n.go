@@ -14,6 +14,10 @@ func tr(lang, en string) string {
 }
 
 var ru = map[string]string{
+ "DoQ cannot use port 53": "DoQ не может использовать порт 53",
+ "DoQ does not use a URL path": "В адресе DoQ не используется путь URL",
+
+
 	"":                             "",
 	"Video hosting":                "Видеохостинги",
 	"AI":                           "ИИ",
@@ -371,7 +375,7 @@ var ru = map[string]string{
 	"The core is not running: the tunnel cannot be tested. Start the service.": "Ядро не запущено: через туннель проверить нечем. Запустите службу.",
 	"The core is not running: tested straight, past it.":                       "Ядро не запущено: проверено напрямую, мимо него.",
 	"awg2 is not loaded.": "awg2 не загружен.",
-	"One per line: <code>https://IP/dns-query</code> (DoH), <code>tls://IP</code> (DoT), <code>IP</code> (plain DNS, often blocked by ISPs). An address, not a name, where possible. The test finds whether a DoH server wants <code>/dns-query</code> and fixes the address.": "По одному в строке: <code>https://IP/dns-query</code> (DoH), <code>tls://IP</code> (DoT), <code>IP</code> (обычный DNS, провайдеры его часто блокируют). По возможности адрес, а не имя. Проверка сама определяет, нужен ли DoH-серверу <code>/dns-query</code>, и исправляет адрес.",
+	"One per line: <code>https://IP/dns-query</code> (DoH), <code>tls://IP</code> (DoT), <code>quic://IP</code> or <code>quic://host:port</code> (DoQ, UDP 853 by default), <code>IP</code> (plain DNS, often blocked by ISPs). An address, not a name, where possible. The test finds whether a DoH server wants <code>/dns-query</code> and fixes the address.": "По одному в строке: <code>https://IP/dns-query</code> (DoH), <code>tls://IP</code> (DoT), <code>quic://IP</code> или <code>quic://имя:порт</code> (DoQ, по умолчанию UDP 853), <code>IP</code> (обычный DNS, провайдеры его часто блокируют). По возможности адрес, а не имя. Проверка сама определяет, нужен ли DoH-серверу <code>/dns-query</code>, и исправляет адрес.",
 	"Save DNS": "Сохранить DNS",
 	"Saving restarts the core: the tunnel drops for a couple of seconds.": "Сохранение перезапускает ядро: туннель пропадёт на пару секунд.",
 	"error":           "ошибка",
@@ -411,7 +415,7 @@ var ru = map[string]string{
 	// a DNS address refused (probe.ResolverError)
 	"empty resolver address":                                 "пустой адрес сервера",
 	"not a server address":                                   "это не адрес сервера",
-	"supported schemes are https://, tls://, tcp://, udp://": "поддерживаются только https://, tls://, tcp://, udp://",
+	"supported schemes are https://, quic://, tls://, tcp://, udp://": "поддерживаются только https://, quic://, tls://, tcp://, udp://",
 	"invalid port":                                           "неверный порт",
 	"no server specified":                                    "не указан сервер",
 	"a #… suffix is not allowed here":                        "окончание #… здесь не допускается",

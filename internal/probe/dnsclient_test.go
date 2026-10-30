@@ -171,7 +171,6 @@ func newSocksStub(t *testing.T, target string) *socksStub {
 			if err != nil {
 				return
 			}
-			s.conns.Add(1)
 			go s.serve(c, target)
 		}
 	}()
@@ -190,6 +189,12 @@ func (s *socksStub) serve(c net.Conn, target string) {
 		c.Close()
 		return
 	}
+	if buf[1] != 1 {
+		c.Write([]byte{5, 7, 0, 1, 0, 0, 0, 0, 0, 0})
+		c.Close()
+		return
+	}
+	s.conns.Add(1)
 	skip := map[byte]int{1: 4, 4: 16}[buf[3]]
 	if buf[3] == 3 {
 		io.ReadFull(c, buf[:1])

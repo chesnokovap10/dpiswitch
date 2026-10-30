@@ -128,7 +128,7 @@
       <div class="dnsres" id="dnsres-tunnel"></div>
       {{if .St.Second}}<div class="dnsres" id="dnsres-tunnel2"></div>{{end}}
     </div>
-    <p class="hint" style="margin-top:8px">{{.TH "One per line: <code>https://IP/dns-query</code> (DoH), <code>tls://IP</code> (DoT), <code>IP</code> (plain DNS, often blocked by ISPs). An address, not a name, where possible. The test finds whether a DoH server wants <code>/dns-query</code> and fixes the address."}}</p>
+    <p class="hint" style="margin-top:8px">{{.TH "One per line: <code>https://IP/dns-query</code> (DoH), <code>tls://IP</code> (DoT), <code>quic://IP</code> or <code>quic://host:port</code> (DoQ, UDP 853 by default), <code>IP</code> (plain DNS, often blocked by ISPs). An address, not a name, where possible. The test finds whether a DoH server wants <code>/dns-query</code> and fixes the address."}}</p>
     <div class="actions"><button class="primary">{{.T "Save DNS"}}</button>{{template "msg" .}}<span class="muted">{{.T "Saving restarts the core: the tunnel drops for a couple of seconds."}}</span></div>
   </form>
   </div>

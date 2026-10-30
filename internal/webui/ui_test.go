@@ -350,7 +350,7 @@ func TestDNSSave(t *testing.T) {
 		t.Fatalf("a refused save was written: %+v", got)
 	}
 	// the same in the DNS test
-	w = do(t, h, "POST", "/act/dnstest?path=direct", url.Values{"direct_dns": {"quic://1.1.1.1"}}, ru)
+	w = do(t, h, "POST", "/act/dnstest?path=direct", url.Values{"direct_dns": {"unsupported://1.1.1.1"}}, ru)
 	if !strings.Contains(w.Body.String(), "поддерживаются только") {
 		t.Fatalf("the test's reason is not in Russian:\n%s", w.Body.String())
 	}
@@ -409,7 +409,7 @@ func TestDNSSave(t *testing.T) {
 
 // Each reason a DNS address is refused for has its Russian.
 func TestResolverReasonsTranslated(t *testing.T) {
-	for _, in := range []string{"", "udp://1.1.1.1 8.8.8.8", "quic://1.1.1.1", "udp://1.1.1.1:0", "https:///dns-query", "tls://1.1.1.1#x"} {
+	for _, in := range []string{"", "udp://1.1.1.1 8.8.8.8", "unsupported://1.1.1.1", "udp://1.1.1.1:0", "https:///dns-query", "tls://1.1.1.1#x", "quic://1.1.1.1:53", "quic://1.1.1.1/dns-query"} {
 		_, err := probe.ParseResolver(in)
 		var re *probe.ResolverError
 		if !errors.As(err, &re) {
@@ -1011,14 +1011,14 @@ func TestDNSTestFixesPath(t *testing.T) {
 	}
 	// as probe.PingEither does it, over the servers above
 	old := pingEither
-	pingEither = func(_ probe.Dialer, srv, _ string) ([]string, time.Duration, string, error) {
+	pingEither = func(_ probe.Dialer, srv, _ string) ([]string, time.Duration, string, string, error) {
 		if answers[srv] {
-			return []string{"192.0.2.1"}, time.Millisecond, srv, nil
+			return []string{"192.0.2.1"}, time.Millisecond, srv, "DoH", nil
 		}
 		if alt, ok := probe.DoHPathAlternative(srv); ok && answers[alt] {
-			return []string{"192.0.2.1"}, time.Millisecond, alt, nil
+			return []string{"192.0.2.1"}, time.Millisecond, alt, "DoH", nil
 		}
-		return nil, 0, srv, errors.New("HTTP 404")
+		return nil, 0, srv, "DoH", errors.New("HTTP 404")
 	}
 	defer func() { pingEither = old }()
 	oldAlive := listenerAlive
@@ -1063,9 +1063,9 @@ func TestDNSTestCoreDown(t *testing.T) {
 	defer func() { listenerAlive, pingEither = oldAlive, oldPing }()
 	listenerAlive = func(probe.Dialer) bool { return false }
 	var direct []bool
-	pingEither = func(d probe.Dialer, srv, _ string) ([]string, time.Duration, string, error) {
+	pingEither = func(d probe.Dialer, srv, _ string) ([]string, time.Duration, string, string, error) {
 		direct = append(direct, d.Direct)
-		return []string{"192.0.2.1"}, time.Millisecond, srv, nil
+		return []string{"192.0.2.1"}, time.Millisecond, srv, "DoH", nil
 	}
 
 	w := do(t, h, "POST", "/act/dnstest?path=direct", url.Values{"direct_dns": {"tls://192.0.2.53"}}, ru)

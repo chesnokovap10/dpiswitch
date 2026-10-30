@@ -20,7 +20,7 @@ import (
 )
 
 // Resolver: a DNS server in the same notation the core understands
-// (https://…, tls://…, tcp://…, udp://… or a bare address).
+// (https://…, quic://…, tls://…, tcp://…, udp://… or a bare address).
 //
 // The prober must ask THE SAME resolver the core uses for direct
 // traffic: a CDN's node depends on who asked and from where. Testing
@@ -28,7 +28,7 @@ import (
 // something other than what will actually be used.
 type Resolver struct {
 	Raw    string
-	Scheme string // https, tls, tcp, udp
+	Scheme string // https, quic, tls, tcp, udp
 	Host   string
 	Port   int
 	Path   string
@@ -61,10 +61,10 @@ func ParseResolver(s string) (Resolver, error) {
 	}
 	r.Scheme = strings.ToLower(u.Scheme)
 	r.Host = u.Hostname()
-	defPort := map[string]int{"https": 443, "tls": 853, "tcp": 53, "udp": 53}
+	defPort := map[string]int{"https": 443, "quic": 853, "tls": 853, "tcp": 53, "udp": 53}
 	p, ok := defPort[r.Scheme]
 	if !ok {
-		return r, &ResolverError{r.Raw, "supported schemes are https://, tls://, tcp://, udp://"}
+		return r, &ResolverError{r.Raw, "supported schemes are https://, quic://, tls://, tcp://, udp://"}
 	}
 	r.Port = p
 	if ps := u.Port(); ps != "" {
@@ -74,6 +74,12 @@ func ParseResolver(s string) (Resolver, error) {
 	}
 	if r.Host == "" {
 		return r, &ResolverError{r.Raw, "no server specified"}
+	}
+	if r.Scheme == "quic" && r.Port == 53 {
+		return r, &ResolverError{r.Raw, "DoQ cannot use port 53"}
+	}
+	if r.Scheme == "quic" && u.EscapedPath() != "" && u.EscapedPath() != "/" {
+		return r, &ResolverError{r.Raw, "DoQ does not use a URL path"}
 	}
 	if u.Fragment != "" {
 		return r, &ResolverError{r.Raw, "a #… suffix is not allowed here"}
@@ -175,6 +181,8 @@ func (r Resolver) lookup(d Dialer, name string, qtype uint16) ([]string, error) 
 	switch r.Scheme {
 	case "https":
 		resp, err = r.doh(d, q)
+	case "quic":
+		resp, err = r.doq(d, q)
 	case "udp":
 		resp, err = r.datagram(d, q)
 	case "local":
@@ -243,8 +251,11 @@ func (r Resolver) dohClient(d Dialer) *http.Client {
 }
 
 func (r Resolver) doh(d Dialer, q []byte) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), d.Timeout)
-	defer cancel()
+	b, _, err := r.dohProtocol(d, q)
+	return b, err
+}
+
+func (r Resolver) dohTCP(ctx context.Context, d Dialer, q []byte) ([]byte, error) {
 	u := fmt.Sprintf("https://%s%s", net.JoinHostPort(r.Host, strconv.Itoa(r.Port)), r.Path)
 	post := func() (*http.Response, error) {
 		req, err := http.NewRequestWithContext(ctx, "POST", u, bytes.NewReader(q))
@@ -323,6 +334,10 @@ func exchange(c net.Conn, d Dialer, q []byte) ([]byte, error) {
 // asked again. A server that closes a stream after one answer is timed with
 // its handshake, the only way it can be used.
 func (r Resolver) Ping(d Dialer, name string) ([]string, time.Duration, error) {
+	if r.Scheme == "https" {
+		ips, rtt, _, err := r.pingDoH(d, name)
+		return ips, rtt, err
+	}
 	if r.Scheme == "tls" || r.Scheme == "tcp" || (r.Scheme == "udp" && d.Direct && net.ParseIP(r.Host) == nil) {
 		return r.pingStream(d, name)
 	}
@@ -339,24 +354,45 @@ func (r Resolver) Ping(d Dialer, name string) ([]string, time.Duration, error) {
 // used is the address that answered, s or the other spelling; when neither
 // did, the error is the one s itself met.
 func PingEither(d Dialer, s, name string) (ips []string, rtt time.Duration, used string, err error) {
+	ips, rtt, used, _, err = PingEitherProtocol(d, s, name)
+	return
+}
+
+// PingEitherProtocol reports the transport of the timed query itself, not
+// a remembered capability or the protocol used for the warm-up request.
+func PingEitherProtocol(d Dialer, s, name string) (ips []string, rtt time.Duration, used, protocol string, err error) {
 	r, err := ParseResolver(s)
 	if err != nil {
-		return nil, 0, s, err
+		return nil, 0, s, "DNS", err
 	}
-	ips, rtt, err = r.Ping(d, name)
+	ping := func(r Resolver) ([]string, time.Duration, string, error) {
+		if r.Scheme == "https" {
+			return r.pingDoH(d, name)
+		}
+		ips, rtt, err := r.Ping(d, name)
+		kind := "DNS"
+		if r.Scheme == "tls" {
+			kind = "DoT"
+		}
+		if r.Scheme == "quic" {
+			kind = "DoQ"
+		}
+		return ips, rtt, kind, err
+	}
+	ips, rtt, protocol, err = ping(r)
 	if err == nil && len(ips) > 0 {
-		return ips, rtt, s, nil
+		return ips, rtt, s, protocol, nil
 	}
 	alt, ok := DoHPathAlternative(s)
 	if !ok {
-		return ips, rtt, s, err
+		return ips, rtt, s, protocol, err
 	}
 	if r2, err2 := ParseResolver(alt); err2 == nil {
-		if ips2, rtt2, err2 := r2.Ping(d, name); err2 == nil && len(ips2) > 0 {
-			return ips2, rtt2, alt, nil
+		if ips2, rtt2, kind2, err2 := ping(r2); err2 == nil && len(ips2) > 0 {
+			return ips2, rtt2, alt, kind2, nil
 		}
 	}
-	return ips, rtt, s, err
+	return ips, rtt, s, protocol, err
 }
 
 func (r Resolver) pingStream(d Dialer, name string) ([]string, time.Duration, error) {

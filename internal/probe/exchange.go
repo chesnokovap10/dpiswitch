@@ -52,6 +52,8 @@ func (r Resolver) Exchange(d Dialer, q []byte) ([]byte, error) {
 	switch {
 	case r.Scheme == "https":
 		resp, err = r.doh(d, q)
+	case r.Scheme == "quic":
+		resp, err = r.doq(d, q)
 	case r.Scheme == "local":
 		resp, err = askLocal(q)
 	case r.Scheme == "udp" && (net.ParseIP(r.Host) != nil || !d.Direct):

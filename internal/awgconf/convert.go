@@ -490,6 +490,7 @@ func render(c *Conf) (string, error) {
 	w("")
 	w("dns:")
 	w("  enable: true")
+	w("  prefer-h3: true")
 	w("  listen: 127.0.0.1:1053")
 	if !ipv6 {
 		// IPv6 found not reaching the adapter: no AAAA answers, or programs

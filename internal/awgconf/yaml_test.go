@@ -79,7 +79,7 @@ func TestRenderQuotesResolvers(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := ctl.UpdateSettings(paths.Settings(), func(s *ctl.Settings) error {
-		s.DirectDNS = []string{"https://77.88.8.8/dns-query'y", "tls://2606:4700:4700::1111"}
+		s.DirectDNS = []string{"https://77.88.8.8/dns-query'y", "tls://2606:4700:4700::1111", "quic://2606:4700:4700::1111"}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -92,12 +92,18 @@ func TestRenderQuotesResolvers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !strings.Contains(out, "dns:\n  enable: true\n  prefer-h3: true\n") {
+		t.Fatal("core DNS does not prefer HTTP/3")
+	}
 	if !strings.Contains(out, "    - 'https://77.88.8.8/dns-query''y'\n") || strings.Contains(out, "query'y'") {
 		t.Fatalf("resolver not quoted:\n%s", out)
 	}
 	// an IPv6 after a scheme goes in brackets: the core's parser wants them
 	if !strings.Contains(out, "    - 'tls://[2606:4700:4700::1111]'\n") {
 		t.Fatalf("IPv6 resolver not bracketed:\n%s", out)
+	}
+	if !strings.Contains(out, "    - 'quic://[2606:4700:4700::1111]'\n") {
+		t.Fatal("DoQ resolver did not reach the core config")
 	}
 }
 

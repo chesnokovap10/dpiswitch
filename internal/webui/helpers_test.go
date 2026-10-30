@@ -2,10 +2,30 @@ package webui
 
 import (
 	"testing"
+	"time"
 
 	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/presets"
+	"dpiswitch/internal/probe"
 )
+
+func TestDNSPingReportsActualTransport(t *testing.T) {
+	old := pingEither
+	defer func() { pingEither = old }()
+	for _, kind := range []string{"DoH3", "DoH", "DoQ"} {
+		pingEither = func(_ probe.Dialer, srv, _ string) ([]string, time.Duration, string, string, error) {
+			return []string{"192.0.2.1"}, 7 * time.Millisecond, srv, kind, nil
+		}
+		srv := "https://192.0.2.53/dns-query"
+		if kind == "DoQ" {
+			srv = "quic://192.0.2.53"
+		}
+		r := pingDNS(probe.Dialer{}, srv)
+		if !r.OK || r.Kind != kind || r.Ms != 7 || r.Fixed != "" {
+			t.Fatalf("%s: %+v", kind, r)
+		}
+	}
+}
 
 // A preset's address rules carry no-resolve: a named connection whose
 // address falls in them is not theirs, and is not closed when the preset
