@@ -1,0 +1,4 @@
++.cdninstagram.com
++.fbcdn.net
++.fbsbx.com
++.instagram.com

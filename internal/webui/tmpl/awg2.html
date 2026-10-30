@@ -45,15 +45,26 @@
 {{define "presets"}}{{$v := .}}
   <h3>{{.T "Presets"}}</h3>
   <p class="hint">{{.T "Through the second tunnel while it is loaded and switched on, in every mode. If awg2 is down, through awg1; if both are down, direct -- in Tunnel only refused. Below Forbidden, Always via tunnel and Always direct; above the detector. A switch applies at once, open connections included."}}</p>
-  <form method="post" action="/act/preset" data-swap="presets" data-instant="1" class="presets">
-    {{range .Data.Presets}}
+  <form method="post" action="/act/preset" data-swap="presets" data-instant="1" class="presets" data-preset-tree>
+    {{range .PresetGroups}}
+    <details data-grp="presets-{{.ID}}" class="preset-group">
+      <summary>
+        <label><input type="checkbox" name="category:{{.ID}}" data-preset-group {{if .On}}checked{{end}} {{if .Mixed}}data-mixed="1" aria-checked="mixed"{{else}}aria-checked="{{.On}}"{{end}}>
+          <span>{{$v.T .Title}}</span></label>
+        <small data-preset-count>{{.Selected}} / {{len .Presets}}</small>
+      </summary>
+      <div class="preset-children">
+    {{range .Presets}}
     <div class="p">
-      <label><input type="checkbox" name="{{.ID}}" {{if .On}}checked{{end}}>
-        <span>{{$v.T .Title}}<small>{{if .Note}}{{$v.T .Note}} · {{end}}{{$v.Tf "%d rules" .Rules}}</small></span></label>
+      <label><input type="checkbox" name="{{.ID}}" {{if .On}}checked{{end}} data-preset-leaf>
+        <span>{{$v.T .Title}}<small>{{if .Note}}{{$v.T .Note}} · {{end}}{{if .Apps}}{{.Apps}} · {{end}}{{$v.Tf "%d rules" .Rules}}</small></span></label>
       <button type="button" data-open="dlg-preset-{{.ID}}">{{$v.T "Edit"}}</button>
       <button class="danger" form="presetdel" name="id" value="{{.ID}}" data-busy="{{$v.T "Deleting…"}}"
         data-confirm="{{$v.Tf "Delete the preset “%s”? What it routes goes the way the other lists send it." ($v.T .Title)}}">{{$v.T "Delete"}}</button>
     </div>
+    {{end}}
+      </div>
+    </details>
     {{else}}
     <p class="muted">{{.T "No presets: add one below."}}</p>
     {{end}}
@@ -83,6 +94,7 @@
     <div class="fields">
       <label>{{$v.T "Preset name"}}<input type="text" name="title" value="{{.Title}}" maxlength="80" required></label>
       <label>{{$v.T "Description"}}<input type="text" name="note" value="{{.Note}}" maxlength="200" placeholder="{{$v.T "optional"}}"></label>
+      <label>{{$v.T "Category"}}{{$category := .Category}}<select name="category">{{range .V.PresetCategories}}<option value="{{.ID}}" {{if eq .ID $category}}selected{{end}}>{{$v.T .Title}}</option>{{end}}</select></label>
     </div>
     <p class="hint">{{$v.T "One per line, as in the lists: a site (example.com; +.example.com for the domain and all under it; * for any one label: +.example.*), an address or a network (1.2.3.4, 192.168.0.0/16: for connections made to it by address), a program (telegram.exe; a full path for that copy only). A line starting with # is a comment."}}</p>
     <textarea name="lines" rows="14" spellcheck="false" placeholder="example.com&#10;+.example.org&#10;192.168.1.0/24&#10;telegram.exe">{{.Text}}</textarea>

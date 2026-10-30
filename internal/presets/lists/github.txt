@@ -1,0 +1,7 @@
++.github.com
++.github.io
++.githubassets.com
++.githubusercontent.com
+GitHubDesktop.exe
+gh.exe
+git-remote-https.exe

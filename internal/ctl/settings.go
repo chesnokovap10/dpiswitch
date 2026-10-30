@@ -390,11 +390,7 @@ func (s *Settings) clamp() {
 	var ps []string
 	if len(s.Awg2Presets) > 0 {
 		known := presets.Known()
-		for _, id := range s.Awg2Presets {
-			if known[id] {
-				ps = append(ps, id)
-			}
-		}
+		ps = presets.ExpandSelection(s.Awg2Presets, known)
 	}
 	if ps == nil {
 		ps = []string{}

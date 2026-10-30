@@ -34,11 +34,11 @@ func TestLoadUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	got = Load()
-	if len(got) != len(shipped) || got[0].ID != "telegram" || got[len(got)-1].Title != "Mine" ||
+	if len(got) != len(shipped) || got[0].ID != "telegram-app" || got[len(got)-1].Title != "Mine" ||
 		!ValidID(got[len(got)-1].ID) {
 		t.Fatalf("after a change: %+v", got)
 	}
-	if k := Known(); k["youtube"] || !k["telegram"] || !k[got[len(got)-1].ID] {
+	if k := Known(); k["youtube"] || !k["telegram-app"] || !k[got[len(got)-1].ID] {
 		t.Fatalf("known %v", k)
 	}
 
@@ -88,7 +88,7 @@ func TestRestore(t *testing.T) {
 	mine := Preset{ID: "mine", Title: "Mine", Lines: []string{"my.example"}}
 	err := Update(func(ps []Preset) ([]Preset, error) {
 		ps[0].Lines = []string{"edited.example"} // youtube
-		ps = slices.DeleteFunc(ps, func(p Preset) bool { return p.ID == "ai" })
+		ps = slices.DeleteFunc(ps, func(p Preset) bool { return p.ID == "openai" })
 		return append(ps, mine), nil
 	})
 	if err != nil {
@@ -109,7 +109,12 @@ func TestRestore(t *testing.T) {
 	for _, p := range got {
 		ids = append(ids, p.ID)
 	}
-	if strings.Join(ids, ",") != "youtube,telegram,discord,ai,social,mine" {
+	var want []string
+	for _, p := range Builtin() {
+		want = append(want, p.ID)
+	}
+	want = append(want, "mine")
+	if !slices.Equal(ids, want) {
 		t.Fatalf("restored %v", ids)
 	}
 	if yt, _ := Shipped("youtube"); !slices.Equal(got[0].Lines, yt.Lines) || Restorable(got) {
@@ -154,7 +159,7 @@ func TestOldFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(paths.UserPresets())
-	if !strings.Contains(string(b), `"version": 2`) {
+	if !strings.Contains(string(b), `"version": 3`) {
 		t.Fatalf("written without the version:\n%s", b)
 	}
 	if got := strings.Join(Load()[0].Lines, ","); got != want+",alone.example" {

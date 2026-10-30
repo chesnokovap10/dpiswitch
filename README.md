@@ -380,7 +380,15 @@ Claude, Gemini, Grok, Copilot, DeepL и др.), Instagram, Facebook, X и ваш
 и свой список ничего не маршрутизируют. Все
 пресеты по умолчанию выключены. Переключение пресета применяется сразу, включая открытые соединения.
 
-Пресеты можно менять: **Изменить** открывает во всплывающем окне название, описание и строки пресета
+Пресеты собраны в раскрывающиеся категории: **Видеохостинги, ИИ, Мессенджеры, Соцсети,
+Прочее**; «Прочее» всегда последнее, остальные категории и сервисы внутри — по алфавиту. Галочка категории выбирает все её сервисы, промежуточное
+состояние означает частичный выбор. Стрелка раскрывает список отдельно от выбора. Раскрытие и галочки
+срабатывают при нажатии мыши, а раскрытые категории сохраняются при обновлении блока. В «Прочее» есть
+GitHub и Reddit. Маски вида `+.claude.ai` покрывают домен и поддомены; у десктопных приложений указаны
+имена процессов. Правило программы направляет через второй туннель все соединения этого процесса.
+Старый выбор укрупнённых групп переносится на сервисы; отредактированные пользователем группы сохраняются.
+
+Пресеты можно менять: **Изменить** открывает во всплывающем окне название, категорию, описание и строки пресета
 (сайты, адреса, программы — как в списках; `#` — комментарий), **Удалить** убирает его, **Добавить…**
 создаёт новый — он сразу включён. Всё это применяется так же сразу, без перезапуска ядра. Пока вы ничего
 не меняли, используются пресеты программы.
@@ -896,7 +904,14 @@ is down, its sites go through the first tunnel; if both are down, direct — in 
 nothing. Every
 preset is off by default. A preset switch applies at once, open connections included.
 
-The presets are yours to change: **Edit** opens a preset's name, description and lines in a dialog
+Presets form a tree of **AI, Messengers, Social networks, Video hosting and Other services**,
+with Other services always last and all remaining categories and services sorted alphabetically. A category checkbox selects all its services; a mixed state
+means a partial selection. The arrow expands the list independently. Mouse presses apply immediately,
+before release, and expanded categories survive redraws. Other includes GitHub and Reddit. Broad masks
+such as `+.claude.ai` include the domain and its subdomains; desktop process names route all connections
+of those processes. Selections of the old aggregate groups migrate to services; user-edited groups stay intact.
+
+The presets are yours to change: **Edit** opens a preset's name, category, description and lines in a dialog
 (sites, addresses and programs, as in the lists; `#` starts a comment), **Delete** removes it,
 **Add…** makes a new one, switched on at once. These apply at once too, with no core restart. Until
 you change any, the program's own presets are used.

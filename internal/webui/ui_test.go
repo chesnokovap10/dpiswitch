@@ -843,7 +843,7 @@ func TestSettingsAtOnce(t *testing.T) {
 			t.Errorf("%s %s=%s: %d", path, field, value, w.Code)
 		}
 	}
-	for i := 0; i < 20; i++ {
+	for i := 0; i < max(20, len(all)); i++ {
 		wg.Add(4)
 		go send("/act/set", "attempts", "5")
 		go send("/act/set", "slow_pct", "30")

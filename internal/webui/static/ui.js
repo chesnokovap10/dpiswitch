@@ -26,8 +26,8 @@ function ticket(el) {
 // answer -- the one shown -- lacked the other change, though the file had
 // both. In a queue the last answer comes after every save before it.
 const queues = new Map();
-function swap(url, body, target, changed) {
-  const run = () => send(url, body, target, changed);
+function swap(url, body, target, changed, presetOp) {
+  const run = () => send(url, body, target, changed, presetOp);
   const p = (queues.get(target) || Promise.resolve()).then(run, run);
   queues.set(target, p);
   return p;
@@ -353,7 +353,7 @@ document.addEventListener('click', e => {
 // get the saved value back and lose what was typed; it keeps its text,
 // focus and caret. The control sent takes the server's value: a refused
 // change shows as refused.
-async function send(url, body, target, changed) {
+async function send(url, body, target, changed, presetOp) {
   const el = byId(target);
   if (!el) return;
   const current = ticket(el);
@@ -370,6 +370,7 @@ async function send(url, body, target, changed) {
     const a = document.activeElement;
     const keep = changed !== undefined && a && el.contains(a) && a.name && a.name !== changed &&
       'value' in a ? {name: a.name, value: a.value, s: a.selectionStart, e: a.selectionEnd} : null;
+    finishPreset(presetOp);
     el.innerHTML = html;
     reblink(el);
     regroup(el);
@@ -406,6 +407,8 @@ async function send(url, body, target, changed) {
     }
   } catch (e) {
     if (current()) failed(el, String(e));
+  } finally {
+    if (finishPreset(presetOp)) paintPresetTree(el);
   }
 }
 
@@ -439,7 +442,15 @@ document.addEventListener('change', e => {
   fd.append('field', el.name);
   fd.append('value', el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value);
   for (const h of f.querySelectorAll('input[type=hidden]')) fd.append(h.name, h.value);
-  swap(f.action, fd, f.dataset.swap, el.name);
+  let presetOp;
+  if (f.matches('[data-preset-tree]')) {
+    const leaves = el.hasAttribute('data-preset-group') ?
+      [...el.closest('.preset-group').querySelectorAll('[data-preset-leaf]')] : [el];
+    presetOp = {ids: leaves.map(c => c.name), on: el.checked};
+    presetOps.push(presetOp);
+    paintPresetTree(f);
+  }
+  swap(f.action, fd, f.dataset.swap, el.name, presetOp);
 });
 
 // A control with data-submit sends its form the moment it changes -- a plain
@@ -710,6 +721,52 @@ function blinkOn(el, elapsed) {
 // The form is drawn anew after every change and every look at the service:
 // the groups open then are opened again, for as long as the window lives.
 const openGroups = new Set();
+
+// Only presentation lives here. Go validates and applies each group in one
+// settings write. Keep later presses visible while earlier replies arrive.
+const presetOps = [];
+function finishPreset(op) {
+  const i = presetOps.indexOf(op);
+  if (i < 0) return false;
+  presetOps.splice(i, 1);
+  return true;
+}
+function paintPresetTree(root) {
+  for (const g of root.querySelectorAll('.preset-group')) {
+    const leaves = [...g.querySelectorAll('[data-preset-leaf]')];
+    for (const c of leaves) {
+      c.checked = c.defaultChecked;
+      for (const op of presetOps) if (op.ids.includes(c.name)) c.checked = op.on;
+    }
+    const count = leaves.filter(c => c.checked).length;
+    const parent = g.querySelector('[data-preset-group]');
+    parent.checked = count === leaves.length;
+    parent.indeterminate = count > 0 && count < leaves.length;
+    parent.setAttribute('aria-checked', parent.indeterminate ? 'mixed' : String(parent.checked));
+    g.querySelector('[data-preset-count]').textContent = count + ' / ' + leaves.length;
+  }
+}
+
+let pressedPreset = null;
+document.addEventListener('pointerdown', e => {
+  pressedPreset = null;
+  if (e.button !== 0 || e.pointerType !== 'mouse') return;
+  const label = e.target.closest('[data-preset-tree] label');
+  const c = label && label.querySelector('input[type=checkbox]');
+  if (!c) return;
+  e.preventDefault();
+  pressedPreset = c.name;
+  c.checked = c.indeterminate || !c.checked;
+  c.indeterminate = false;
+  c.dispatchEvent(new Event('change', {bubbles: true}));
+});
+document.addEventListener('click', e => {
+  if (!e.detail || !pressedPreset) return;
+  const label = e.target.closest('[data-preset-tree] label');
+  const c = label && label.querySelector('input[type=checkbox]');
+  if (c && c.name === pressedPreset) e.preventDefault();
+  pressedPreset = null;
+}, true);
 document.addEventListener('toggle', e => {
   const d = e.target;
   if (!(d instanceof HTMLDetailsElement) || !d.dataset.grp) return;
@@ -725,6 +782,7 @@ document.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'mouse' || e.button !== 0) return;
   const s = e.target.closest('details[data-grp] > summary');
   if (!s) return;
+  if (e.target.closest('label,input,button,select,a')) return;
   e.preventDefault(); // no focus ring, no text selected on a double press
   s.parentElement.open = !s.parentElement.open;
   pressed = s;
@@ -735,6 +793,7 @@ document.addEventListener('click', e => {
 }, true);
 function regroup(root) {
   for (const d of root.querySelectorAll('details[data-grp]')) d.open = openGroups.has(d.dataset.grp);
+  paintPresetTree(root);
 }
 
 // The part pointed at blinks on when the part around it is drawn anew: a
@@ -776,6 +835,7 @@ function point(id) {
 // others are fetched once it is drawn, one after another.
 document.addEventListener('DOMContentLoaded', () => {
   if (!current) return;
+  regroup(current);
   current.dataset.url = location.pathname + location.search;
   followPref(current);
   init(current);

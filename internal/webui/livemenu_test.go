@@ -84,21 +84,21 @@ func TestLiveAddPreset(t *testing.T) {
 		return liveAct(t, s, "/act/liveadd", url.Values{"to": {"preset"}, "preset": {preset}, "entry": {entry}}, nil)
 	}
 	liveAct(t, s, "/act/liveadd", url.Values{"to": {"direct"}, "entry": {"chat.example"}}, nil)
-	a := add("ai", "chat.example")
-	if !a.OK || !strings.Contains(a.Msg, "Added to “AI services”: chat.example") ||
+	a := add("claude", "chat.example")
+	if !a.OK || !strings.Contains(a.Msg, "Added to “Claude”: chat.example") ||
 		!strings.Contains(a.Msg, "taken out of «Always direct»") || !strings.Contains(a.Msg, "The preset is off") {
 		t.Fatalf("to a preset: %+v", a)
 	}
-	ai, _ := findPreset(presets.Load(), "ai")
+	ai, _ := findPreset(presets.Load(), "claude")
 	if ai.Lines[len(ai.Lines)-1] != "chat.example" || len(readEntries(paths.DirectList)) != 0 {
 		t.Fatalf("the preset's lines end %q, direct %v", ai.Lines[len(ai.Lines)-1], readEntries(paths.DirectList))
 	}
 	// the shipped list has claude.ai: its whole domain is the same rule
-	if a = add("ai", "+.claude.ai"); !a.OK || !strings.Contains(a.Msg, "has +.claude.ai already") {
+	if a = add("claude", "+.claude.ai"); !a.OK || !strings.Contains(a.Msg, "has +.claude.ai already") {
 		t.Fatalf("a line it has: %+v", a)
 	}
-	do(t, s.Handler(), "POST", "/act/preset", url.Values{"field": {"ai"}, "value": {"1"}}, nil)
-	if a = add("ai", "+.more.example"); !a.OK || strings.Contains(a.Msg, "is off") {
+	do(t, s.Handler(), "POST", "/act/preset", url.Values{"field": {"claude"}, "value": {"1"}}, nil)
+	if a = add("claude", "+.more.example"); !a.OK || strings.Contains(a.Msg, "is off") {
 		t.Fatalf("to a preset switched on: %+v", a)
 	}
 	if a = add("nope", "x.example"); a.OK {
@@ -304,15 +304,15 @@ func TestLiveAddBelowLists(t *testing.T) {
 		p, _ := findPreset(presets.Load(), id)
 		return strings.Join(p.Lines, ",")
 	}
-	do(t, s.Handler(), "POST", "/act/preset", url.Values{"field": {"ai"}, "value": {"1"}}, nil)
-	ai := lines("ai")
+	do(t, s.Handler(), "POST", "/act/preset", url.Values{"field": {"claude"}, "value": {"1"}}, nil)
+	ai := lines("claude")
 	for _, to := range []string{"direct", "tunnel"} {
 		a := add(url.Values{"to": {to}, "entry": {"+.claude.ai"}})
-		if !a.OK || strings.Contains(a.Msg, "«AI services»") || lines("ai") != ai {
-			t.Fatalf("to %s: %+v, the preset %s", to, a, lines("ai"))
+		if !a.OK || strings.Contains(a.Msg, "«Claude»") || lines("claude") != ai {
+			t.Fatalf("to %s: %+v, the preset %s", to, a, lines("claude"))
 		}
 	}
-	a := add(url.Values{"to": {"preset"}, "preset": {"ai"}, "entry": {"+.claude.ai"}})
+	a := add(url.Values{"to": {"preset"}, "preset": {"claude"}, "entry": {"+.claude.ai"}})
 	if !a.OK || !strings.Contains(a.Msg, "taken out of «Always via tunnel»") || len(readEntries(paths.TunnelList)) != 0 {
 		t.Fatalf("to the preset: %+v", a)
 	}
@@ -364,7 +364,7 @@ func TestLiveAddAtOnce(t *testing.T) {
 // marked.
 func TestLivePresets(t *testing.T) {
 	s, _ := testServer(t)
-	do(t, s.Handler(), "POST", "/act/preset", url.Values{"field": {"telegram"}, "value": {"1"}}, nil)
+	do(t, s.Handler(), "POST", "/act/preset", url.Values{"field": {"telegram-app"}, "value": {"1"}}, nil)
 	w := do(t, s.Handler(), "GET", "/live/presets", nil, map[string]string{"Cookie": "lang=ru"})
 	var got []struct {
 		ID, Title string
@@ -373,7 +373,7 @@ func TestLivePresets(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatalf("%v: %s", err, w.Body.String())
 	}
-	if len(got) != 5 || got[3].ID != "ai" || got[3].Title != "ИИ-сервисы" || got[3].On || !got[1].On || got[1].Title != "Telegram, WhatsApp" {
+	if len(got) != len(presets.Builtin()) || got[6].ID != "claude" || got[6].Title != "Claude" || got[6].On || !got[1].On || got[1].Title != "Telegram" {
 		t.Fatalf("presets: %+v", got)
 	}
 }

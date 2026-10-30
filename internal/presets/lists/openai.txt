@@ -1,0 +1,17 @@
++.ai.com
++.auth0.com
++.challenges.cloudflare.com
++.chat.com
++.chat.openai.com.cdn.cloudflare.net
++.chatgpt.com
++.intercom.io
++.intercomcdn.com
++.o33249.ingest.us.sentry.io
++.oaistatic.com
++.oaistatsig.com
++.oaiusercontent.com
++.openai.com
++.openai.fund
++.sora.com
+ChatGPT.exe
+Codex.exe

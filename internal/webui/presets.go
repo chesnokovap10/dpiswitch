@@ -19,6 +19,58 @@ import (
 
 var errPresetGone = errors.New("This preset is no longer there: it was deleted in another window")
 
+type presetGroup struct {
+	ID, Title string
+	Presets   []preset
+	On, Mixed bool
+	Selected  int
+}
+
+// Go supplies the whole tree and its translated order, including user presets.
+func (v *view) PresetCategories() []presets.Category {
+	out := slices.Clone(presets.Categories)
+	slices.SortFunc(out, func(a, b presets.Category) int {
+		if a.ID == "other" && b.ID != "other" {
+			return 1
+		}
+		if b.ID == "other" && a.ID != "other" {
+			return -1
+		}
+		return strings.Compare(v.T(a.Title), v.T(b.Title))
+	})
+	return out
+}
+
+func (v *view) PresetGroups() []presetGroup {
+	a, _ := v.Data.(awg2)
+	var out []presetGroup
+	for _, c := range v.PresetCategories() {
+		g := presetGroup{ID: c.ID, Title: c.Title}
+		for _, p := range a.Presets {
+			if presets.CategoryOf(p.Preset) != c.ID {
+				continue
+			}
+			g.Presets = append(g.Presets, p)
+			if p.On {
+				g.Selected++
+			}
+		}
+		if len(g.Presets) == 0 {
+			continue
+		}
+		slices.SortFunc(g.Presets, func(a, b preset) int {
+			if n := strings.Compare(strings.ToLower(v.T(a.Title)), strings.ToLower(v.T(b.Title))); n != 0 {
+				return n
+			}
+			return strings.Compare(a.ID, b.ID)
+		})
+		g.On = g.Selected == len(g.Presets)
+		g.Mixed = g.Selected > 0 && !g.On
+		out = append(out, g)
+	}
+	return out
+}
+
 func findPreset(all []presets.Preset, id string) (presets.Preset, bool) {
 	for _, p := range all {
 		if p.ID == id {
@@ -30,7 +82,7 @@ func findPreset(all []presets.Preset, id string) (presets.Preset, bool) {
 
 // presetDraft: a preset's dialog as it was sent, and why it was not saved
 type presetDraft struct {
-	ID, Title, Note, Text, Err string
+	ID, Title, Note, Text, Err, Category string
 }
 
 // presetDlg: what a preset's dialog shows. ID is "" for a new preset.
@@ -40,23 +92,26 @@ type presetDlg struct {
 	ID, Title, Note, Text string
 	Err                   string
 	Show                  bool // opened as it arrives: a save refused
+	Category              string
 }
 
 // PresetDlg: the dialog of the preset with this ID, or of a new one for "".
 // A shipped preset's name and note are shown in the page's language.
 func (v *view) PresetDlg(id string) presetDlg {
-	d := presetDlg{V: v, Key: "new", ID: id}
+	d := presetDlg{V: v, Key: "new", ID: id, Category: "other"}
 	a, _ := v.Data.(awg2)
 	if id != "" {
 		d.Key = id
 		for _, p := range a.Presets {
 			if p.ID == id {
 				d.Title, d.Note, d.Text = v.T(p.Title), v.T(p.Note), strings.Join(p.Lines, "\n")
+				d.Category = presets.CategoryOf(p.Preset)
 			}
 		}
 	}
 	if dr := a.Draft; dr != nil && dr.ID == id {
 		d.Title, d.Note, d.Text, d.Err, d.Show = dr.Title, dr.Note, dr.Text, dr.Err, true
+		d.Category = dr.Category
 	}
 	return d
 }
@@ -93,7 +148,13 @@ func presetLines(text string) (out []string, bad string) {
 func (s *Server) actPresetSave(w http.ResponseWriter, r *http.Request) {
 	id := r.FormValue("id")
 	d := presetDraft{ID: id, Title: strings.TrimSpace(r.FormValue("title")),
-		Note: strings.TrimSpace(r.FormValue("note")), Text: r.FormValue("lines")}
+		Note: strings.TrimSpace(r.FormValue("note")), Text: r.FormValue("lines"), Category: r.FormValue("category")}
+	if !presets.ValidCategory(d.Category) {
+		d.Category = "other"
+		if old, ok := findPreset(presets.Load(), id); ok {
+			d.Category = presets.CategoryOf(old)
+		}
+	}
 	lines, bad := presetLines(d.Text)
 	switch {
 	case d.Title == "":
@@ -105,7 +166,7 @@ func (s *Server) actPresetSave(w http.ResponseWriter, r *http.Request) {
 		s.refusePreset(w, r, d)
 		return
 	}
-	p := presets.Preset{ID: id, Title: d.Title, Note: d.Note, Lines: lines}
+	p := presets.Preset{ID: id, Title: d.Title, Note: d.Note, Category: d.Category, Lines: lines}
 	// a shipped preset saved with the name it was shown under keeps the
 	// program's own: it is then shown in the language of whoever looks
 	if b, ok := presets.Shipped(id); ok {

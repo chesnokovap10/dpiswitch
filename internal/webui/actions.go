@@ -554,21 +554,39 @@ func splitLines(s string) []string {
 // watches it), and the connections the preset moves are closed.
 func (s *Server) actPreset(w http.ResponseWriter, r *http.Request) {
 	id, on := r.FormValue("field"), r.FormValue("value") == "1"
-	p, ok := findPreset(presets.Load(), id)
-	if !ok {
+	all := presets.Load()
+	var selected []presets.Preset
+	if category, group := strings.CutPrefix(id, "category:"); group && presets.ValidCategory(category) {
+		for _, p := range all {
+			if presets.CategoryOf(p) == category {
+				selected = append(selected, p)
+			}
+		}
+	} else if p, ok := findPreset(all, id); ok {
+		selected = append(selected, p)
+	}
+	if len(selected) == 0 {
 		// deleted in another window meanwhile
 		s.part(w, r, "awg2", "presets", false, tr(lang(r), errPresetGone.Error()))
 		return
 	}
+	chosen := map[string]bool{}
+	var rules []string
+	for _, p := range selected {
+		chosen[p.ID] = true
+		rules = append(rules, ctl.PresetRules(p)...)
+	}
 	toggle := func(cur []string) []string {
 		ids := []string{}
 		for _, x := range cur {
-			if x != id {
+			if !chosen[x] {
 				ids = append(ids, x)
 			}
 		}
 		if on {
-			ids = append(ids, id)
+			for _, p := range selected {
+				ids = append(ids, p.ID)
+			}
 		}
 		return ids
 	}
@@ -582,8 +600,14 @@ func (s *Server) actPreset(w http.ResponseWriter, r *http.Request) {
 	n := 0
 	var cerr error
 	if err == nil {
-		n, cerr = closeMoved([]string{ctl.PresetsProvider}, rulesMatch(ctl.PresetRules(p)),
-			func() bool { return ctl.PresetWritten(p, on) })
+		n, cerr = closeMoved([]string{ctl.PresetsProvider}, rulesMatch(rules), func() bool {
+			for _, p := range selected {
+				if !ctl.PresetWritten(p, on) {
+					return false
+				}
+			}
+			return true
+		})
 	}
 	ok, msg := saved(r, err, n, cerr)
 	s.part(w, r, "awg2", "presets", ok, msg)

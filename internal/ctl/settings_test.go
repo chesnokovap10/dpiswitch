@@ -1,15 +1,65 @@
 package ctl
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
 	"dpiswitch/internal/paths"
+	"dpiswitch/internal/presets"
 	"dpiswitch/internal/probe"
 )
+
+func TestLegacyPresetSelection(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	p := filepath.Join(t.TempDir(), "settings.json")
+	s := DefaultSettings()
+	s.Awg2Presets = []string{"ai", "social", "telegram", "youtube", "ai", "deleted"}
+	b, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(p, b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got := LoadSettings(p)
+	for _, id := range []string{"claude", "openai", "telegram-app", "whatsapp", "facebook", "instagram", "twitter", "youtube"} {
+		if !slices.Contains(got.Awg2Presets, id) {
+			t.Errorf("old selection lost %s", id)
+		}
+	}
+	for _, id := range []string{"ai", "social", "telegram", "deleted", "discord", "github", "reddit"} {
+		if slices.Contains(got.Awg2Presets, id) {
+			t.Errorf("unexpected selection %s", id)
+		}
+	}
+	if err = SaveSettings(p, got); err != nil {
+		t.Fatal(err)
+	}
+	if next := LoadSettings(p); !slices.Equal(next.Awg2Presets, got.Awg2Presets) {
+		t.Fatal("migration changed on next read")
+	}
+	// A legacy group edited by the user remains independently selectable.
+	if err = paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	if err = presets.Update(func(all []presets.Preset) ([]presets.Preset, error) {
+		return append(all, presets.Preset{ID: "ai", Title: "My AI", Category: "ai", Lines: []string{"+.custom.example"}}), nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Awg2Presets = []string{"ai"}
+	if err = SaveSettings(p, s); err != nil {
+		t.Fatal(err)
+	}
+	if next := LoadSettings(p); !slices.Equal(next.Awg2Presets, []string{"ai"}) {
+		t.Fatal("custom legacy selection expanded")
+	}
+}
 
 func TestSettingsRoundTrip(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "settings.json")
@@ -149,7 +199,7 @@ func TestPatchSettingsKeepsOtherFields(t *testing.T) {
 	t.Setenv("ProgramData", t.TempDir())
 	p := filepath.Join(t.TempDir(), "settings.json")
 	s := DefaultSettings()
-	s.Awg2Presets = []string{"youtube", "ai"}
+	s.Awg2Presets = []string{"youtube", "openai"}
 	if err := SaveSettings(p, s); err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +213,7 @@ func TestPatchSettingsKeepsOtherFields(t *testing.T) {
 	if got.AutoSwitch || got.CleanTTLMin != 480 {
 		t.Fatalf("the form was not applied: %+v", got)
 	}
-	if len(got.Awg2Presets) != 2 || got.Awg2Presets[0] != "youtube" || got.Awg2Presets[1] != "ai" {
+	if len(got.Awg2Presets) != 2 || got.Awg2Presets[0] != "youtube" || got.Awg2Presets[1] != "openai" {
 		t.Fatalf("presets lost: %v", got.Awg2Presets)
 	}
 	if PatchSettings(p, []byte(`{"attempts":99}`)) == nil {

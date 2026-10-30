@@ -78,10 +78,10 @@ func TestPresetEdit(t *testing.T) {
 
 	// a shipped one saved as the Russian page showed it keeps its own words:
 	// the English page shows it in English still
-	ai, _ := presets.Shipped("ai")
-	post("/act/presetsave", url.Values{"id": {"ai"}, "title": {tr("ru", ai.Title)}, "note": {tr("ru", ai.Note)},
+	ai, _ := presets.Shipped("openai")
+	post("/act/presetsave", url.Values{"id": {"openai"}, "title": {tr("ru", ai.Title)}, "note": {tr("ru", ai.Note)},
 		"lines": {"claude.ai"}}, map[string]string{"Cookie": "lang=ru"})
-	if got, _ := findPreset(presets.Load(), "ai"); got.Title != ai.Title || got.Note != ai.Note ||
+	if got, _ := findPreset(presets.Load(), "openai"); got.Title != ai.Title || got.Note != ai.Note ||
 		strings.Join(got.Lines, ",") != "claude.ai" {
 		t.Fatalf("a shipped preset saved: %+v", got)
 	}
@@ -135,9 +135,9 @@ func TestPresetRestore(t *testing.T) {
 	}
 
 	post("/act/preset", url.Values{"field": {"youtube"}, "value": {"1"}})
-	post("/act/preset", url.Values{"field": {"ai"}, "value": {"1"}})
+	post("/act/preset", url.Values{"field": {"openai"}, "value": {"1"}})
 	post("/act/presetsave", url.Values{"id": {"youtube"}, "title": {"YouTube"}, "lines": {"edited.example"}})
-	post("/act/presetdel", url.Values{"id": {"ai"}})
+	post("/act/presetdel", url.Values{"id": {"openai"}})
 	post("/act/presetsave", url.Values{"id": {""}, "title": {"Mine"}, "lines": {"my.example"}})
 	if !strings.Contains(page(), "/act/presetrestore") {
 		t.Fatal("a shipped preset edited and one deleted, yet no button")
@@ -153,14 +153,14 @@ func TestPresetRestore(t *testing.T) {
 	if !slices.Equal(yt.Lines, shipped.Lines) {
 		t.Fatalf("youtube not as shipped: %v", yt.Lines)
 	}
-	if _, ok := findPreset(all, "ai"); !ok {
+	if _, ok := findPreset(all, "openai"); !ok {
 		t.Fatal("the deleted preset did not come back")
 	}
 	if all[len(all)-1].Title != "Mine" {
 		t.Fatalf("the user's own preset lost: %+v", all[len(all)-1])
 	}
 	on := ctl.LoadSettings(paths.Settings()).Awg2Presets
-	if !slices.Contains(on, "youtube") || slices.Contains(on, "ai") || !slices.Contains(on, all[len(all)-1].ID) {
+	if !slices.Contains(on, "youtube") || slices.Contains(on, "openai") || !slices.Contains(on, all[len(all)-1].ID) {
 		t.Fatalf("switched on after the restore: %v", on)
 	}
 	ctl.SyncUserFiles()

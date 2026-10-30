@@ -350,7 +350,13 @@ which leaves its names alone. If it is down, its sites go through the first tunn
 direct -- in Tunnel only refused. The detector measures the direct path against the first tunnel only: what goes to awg2 is never checked, and without awg1 nothing is, even with auto-switch On. Until it is attached, its
 presets and list route nothing. <a href="/awg2#awg2switch"><b>Use the second tunnel</b></a> on its page switches it off and on: switched off,
 its presets and list route nothing, and what they name goes the way the other lists and the mode send it.</p>
-<p>The <a href="/awg2#presets">presets</a> are yours to change: <b>Edit</b> opens a preset's name, description and
+<p>Presets form an alphabetically sorted tree of <b>AI, Messengers, Social networks, Video hosting and Other services</b>.
+Other services is always last; remaining categories and services are sorted alphabetically.
+A category checkbox selects all its services; a mixed state means a partial selection. The arrow expands
+the list independently. Mouse presses apply before release, and expanded categories survive redraws.
+Other includes GitHub and Reddit. Masks such as <code>+.claude.ai</code> include the domain and its subdomains;
+a desktop process name routes all connections of that process.</p>
+<p>The <a href="/awg2#presets">presets</a> are yours to change: <b>Edit</b> opens a preset's name, category, description and
 lines (sites, addresses and programs, as in the lists), <b>Delete</b> removes it, <b>Add…</b> makes a new one,
 switched on at once. A change applies at once, like a switch. Once a built-in preset is deleted or edited,
 <b>Restore built-in presets…</b> puts them back as the program ships them; your own presets stay.</p>

@@ -1,15 +1,10 @@
 // Second-tunnel presets: sets of services that always go through awg2,
 // bypassing the detector.
 //
-// The program ships a few, taken from server-side setups solving the same
-// task:
-//   - AI: an nginx SNI allow-list plus the Google AI zones;
-//   - Telegram and WhatsApp: the ranges from core.telegram.org/resources/cidr.txt
-//     and Meta's (WhatsApp's calls go by address), plus domains -- one
-//     preset under Telegram's old ID, so one switched on stays on;
-//   - Discord: domains, its voice servers' network and the desktop app;
-//   - YouTube: domains (the server relays all of Google via goog.json;
-//     the client only needs YouTube).
+// catalog.go defines individual services in five categories. The embedded
+// lists contain broad service domains, desktop process names and, for calls
+// made by address, the Telegram, WhatsApp and Discord networks. Retired
+// aggregate presets remain available solely to migrate older user catalogs.
 //
 // The user edits them, deletes them and adds their own on the second
 // tunnel's page. Until the first such change the shipped ones are used; from
@@ -43,14 +38,15 @@ var lists embed.FS
 // Preset: a named set of lines as the user's lists take them -- sites,
 // addresses and programs -- with the # comments kept.
 type Preset struct {
-	ID    string   `json:"id"`
-	Title string   `json:"title"`
-	Note  string   `json:"note,omitempty"`
-	Lines []string `json:"lines"`
+	ID       string   `json:"id"`
+	Title    string   `json:"title"`
+	Note     string   `json:"note,omitempty"`
+	Category string   `json:"category,omitempty"`
+	Lines    []string `json:"lines"`
 }
 
-// shipped: the presets the program comes with, their lines in lists/
-var shipped = []struct {
+// Original stock groups, used to distinguish user edits during migration.
+var legacy = []struct {
 	id, title, note string
 	files           []string
 }{
@@ -70,7 +66,7 @@ var shipped = []struct {
 var builtin = sync.OnceValue(func() []Preset {
 	out := make([]Preset, 0, len(shipped))
 	for _, s := range shipped {
-		p := Preset{ID: s.id, Title: s.title, Note: s.note, Lines: []string{}}
+		p := Preset{ID: s.id, Title: s.title, Category: s.category, Lines: []string{}}
 		for _, f := range s.files {
 			b, err := lists.ReadFile("lists/" + f)
 			if err != nil {
@@ -110,7 +106,7 @@ func Restorable(ps []Preset) bool {
 	}
 	for _, b := range builtin() {
 		p, ok := have[b.ID]
-		if !ok || p.Title != b.Title || p.Note != b.Note || !slices.Equal(p.Lines, b.Lines) {
+		if !ok || p.Title != b.Title || p.Note != b.Note || CategoryOf(p) != b.Category || !slices.Equal(p.Lines, b.Lines) {
 			return true
 		}
 	}
@@ -181,8 +177,9 @@ var errNotRead = errors.New("The presets could not be read: nothing saved, try a
 // fileVersion: the file's format. Up to 1.6.1 it was the bare list of
 // presets, where a name took everything under it; since, a name is what it
 // is in the lists -- "example.com" that name alone, "+.example.com" the
-// domain -- and the file says so.
-const fileVersion = 2
+// domain -- and the file says so. Version 3 adds categories and splits the
+// original groups without replacing edited user rules.
+const fileVersion = 3
 
 // file: the user's file as it is written
 type file struct {
@@ -195,6 +192,9 @@ type file struct {
 func decode(b []byte) ([]Preset, error) {
 	var f file
 	if err := json.Unmarshal(b, &f); err == nil && f.Version > 0 {
+		if f.Version < 3 {
+			return migrate(f.Presets), nil
+		}
 		return f.Presets, nil
 	}
 	var ps []Preset
@@ -206,7 +206,7 @@ func decode(b []byte) ([]Preset, error) {
 			ps[i].Lines[j] = wholeDomain(l)
 		}
 	}
-	return ps, nil
+	return migrate(ps), nil
 }
 
 // oldName: a name as the lists write it, with the prefix it may carry --

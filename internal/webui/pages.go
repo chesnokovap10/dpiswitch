@@ -290,6 +290,7 @@ type preset struct {
 	presets.Preset
 	Rules int
 	On    bool
+	Apps  string
 }
 
 type awg2 struct {
@@ -311,7 +312,13 @@ func awg2Data() awg2 {
 	d.Online = onlineApps(d.Hosts)
 	all := presets.Load()
 	for _, p := range all {
-		d.Presets = append(d.Presets, preset{Preset: p, Rules: len(ctl.PresetRules(p)), On: on[p.ID]})
+		var apps []string
+		for _, line := range p.Lines {
+			if kind, app, err := ctl.ParseEntry(line); err == nil && kind == ctl.EntryApp {
+				apps = append(apps, app)
+			}
+		}
+		d.Presets = append(d.Presets, preset{Preset: p, Rules: len(ctl.PresetRules(p)), On: on[p.ID], Apps: strings.Join(apps, ", ")})
 	}
 	d.Restorable = presets.Restorable(all)
 	return d
