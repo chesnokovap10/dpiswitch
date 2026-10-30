@@ -11,9 +11,9 @@
 
 {{define "awg2state"}}{{$s := .St}}
   <div class="row">
-    {{/* switched on or off by mode: each mode keeps its own, observe only starts off */}}
+    {{/* one manual switch shared by all modes */}}
     <form method="post" action="/act/awg2" data-swap="awg2state" data-instant="1" id="awg2switch">
-      <label title="{{.T "Switched off, the presets and your own list route nothing: what they name goes the way the other lists and the mode send it. Each auto-switch mode keeps its own switch; Observe only starts switched off every time it is chosen."}}"><input type="checkbox" name="awg2" {{if $s.Awg2On}}checked{{end}}> {{.T "Use the second tunnel"}}</label>
+      <label title="{{.T "Switched off, the presets and your own list route nothing: what they name goes the way the other lists and the mode send it. Changing auto-switch mode leaves this switch unchanged, including Observe only."}}"><input type="checkbox" name="awg2" {{if $s.Awg2On}}checked{{end}}> {{.T "Use the second tunnel"}}</label>
     </form>
     {{if $s.Awg2}}
       <span class="pill ok">{{.T "attached"}}</span><span>{{$s.Endpoint2}}</span>
@@ -38,7 +38,7 @@
   </div>
   {{if and $s.Awg2 (not $s.HasConfig)}}<p class="hint warn-t" style="margin:0">{{.T "The first tunnel (awg1) is not loaded: the second one takes only its presets and your own list, and Always via tunnel, while switched on. Everything else goes direct, not to awg2."}}</p>{{end}}
   <p class="hint" style="margin:0">{{.T "The detector checks sites through the first tunnel (awg1) only: what goes to awg2 is never checked, and with awg1 not loaded nothing is."}}</p>
-  {{if not $s.Awg2On}}<p class="hint warn-t" style="margin:0">{{.T "The second tunnel is switched off in this mode: the presets and your own list route nothing, what they name goes the way the other lists and the mode send it."}}</p>{{end}}
+  {{if not $s.Awg2On}}<p class="hint warn-t" style="margin:0">{{.T "The second tunnel is switched off: the presets and your own list route nothing, what they name goes the way the other lists and the mode send it."}}</p>{{end}}
 {{end}}
 
 

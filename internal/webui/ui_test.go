@@ -1124,12 +1124,12 @@ func TestAwg2Switch(t *testing.T) {
 		t.Fatal("tunnel only never switched: not on")
 	}
 	mode(ctl.ModeOn)
-	if active() {
-		t.Fatal("on forgot it was switched off")
+	if !active() {
+		t.Fatal("mode change switched awg2 off")
 	}
 	mode(ctl.ModeObserve)
-	if active() {
-		t.Fatal("observe only kept the switch from before")
+	if !active() {
+		t.Fatal("observe only switched awg2 off")
 	}
 }
 

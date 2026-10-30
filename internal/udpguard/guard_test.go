@@ -213,3 +213,26 @@ func TestDropped(t *testing.T) {
 		t.Fatal("a drop reported after the lift")
 	}
 }
+
+func TestTunnelEndpointsRefresh(t *testing.T) {
+	var w fakeWorld
+	g := w.guard()
+	peers := []netip.AddrPort{netip.MustParseAddrPort("198.51.100.7:51820")}
+	g.endpoints = func() []netip.AddrPort { return peers }
+	exe := testExe(t)
+	if ch, err := g.Ensure(exe); err != nil || ch != Put {
+		t.Fatalf("%v %v", ch, err)
+	}
+	peers = append(peers, peers[0])
+	if ch, err := g.Ensure(exe); err != nil || ch != Kept {
+		t.Fatalf("duplicate: %v %v", ch, err)
+	}
+	peers = []netip.AddrPort{netip.MustParseAddrPort("198.51.100.8:51821")}
+	if ch, err := g.Ensure(exe); err != nil || ch != Replaced {
+		t.Fatalf("changed: %v %v", ch, err)
+	}
+	peers = nil
+	if ch, err := g.Ensure(exe); err != nil || ch != Replaced || g.Rules() != 8 {
+		t.Fatalf("removed: %v %v %d", ch, err, g.Rules())
+	}
+}

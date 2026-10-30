@@ -64,7 +64,7 @@ type Supervisor struct {
 const apiAddr = "127.0.0.1:9090"
 
 func New() *Supervisor {
-	return &Supervisor{recheck: make(chan struct{}, 1), guard: udpguard.New(), nrpt: realNRPT{}}
+	return &Supervisor{recheck: make(chan struct{}, 1), guard: udpguard.NewWithSystemEndpoints(guardSystemEndpoints()), nrpt: realNRPT{}}
 }
 
 // Run keeps the core alive until the context is cancelled and runs

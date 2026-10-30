@@ -1,7 +1,6 @@
 package webui
 
 import (
-	"maps"
 	"os"
 	"slices"
 	"sync"
@@ -76,7 +75,7 @@ func settled(keys []fileKey, at time.Time) bool {
 
 var settingsMemo memo[ctl.Settings]
 
-// loadSettings: ctl.LoadSettings from memory. Its slices and map are the
+// loadSettings: ctl.LoadSettings from memory. Its slices are the
 // caller's own copies: a caller changing them changes nothing kept.
 func loadSettings() ctl.Settings {
 	p := paths.Settings()
@@ -87,7 +86,6 @@ func loadSettings() ctl.Settings {
 	s.DirectDNS = slices.Clone(s.DirectDNS)
 	s.TunnelDNS = slices.Clone(s.TunnelDNS)
 	s.TunnelDNS2 = slices.Clone(s.TunnelDNS2)
-	s.Awg2On = maps.Clone(s.Awg2On)
 	return s
 }
 

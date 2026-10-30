@@ -252,8 +252,7 @@ CDN, спидтестам, обновлениям.
 - **Вкл**: вердикты применяются. Незаблокированные сайты идут напрямую, остальное по спискам и в
   туннель.
 - **Только наблюдать**: чистый директ — белый список. Всё идёт напрямую, кроме списков, которые работают
-  как в любом режиме. Второй туннель при каждом выборе этого режима
-  выключается; включите его на его странице, и пресеты и свой список awg2 тоже пойдут в awg2. Детектор
+  как в любом режиме. Состояние второго туннеля не меняется: если он включён, его пресеты и свой список продолжают идти в awg2. Детектор
   проверяет всё, что идёт напрямую.
 - **Только в туннель**: жёсткий режим. Всё, кроме «Всегда напрямую», идёт через туннели и никогда
   напрямую: если туннели лежат, соединения не проходят. «Всегда напрямую» — единственный выход мимо туннелей.
@@ -262,8 +261,7 @@ CDN, спидтестам, обновлениям.
 режиме. Переключение применяется за секунду: открытые соединения, которым режим меняет маршрут,
 закрываются, и программы переподключаются по-новому. Вердикты сохраняются во всех режимах.
 
-Переключатель второго туннеля («Использовать второй туннель») запоминается для каждого режима:
-выключенный во «Вкл», он снова выключен при каждом выборе «Вкл», и так же для «Только в туннель».
+Переключатель второго туннеля общий для всех режимов. Смена режима не меняет AWG2; отдельные состояния по режимам не сохраняются.
 Выключенный, его пресеты и список ничего не маршрутизируют.
 
 ### Сети
@@ -769,8 +767,7 @@ traffic goes.
 - **On**: the verdicts are applied. Unblocked sites go direct, the rest by the lists and through the
   tunnel.
 - **Observe only**: plain direct — a whitelist. Everything goes direct but the lists, which go their way
-  as in every mode. The second tunnel starts switched off each time this
-  mode is chosen; switch it on on its page, and its presets and list go to awg2 too. The detector checks
+  as in every mode. The second tunnel keeps its current state: while switched on, its presets and list continue through awg2. The detector checks
   everything that goes direct.
 - **Tunnel only**: a strict mode. Everything but "Always direct" goes through the tunnels and never
   direct: with the tunnels down it fails. "Always direct" is the one way out past the tunnels.
@@ -780,8 +777,7 @@ every mode. Switching applies within a
 second: the open connections the mode sends another way are closed, and the programs reconnect the new
 way. The verdicts are kept in every mode.
 
-The second tunnel's switch ("Use the second tunnel") is kept per mode: switched off in On, it is off
-again whenever On is chosen, and so for Tunnel only. Switched off, its presets and list route nothing.
+The second tunnel has one switch shared by all modes. Changing mode leaves AWG2 unchanged; no per-mode states are saved. Switched off, its presets and list route nothing.
 
 ### Networks
 

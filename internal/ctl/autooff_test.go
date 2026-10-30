@@ -221,7 +221,7 @@ func TestModeFiles(t *testing.T) {
 		mode, direct, tunnel, awg2 string
 		observe                    bool
 	}{
-		{ModeObserve, "d.example", "t.example", "", true},
+		{ModeObserve, "d.example", "t.example", "a.example", true},
 		{ModeTunnel, "d.example", "t.example", "a.example", false},
 		{ModeOn, "d.example", "t.example", "a.example", false},
 	} {
@@ -239,7 +239,7 @@ func TestModeFiles(t *testing.T) {
 		if got := listRules(paths.ObserveAll()) != nil; got != c.observe {
 			t.Errorf("%s: catch-all %v", c.mode, listRules(paths.ObserveAll()))
 		}
-		// the second tunnel starts off in observe only, on in the others
+		// the second tunnel stays on in every mode
 		if got := strings.Join(listRules(paths.Awg2Hosts()), " "); got != c.awg2 {
 			t.Errorf("%s: awg2 list %q, want %q", c.mode, got, c.awg2)
 		}

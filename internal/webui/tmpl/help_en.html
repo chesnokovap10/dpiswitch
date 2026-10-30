@@ -41,7 +41,7 @@ tunnel</b></a> switch; with no awg2 loaded its presets and list do nothing.</p>
 <tr><td>awg1 + awg2, awg2 switched off</td><td>clean ones direct, the rest awg1; if awg1 is down, direct</td><td>do nothing (go as the rest)</td><td>awg1; if it is down, refused</td><td>direct</td><td>refused</td></tr>
 </table>
 <h5>Observe only</h5>
-<p>The second tunnel is switched off each time this mode is chosen; "switched on" here means by hand.</p>
+<p>Changing mode leaves the second tunnel unchanged.</p>
 <table>
 <tr><th>Loaded</th><th>What no list names</th><th>Presets and the awg2 list</th><th>Always via tunnel</th><th>Always direct</th><th>Forbidden</th></tr>
 <tr><td>nothing</td><td>direct</td><td>direct</td><td>refused</td><td>direct</td><td>refused</td></tr>
@@ -253,13 +253,11 @@ the traffic goes.</p>
 <ul>
 <li><b>On</b>: the verdicts are applied. Unblocked sites go direct, the rest by the lists and through {{if .St.Second}}awg1{{else}}the tunnel{{end}}.</li>
 {{if .St.Second}}<li><b>Observe only</b>: plain direct -- a whitelist. Everything goes direct but the lists, which go their
-way as in every mode. The second tunnel starts switched off each time this mode is chosen: switch it on on
-its page, and its presets and list go to awg2 too. The detector checks everything that goes direct.</li>
+way as in every mode. The second tunnel keeps its current state: while switched on, its presets and list continue through awg2. The detector checks everything that goes direct.</li>
 <li><b>Tunnel only</b>: a strict mode. Everything but "Always direct" goes through the tunnels and never
 direct: with the tunnels down it fails. "Always direct" is the one way out past the tunnels.</li>
 </ul>
-<p>The second tunnel's switch is kept per mode: switched off in On, it is off again whenever On is
-chosen, and so for Tunnel only. Switched off, its presets and list route nothing.</p>
+<p>The second tunnel has one switch shared by all modes. Changing mode leaves AWG2 unchanged; no per-mode states are saved. Switched off, its presets and list route nothing.</p>
 <p>The local network and the tunnels' own addresses go direct,{{else}}<li><b>Observe only</b>: plain direct -- a whitelist. Everything goes direct but the lists, which go their
 way as in every mode. The detector checks everything that goes direct.</li>
 <li><b>Tunnel only</b>: a strict mode. Everything but "Always direct" goes through the tunnel and never

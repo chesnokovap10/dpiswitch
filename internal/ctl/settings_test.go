@@ -302,3 +302,24 @@ func TestSettingsFieldOfWrongType(t *testing.T) {
 		t.Fatalf("tunnel_only of the wrong type read as mode %s", s.Mode())
 	}
 }
+
+// Mode changes must never toggle AWG2, including across a settings reload.
+func TestAwg2IndependentOfMode(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	p := filepath.Join(t.TempDir(), "settings.json")
+	for _, on := range []bool{true, false} {
+		s := DefaultSettings()
+		s.SecondTunnel = true
+		s.SetAwg2(on)
+		for _, mode := range []string{ModeObserve, ModeTunnel, ModeOn, ModeObserve} {
+			s.SetMode(mode)
+			if err := SaveSettings(p, s); err != nil {
+				t.Fatal(err)
+			}
+			s = LoadSettings(p)
+			if s.Awg2Active() != on {
+				t.Fatalf("mode %s changed AWG2 from %v", mode, on)
+			}
+		}
+	}
+}

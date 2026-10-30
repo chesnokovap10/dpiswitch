@@ -145,7 +145,7 @@
   <p class="hint">{{.Hint}}{{if eq .Kind "awg2"}} {{$v.T "One per line: a site (example.com; +.example.com for the domain and all under it; * for any one label: +.example.*), an address or a network (1.2.3.4, 192.168.0.0/16: for connections made to it by address), a program (telegram.exe; a full path for that copy only)."}}{{end}}
   {{- /* the auto-switch mode stands above the lists: said where it sets one aside */}}
   {{- if and (eq .Kind "awg2") (not $v.St.Awg2)}} <span class="warn-t">{{$v.T "The second tunnel is not loaded: this list routes nothing until it is."}}</span>
-  {{- else if and (eq .Kind "awg2") (not $v.St.Awg2On)}} <span class="warn-t">{{$v.T "The second tunnel is switched off in this mode: this list routes nothing until it is switched on."}}</span>{{end}}</p>
+  {{- else if and (eq .Kind "awg2") (not $v.St.Awg2On)}} <span class="warn-t">{{$v.T "The second tunnel is switched off: this list routes nothing until it is switched on."}}</span>{{end}}</p>
   <form method="post" action="/act/list" data-swap="list-{{.Kind}}">
     <input type="hidden" name="kind" value="{{.Kind}}">
     <div class="row" style="margin-bottom:8px">

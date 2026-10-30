@@ -234,3 +234,37 @@ func TestDHCPPermitIsTheClients(t *testing.T) {
 		t.Errorf("%d DHCP rules, want one for each family", seen)
 	}
 }
+
+// Re-injected tunnel transport has a narrowly scoped System exception.
+func TestSystemTunnelEndpoint(t *testing.T) {
+	peers := []netip.AddrPort{netip.MustParseAddrPort("198.51.100.7:42273"), netip.MustParseAddrPort("[2001:db8::7]:51820")}
+	p, err := buildPlan(testExe(t), peers...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.rules) != 10 {
+		t.Fatalf("rules %d", len(p.rules))
+	}
+	for i, peer := range peers {
+		r := p.rules[6+i]
+		if r.Action != wf.ActionPermit || r.Weight <= weightBlock || len(r.Conditions) != 4 {
+			t.Fatalf("bad exception: %+v", r)
+		}
+		if r.Conditions[1].Field != wf.FieldALEAppID || r.Conditions[1].Value != "System" {
+			t.Fatal("exception must be System only")
+		}
+		if r.Conditions[2].Field != wf.FieldIPRemoteAddress || r.Conditions[2].Value != netip.PrefixFrom(peer.Addr(), peer.Addr().BitLen()) {
+			t.Fatal("exception must match one address")
+		}
+		if r.Conditions[3].Field != wf.FieldIPRemotePort || r.Conditions[3].Value != peer.Port() {
+			t.Fatal("exception must match one port")
+		}
+		want := wf.LayerALEAuthConnectV4
+		if peer.Addr().Is6() {
+			want = wf.LayerALEAuthConnectV6
+		}
+		if r.Layer != want {
+			t.Fatal("wrong family")
+		}
+	}
+}

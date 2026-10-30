@@ -20,6 +20,8 @@ package udpguard
 import (
 	"errors"
 	"net/netip"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -69,13 +71,34 @@ type Guard struct {
 	// open puts a plan into the engine; the tests' own in place of Windows'
 	open func(plan) (engine, error)
 
-	mu   sync.Mutex
-	eng  engine
-	core string
-	n    int
+	mu        sync.Mutex
+	eng       engine
+	core      string
+	n         int
+	endpoints func() []netip.AddrPort
+	targets   []netip.AddrPort
 }
 
 func New() *Guard { return &Guard{open: openWFP} }
+
+// NewWithSystemEndpoints permits re-injected UDP from System only to the
+// configured tunnel and direct DNS endpoint addresses and ports.
+func NewWithSystemEndpoints(endpoints func() []netip.AddrPort) *Guard {
+	g := New()
+	g.endpoints = endpoints
+	return g
+}
+
+func guardTargets(endpoints []netip.AddrPort) []netip.AddrPort {
+	out := make([]netip.AddrPort, 0, len(endpoints))
+	for _, p := range endpoints {
+		if p.IsValid() && p.Port() != 0 {
+			out = append(out, netip.AddrPortFrom(p.Addr().Unmap(), p.Port()))
+		}
+	}
+	slices.SortFunc(out, func(a, b netip.AddrPort) int { return strings.Compare(a.String(), b.String()) })
+	return slices.Compact(out)
+}
 
 // Ensure has the guard in place for the core at the path given. One in place
 // is looked at, and put in again if the engine lost it -- its service
@@ -83,15 +106,19 @@ func New() *Guard { return &Guard{open: openWFP} }
 func (g *Guard) Ensure(core string) (Change, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	targets := []netip.AddrPort(nil)
+	if g.endpoints != nil {
+		targets = guardTargets(g.endpoints())
+	}
 	ch := Put
 	if g.eng != nil {
-		if g.core == core && g.eng.alive() {
+		if g.core == core && slices.Equal(g.targets, targets) && g.eng.alive() {
 			return Kept, nil
 		}
 		g.eng.close()
 		g.eng, g.n, ch = nil, 0, Replaced
 	}
-	p, err := buildPlan(core)
+	p, err := buildPlan(core, targets...)
 	if err != nil {
 		return ch, err
 	}
@@ -100,6 +127,7 @@ func (g *Guard) Ensure(core string) (Change, error) {
 		return ch, err
 	}
 	g.eng, g.core, g.n = eng, core, len(p.rules)
+	g.targets = slices.Clone(targets)
 	return ch, nil
 }
 

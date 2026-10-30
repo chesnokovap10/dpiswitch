@@ -189,7 +189,7 @@ func (s *Server) actLiveAdd(w http.ResponseWriter, r *http.Request) {
 	case (to == "awg2" || to == "preset") && !ctl.Awg2Attached():
 		msg += tr(l, ". The second tunnel is not loaded: this routes nothing until it is")
 	case (to == "awg2" || to == "preset") && !set.Awg2Active():
-		msg += tr(l, ". The second tunnel is switched off in this mode: this routes nothing until it is switched on")
+		msg += tr(l, ". The second tunnel is switched off: this routes nothing until it is switched on")
 	}
 	ok := true
 	if len(still) > 0 {

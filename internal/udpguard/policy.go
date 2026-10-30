@@ -128,7 +128,7 @@ var families = []family{
 // buildPlan: the filters for a core at the path given. The permits come
 // first and the blocks last: put in one by one, the block is the last to
 // take effect, and never stands alone.
-func buildPlan(core string) (plan, error) {
+func buildPlan(core string, endpoints ...netip.AddrPort) (plan, error) {
 	app, err := wf.AppID(core)
 	if err != nil {
 		return plan{}, fmt.Errorf("the core's application ID: %w", err)
@@ -151,6 +151,22 @@ func buildPlan(core string) (plan, error) {
 				&wf.Match{Field: wf.FieldIPRemotePort, Op: wf.MatchTypeEqual, Value: f.dhcp}),
 		)
 		blocks = append(blocks, f.rule("UDP out of a physical adapter", weightBlock, wf.ActionBlock, uplinkMatches()...))
+	}
+	// Some network filter drivers re-inject the core's UDP as System.
+	// Permit only that identity and each exact configured tunnel or DNS tuple.
+	for _, peer := range endpoints {
+		if !peer.IsValid() || peer.Port() == 0 {
+			continue
+		}
+		ip := peer.Addr().Unmap()
+		f := families[0]
+		if ip.Is6() {
+			f = families[1]
+		}
+		p.rules = append(p.rules, f.rule("System UDP to configured endpoint "+peer.String(), weightCore, wf.ActionPermit,
+			&wf.Match{Field: wf.FieldALEAppID, Op: wf.MatchTypeEqual, Value: "System"},
+			&wf.Match{Field: wf.FieldIPRemoteAddress, Op: wf.MatchTypeEqual, Value: netip.PrefixFrom(ip, ip.BitLen())},
+			&wf.Match{Field: wf.FieldIPRemotePort, Op: wf.MatchTypeEqual, Value: peer.Port()}))
 	}
 	p.rules = append(p.rules, blocks...)
 	for i, r := range p.rules {

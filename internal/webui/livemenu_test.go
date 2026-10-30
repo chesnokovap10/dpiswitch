@@ -215,8 +215,8 @@ func TestLiveAddSaid(t *testing.T) {
 	if a = add("block", "b.example"); strings.Contains(a.Msg, "is on") {
 		t.Errorf("observe only, forbidden: %s", a.Msg)
 	}
-	// the second tunnel starts off there, and is said so
-	if a = add("awg2", "o.example"); !strings.Contains(a.Msg, "The second tunnel is switched off") {
+	// the second tunnel stays on when changing mode
+	if a = add("awg2", "o.example"); strings.Contains(a.Msg, "The second tunnel is switched off") {
 		t.Errorf("observe only, the second tunnel: %s", a.Msg)
 	}
 	// tunnel only keeps Always direct: nothing to say
