@@ -405,7 +405,6 @@ Claude, Google AI, Grok, Meta AI, Copilot и общего входа ИИ-сер
 срабатывают при нажатии мыши, а раскрытые категории сохраняются при обновлении блока. В «Прочее» есть
 GitHub и Reddit. Маски вида `+.claude.ai` покрывают домен и поддомены; у десктопных приложений указаны
 имена процессов. Правило программы направляет через второй туннель все соединения этого процесса.
-Старый выбор укрупнённых групп переносится на сервисы; отредактированные пользователем группы сохраняются.
 
 Пресеты можно менять: **Изменить** открывает во всплывающем окне название, категорию, описание и строки пресета
 (сайты, адреса, программы — как в списках; `#` — комментарий), **Удалить** убирает его, **Добавить…**
@@ -947,7 +946,7 @@ with Other services always last and all remaining categories and services sorted
 means a partial selection. The arrow expands the list independently. Mouse presses apply immediately,
 before release, and expanded categories survive redraws. Other includes GitHub and Reddit. Broad masks
 such as `+.claude.ai` include the domain and its subdomains; desktop process names route all connections
-of those processes. Selections of the old aggregate groups migrate to services; user-edited groups stay intact.
+of those processes.
 
 The presets are yours to change: **Edit** opens a preset's name, category, description and lines in a dialog
 (sites, addresses and programs, as in the lists; `#` starts a comment), **Delete** removes it,

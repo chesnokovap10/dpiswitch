@@ -1,7 +1,6 @@
 package ctl
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -10,54 +9,16 @@ import (
 	"time"
 
 	"dpiswitch/internal/paths"
-	"dpiswitch/internal/presets"
 	"dpiswitch/internal/probe"
 )
 
-func TestLegacyPresetSelection(t *testing.T) {
+func TestUnknownPresetSelection(t *testing.T) {
 	t.Setenv("ProgramData", t.TempDir())
-	p := filepath.Join(t.TempDir(), "settings.json")
 	s := DefaultSettings()
-	s.Awg2Presets = []string{"ai", "social", "telegram", "youtube", "ai", "deleted"}
-	b, err := json.Marshal(s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = os.WriteFile(p, b, 0600); err != nil {
-		t.Fatal(err)
-	}
-	got := LoadSettings(p)
-	for _, id := range []string{"claude", "openai", "telegram-app", "whatsapp", "facebook", "instagram", "twitter", "youtube"} {
-		if !slices.Contains(got.Awg2Presets, id) {
-			t.Errorf("old selection lost %s", id)
-		}
-	}
-	for _, id := range []string{"ai", "social", "telegram", "deleted", "discord", "github", "reddit"} {
-		if slices.Contains(got.Awg2Presets, id) {
-			t.Errorf("unexpected selection %s", id)
-		}
-	}
-	if err = SaveSettings(p, got); err != nil {
-		t.Fatal(err)
-	}
-	if next := LoadSettings(p); !slices.Equal(next.Awg2Presets, got.Awg2Presets) {
-		t.Fatal("migration changed on next read")
-	}
-	// A legacy group edited by the user remains independently selectable.
-	if err = paths.EnsureDataDir(); err != nil {
-		t.Fatal(err)
-	}
-	if err = presets.Update(func(all []presets.Preset) ([]presets.Preset, error) {
-		return append(all, presets.Preset{ID: "ai", Title: "My AI", Category: "ai", Lines: []string{"+.custom.example"}}), nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	s.Awg2Presets = []string{"ai"}
-	if err = SaveSettings(p, s); err != nil {
-		t.Fatal(err)
-	}
-	if next := LoadSettings(p); !slices.Equal(next.Awg2Presets, []string{"ai"}) {
-		t.Fatal("custom legacy selection expanded")
+	s.Awg2Presets = []string{"ai", "social", "telegram", "youtube", "youtube", "deleted"}
+	s.clamp()
+	if !slices.Equal(s.Awg2Presets, []string{"youtube"}) {
+		t.Fatalf("unknown groups expanded: %v", s.Awg2Presets)
 	}
 }
 

@@ -3,8 +3,7 @@
 //
 // catalog.go defines individual services in five categories. The embedded
 // lists contain broad service domains, desktop process names and, for calls
-// made by address, the Telegram, WhatsApp and Discord networks. Retired
-// aggregate presets remain available solely to migrate older user catalogs.
+// made by address, the Telegram, WhatsApp and Discord networks.
 //
 // The user edits them, deletes them and adds their own on the second
 // tunnel's page. Until the first such change the shipped ones are used; from
@@ -43,22 +42,6 @@ type Preset struct {
 	Note     string   `json:"note,omitempty"`
 	Category string   `json:"category,omitempty"`
 	Lines    []string `json:"lines"`
-}
-
-// Original stock groups, used to distinguish user edits during migration.
-var legacy = []struct {
-	id, title, note string
-	files           []string
-}{
-	{"youtube", "YouTube", "site, video, thumbnails, apps", []string{"youtube.txt"}},
-	{"telegram", "Telegram, WhatsApp", "their domains and networks -- the apps and calls connect by IP",
-		[]string{"telegram-domains.txt", "telegram-cidr.txt", "whatsapp-domains.txt", "whatsapp-cidr.txt"}},
-	{"discord", "Discord", "site, apps, voice and video",
-		[]string{"discord.txt"}},
-	{"ai", "AI services", "ChatGPT, Claude, Gemini, Grok, Copilot, DeepL and more",
-		[]string{"ai.txt"}},
-	{"social", "Instagram, Facebook, X", "their media CDNs too -- without those the page loads but photos and video do not",
-		[]string{"social-meta.txt", "social-x.txt"}},
 }
 
 // builtin: the shipped presets, read once -- Load gives them every second
@@ -174,11 +157,7 @@ func read() ([]Preset, error) {
 // errNotRead: the user's presets could not be read: none is written over them
 var errNotRead = errors.New("The presets could not be read: nothing saved, try again")
 
-// fileVersion: the file's format. Up to 1.6.1 it was the bare list of
-// presets, where a name took everything under it; since, a name is what it
-// is in the lists -- "example.com" that name alone, "+.example.com" the
-// domain -- and the file says so. Version 3 adds categories and splits the
-// original groups without replacing edited user rules.
+// fileVersion is the only supported preset file format.
 const fileVersion = 3
 
 // file: the user's file as it is written
@@ -187,42 +166,16 @@ type file struct {
 	Presets []Preset `json:"presets"`
 }
 
-// decode reads the user's file, one from before a version included: its
-// names are read as they meant, each with everything under it.
+// decode accepts the current format without transforming saved rules.
 func decode(b []byte) ([]Preset, error) {
 	var f file
-	if err := json.Unmarshal(b, &f); err == nil && f.Version > 0 {
-		if f.Version < 3 {
-			return migrate(f.Presets), nil
-		}
-		return f.Presets, nil
-	}
-	var ps []Preset
-	if err := json.Unmarshal(b, &ps); err != nil {
+	if err := json.Unmarshal(b, &f); err != nil {
 		return nil, err
 	}
-	for i := range ps {
-		for j, l := range ps[i].Lines {
-			ps[i].Lines[j] = wholeDomain(l)
-		}
+	if f.Version != fileVersion {
+		return nil, errors.New("unsupported preset file version")
 	}
-	return migrate(ps), nil
-}
-
-// oldName: a name as the lists write it, with the prefix it may carry --
-// not an address, not a program
-var oldName = regexp.MustCompile(`^(\+\.|\.|\*\.)?[a-z0-9_]([a-z0-9_.-]*[a-z0-9])?$`)
-
-// wholeDomain: a line of a preset from before, as the lists write what it
-// meant -- a name with everything under it: "+.example.com". Addresses,
-// programs and comments stay as they are.
-func wholeDomain(l string) string {
-	t := strings.TrimSpace(l)
-	if t == "" || strings.HasPrefix(t, "#") || !oldName.MatchString(t) ||
-		strings.Trim(t, "0123456789.") == "" || strings.HasSuffix(t, ".exe") {
-		return l
-	}
-	return "+." + strings.TrimLeft(t, "+.*")
+	return f.Presets, nil
 }
 
 // Known: the IDs of the presets there are
