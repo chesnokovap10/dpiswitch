@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -29,6 +30,50 @@ import (
 	"dpiswitch/internal/winexec"
 	"dpiswitch/internal/winsvc"
 )
+
+// runSetup is the elevated half. Silent success lets the caller proceed
+// immediately, rather than waiting for a hidden "Done" dialog to be closed.
+func runSetup(reinstall bool) {
+	if v := argValue("--keep"); v != "" {
+		keep, err := strconv.ParseUint(v, 10, 32)
+		if err != nil {
+			report("DPI Switch", err)
+			return
+		}
+		closeTraysBut(uint32(keep))
+	}
+	var err error
+	if reinstall {
+		err = winsvc.Reinstall(ownerArg())
+	} else {
+		err = winsvc.Install(ownerArg())
+	}
+	if err == nil {
+		err = winsvc.VerifyInstalled()
+	}
+	if err != nil || !hasArg("--quiet") {
+		report("DPI Switch", err)
+	}
+}
+
+func waitSetup(h windows.Handle) error {
+	defer windows.CloseHandle(h)
+	if _, err := windows.WaitForSingleObject(h, windows.INFINITE); err != nil {
+		return err
+	}
+	var code uint32
+	if err := windows.GetExitCodeProcess(h, &code); err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("installation ended with code %d", code)
+	}
+	return winsvc.VerifyInstalled()
+}
+
+func setupArgs(verb, owner string) string {
+	return fmt.Sprintf("%s --owner %s --quiet --keep %d", verb, owner, windows.GetCurrentProcessId())
+}
 
 // quitTray ends the running tray; set by runTray
 var quitTray = func() {}
@@ -60,16 +105,14 @@ func installFor(verb string) error {
 	if err != nil {
 		return err
 	}
-	h, err := runasWait(verb + " --owner " + u.Uid)
+	h, err := runasWait(setupArgs(verb, u.Uid))
 	if err != nil {
 		return err
 	}
 	go func() {
-		defer windows.CloseHandle(h)
-		windows.WaitForSingleObject(h, windows.INFINITE)
-		var code uint32
-		if windows.GetExitCodeProcess(h, &code); code != 0 {
-			log.Printf("tray: %s ended with code %d, the tray stays where it is", verb, code)
+		if err := waitSetup(h); err != nil {
+			log.Printf("tray: %s failed: %v", verb, err)
+			msgBox("DPI Switch", err.Error(), 0x10)
 			return
 		}
 		moveTray(first)
@@ -155,37 +198,44 @@ func waitMutex() bool {
 // same build just opens the UI (false); another build offers to update.
 func updateOffer() bool {
 	exe := winsvc.InstalledExe()
-	if sameFile(selfExe(), exe) || !fileExists(exe) || !winsvc.Installed() || winsvc.SameBuild() {
+	if sameFile(selfExe(), exe) || !winsvc.Installed() {
 		return false
 	}
+	if winsvc.AtInstalledPath() && winsvc.SameBuild() {
+		if err := shellOpen(exe, "tray"); err != nil {
+			msgBox("DPI Switch", err.Error(), 0x10)
+		}
+		return true
+	}
+	log.Printf("update: source %s, destination %s, service %s", selfExe(), exe, winsvc.BinPath())
 	r, _ := windows.MessageBox(0, ptr(fmt.Sprintf(
 		T("Install DPI Switch %s over the installed version?"), version.Version)),
 		ptr("DPI Switch"), windows.MB_YESNO|windows.MB_ICONQUESTION)
 	if r != 6 { // IDYES
 		return true
 	}
-	// the running tray -- wherever it runs from -- holds the mutex, and the
-	// installed one its file open: it goes first
-	closeTrays()
 	u, err := user.Current()
 	if err != nil {
 		msgBox("DPI Switch", err.Error(), 0x10)
 		return true
 	}
-	h, err := runasWait("reinstall --owner " + u.Uid)
+	h, err := runasWait(setupArgs("reinstall", u.Uid))
 	if err != nil {
 		_ = shellOpen(exe, "tray") // declined: the old one back
 		return true
 	}
-	windows.WaitForSingleObject(h, windows.INFINITE)
-	var code uint32
-	windows.GetExitCodeProcess(h, &code)
-	windows.CloseHandle(h)
-	if code != 0 {
+	if err := waitSetup(h); err != nil {
+		log.Printf("tray: update failed: %v", err)
+		msgBox("DPI Switch", err.Error(), 0x10)
 		_ = shellOpen(exe, "tray") // not updated: the old one back
 		return true
 	}
-	_ = shellOpen(exe, "tray --moved")
+	if err := shellOpen(exe, "tray --moved"); err != nil {
+		log.Printf("tray: cannot start installed copy: %v", err)
+		msgBox("DPI Switch", err.Error(), 0x10)
+	} else {
+		log.Printf("update: installed file verified, service running from %s, starting installed tray", exe)
+	}
 	return true
 }
 

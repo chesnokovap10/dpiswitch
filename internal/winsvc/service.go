@@ -64,6 +64,8 @@ func InstallDir() string {
 // InstalledExe: the service's binary
 func InstalledExe() string { return filepath.Join(InstallDir(), "dpiswitch.exe") }
 
+func AtInstalledPath() bool { return samePath(BinPath(), InstalledExe()) }
+
 // Install copies this binary to InstallDir and registers it as the service
 // of owner (a user's SID), who may then start and stop it.
 func Install(owner string) error {
@@ -122,6 +124,93 @@ func Install(owner string) error {
 	// user found the Start button. With no .conf yet it waits for one.
 	if err := s.Start(); err != nil {
 		return fmt.Errorf("installed, but not started: %w", err)
+	}
+	return waitState(query(s), svc.Running, 30*time.Second, 300*time.Millisecond)
+}
+
+// Reinstall updates an existing service in place. Deleting it first can
+// leave it marked for deletion while another process still has a handle.
+func Reinstall(owner string) (err error) {
+	if !paths.ValidSID(owner) {
+		return fmt.Errorf("invalid service owner %q", owner)
+	}
+	m, err := mgr.Connect()
+	if err != nil {
+		return err
+	}
+	defer m.Disconnect()
+	s, err := m.OpenService(Name)
+	if err == windows.ERROR_SERVICE_DOES_NOT_EXIST {
+		return Install(owner)
+	}
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	cfg, err := s.Config()
+	if err != nil {
+		return err
+	}
+	st, err := s.Query()
+	if err != nil {
+		return err
+	}
+	if st.State != svc.Stopped {
+		if st.State != svc.StopPending {
+			if _, err := s.Control(svc.Stop); err != nil {
+				return err
+			}
+		}
+		if err := waitState(query(s), svc.Stopped, stopLimit+30*time.Second, 300*time.Millisecond); err != nil {
+			return err
+		}
+	}
+	// A failed copy/configuration must not leave the previous installation off.
+	defer func() {
+		if err != nil {
+			_ = s.Start()
+		}
+	}()
+	if err = copyBinaries(); err != nil {
+		return err
+	}
+	if err = paths.SetOwner(owner); err != nil {
+		return err
+	}
+	if err = paths.SecureDataDir(owner); err != nil {
+		return err
+	}
+	cfg.BinaryPathName = windows.EscapeArg(InstalledExe()) + " service"
+	cfg.ServiceStartName = "LocalSystem"
+	cfg.StartType = mgr.StartAutomatic
+	cfg.DelayedAutoStart = false
+	if err = s.UpdateConfig(cfg); err != nil {
+		return err
+	}
+	if err = setServiceSD(s.Handle, owner); err != nil {
+		return err
+	}
+	if err = s.Start(); err != nil {
+		return err
+	}
+	return waitState(query(s), svc.Running, 30*time.Second, 300*time.Millisecond)
+}
+
+// VerifyInstalled checks the destination, not just a helper's exit status.
+func VerifyInstalled() error {
+	if !samePath(BinPath(), InstalledExe()) {
+		return fmt.Errorf("service does not point to %s", InstalledExe())
+	}
+	a, b := fileHash(paths.Exe()), fileHash(InstalledExe())
+	if a == "" || a != b {
+		return fmt.Errorf("installed file does not match the update")
+	}
+	st, err := State()
+	if err != nil {
+		return err
+	}
+	if st != svc.Running {
+		return fmt.Errorf("updated service is %s", StateText(st))
 	}
 	return nil
 }

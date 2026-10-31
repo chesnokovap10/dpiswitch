@@ -46,12 +46,11 @@ func main() {
 	case "service":
 		runService()
 	case "install":
-		report(T("Install service"), winsvc.Install(ownerArg()))
+		runSetup(false)
 	case "uninstall":
 		report(T("Uninstall service"), winsvc.Uninstall())
 	case "reinstall":
-		_ = winsvc.Uninstall()
-		report(T("Reinstall service"), winsvc.Install(ownerArg()))
+		runSetup(true)
 	case "remove":
 		runRemove()
 	case "", "tray":
@@ -183,6 +182,9 @@ func runTray() {
 	if err != nil {
 		log.Printf("UI key not kept, an open tab will not outlive a restart: %v", err)
 	}
+	if !hasArg("--moved") && updateOffer() {
+		return
+	}
 	if hasArg("--moved") {
 		// started by the tray it replaces: that one is on its way out
 		if !waitMutex() {
@@ -190,9 +192,6 @@ func runTray() {
 			return
 		}
 	} else if alreadyRunning() {
-		if updateOffer() {
-			return
-		}
 		log.Println("tray: another copy is already running -- opening the UI and exiting")
 		// the first copy may still be starting its UI
 		addr := webui.Find(key)

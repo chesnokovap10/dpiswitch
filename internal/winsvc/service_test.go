@@ -2,6 +2,8 @@ package winsvc
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +11,32 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 )
+
+func TestUpdateCopy(t *testing.T) {
+	dir := t.TempDir()
+	source, target := filepath.Join(dir, "desktop.exe"), filepath.Join(dir, "installed.exe")
+	if err := os.WriteFile(target, []byte("previous"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyFile(source, target); err == nil {
+		t.Fatal("missing update accepted")
+	}
+	if b, _ := os.ReadFile(target); string(b) != "previous" {
+		t.Fatal("failed update damaged installed binary")
+	}
+	if err := os.WriteFile(source, []byte("new build"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyFile(source, target); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(target); string(b) != "new build" {
+		t.Fatal("installed binary not replaced")
+	}
+	if _, err := os.Stat(target + ".new"); !os.IsNotExist(err) {
+		t.Fatal("temporary binary left behind")
+	}
+}
 
 // The registration matches this binary only when it runs this very path:
 // not one it is a prefix of, not one merely spelled with other case.
