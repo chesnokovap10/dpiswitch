@@ -40,6 +40,9 @@ type tunnelPulse struct {
 	state   map[string]tunnelState
 	looking bool // a look under way: the next tick does not start another
 	changed chan struct{}
+	run     string // service's identity of the current core process
+	gen     uint64 // invalidates checks started before a lifecycle change
+	waiting bool   // a restart was requested or the core was seen down
 
 	health func(proxy string) (bool, string) // the core's last check
 	check  func(proxy string)                // the core checks now
@@ -76,10 +79,59 @@ var pulse = newTunnelPulse(
 
 func init() { pulse.names = awgconf.Tunnels }
 
+// resetLocked invalidates both health and traffic from the previous core.
+// Every tunnel changes together, including while a health call is in flight.
+func (p *tunnelPulse) resetLocked(note string) {
+	p.gen++
+	p.recv = map[string]time.Time{}
+	p.fail = map[string]time.Time{}
+	p.asked = map[string]time.Time{}
+	p.state = map[string]tunnelState{}
+	for _, name := range pulseTunnels {
+		p.state[name] = tunnelState{Note: note, at: time.Now()}
+	}
+	p.notify()
+}
+
+// expectRestart is called only after a changed core setting was saved.
+// Keep waiting until the live loop sees the next run or the core go away.
+func (p *tunnelPulse) expectRestart(previousRun string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.run != "" && previousRun != "" && p.run != previousRun {
+		return // the live loop already observed the replacement core
+	}
+	p.run = previousRun
+	p.waiting = true
+	p.resetLocked("core API not responding: restarting")
+}
+
+func (p *tunnelPulse) coreState(run string, down bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if down {
+		if !p.waiting {
+			p.resetLocked("core API not responding: stopped")
+		}
+		p.waiting = true
+		// Even a service without run identities can be seen gone and back.
+		p.run = ""
+		return
+	}
+	if (run != "" && run != p.run) || (p.waiting && p.run == "") {
+		p.run, p.waiting = run, false
+		p.resetLocked("not checked yet")
+	}
+}
+
 // saw takes one tick's traffic -- the tunnels bytes came in through, and
 // those a dial failed through -- and looks at the tunnels again.
 func (p *tunnelPulse) saw(now time.Time, recv, fail map[string]bool) {
 	p.mu.Lock()
+	if p.waiting {
+		p.mu.Unlock()
+		return
+	}
 	for t := range recv {
 		p.recv[t] = now
 	}
@@ -103,13 +155,24 @@ func (p *tunnelPulse) saw(now time.Time, recv, fail map[string]bool) {
 // look reads each tunnel's last check, and has the core check it again
 // when the traffic says otherwise
 func (p *tunnelPulse) look(now time.Time) {
+	p.mu.Lock()
+	gen, waiting := p.gen, p.waiting
+	p.mu.Unlock()
+	if waiting {
+		return
+	}
 	names := pulseTunnels
 	if p.names != nil {
 		names = p.names()
 	}
+	next := make(map[string]tunnelState, len(names))
 	for _, t := range names {
 		alive, note := p.health(t)
 		p.mu.Lock()
+		if gen != p.gen {
+			p.mu.Unlock()
+			return
+		}
 		recv := now.Sub(p.recv[t]) < pulseRecent
 		fail := now.Sub(p.fail[t]) < pulseRecent
 		ask := (alive && fail && !recv || !alive && recv) && now.Sub(p.asked[t]) >= pulseAgain
@@ -121,21 +184,40 @@ func (p *tunnelPulse) look(now time.Time) {
 			p.check(t)
 			alive, note = p.health(t)
 		}
-		p.set(t, alive, note)
+		next[t] = tunnelState{alive, note, time.Now()}
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if gen != p.gen {
+		return
+	}
+	for t, st := range next {
+		was := p.state[t]
+		if was.at.IsZero() || was.Alive != st.Alive || was.Note != st.Note {
+			p.notify()
+		}
+	}
+	p.state = next
+}
+
+func (p *tunnelPulse) notify() {
+	select {
+	case p.changed <- struct{}{}:
+	default:
 	}
 }
 
-func (p *tunnelPulse) set(t string, alive bool, note string) {
+// snapshot is one consistent view for both chips and cached page fragments.
+func (p *tunnelPulse) snapshot() map[string]tunnelState {
 	p.mu.Lock()
-	was := p.state[t]
-	p.state[t] = tunnelState{alive, note, time.Now()}
-	p.mu.Unlock()
-	if was.at.IsZero() || was.Alive != alive || was.Note != note {
-		select {
-		case p.changed <- struct{}{}:
-		default:
+	defer p.mu.Unlock()
+	out := make(map[string]tunnelState, len(p.state))
+	for name, st := range p.state {
+		if p.waiting || time.Since(st.at) < 3*time.Second {
+			out[name] = st
 		}
 	}
+	return out
 }
 
 // get: a tunnel's state, if read lately -- the loop stopped, it is not
@@ -143,7 +225,7 @@ func (p *tunnelPulse) get(t string) (tunnelState, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	s := p.state[t]
-	return s, !s.at.IsZero() && time.Since(s.at) < 3*time.Second
+	return s, !s.at.IsZero() && (p.waiting || time.Since(s.at) < 3*time.Second)
 }
 
 // Tunnel: a tunnel's state as the UI shows it, for the tray; ok false when
@@ -162,8 +244,9 @@ func TunnelChanged() <-chan struct{} { return pulse.changed }
 func (s *Server) handleTunnels(w http.ResponseWriter, r *http.Request) {
 	v := &view{Lang: lang(r)}
 	out := map[string]any{}
+	states := pulse.snapshot()
 	for _, t := range pulseTunnels {
-		st, ok := pulse.get(t)
+		st, ok := states[t]
 		if !ok {
 			continue
 		}

@@ -344,6 +344,9 @@ func (h *liveHub) update(live ctl.Live, err error, now time.Time) {
 	if err != nil {
 		h.down, h.err = "error", err.Error()
 		if errors.Is(err, ctl.ErrCoreDown) {
+			if h.pulse != nil {
+				h.pulse.coreState("", true)
+			}
 			// nothing listens: the core is gone, and so is every connection
 			// it held. A core slow to answer still holds them.
 			h.down, h.err = "stopped", ""
@@ -369,6 +372,9 @@ func (h *liveHub) update(live ctl.Live, err error, now time.Time) {
 	// with not one of the connections held before left: totals alone may
 	// have grown past the last run's by the next call.
 	run := h.runOf()
+	if h.pulse != nil {
+		h.pulse.coreState(run, false)
+	}
 	anew := !h.downAt.IsZero() || run != "" && h.lastRun != "" && run != h.lastRun
 	if !anew && run == "" && !h.at.IsZero() && (live.UploadTotal < h.tot.Up || live.DownloadTotal < h.tot.Down) {
 		anew = !slices.ContainsFunc(live.Conns, func(c ctl.LiveConn) bool { return h.open[c.ID] != nil })

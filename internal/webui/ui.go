@@ -85,6 +85,19 @@ type tunArg struct {
 
 func (a tunArg) Poor() bool { return a.HasQ && a.Q.Poor }
 
+// PendingNote describes an unknown state without presenting it as either
+// a successful check or a tunnel failure. Keep the API error in the title.
+func (a tunArg) PendingNote() string {
+	switch {
+	case a.Note == "not checked yet":
+		return a.V.T("Checking connection…")
+	case strings.HasPrefix(a.Note, "core API not responding: "):
+		return a.V.T("Waiting for core…")
+	default:
+		return ""
+	}
+}
+
 // Quality: the line after the state; empty when there is nothing to say
 func (a tunArg) Quality() string {
 	if !a.HasQ {
@@ -553,6 +566,17 @@ func (s *Server) status() status {
 	}
 	st := c.st
 	c.Unlock()
+	// The system cache may belong to the previous core. Tunnel states come
+	// from the current lifecycle, as in /api/tunnels, even on a cached page.
+	if st.ServiceRun {
+		states := pulse.snapshot()
+		if t, ok := states["awg1"]; ok {
+			st.TunnelAlive, st.TunnelNote = t.Alive, t.Note
+		}
+		if t, ok := states["awg2"]; ok {
+			st.Awg2Alive, st.Awg2Note = t.Alive, t.Note
+		}
+	}
 	filesInto(&st)
 	return st
 }

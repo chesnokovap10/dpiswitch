@@ -116,7 +116,17 @@ func (d Dialer) DialUDP() (*udpConn, error) {
 		return fail(err)
 	}
 	_ = c.SetDeadline(time.Time{})
-	return &udpConn{ctrl: c, relay: uc, to: raddr}, nil
+	u := &udpConn{ctrl: c, relay: uc, to: raddr}
+	go u.watchControl()
+	return u, nil
+}
+
+// A core restart closes the control connection and invalidates the UDP
+// association. Wake packet readers immediately, so pooled QUIC connections
+// cannot keep sending queries into a dead relay until their timeout.
+func (u *udpConn) watchControl() {
+	_, _ = io.Copy(io.Discard, u.ctrl)
+	u.Close()
 }
 
 // below: a net.PacketConn implementation on top of the relay, so it can

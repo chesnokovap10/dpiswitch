@@ -21,11 +21,13 @@ func Tr(lang, en string) string { return tr(lang, en) }
 // English whatever the language: "not checked yet" after every start of
 // the core. A time or an error in it stays as it is, and so does "96 ms".
 func TunnelNote(lang, note string) string {
+	if note == "not checked yet" {
+		return tr(lang, "Checking connection…")
+	}
 	if lang != "ru" {
 		return note
 	}
 	for _, p := range [][2]string{
-		{"not checked yet", "ещё не проверялся"},
 		{"no check since ", "нет проверки с "},
 		{"no answer at ", "нет ответа в "},
 		{"core API not responding: ", "API ядра не отвечает: "},

@@ -4,11 +4,101 @@ import (
 	"encoding/json"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"dpiswitch/internal/paths"
 )
+
+func assertPendingTunnels(t *testing.T, p *tunnelPulse, note string) {
+	t.Helper()
+	states := p.snapshot()
+	for _, name := range pulseTunnels {
+		st, ok := states[name]
+		if !ok || st.Alive || st.Note != note {
+			t.Fatalf("%s: %+v (present=%v), want pending %q", name, st, ok, note)
+		}
+	}
+}
+
+func TestTunnelPulseCoreLifecycle(t *testing.T) {
+	var calls int
+	p := newTunnelPulse(func(string) (bool, string) {
+		calls++
+		return true, "42 ms"
+	}, func(string) {})
+	p.coreState("run1", false)
+	p.look(time.Now())
+	for _, name := range pulseTunnels {
+		p.recv[name], p.fail[name], p.asked[name] = time.Now(), time.Now(), time.Now()
+	}
+	p.expectRestart("run1")
+	assertPendingTunnels(t, p, "core API not responding: restarting")
+	if len(p.recv)+len(p.fail)+len(p.asked) != 0 {
+		t.Fatal("traffic from the previous core survived the reset")
+	}
+	p.coreState("run1", false) // the outgoing core can still answer
+	p.look(time.Now())
+	if calls != 2 {
+		t.Fatal("queried the outgoing core while waiting for its replacement")
+	}
+	assertPendingTunnels(t, p, "core API not responding: restarting")
+	p.coreState("", true)
+	p.coreState("run2", false)
+	assertPendingTunnels(t, p, "not checked yet")
+	p.look(time.Now())
+	if st, _ := p.get("awg1"); !st.Alive {
+		t.Fatal("new core's health result was not published")
+	}
+	// A restart entirely between two live polls still invalidates both.
+	p.coreState("run3", false)
+	assertPendingTunnels(t, p, "not checked yet")
+	p.look(time.Now())
+	p.coreState("run3", false)
+	p.expectRestart("run2") // a late save response must not reset run3
+	if st, _ := p.get("awg1"); !st.Alive {
+		t.Fatal("same run or a late response reset an already checked core")
+	}
+}
+
+func TestTunnelPulseRejectsPreviousRunResults(t *testing.T) {
+	entered, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var block atomic.Bool
+	block.Store(true)
+	p := newTunnelPulse(func(name string) (bool, string) {
+		if name == "awg2" && block.Load() {
+			close(entered)
+			<-release
+		}
+		return true, "42 ms"
+	}, func(string) {})
+	p.coreState("run1", false)
+	go func() { defer close(done); p.look(time.Now()) }()
+	// The first result must not appear alone while the second is pending.
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("health call did not start")
+	}
+	assertPendingTunnels(t, p, "not checked yet")
+	p.expectRestart("run1")
+	p.coreState("run2", false)
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("old health call did not finish")
+	}
+	assertPendingTunnels(t, p, "not checked yet")
+	block.Store(false)
+	p.look(time.Now())
+	for name, st := range p.snapshot() {
+		if !st.Alive || st.Note != "42 ms" {
+			t.Fatalf("new result for %s: %+v", name, st)
+		}
+	}
+}
 
 // The traffic says when the last check is out of date: dials failing with
 // nothing coming in, on a tunnel found alive; bytes coming in, on one found
@@ -133,5 +223,32 @@ func TestTunnelsDrawn(t *testing.T) {
 	}
 	if p := got.Awg2.Pill; !strings.Contains(p, `class="pill bad"`) {
 		t.Fatalf("awg2's pill: %q", p)
+	}
+}
+
+// Both render paths use the same wording and warning color for states
+// that have no check result yet. Neither implies a healthy or dead tunnel.
+func TestTunnelPendingRendering(t *testing.T) {
+	for _, tc := range []struct {
+		note   string
+		alive  bool
+		en, ru string
+	}{
+		{"not checked yet", true, "Checking connection…", "проверка соединения…"},
+		{"core API not responding: EOF", false, "Waiting for core…", "ожидание ядра…"},
+	} {
+		for lang, label := range map[string]string{"en": tc.en, "ru": tc.ru} {
+			a := tunArg{V: &view{Lang: lang}, Name: "awg1", Alive: tc.alive, Note: tc.note}
+			for _, name := range []string{"tunchip", "tunpill"} {
+				body, err := drawn(name, a)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(body, label) || !strings.Contains(body, "warn") ||
+					strings.Contains(body, `class="dot ok"`) || strings.Contains(body, `class="pill bad"`) {
+					t.Fatalf("%s %s %q: %s", lang, name, tc.note, body)
+				}
+			}
+		}
 	}
 }

@@ -1,5 +1,7 @@
 # build output
 /dist/
+# Local hosts mappings contain private infrastructure addresses.
+hosts
 *.exe
 *.exe~*
 

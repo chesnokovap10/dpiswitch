@@ -1,14 +1,7 @@
 +.anthropic.com
-+.auth0.com
-+.challenges.cloudflare.com
 +.claude.ai
 +.claude.app
 +.claude.com
 +.claudemcpcontent.com
 +.claudeusercontent.com
-+.hcaptcha.com
-+.http-intake.logs.us5.datadoghq.com
-+.intercom.io
-+.intercomcdn.com
-+.o1158394.ingest.us.sentry.io
 Claude.exe

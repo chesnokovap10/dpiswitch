@@ -373,7 +373,7 @@ func TestLivePresets(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatalf("%v: %s", err, w.Body.String())
 	}
-	if len(got) != len(presets.Builtin()) || got[6].ID != "claude" || got[6].Title != "Claude" || got[6].On || !got[1].On || got[1].Title != "Telegram" {
+	if len(got) != len(presets.Builtin()) || got[5].ID != "claude" || got[5].Title != "Claude" || got[5].On || !got[1].On || got[1].Title != "Telegram" {
 		t.Fatalf("presets: %+v", got)
 	}
 }

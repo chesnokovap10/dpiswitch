@@ -380,7 +380,7 @@ OpenVPN, IKEv2), звонок или игра, которым привязка �
 разделе и упоминания awg2 в остальных — про включённый второй туннель.
 
 Второй сервер AmneziaWG только для выбранных сервисов: YouTube, Telegram и WhatsApp, Discord, ИИ-сервисов (ChatGPT,
-Claude, Gemini, Grok, Copilot, DeepL и др.), Instagram, Facebook, X и вашего списка. Он стоит ниже
+Claude, Google AI, Grok, Meta AI, Copilot и общего входа ИИ-сервисов), Instagram, Facebook, X и вашего списка. Он стоит ниже
 «Запрещено», «Всегда через туннель» и «Всегда напрямую» и выше детектора — детектор его имена не трогает.
 Если он лежит, его сайты идут через первый туннель; если лежат оба — напрямую, а в «Только в туннель»
 отклоняются. Детектор сравнивает прямой путь только с первым туннелем: то, что идёт в awg2, не проверяется никогда, а без awg1 не проверяется ничего, даже при включённом «Вкл». Пока он не подключён, пресеты
@@ -912,7 +912,7 @@ seconds. Settings written by version 1.9.1 or before, with a second `.conf` load
 switched on. The rest of this section, and what the others say of awg2, is of the second tunnel switched on.
 
 A second AmneziaWG server for chosen services only: YouTube, Telegram and WhatsApp, Discord, AI services (ChatGPT, Claude,
-Gemini, Grok, Copilot, DeepL and more), Instagram, Facebook, X and your own list. It stands below
+Google AI, Grok, Meta AI, Copilot and shared AI sign-in), Instagram, Facebook, X and your own list. It stands below
 Forbidden, Always via tunnel and Always direct and above the detector, which leaves its names alone. If it
 is down, its sites go through the first tunnel; if both are down, direct — in Tunnel only refused. The detector measures the direct path against the first tunnel only: what goes to awg2 is never checked, and without awg1 nothing is, even with auto-switch On. Until it is attached, its presets and list route
 nothing. Every

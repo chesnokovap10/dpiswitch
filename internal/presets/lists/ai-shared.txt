@@ -1,0 +1,7 @@
+cdn.auth0.com
+cdn.workos.com
+challenges.cloudflare.com
+forwarder.workos.com
+images.workoscdn.com
+setup.workos.com
+workos.imgix.net

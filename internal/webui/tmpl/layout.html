@@ -166,8 +166,8 @@
 {{/* a tunnel's health: in the overview's and the second tunnel's state, and
    in the header's chip. Drawn here alone -- /api/tunnels sends them drawn
    every second (see tunnelpulse.go), and ui.js only puts them in place */}}
-{{define "tunpill"}}{{$v := .V}}{{if .Alive}}<span class="pill {{if .Poor}}warn{{else}}ok{{end}}">{{if .Poor}}{{$v.T "responding slowly"}}{{else}}{{$v.T "responding"}}{{end}} · {{$v.Note .Note}}</span>{{with .Quality}} <span class="muted">{{.}}</span>{{end}}{{else}}<span class="pill bad">{{$v.T "not responding"}}</span> <span class="muted">{{$v.Note .Note}}</span>{{end}}{{end}}
-{{define "tunchip"}}<span class="dot {{if not .Alive}}bad{{else if .Poor}}warn{{else}}ok{{end}}"></span>{{.Name}} {{if .Alive}}{{.V.Note .Note}}{{else}}{{.V.T "not responding"}}{{end}}{{end}}
+{{define "tunpill"}}{{$v := .V}}{{if .PendingNote}}<span class="pill warn" title="{{$v.Note .Note}}">{{.PendingNote}}</span>{{else if .Alive}}<span class="pill {{if .Poor}}warn{{else}}ok{{end}}">{{if .Poor}}{{$v.T "responding slowly"}}{{else}}{{$v.T "responding"}}{{end}} · {{$v.Note .Note}}</span>{{with .Quality}} <span class="muted">{{.}}</span>{{end}}{{else}}<span class="pill bad">{{$v.T "not responding"}}</span> <span class="muted">{{$v.Note .Note}}</span>{{end}}{{end}}
+{{define "tunchip"}}<span class="dot {{if .PendingNote}}warn{{else if not .Alive}}bad{{else if .Poor}}warn{{else}}ok{{end}}"></span>{{.Name}} {{if .PendingNote}}<span title="{{.V.Note .Note}}">{{.PendingNote}}</span>{{else if .Alive}}{{.V.Note .Note}}{{else}}{{.V.T "not responding"}}{{end}}{{end}}
 
 {{/* the second tunnel's state: switched off in this mode, or its health */}}
 {{define "awg2pill"}}{{$s := .St}}{{if not $s.Awg2On}}<span class="pill">{{.T "switched off"}}</span>

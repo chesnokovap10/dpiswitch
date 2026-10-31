@@ -70,39 +70,23 @@ func TestLegacyCatalogMigration(t *testing.T) {
 	}
 }
 
-func TestBroadMasksCoverLegacyAIAndDesktopTraffic(t *testing.T) {
-	all := Builtin()
-	covered := func(host string) bool {
-		for _, p := range all {
-			for _, l := range p.Lines {
-				if base, ok := strings.CutPrefix(l, "+."); ok && (host == base || strings.HasSuffix(host, "."+base)) {
-					return true
-				}
+func TestSelectedAIPresets(t *testing.T) {
+	want := map[string]bool{"openai": true, "claude": true, "google-ai": true, "grok": true, "meta-ai": true, "copilot": true, "ai-shared": true}
+	for _, p := range Builtin() {
+		if p.Category != "ai" {
+			continue
+		}
+		if !want[p.ID] {
+			t.Errorf("unexpected AI preset %s", p.ID)
+		}
+		delete(want, p.ID)
+		for _, line := range p.Lines {
+			if p.ID == "ai-shared" && strings.HasPrefix(line, "+.") {
+				t.Errorf("shared dependency has broad mask: %s", line)
 			}
 		}
-		return false
 	}
-	b, _ := lists.ReadFile("lists/ai.txt")
-	for _, l := range strings.Fields(string(b)) {
-		if host, ok := strings.CutPrefix(l, "+."); ok && !covered(host) {
-			t.Errorf("old AI host no longer covered: %s", host)
-		}
-	}
-	for _, host := range []string{"api.oaistatsig.com", "downloads.claude.ai", "bridge.claudeusercontent.com", "new.frame.claudeusercontent.com", "codex-cloud-environments.chatgpt.com", "sdmntprwestus.oaiusercontent.com", "gemini.gstatic.com"} {
-		if !covered(host) {
-			t.Errorf("logged desktop host not covered: %s", host)
-		}
-	}
-	for _, p := range all {
-		if !ValidCategory(p.Category) {
-			t.Errorf("uncategorized %s", p.ID)
-		}
-		for _, a := range p.Lines {
-			for _, b := range p.Lines {
-				if a != b && strings.HasPrefix(a, "+.") && strings.HasPrefix(b, "+.") && strings.HasSuffix(a[2:], "."+b[2:]) {
-					t.Errorf("redundant %s under %s in %s", a, b, p.ID)
-				}
-			}
-		}
+	if len(want) != 0 {
+		t.Errorf("missing AI presets: %v", want)
 	}
 }

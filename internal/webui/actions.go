@@ -825,6 +825,7 @@ func (s *Server) partField(w http.ResponseWriter, r *http.Request, field string,
 // used to come back with the saved servers, and a typo in one line lost
 // every line written.
 func (s *Server) actDNS(w http.ResponseWriter, r *http.Request) {
+	previousRun := coreRun()
 	direct, tunnel, tunnel2 := splitLines(r.FormValue("direct_dns")), splitLines(r.FormValue("tunnel_dns")), splitLines(r.FormValue("tunnel_dns2"))
 	if tunnel == nil {
 		tunnel = []string{}
@@ -847,6 +848,9 @@ func (s *Server) actDNS(w http.ResponseWriter, r *http.Request) {
 			restart = !set.SameCore(was)
 			return nil
 		})
+	}
+	if err == nil && restart && s.status().ServiceRun {
+		pulse.expectRestart(previousRun)
 	}
 	ok, msg := done(r, err, s.coreNote(restart))
 	v := &view{Lang: lang(r), Page: "settings", Path: back(r), St: s.status(), Msg: &flash{ok, msg}}

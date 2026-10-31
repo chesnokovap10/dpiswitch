@@ -11,6 +11,28 @@
 // own, and a tab of the menu took up to half a second to come up.
 'use strict';
 
+// Tunnel updates own these small parts. Replacing their parent must keep
+// the latest live result instead of restoring the parent's cached status.
+let tunnelSnapshot = {};
+function paintTunnels(root = document) {
+  for (const [selector, key, part] of [
+    ['[data-tunnel]', 'tunnel', 'chip'],
+    ['[data-tstate]', 'tstate', 'pill'],
+  ]) {
+    for (const el of root.querySelectorAll(selector)) {
+      const html = (tunnelSnapshot[el.dataset[key]] || {})[part];
+      if (html !== undefined && el._html !== html) {
+        el.innerHTML = html;
+        el._html = html;
+      }
+    }
+  }
+}
+function replacePart(el, html) {
+  el.innerHTML = html;
+  paintTunnels(el);
+}
+
 // Answers can come back out of order: a refresh started before a change
 // may land after it and show the state before. Each element keeps the
 // number of its latest request, and only that one's answer is shown.
@@ -90,7 +112,7 @@ function load(name) {
       sec.className = 'pg away';
       sec.dataset.page = name;
       sec.dataset.url = '/' + name;
-      sec.innerHTML = html;
+      replacePart(sec, html);
       regroup(sec);
       main.append(sec);
       sections.set(name, sec);
@@ -371,7 +393,7 @@ async function send(url, body, target, changed, presetOp) {
     const keep = changed !== undefined && a && el.contains(a) && a.name && a.name !== changed &&
       'value' in a ? {name: a.name, value: a.value, s: a.selectionStart, e: a.selectionEnd} : null;
     finishPreset(presetOp);
-    el.innerHTML = html;
+    replacePart(el, html);
     reblink(el);
     regroup(el);
     el._html = undefined;
@@ -499,7 +521,7 @@ async function refresh(el, url) {
   if (!r || !r.ok) return;
   const html = await r.text();
   if (current()) {
-    el.innerHTML = html;
+    replacePart(el, html);
     reblink(el);
     regroup(el);
     el._html = undefined;
@@ -581,7 +603,7 @@ async function poll(el) {
     const bottom = top + el.clientHeight >= el.scrollHeight - 4;
     const follow = el.dataset.follow !== undefined && follows(el, bottom);
     const at = el.dataset.follow !== undefined && !follow ? readingAt(el) : null;
-    el.innerHTML = html;
+    replacePart(el, html);
     reblink(el);
     regroup(el);
     el._html = html;
@@ -865,29 +887,30 @@ addEventListener('hashchange', () => point(location.hash.slice(1)));
 // still said the tunnel was down (see tunnelpulse.go). Not while hidden.
 // The network comes with it: another one has every part drawn anew at once.
 let netSeen = '';
+let tunnelsBusy = false;
 setInterval(async () => {
-  if (document.hidden || !document.querySelector('[data-tunnel]')) return;
-  const r = await fetch('/api/tunnels').catch(() => null);
-  if (!r || !r.ok) return;
-  const st = await r.json().catch(() => ({}));
-  const chip = document.getElementById('netchip');
-  if (st.net && st.net !== netSeen) {
-    const was = netSeen || (chip && chip.dataset.cur);
-    netSeen = st.net;
-    if (was && was !== st.net) {
-      for (const p of document.querySelectorAll('[data-poll],[data-sync],[data-fresh]')) {
-        if (p.dataset.poll) due.set(p, 0); else if (!away(p)) poll(p);
+  if (tunnelsBusy || document.hidden || !document.querySelector('[data-tunnel]')) return;
+  tunnelsBusy = true;
+  try {
+    const r = await fetch('/api/tunnels', {signal: AbortSignal.timeout(15000)}).catch(() => null);
+    if (!r || !r.ok) return;
+    const st = await r.json().catch(() => null);
+    if (!st) return;
+    const chip = document.getElementById('netchip');
+    if (st.net && st.net !== netSeen) {
+      const was = netSeen || (chip && chip.dataset.cur);
+      netSeen = st.net;
+      if (was && was !== st.net) {
+        for (const p of document.querySelectorAll('[data-poll],[data-sync],[data-fresh]')) {
+          if (p.dataset.poll) due.set(p, 0); else if (!away(p)) poll(p);
+        }
       }
     }
+    // A tunnel omitted because its live sample expired keeps its last
+    // result until the next sample; an absent chip is never recreated.
+    tunnelSnapshot = {...tunnelSnapshot, ...st};
+    paintTunnels();
+  } finally {
+    tunnelsBusy = false;
   }
-  // the header's chips and the overview's and second tunnel's state come
-  // drawn by the server's templates: put in place when they changed
-  const put = (sel, key, part) => {
-    for (const c of document.querySelectorAll(sel)) {
-      const html = (st[c.dataset[key]] || {})[part];
-      if (html !== undefined && c._html !== html) { c.innerHTML = html; c._html = html; }
-    }
-  };
-  put('[data-tunnel]', 'tunnel', 'chip');
-  put('[data-tstate]', 'tstate', 'pill');
 }, 1000);

@@ -49,7 +49,7 @@ func TestPagesSpeakTheTraysLanguage(t *testing.T) {
 func TestTunnelNote(t *testing.T) {
 	for in, want := range map[string]string{
 		"96 ms":                        "96 ms",
-		"not checked yet":              "ещё не проверялся",
+		"not checked yet":              "проверка соединения…",
 		"no check since 12:03:04":      "нет проверки с 12:03:04",
 		"no answer at 12:03:04":        "нет ответа в 12:03:04",
 		"core API not responding: EOF": "API ядра не отвечает: EOF",
@@ -59,7 +59,11 @@ func TestTunnelNote(t *testing.T) {
 		if got := TunnelNote("ru", in); got != want {
 			t.Errorf("%q: %q, want %q", in, got, want)
 		}
-		if got := TunnelNote("en", in); got != in {
+		en := in
+		if in == "not checked yet" {
+			en = "Checking connection…"
+		}
+		if got := TunnelNote("en", in); got != en {
 			t.Errorf("en %q: %q", in, got)
 		}
 	}

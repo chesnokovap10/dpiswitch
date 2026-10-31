@@ -1,6 +1,11 @@
 package webui
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net"
 	"testing"
 	"time"
 
@@ -8,6 +13,66 @@ import (
 	"dpiswitch/internal/presets"
 	"dpiswitch/internal/probe"
 )
+
+func TestDNSPingRetriesTransportFailure(t *testing.T) {
+	old := pingEither
+	t.Cleanup(func() { pingEither = old })
+	for _, first := range []error{
+		context.DeadlineExceeded,
+		fmt.Errorf("read: %w", io.EOF),
+		&net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")},
+	} {
+		t.Run(first.Error(), func(t *testing.T) {
+			calls := 0
+			pingEither = func(_ probe.Dialer, srv, name string) ([]string, time.Duration, string, string, error) {
+				calls++
+				if srv != "quic://192.0.2.53" || name != "whoami.akamai.net" {
+					t.Fatalf("retry changed query: %s %s", srv, name)
+				}
+				if calls == 1 {
+					return nil, 0, srv, "DoQ", first
+				}
+				return []string{"192.0.2.1"}, 7 * time.Millisecond, srv, "DoQ", nil
+			}
+			r := pingDNS(probe.Dialer{}, "quic://192.0.2.53")
+			if calls != 2 || !r.OK || r.Kind != "DoQ" || r.Ms != 7 || r.Error != "" {
+				t.Fatalf("calls=%d result=%+v", calls, r)
+			}
+		})
+	}
+}
+
+func TestDNSPingRetryIsBounded(t *testing.T) {
+	old := pingEither
+	t.Cleanup(func() { pingEither = old })
+	for _, tc := range []struct {
+		err   error
+		calls int
+	}{
+		{context.DeadlineExceeded, 2},
+		{errors.New("NXDOMAIN"), 1},
+		{errors.New("tls: certificate verification failed"), 1},
+	} {
+		t.Run(tc.err.Error(), func(t *testing.T) {
+			calls := 0
+			pingEither = func(_ probe.Dialer, srv, _ string) ([]string, time.Duration, string, string, error) {
+				calls++
+				return nil, 0, srv, "DoQ", tc.err
+			}
+			r := pingDNS(probe.Dialer{}, "quic://192.0.2.53")
+			if calls != tc.calls || r.OK || r.Error != tc.err.Error() {
+				t.Fatalf("calls=%d result=%+v", calls, r)
+			}
+		})
+	}
+	pingEither = func(probe.Dialer, string, string) ([]string, time.Duration, string, string, error) {
+		t.Fatal("invalid resolver reached network test")
+		return nil, 0, "", "", nil
+	}
+	if r := pingDNS(probe.Dialer{}, "quic://192.0.2.53:53"); r.OK || r.Error == "" {
+		t.Fatalf("invalid resolver: %+v", r)
+	}
+}
 
 func TestDNSPingReportsActualTransport(t *testing.T) {
 	old := pingEither

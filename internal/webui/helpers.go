@@ -1,7 +1,10 @@
 package webui
 
 import (
+	"context"
 	"errors"
+	"io"
+	"net"
 	"net/netip"
 	"sync"
 	"time"
@@ -151,6 +154,12 @@ func pingDNS(d probe.Dialer, srv string) dnsResult {
 		var used string
 		var protocol string
 		res.IPs, rtt, used, protocol, err = pingEither(d, srv, "whoami.akamai.net")
+		// A cold resolver or a connection left over from a core restart
+		// can fail once. Repeat the test once for transport failures only;
+		// the successful attempt still measures a warmed-up query.
+		if transientDNSError(err) {
+			res.IPs, rtt, used, protocol, err = pingEither(d, srv, "whoami.akamai.net")
+		}
 		if err == nil {
 			res.Kind = protocol
 		}
@@ -171,4 +180,17 @@ func pingDNS(d probe.Dialer, srv string) dnsResult {
 		res.OK = len(res.IPs) > 0
 	}
 	return res
+}
+
+func transientDNSError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	var ne net.Error
+	var op *net.OpError
+	return (errors.As(err, &ne) && ne.Timeout()) || errors.As(err, &op)
 }

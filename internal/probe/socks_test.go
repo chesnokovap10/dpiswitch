@@ -1,11 +1,40 @@
 package probe
 
 import (
+	"errors"
 	"io"
 	"net"
 	"testing"
 	"time"
 )
+
+func TestUDPControlClosureClosesPackets(t *testing.T) {
+	client, server := net.Pipe()
+	relay, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		client.Close()
+		server.Close()
+		t.Fatal(err)
+	}
+	u := &udpConn{ctrl: client, relay: relay}
+	t.Cleanup(func() { u.Close(); server.Close() })
+	go u.watchControl()
+	read := make(chan error, 1)
+	go func() {
+		_, _, err := u.ReadFrom(make([]byte, 1))
+		read <- err
+	}()
+	// A restart closes TCP without delivering any UDP error or response.
+	server.Close()
+	select {
+	case err := <-read:
+		if !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("packet read after control closure: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("packet read still blocked after SOCKS association ended")
+	}
+}
 
 // authStub: a SOCKS5 listener that takes SocksUser with its password only,
 // as the core's prober listeners do; it answers a CONNECT and a UDP
