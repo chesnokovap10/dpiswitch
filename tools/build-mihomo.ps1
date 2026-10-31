@@ -107,7 +107,7 @@ Push-Location $src
 $cgo = $env:CGO_ENABLED
 try {
     $env:CGO_ENABLED = "0"
-    go test -mod=vendor -tags $tags ./component/resolver/... ./component/hostpolicy ./adapter/outbound ./component/sniffer ./dns ./tunnel
+    go test -mod=vendor -tags $tags ./component/resolver/... ./component/hostpolicy ./adapter/outbound ./component/sniffer ./dns ./tunnel ./tunnel/statistic ./hub/route
     if ($LASTEXITCODE) { throw "the core hosts policy tests failed" }
     go test -mod=vendor -tags $tags -run TestSystemHostsDirectOnlyConfig ./config
     if ($LASTEXITCODE) { throw "the core hosts policy config test failed" }

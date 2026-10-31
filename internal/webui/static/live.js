@@ -364,7 +364,8 @@ pageInit.live = function (sec) {
     p.textContent = r.proc || '—';
     p.title = r.path || '';
     const h = td('c-h');
-    if (r.host) { h.textContent = r.host; h.title = r.host; }
+    if (r.udpOverflow) { h.textContent = W.udpOverflow; h.title = W.udpOverflow; }
+    else if (r.host) { h.textContent = r.host; h.title = r.host; }
     else { h.textContent = W.noname; h.classList.add('muted'); }
     r._ip = td();
     r._ip.textContent = r.ip || '';
@@ -396,7 +397,7 @@ pageInit.live = function (sec) {
       x.type = 'button';
       x.className = 'lx';
       x.textContent = '✕';
-      x.title = W.close;
+      x.title = r.udpAssociation ? W.closeUDP : W.close;
       x.dataset.id = r.id;
       r._x.append(x);
     }
@@ -692,10 +693,11 @@ pageInit.live = function (sec) {
   const picked = () => Array.from(tbody.children, tr => tr._r).filter(r => r && sel.has(r));
   // the ✕ of a row picked says it closes them all
   function xTitles(rs) {
+    const sharedUDP = picked().some(r => r.udpAssociation);
     for (const r of rs) {
       const x = r._x && r._x.querySelector('button.lx');
       if (!x) continue;
-      const t = sel.size > 1 && sel.has(r) ? fmt(W.closeMany, sel.size) : W.close;
+      const t = sel.size > 1 && sel.has(r) ? fmt(W.closeMany, sel.size) + (sharedUDP ? '\n' + W.closeUDP : '') : r.udpAssociation ? W.closeUDP : W.close;
       if (x.title !== t) x.title = t;
     }
   }

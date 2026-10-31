@@ -130,14 +130,17 @@ func (a *api) send(method, path string, payload []byte) ([]byte, int, error) {
 var maxBody int64 = 64 << 20
 
 type connection struct {
-	ID          string   `json:"id"`
-	Chains      []string `json:"chains"`
-	Download    int64    `json:"download"`
-	Upload      int64    `json:"upload"`
-	Start       string   `json:"start"`
-	Rule        string   `json:"rule"`
-	RulePayload string   `json:"rulePayload"`
-	Metadata    struct {
+	PeerID         string   `json:"peerID"`
+	UDPAssociation string   `json:"udpAssociation"`
+	UDPOverflow    bool     `json:"udpOverflow"`
+	ID             string   `json:"id"`
+	Chains         []string `json:"chains"`
+	Download       int64    `json:"download"`
+	Upload         int64    `json:"upload"`
+	Start          string   `json:"start"`
+	Rule           string   `json:"rule"`
+	RulePayload    string   `json:"rulePayload"`
+	Metadata       struct {
 		SourceIP        string `json:"sourceIP"`
 		SourcePort      string `json:"sourcePort"`
 		Host            string `json:"host"`

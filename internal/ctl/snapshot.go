@@ -15,21 +15,23 @@ import (
 
 // LiveConn: one open connection as the core tracks it.
 type LiveConn struct {
-	ID          string
-	Host        string // the name the core routed by, "" for a bare address
-	Sniffed     bool   // the name was read from the traffic itself (ClientHello, Host:)
-	DstIP       string // the address dialled; for a name, where it resolved
-	Port        int
-	Network     string // tcp, udp
-	Process     string
-	ProcessPath string
-	Chains      []string // the outbound first, then the groups it was picked by
-	Rule        string
-	RulePayload string
-	Probe       bool // the prober's own, over its listeners
-	Start       time.Time
-	Upload      int64
-	Download    int64
+	UDPAssociation string
+	UDPOverflow    bool
+	ID             string
+	Host           string // the name the core routed by, "" for a bare address
+	Sniffed        bool   // the name was read from the traffic itself (ClientHello, Host:)
+	DstIP          string // the address dialled; for a name, where it resolved
+	Port           int
+	Network        string // tcp, udp
+	Process        string
+	ProcessPath    string
+	Chains         []string // the outbound first, then the groups it was picked by
+	Rule           string
+	RulePayload    string
+	Probe          bool // the prober's own, over its listeners
+	Start          time.Time
+	Upload         int64
+	Download       int64
 }
 
 // Live: the core's counters and its open connections.
@@ -65,7 +67,7 @@ func NewLiveClient(apiAddr, secret string) *LiveClient {
 func (l *LiveClient) Release() { l.tr.CloseIdleConnections() }
 
 func (l *LiveClient) Connections() (Live, error) {
-	b, err := l.a.do("GET", "/connections", nil)
+	b, err := l.a.do("GET", "/connections?udp=peers", nil)
 	var op *net.OpError
 	if errors.As(err, &op) && op.Op == "dial" {
 		return Live{}, ErrCoreDown
@@ -85,12 +87,16 @@ func (l *LiveClient) Connections() (Live, error) {
 	out := Live{UploadTotal: snap.UploadTotal, DownloadTotal: snap.DownloadTotal, Memory: snap.Memory,
 		Conns: make([]LiveConn, 0, len(snap.Connections))}
 	for _, c := range snap.Connections {
+		if c.PeerID != "" {
+			c.ID = c.PeerID
+		}
 		m := c.Metadata
 		lc := LiveConn{ID: c.ID, Host: c.domain(), Sniffed: m.SniffHost != "",
 			DstIP: m.DestinationIP, Network: m.Network, Process: m.Process, ProcessPath: m.ProcessPath,
 			Chains: c.Chains, Rule: c.Rule, RulePayload: c.RulePayload, Probe: c.fromProbe(),
 			Upload: c.Upload, Download: c.Download}
 		lc.Port, _ = strconv.Atoi(m.DestinationPort)
+		lc.UDPAssociation, lc.UDPOverflow = c.UDPAssociation, c.UDPOverflow
 		// a name has no address of its own until it is dialled: the one a
 		// TCP outbound connected to is where it went. A UDP one names the
 		// tunnel's server there, not the destination.

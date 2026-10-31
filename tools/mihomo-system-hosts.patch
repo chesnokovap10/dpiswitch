@@ -1124,6 +1124,368 @@ index 796face2..160b8391 100644
  
  	if r.ProxyResolver.Invalid() {
  		resolver.ProxyServerHostResolver = r.ProxyResolver
+diff --git a/hub/route/connections.go b/hub/route/connections.go
+index ddfa6c58..b98f8a18 100644
+--- a/hub/route/connections.go
++++ b/hub/route/connections.go
+@@ -24,6 +24,9 @@ func connectionRouter() http.Handler {
+ func getConnections(w http.ResponseWriter, r *http.Request) {
+ 	if !(r.Header.Get("Upgrade") == "websocket") {
+ 		snapshot := statistic.DefaultManager.Snapshot()
++		if r.URL.Query().Get("udp") == "peers" {
++			snapshot = statistic.DefaultManager.DetailedSnapshot()
++		}
+ 		render.JSON(w, r, snapshot)
+ 		return
+ 	}
+@@ -72,6 +75,10 @@ func getConnections(w http.ResponseWriter, r *http.Request) {
+ 
+ func closeConnection(w http.ResponseWriter, r *http.Request) {
+ 	id := chi.URLParam(r, "id")
++	// Detailed peer IDs retain the association's UUID as a prefix.
++	if len(id) == 73 && id[36] == '-' {
++		id = id[:36]
++	}
+ 	if c := statistic.DefaultManager.Get(id); c != nil {
+ 		_ = c.Close()
+ 	}
+diff --git a/tunnel/statistic/manager.go b/tunnel/statistic/manager.go
+index c69746db..2a964703 100644
+--- a/tunnel/statistic/manager.go
++++ b/tunnel/statistic/manager.go
+@@ -23,6 +23,7 @@ func init() {
+ 	}
+ 
+ 	go DefaultManager.handle()
++	udpPeerClock.Store(time.Now().Unix())
+ }
+ 
+ type Manager struct {
+@@ -81,9 +82,19 @@ func (m *Manager) Memory() uint64 {
+ 	return m.memory
+ }
+ 
+-func (m *Manager) Snapshot() *Snapshot {
++func (m *Manager) Snapshot() *Snapshot { return m.snapshot(false) }
++
++func (m *Manager) DetailedSnapshot() *Snapshot { return m.snapshot(true) }
++
++func (m *Manager) snapshot(detailed bool) *Snapshot {
+ 	var connections []*TrackerInfo
+ 	m.Range(func(c Tracker) bool {
++		if detailed {
++			if u, ok := c.(*udpTracker); ok {
++				connections = append(connections, u.detailed()...)
++				return true
++			}
++		}
+ 		connections = append(connections, c.Info())
+ 		return true
+ 	})
+@@ -116,6 +127,13 @@ func (m *Manager) handle() {
+ 	ticker := time.NewTicker(time.Second)
+ 
+ 	for range ticker.C {
++		udpPeerClock.Store(time.Now().Unix())
++		m.Range(func(c Tracker) bool {
++			if u, ok := c.(*udpTracker); ok {
++				u.peers.expire()
++			}
++			return true
++		})
+ 		m.uploadBlip.Store(m.uploadTemp.Swap(0))
+ 		m.downloadBlip.Store(m.downloadTemp.Swap(0))
+ 	}
+diff --git a/tunnel/statistic/tracker.go b/tunnel/statistic/tracker.go
+index 2fbb1cf9..9a944499 100644
+--- a/tunnel/statistic/tracker.go
++++ b/tunnel/statistic/tracker.go
+@@ -22,15 +22,18 @@ type Tracker interface {
+ }
+ 
+ type TrackerInfo struct {
+-	UUID          uuid.UUID    `json:"id"`
+-	Metadata      *C.Metadata  `json:"metadata"`
+-	UploadTotal   atomic.Int64 `json:"upload"`
+-	DownloadTotal atomic.Int64 `json:"download"`
+-	Start         time.Time    `json:"start"`
+-	Chain         C.Chain      `json:"chains"`
+-	ProviderChain C.Chain      `json:"providerChains"`
+-	Rule          string       `json:"rule"`
+-	RulePayload   string       `json:"rulePayload"`
++	PeerID         string       `json:"peerID,omitempty"`
++	UDPAssociation string       `json:"udpAssociation,omitempty"`
++	UDPOverflow    bool         `json:"udpOverflow,omitempty"`
++	UUID           uuid.UUID    `json:"id"`
++	Metadata       *C.Metadata  `json:"metadata"`
++	UploadTotal    atomic.Int64 `json:"upload"`
++	DownloadTotal  atomic.Int64 `json:"download"`
++	Start          time.Time    `json:"start"`
++	Chain          C.Chain      `json:"chains"`
++	ProviderChain  C.Chain      `json:"providerChains"`
++	Rule           string       `json:"rule"`
++	RulePayload    string       `json:"rulePayload"`
+ }
+ 
+ type tcpTracker struct {
+@@ -159,6 +162,7 @@ type udpTracker struct {
+ 	manager *Manager
+ 
+ 	pushToManager bool `json:"-"`
++	peers         udpPeers
+ }
+ 
+ func (ut *udpTracker) ID() string {
+@@ -176,6 +180,7 @@ func (ut *udpTracker) ReadFrom(b []byte) (int, net.Addr, error) {
+ 		ut.manager.PushDownloaded(download)
+ 	}
+ 	ut.DownloadTotal.Add(download)
++	ut.peers.count(addr, 0, download)
+ 	return n, addr, err
+ }
+ 
+@@ -186,6 +191,7 @@ func (ut *udpTracker) WaitReadFrom() (data []byte, put func(), addr net.Addr, er
+ 		ut.manager.PushDownloaded(download)
+ 	}
+ 	ut.DownloadTotal.Add(download)
++	ut.peers.count(addr, 0, download)
+ 	return
+ }
+ 
+@@ -196,10 +202,12 @@ func (ut *udpTracker) WriteTo(b []byte, addr net.Addr) (int, error) {
+ 		ut.manager.PushUploaded(upload)
+ 	}
+ 	ut.UploadTotal.Add(upload)
++	ut.peers.count(addr, upload, 0)
+ 	return n, err
+ }
+ 
+ func (ut *udpTracker) Close() error {
++	ut.peers.close()
+ 	ut.manager.Leave(ut)
+ 	return ut.PacketConn.Close()
+ }
+diff --git a/tunnel/statistic/udp_peers.go b/tunnel/statistic/udp_peers.go
+new file mode 100644
+index 00000000..b066a192
+--- /dev/null
++++ b/tunnel/statistic/udp_peers.go
+@@ -0,0 +1,133 @@
++package statistic
++
++import (
++	"net"
++	"net/netip"
++	"sync"
++	"sync/atomic"
++	"time"
++
++	"github.com/metacubex/mihomo/common/utils"
++)
++
++// Only the detailed API expands these counters. Transport, routing and the
++// controller's compact snapshot keep their original association semantics.
++const udpPeerLimit = 4096
++
++var udpPeerCount atomic.Int64
++var udpPeerClock atomic.Int64
++
++type udpPeer struct {
++	id       string
++	start    time.Time
++	seen     int64
++	up, down int64
++}
++type udpPeers struct {
++	sync.Mutex
++	entries  map[netip.AddrPort]*udpPeer
++	closed   bool
++	overflow udpPeer
++}
++
++func (p *udpPeers) count(addr net.Addr, up, down int64) {
++	if up <= 0 && down <= 0 {
++		return
++	}
++	a, ok := addr.(*net.UDPAddr)
++	if !ok || a == nil || !a.AddrPort().IsValid() {
++		return
++	}
++	key := a.AddrPort()
++	key = netip.AddrPortFrom(key.Addr().Unmap(), key.Port())
++	now := udpPeerClock.Load()
++	p.Lock()
++	defer p.Unlock()
++	if p.closed {
++		return
++	}
++	e := p.entries[key]
++	if e == nil {
++		if udpPeerCount.Add(1) > udpPeerLimit {
++			udpPeerCount.Add(-1)
++			e = &p.overflow
++			if e.start.IsZero() {
++				e.start = time.Now()
++			}
++		} else {
++			if p.entries == nil {
++				p.entries = make(map[netip.AddrPort]*udpPeer)
++			}
++			e = &udpPeer{id: utils.NewUUIDV4().String(), start: time.Now()}
++			p.entries[key] = e
++		}
++	}
++	e.seen = now
++	e.up += up
++	e.down += down
++}
++
++func (p *udpPeers) close() {
++	p.Lock()
++	defer p.Unlock()
++	if !p.closed {
++		udpPeerCount.Add(-int64(len(p.entries)))
++	}
++	p.closed = true
++	p.entries = nil
++}
++
++func (p *udpPeers) expire() {
++	now := udpPeerClock.Load()
++	p.Lock()
++	defer p.Unlock()
++	if !p.overflow.start.IsZero() && now-p.overflow.seen >= 60 {
++		p.overflow = udpPeer{}
++	}
++	for k, e := range p.entries {
++		if now-e.seen >= 60 {
++			delete(p.entries, k)
++			udpPeerCount.Add(-1)
++		}
++	}
++}
++
++func (ut *udpTracker) detailed() []*TrackerInfo {
++	p := &ut.peers
++	p.Lock()
++	defer p.Unlock()
++	rows := make([]*TrackerInfo, 0, len(p.entries)+1)
++	makeRow := func(key netip.AddrPort, e *udpPeer, overflow bool) {
++		// Copy metadata: the shared transport's first destination is not a peer's.
++		meta := ut.Metadata.Clone()
++		meta.Host, meta.SniffHost, meta.RemoteDst = "", "", ""
++		if !overflow && ut.Metadata.DstIP.Unmap() == key.Addr() && ut.Metadata.DstPort == key.Port() {
++			meta.Host, meta.SniffHost = ut.Metadata.Host, ut.Metadata.SniffHost
++		}
++		meta.DstIP, meta.DstPort = key.Addr(), key.Port()
++		r := TrackerInfo{UUID: ut.UUID, Metadata: meta, Chain: ut.Chain, ProviderChain: ut.ProviderChain, Rule: ut.Rule, RulePayload: ut.RulePayload}
++		r.UDPAssociation = ut.ID()
++		r.UDPOverflow = overflow
++		r.PeerID = ut.ID() + "-" + e.id
++		if overflow {
++			r.PeerID = ut.ID()
++		}
++		r.Start = e.start
++		r.UploadTotal.Store(e.up)
++		r.DownloadTotal.Store(e.down)
++		rows = append(rows, &r)
++	}
++	now := udpPeerClock.Load()
++	for key, e := range p.entries {
++		if now-e.seen >= 60 {
++			delete(p.entries, key)
++			udpPeerCount.Add(-1)
++			continue
++		}
++		makeRow(key, e, false)
++	}
++	if !p.overflow.start.IsZero() && now-p.overflow.seen < 60 {
++		makeRow(netip.AddrPort{}, &p.overflow, true)
++	}
++	return rows
++}
+diff --git a/tunnel/statistic/udp_peers_test.go b/tunnel/statistic/udp_peers_test.go
+new file mode 100644
+index 00000000..7549717d
+--- /dev/null
++++ b/tunnel/statistic/udp_peers_test.go
+@@ -0,0 +1,76 @@
++package statistic
++
++import (
++	"net"
++	"net/netip"
++	"testing"
++	"time"
++
++	"github.com/metacubex/mihomo/common/utils"
++	C "github.com/metacubex/mihomo/constant"
++)
++
++func TestUDPPeers(t *testing.T) {
++	udpPeerClock.Store(100)
++	u := &udpTracker{TrackerInfo: &TrackerInfo{UUID: utils.NewUUIDV4(), Metadata: &C.Metadata{NetWork: C.UDP, Host: "first.example"}}}
++	defer u.peers.close()
++	a := net.UDPAddrFromAddrPort(netip.MustParseAddrPort("192.0.2.1:1000"))
++	b := net.UDPAddrFromAddrPort(netip.MustParseAddrPort("[2001:db8::1]:2000"))
++	u.peers.count(a, 10, 20)
++	u.peers.count(b, 30, 40)
++	rows := u.detailed()
++	if len(rows) != 2 {
++		t.Fatalf("rows: %d", len(rows))
++	}
++	var up, down int64
++	ids := map[string]bool{}
++	for _, r := range rows {
++		up += r.UploadTotal.Load()
++		down += r.DownloadTotal.Load()
++		if len(r.PeerID) != 73 || r.UDPAssociation != u.ID() || r.Metadata.Host != "" {
++			t.Fatal("bad peer metadata")
++		}
++		ids[r.PeerID] = true
++	}
++	if up != 40 || down != 60 || len(ids) != 2 {
++		t.Fatal("wrong totals or IDs")
++	}
++	udpPeerClock.Store(159)
++	if len(u.detailed()) != 2 {
++		t.Fatal("expired too early")
++	}
++	udpPeerClock.Store(160)
++	u.peers.expire()
++	if len(u.detailed()) != 0 {
++		t.Fatal("did not expire")
++	}
++	u.peers.close()
++	u.peers.count(a, 1, 1)
++	if len(u.detailed()) != 0 {
++		t.Fatal("resurrected closed association")
++	}
++	udpPeerClock.Store(time.Now().Unix())
++}
++
++func TestUDPPeerLimit(t *testing.T) {
++	p := udpPeers{}
++	defer p.close()
++	for i := 0; i < udpPeerLimit+10; i++ {
++		p.count(net.UDPAddrFromAddrPort(netip.AddrPortFrom(netip.MustParseAddr("192.0.2.1"), uint16(i+1))), 1, 2)
++	}
++	if len(p.entries) != udpPeerLimit || p.overflow.up != 10 || p.overflow.down != 20 {
++		t.Fatal("limit lost traffic")
++	}
++}
++
++func BenchmarkUDPPeerCount(b *testing.B) {
++	p := udpPeers{}
++	defer p.close()
++	a := net.UDPAddrFromAddrPort(netip.MustParseAddrPort("192.0.2.1:1234"))
++	p.count(a, 1, 1)
++	b.ReportAllocs()
++	b.ResetTimer()
++	for i := 0; i < b.N; i++ {
++		p.count(a, 0, 1400)
++	}
++}
 diff --git a/tunnel/tunnel.go b/tunnel/tunnel.go
 index 86dbc14a..a661d9eb 100644
 --- a/tunnel/tunnel.go

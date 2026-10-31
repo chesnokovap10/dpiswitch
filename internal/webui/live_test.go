@@ -596,6 +596,10 @@ func TestLiveClose(t *testing.T) {
 			t.Errorf("id %q: %d", bad, w.Code)
 		}
 	}
+	peerID := id + "-" + "12345678-1234-4321-9876-123456789abc"
+	if w := do(t, h, "POST", "/act/liveclose", url.Values{"id": {peerID}}, nil); w.Code != 204 {
+		t.Fatalf("UDP peer close: %d %s", w.Code, w.Body)
+	}
 	if w := do(t, h, "GET", "/act/liveclose?id="+id, nil, nil); w.Code != 405 {
 		t.Errorf("GET: %d", w.Code)
 	}

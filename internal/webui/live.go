@@ -68,27 +68,29 @@ func coreSource() liveSource {
 
 // liveRow: one connection as the page draws it. Times are Unix milliseconds.
 type liveRow struct {
-	ID    string `json:"id"`
-	Host  string `json:"host,omitempty"`
-	Dom   string `json:"dom,omitempty"` // the domain the host is under, for the page's menu
-	IP    string `json:"ip,omitempty"`
-	Port  int    `json:"port"`
-	Net   string `json:"net"`
-	Proto string `json:"proto"`
-	Sure  bool   `json:"sure,omitempty"` // the protocol was read from the traffic, not taken from the port
-	Route string `json:"route"`          // direct, awg1, awg2, reject, other
-	Chain string `json:"chain"`          // the groups and the outbound, in the order they were passed
-	Rule  string `json:"rule,omitempty"`
-	Probe bool   `json:"probe,omitempty"`
-	Proc  string `json:"proc,omitempty"`
-	Path  string `json:"path,omitempty"`
-	Start int64  `json:"start"`
-	Up    int64  `json:"up"`
-	Down  int64  `json:"down"`
-	US    int64  `json:"us"` // bytes a second over the last interval
-	DS    int64  `json:"ds"`
-	Act   int64  `json:"act"` // the last time its bytes moved
-	End   int64  `json:"end,omitempty"`
+	UDPAssociation string `json:"udpAssociation,omitempty"`
+	UDPOverflow    bool   `json:"udpOverflow,omitempty"`
+	ID             string `json:"id"`
+	Host           string `json:"host,omitempty"`
+	Dom            string `json:"dom,omitempty"` // the domain the host is under, for the page's menu
+	IP             string `json:"ip,omitempty"`
+	Port           int    `json:"port"`
+	Net            string `json:"net"`
+	Proto          string `json:"proto"`
+	Sure           bool   `json:"sure,omitempty"` // the protocol was read from the traffic, not taken from the port
+	Route          string `json:"route"`          // direct, awg1, awg2, reject, other
+	Chain          string `json:"chain"`          // the groups and the outbound, in the order they were passed
+	Rule           string `json:"rule,omitempty"`
+	Probe          bool   `json:"probe,omitempty"`
+	Proc           string `json:"proc,omitempty"`
+	Path           string `json:"path,omitempty"`
+	Start          int64  `json:"start"`
+	Up             int64  `json:"up"`
+	Down           int64  `json:"down"`
+	US             int64  `json:"us"` // bytes a second over the last interval
+	DS             int64  `json:"ds"`
+	Act            int64  `json:"act"` // the last time its bytes moved
+	End            int64  `json:"end,omitempty"`
 	// a failed dial: what the core said, what it comes to (ctl.FailKind),
 	// how many times; Start is the first, End the last
 	Err string `json:"err,omitempty"`
@@ -766,6 +768,7 @@ func newLiveRow(c ctl.LiveConn, now time.Time) *liveRow {
 		// not called idle until they have stood still for a while
 		Act: now.UnixMilli()}
 	r.Proto, r.Sure = liveProto(r.Net, c.Port, c.Sniffed)
+	r.UDPAssociation, r.UDPOverflow = c.UDPAssociation, c.UDPOverflow
 	r.Rule = strings.TrimSpace(c.Rule + " " + c.RulePayload)
 	if !c.Start.IsZero() {
 		r.Start = c.Start.UnixMilli()
@@ -856,7 +859,7 @@ func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-var liveID = regexp.MustCompile(`^[0-9a-fA-F-]{8,64}$`)
+var liveID = regexp.MustCompile(`^(?:[0-9a-fA-F-]{8,64}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$`)
 
 // actLiveClose: the core drops a connection -- one, or the rows picked at
 // once; the program opens a new one, routed by the rules as they are now.
@@ -955,6 +958,8 @@ func liveWords(v *view) liveData {
 		"noMatch":       v.T("Nothing matches the filter."),
 		"shown":         v.T("Shown %d of %d: narrow the filter."),
 		"close":         v.T("Close the connection: the program opens a new one, routed by the rules as they are now"),
+		"closeUDP":      v.T("Close the UDP association: interrupts traffic to all addresses using this application's UDP socket"),
+		"udpOverflow":   v.T("Other UDP destinations (tracking limit reached)"),
 		"closeFail":     v.T("Not closed:"),
 		"pause":         v.T("Pause"),
 		"resume":        v.T("Resume"),

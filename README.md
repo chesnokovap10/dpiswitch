@@ -305,6 +305,11 @@ CDN, спидтестам, обновлениям.
 
 ### Весь DNS через туннель
 
+Live показывает UDP отдельно по удалённому IP и порту, сохраняя общий транспортный сокет.
+Закрытие такой строки закрывает всю UDP-ассоциацию; подсказка кнопки предупреждает об этом.
+Ядро хранит до 4096 UDP-адресов, забывая их после 60 секунд простоя; сверх лимита трафик
+показан общей строкой «Другие UDP-адреса». Детектор получает компактную таблицу ассоциаций.
+
 Системный hosts учитывается при прямом выходе, включая обход DPI и переключение с туннеля на DIRECT.
 Для соединения с распознанным доменом через AWG адрес разрешается DNS выбранного туннеля без hosts.
 Сам файл не меняется; настоящий адрес из туннеля приложению не выдаётся. Прямые диагностические пробы
@@ -843,6 +848,11 @@ current network. The tray's reset is of the current network.
 > Saving the DNS restarts the core: the tunnel drops for a couple of seconds.
 
 ### All DNS through the tunnel
+
+Live displays UDP traffic per remote IP and port while retaining the shared transport socket.
+Closing a UDP row closes the entire association, as its button tooltip explains.
+The core tracks up to 4096 UDP endpoints and expires them after 60 idle seconds; excess
+traffic appears under “Other UDP destinations”. The detector uses compact association snapshots.
 
 System hosts applies to direct connections, including DPI bypass and fallback from a tunnel to DIRECT.
 AWG connections with a known domain use that tunnel's DNS without system hosts. The file is never edited,
