@@ -30,21 +30,19 @@ param(
     # (tls-split), cutting the name inside the registered domain's label,
     # and a decoy QUIC Initial ahead of the first one (quic-fake);
     # see DPISWITCH.md there
-    [string]$Commit = "6027ebb8aa45d32f9cada08067f5a670828037c2",
+    [string]$Commit = "a5c0afe66703b24bea6f129b2ca5b9ae599c978e",
     [string]$Repo = "https://github.com/chesnokovap10/mihomo-dpiswitch.git",
-    # Existing checkout at Commit with exactly the hosts patch; never reset it.
+    # Existing clean checkout at Commit; never reset it.
     [string]$SourcePath = ""
 )
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot | Split-Path
-$patch = Join-Path $PSScriptRoot "mihomo-system-hosts.patch"
-$patchHash = (Get-FileHash $patch -Algorithm SHA256).Hash.ToLower()
-$sourceID = "$Commit+$patchHash"
+$sourceID = $Commit
 $src = if ($SourcePath) { (Resolve-Path -LiteralPath $SourcePath).Path } else {
-    Join-Path $env:TEMP "mihomo-src-$($Commit.Substring(0, 12))-hosts-$($patchHash.Substring(0, 12))"
+    Join-Path $env:TEMP "mihomo-src-$($Commit.Substring(0, 12))"
 }
-# what dist\mihomo.exe was built from: the commit, patch hash and file's SHA-256,
+# what dist\mihomo.exe was built from: the commit and file's SHA-256,
 # written once the core has passed the routing tests below. build.ps1 builds
 # the core again when it says another commit, or another file, or nothing.
 $stamp = Join-Path $root "dist\mihomo.commit"
@@ -56,19 +54,12 @@ if (-not (Test-Path $src)) {
     if ($LASTEXITCODE) { throw "could not fetch the pinned core" }
     git -C $src checkout --quiet --detach $Commit
     if ($LASTEXITCODE) { throw "could not check out the pinned core" }
-    git -C $src apply --index $patch
-    if ($LASTEXITCODE) { throw "the hosts policy patch does not apply" }
 }
 # Existing copies must match exactly; never discard somebody's edits.
 if ((git -C $src rev-parse HEAD) -ne $Commit) { throw "the core's source is not at $Commit" }
-$diff = Join-Path $root "dist\mihomo-source.diff"
 New-Item -ItemType Directory -Force (Join-Path $root dist) | Out-Null
-git -C $src diff --binary "--output=$diff" HEAD
-if ($LASTEXITCODE -or (Get-FileHash $diff -Algorithm SHA256).Hash.ToLower() -ne $patchHash) {
-    throw "the core checkout does not match the pinned commit and hosts policy patch"
-}
-$untracked = git -C $src ls-files --others --exclude-standard
-if ($LASTEXITCODE -or $untracked) { throw "the core checkout has unreviewed files" }
+$dirty = git -C $src status --porcelain
+if ($LASTEXITCODE -or $dirty) { throw "the core checkout must be clean" }
 
 # Keeps only the listed cases of the "switch proxyType" in a file. A case runs
 # from its "case" line to the next case/default at the same indent.
@@ -142,11 +133,10 @@ try {
     Pop-Location
 }
 $hash = (Get-FileHash $out -Algorithm SHA256).Hash.ToLower()
-# Refuse to stamp a binary if source or patch changed during a long test run.
-git -C $src diff --binary "--output=$diff" HEAD
-if ($LASTEXITCODE -or (Get-FileHash $diff -Algorithm SHA256).Hash.ToLower() -ne $patchHash -or
-    (Get-FileHash $patch -Algorithm SHA256).Hash.ToLower() -ne $patchHash) {
-    throw "the core source or hosts policy patch changed while building"
+# Refuse to stamp a binary if its source changed during a long test run.
+$dirty = git -C $src status --porcelain
+if ($LASTEXITCODE -or $dirty -or (git -C $src rev-parse HEAD) -ne $Commit) {
+    throw "the core source changed while building"
 }
 Set-Content -NoNewline -Encoding ascii $stamp "$sourceID $hash"
 Write-Host "stamped: $stamp"

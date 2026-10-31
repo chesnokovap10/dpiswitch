@@ -522,9 +522,8 @@ dpiswitch version    показать версию
 
 Результат — один файл `dist\dpiswitch.exe` со встроенным ядром mihomo (сжато gzip, всего ~24 МБ).
 При первой сборке ядро собирается скриптом `tools\build-mihomo.ps1` в `dist\mihomo.exe` и потом
-переиспользуется, пока отметка `dist\mihomo.commit` совпадает с закреплённым коммитом и хешем патча. Ядро собирается
-из форка mihomo [chesnokovap10/mihomo-dpiswitch](https://github.com/chesnokovap10/mihomo-dpiswitch) с патчем
-`tools/mihomo-system-hosts.patch`, на
+переиспользуется, пока отметка `dist\mihomo.commit` совпадает с закреплённым коммитом. Ядро собирается
+из форка mihomo [chesnokovap10/mihomo-dpiswitch](https://github.com/chesnokovap10/mihomo-dpiswitch) на
 закреплённом коммите: проверенная альфа mihomo, все зависимости в `vendor/` и правки для DPI Switch —
 первые пакеты через WireGuard не теряются после старта, API ядра оставляет только то, что вызывает
 служба, а слушатели пробника пускают только его самого, UDP тоже. Оставлено только нужное DPI Switch: исходящий WireGuard (AmneziaWG), входящие TUN и SOCKS;
@@ -1065,10 +1064,9 @@ Requires Go 1.26+.
 
 The result is a single `dist\dpiswitch.exe` with the mihomo core embedded inside (gzip-compressed,
 ~24 MB in total). On the first build the core is built by `tools\build-mihomo.ps1` into
-`dist\mihomo.exe` and reused afterwards, while its stamp `dist\mihomo.commit` matches the pinned commit and patch hash.
+`dist\mihomo.exe` and reused afterwards, while its stamp `dist\mihomo.commit` matches the pinned commit.
 The core is built from the fork of mihomo at
-[chesnokovap10/mihomo-dpiswitch](https://github.com/chesnokovap10/mihomo-dpiswitch), with
-`tools/mihomo-system-hosts.patch`, at a pinned
+[chesnokovap10/mihomo-dpiswitch](https://github.com/chesnokovap10/mihomo-dpiswitch), at a pinned
 commit: the tested mihomo Alpha, every dependency in `vendor/` and changes for DPI Switch -- the first
 packets through WireGuard are not lost after a start, the core's API keeps only what the service calls,
 and the prober's listeners take the prober alone, UDP included. Only what DPI Switch uses is kept: the WireGuard outbound (AmneziaWG) and the
