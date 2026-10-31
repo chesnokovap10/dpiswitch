@@ -16,6 +16,9 @@ import (
 // hanging on it meanwhile. ip: the node tried, the one direct DNS gives
 // first, as the full check takes it; "" when there is none to try.
 func QuickDead(direct, split, tunnel Dialer, dom string, wait time.Duration) (ip string, dead bool) {
+	if direct.checkHosts(dom) != nil {
+		return "", false
+	}
 	if len(direct.DNS) == 0 {
 		return "", false
 	}
@@ -45,6 +48,7 @@ func QuickDead(direct, split, tunnel Dialer, dom string, wait time.Duration) (ip
 // runHello: the TLS handshake on 443 with the name, and the certificate
 // checked -- Run's first half, with no request after it
 var runHello = func(d Dialer, ip, host string) PathResult {
+	d = d.forDomain(host)
 	var r PathResult
 	r.IP = ip
 	conn, err := d.dial(ip, 443)

@@ -289,6 +289,11 @@ var lookupAnyV6Fn = LookupAnyV6
 func checkAlone(direct, split Dialer, dom string, attempts int) Report {
 	rep := Report{Domain: dom, Port: 443, Proto: "tcp", Time: time.Now().Format(time.RFC3339), Attempts: attempts,
 		Note: "no tunnel to compare against"}
+	if err := direct.checkHosts(dom); err != nil {
+		rep.Verdict, rep.Unmeasured, rep.Reason = Inconcl, true, err.Error()
+		return rep
+	}
+	direct, split = direct.forDomain(dom), split.forDomain(dom)
 	var ips []string
 	var err error
 	if len(direct.DNS) > 0 {
@@ -381,6 +386,7 @@ func CheckProtoV6(direct, tunnel Dialer, dom string, port, attempts int, udp boo
 // connection opened is not tried again on IPv4. Anything else stays
 // INCONCLUSIVE, the IPv4 node's verdict the name's.
 func nameBlockedAlone(direct Dialer, rep *Report) {
+	direct = direct.forDomain(rep.Domain)
 	type pass struct{ name, noName bool }
 	res := make([]pass, confirmPasses)
 	var wg sync.WaitGroup
@@ -415,6 +421,11 @@ func checkFamily(direct, tunnel Dialer, dom string, port, attempts int, udp bool
 		proto = "quic"
 	}
 	rep := Report{Domain: dom, Port: port, Proto: proto, Time: time.Now().Format(time.RFC3339), Attempts: attempts}
+	if err := direct.checkHosts(dom); err != nil {
+		rep.Verdict, rep.Unmeasured, rep.Reason = Inconcl, true, err.Error()
+		return rep, true
+	}
+	direct = direct.forDomain(dom)
 
 	var ip string
 	a, isAddr := AddrKey(dom)
@@ -591,6 +602,7 @@ var (
 // handshake now and then, and rr17---sn-n8v7znsk, 0 with the name and 2 of
 // 3 without, came out INCONCLUSIVE and went its family's way, blocked.
 func confirmByName(direct, tunnel Dialer, ip, dom string, rep *Report) (fluke bool) {
+	direct = direct.forDomain(dom)
 	type pass struct{ name, noName, tunnel bool }
 	res := make([]pass, confirmPasses)
 	var wg sync.WaitGroup

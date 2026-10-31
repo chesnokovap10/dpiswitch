@@ -21,6 +21,9 @@ type udpConn struct {
 }
 
 func (d Dialer) DialUDP() (*udpConn, error) {
+	if err := d.checkHosts(d.guardDomain); err != nil {
+		return nil, err
+	}
 	if d.Direct {
 		uc, err := net.ListenUDP("udp", nil)
 		if err != nil {

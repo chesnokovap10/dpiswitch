@@ -305,6 +305,13 @@ CDN, спидтестам, обновлениям.
 
 ### Весь DNS через туннель
 
+Системный hosts учитывается при прямом выходе, включая обход DPI и переключение с туннеля на DIRECT.
+Для соединения с распознанным доменом через AWG адрес разрешается DNS выбранного туннеля без hosts.
+Сам файл не меняется; настоящий адрес из туннеля приложению не выдаётся. Прямые диагностические пробы
+доменов из hosts пропускаются. Локальные назначения остаются исключёнными.
+Если DNS туннеля не задан ни в настройках, ни в его конфигурации, выбранные DNS-серверы запрашиваются
+через этот туннель, без отката к прямому DNS.
+
 Windows спрашивает имя сразу на всех адаптерах: через адаптер DPI Switch и одновременно у DNS адаптера
 Wi-Fi или Ethernet — роутера, провайдера. Ответ из туннеля приходит первым, и второй запрос Windows
 отменяет, но он уже ушёл: роутер спрашивает DNS провайдера, и тот видит, какие сайты вы открываете. На
@@ -510,8 +517,9 @@ dpiswitch version    показать версию
 
 Результат — один файл `dist\dpiswitch.exe` со встроенным ядром mihomo (сжато gzip, всего ~24 МБ).
 При первой сборке ядро собирается скриптом `tools\build-mihomo.ps1` в `dist\mihomo.exe` и потом
-переиспользуется, пока отметка `dist\mihomo.commit` совпадает с закреплённым коммитом. Ядро собирается
-из форка mihomo [chesnokovap10/mihomo-dpiswitch](https://github.com/chesnokovap10/mihomo-dpiswitch) на
+переиспользуется, пока отметка `dist\mihomo.commit` совпадает с закреплённым коммитом и хешем патча. Ядро собирается
+из форка mihomo [chesnokovap10/mihomo-dpiswitch](https://github.com/chesnokovap10/mihomo-dpiswitch) с патчем
+`tools/mihomo-system-hosts.patch`, на
 закреплённом коммите: проверенная альфа mihomo, все зависимости в `vendor/` и правки для DPI Switch —
 первые пакеты через WireGuard не теряются после старта, API ядра оставляет только то, что вызывает
 служба, а слушатели пробника пускают только его самого, UDP тоже. Оставлено только нужное DPI Switch: исходящий WireGuard (AmneziaWG), входящие TUN и SOCKS;
@@ -836,6 +844,13 @@ current network. The tray's reset is of the current network.
 
 ### All DNS through the tunnel
 
+System hosts applies to direct connections, including DPI bypass and fallback from a tunnel to DIRECT.
+AWG connections with a known domain use that tunnel's DNS without system hosts. The file is never edited,
+and the tunnel's real address is not disclosed to the application. Direct diagnostic probes of names in
+hosts are skipped. Local destinations remain excluded.
+If neither the settings nor the tunnel configuration provides DNS, the selected DNS servers are queried
+through that tunnel, without falling back to direct DNS.
+
 Windows asks a name on every adapter at once: through the DPI Switch adapter, and at the same time of
 the Wi-Fi or Ethernet adapter's DNS -- the router's, the ISP's. The tunnel's answer comes first and
 Windows cancels the other query, but it has gone out: the router asks the ISP's resolver, which sees the
@@ -1040,9 +1055,10 @@ Requires Go 1.26+.
 
 The result is a single `dist\dpiswitch.exe` with the mihomo core embedded inside (gzip-compressed,
 ~24 MB in total). On the first build the core is built by `tools\build-mihomo.ps1` into
-`dist\mihomo.exe` and reused afterwards, while its stamp `dist\mihomo.commit` names the pinned commit.
+`dist\mihomo.exe` and reused afterwards, while its stamp `dist\mihomo.commit` matches the pinned commit and patch hash.
 The core is built from the fork of mihomo at
-[chesnokovap10/mihomo-dpiswitch](https://github.com/chesnokovap10/mihomo-dpiswitch), at a pinned
+[chesnokovap10/mihomo-dpiswitch](https://github.com/chesnokovap10/mihomo-dpiswitch), with
+`tools/mihomo-system-hosts.patch`, at a pinned
 commit: the tested mihomo Alpha, every dependency in `vendor/` and changes for DPI Switch -- the first
 packets through WireGuard are not lost after a start, the core's API keeps only what the service calls,
 and the prober's listeners take the prober alone, UDP included. Only what DPI Switch uses is kept: the WireGuard outbound (AmneziaWG) and the

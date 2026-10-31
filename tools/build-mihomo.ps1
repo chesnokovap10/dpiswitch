@@ -31,33 +31,44 @@ param(
     # and a decoy QUIC Initial ahead of the first one (quic-fake);
     # see DPISWITCH.md there
     [string]$Commit = "6027ebb8aa45d32f9cada08067f5a670828037c2",
-    [string]$Repo = "https://github.com/chesnokovap10/mihomo-dpiswitch.git"
+    [string]$Repo = "https://github.com/chesnokovap10/mihomo-dpiswitch.git",
+    # Existing checkout at Commit with exactly the hosts patch; never reset it.
+    [string]$SourcePath = ""
 )
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot | Split-Path
-$src = Join-Path $env:TEMP "mihomo-src-$($Commit.Substring(0, 12))"
-# what dist\mihomo.exe was built from: the commit and the file's SHA-256,
+$patch = Join-Path $PSScriptRoot "mihomo-system-hosts.patch"
+$patchHash = (Get-FileHash $patch -Algorithm SHA256).Hash.ToLower()
+$sourceID = "$Commit+$patchHash"
+$src = if ($SourcePath) { (Resolve-Path -LiteralPath $SourcePath).Path } else {
+    Join-Path $env:TEMP "mihomo-src-$($Commit.Substring(0, 12))-hosts-$($patchHash.Substring(0, 12))"
+}
+# what dist\mihomo.exe was built from: the commit, patch hash and file's SHA-256,
 # written once the core has passed the routing tests below. build.ps1 builds
 # the core again when it says another commit, or another file, or nothing.
 $stamp = Join-Path $root "dist\mihomo.commit"
 
 if (-not (Test-Path $src)) {
     git clone --filter=blob:none $Repo $src
-} else {
-    # the copy is reset below: a change made in it and not yet committed
-    # would go with the reset, without a word
-    $dirty = git -C $src status --porcelain
-    if ($LASTEXITCODE) { throw "$src is not a copy git can read: remove it to build afresh" }
-    if ($dirty) { throw "$src holds changes not committed: commit them in the fork first, or remove the folder to build afresh" }
+    if ($LASTEXITCODE) { throw "could not clone the core" }
+    git -C $src fetch --quiet $Repo $Commit
+    if ($LASTEXITCODE) { throw "could not fetch the pinned core" }
+    git -C $src checkout --quiet --detach $Commit
+    if ($LASTEXITCODE) { throw "could not check out the pinned core" }
+    git -C $src apply --index $patch
+    if ($LASTEXITCODE) { throw "the hosts policy patch does not apply" }
 }
-git -C $src fetch --quiet $Repo $Commit
-# a previous run left the switches cut: start from the pristine tree
-git -C $src reset --quiet --hard
-git -C $src checkout --quiet --detach $Commit
-# a git command failing does not stop the script: without this check a
-# fetch that failed built whatever commit the copy was on
+# Existing copies must match exactly; never discard somebody's edits.
 if ((git -C $src rev-parse HEAD) -ne $Commit) { throw "the core's source is not at $Commit" }
+$diff = Join-Path $root "dist\mihomo-source.diff"
+New-Item -ItemType Directory -Force (Join-Path $root dist) | Out-Null
+git -C $src diff --binary "--output=$diff" HEAD
+if ($LASTEXITCODE -or (Get-FileHash $diff -Algorithm SHA256).Hash.ToLower() -ne $patchHash) {
+    throw "the core checkout does not match the pinned commit and hosts policy patch"
+}
+$untracked = git -C $src ls-files --others --exclude-standard
+if ($LASTEXITCODE -or $untracked) { throw "the core checkout has unreviewed files" }
 
 # Keeps only the listed cases of the "switch proxyType" in a file. A case runs
 # from its "case" line to the next case/default at the same indent.
@@ -96,6 +107,10 @@ Push-Location $src
 $cgo = $env:CGO_ENABLED
 try {
     $env:CGO_ENABLED = "0"
+    go test -mod=vendor -tags $tags ./component/resolver/... ./component/hostpolicy ./adapter/outbound ./component/sniffer ./dns ./tunnel
+    if ($LASTEXITCODE) { throw "the core hosts policy tests failed" }
+    go test -mod=vendor -tags $tags -run TestSystemHostsDirectOnlyConfig ./config
+    if ($LASTEXITCODE) { throw "the core hosts policy config test failed" }
     go build -trimpath -tags $tags -ldflags "-s -w" -o $out .
     if ($LASTEXITCODE) { throw "the core did not build" }
 } finally {
@@ -120,12 +135,18 @@ $prev = $env:DPISWITCH_CORE
 Push-Location $root
 try {
     $env:DPISWITCH_CORE = $out
-    go test -tags routing -run 'TestCoreFailClosed|TestCoreTables|TestCoreLockedDown|TestCoreAAAA' -count=1 ./internal/awgconf
+    go test -tags routing -timeout 20m -run 'TestCoreFailClosed|TestCoreTables|TestCoreLockedDown|TestCoreAAAA' -count=1 ./internal/awgconf
     if ($LASTEXITCODE) { throw "the new core does not route as the help's tables say, is not locked down, or answers AAAA otherwise: do not ship it" }
 } finally {
     $env:DPISWITCH_CORE = $prev
     Pop-Location
 }
 $hash = (Get-FileHash $out -Algorithm SHA256).Hash.ToLower()
-Set-Content -NoNewline -Encoding ascii $stamp "$Commit $hash"
+# Refuse to stamp a binary if source or patch changed during a long test run.
+git -C $src diff --binary "--output=$diff" HEAD
+if ($LASTEXITCODE -or (Get-FileHash $diff -Algorithm SHA256).Hash.ToLower() -ne $patchHash -or
+    (Get-FileHash $patch -Algorithm SHA256).Hash.ToLower() -ne $patchHash) {
+    throw "the core source or hosts policy patch changed while building"
+}
+Set-Content -NoNewline -Encoding ascii $stamp "$sourceID $hash"
 Write-Host "stamped: $stamp"

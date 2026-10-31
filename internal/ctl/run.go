@@ -348,7 +348,7 @@ func probeBatch(cfg Config, a *api, st *state, netID string, w *watcher, queue [
 
 	// the listeners' password is the API's secret (see awgconf)
 	pass := *a.secret.Load()
-	direct := probe.Dialer{Addr: cfg.DirectAddr, Timeout: cfg.Timeout, DNS: directResolvers(cfg),
+	direct := probe.Dialer{RespectHosts: true, Addr: cfg.DirectAddr, Timeout: cfg.Timeout, DNS: directResolvers(cfg),
 		Established: a.established, NoV6: st.directNoV6(netID), Pass: pass}
 	tunnel := probe.Dialer{Addr: cfg.TunnelAddr, Timeout: cfg.Timeout, Established: a.established, Pass: pass}
 	split := direct

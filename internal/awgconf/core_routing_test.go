@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,6 +68,7 @@ func TestCoreFailClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	out, _ = localCoreHealth(t, out)
 
 	// what may never go direct in tunnel only: the strict groups, and the
 	// select groups as tunnel only chooses their members. "tunnel" (the
@@ -137,6 +139,46 @@ func TestCoreFailClosed(t *testing.T) {
 			t.Errorf("both tunnels down: %s is on %q", g, now)
 		}
 	}
+}
+
+// A routing test must not depend on a public resolver or health-check website.
+// The test WireGuard peer answers HTTP at any destination; DIRECT uses this
+// local server. Tunnel liveness still reflects the real test peer's state.
+func localCoreHealth(t *testing.T, out string) (string, string) {
+	t.Helper()
+	ifc, err := net.InterfaceByName(physicalIface())
+	if err != nil {
+		t.Fatal(err)
+	}
+	addrs, err := ifc.Addrs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var host string
+	for _, addr := range addrs {
+		ip, _, err := net.ParseCIDR(addr.String())
+		if err == nil && ip.To4() != nil && ip.IsGlobalUnicast() {
+			host = ip.String()
+			break
+		}
+	}
+	if host == "" {
+		t.Fatal("routing fixture needs an IPv4 address on the physical adapter")
+	}
+	// Loopback is local to the WireGuard userspace stack, so it cannot reach
+	// the peer. Our own adapter address works both directly and via the peer.
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	srv.Listener.Close()
+	srv.Listener, err = net.Listen("tcp4", net.JoinHostPort(host, "0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Start()
+	t.Cleanup(srv.Close)
+	if !strings.Contains(out, ctl.HealthURL) {
+		t.Fatal("no health URL in core config")
+	}
+	return strings.ReplaceAll(out, ctl.HealthURL, srv.URL), srv.URL
 }
 
 // coreBinary: the core the checks run, dist\mihomo.exe or DPISWITCH_CORE;

@@ -56,6 +56,7 @@ const bodyLimit = 64 << 10 // read at most 64 KB: we need a fingerprint, not the
 // We connect by IP so a broken handshake cannot be confused with a failed
 // resolution, and we know exactly which node was tested.
 func Run(d Dialer, ip, host string) PathResult {
+	d = d.forDomain(host)
 	var r PathResult
 	r.IP = ip
 
@@ -137,6 +138,7 @@ func RunNoName(d Dialer, ip string) PathResult {
 // block page, or resets the session -- so a bare connect called such a host
 // clean.
 func RunHTTP(d Dialer, ip, host string) PathResult {
+	d = d.forDomain(host)
 	conn, r := dialConfirmed(d, ip, 80)
 	if conn == nil {
 		return r

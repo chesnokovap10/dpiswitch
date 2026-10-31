@@ -29,6 +29,43 @@ func TestYQ(t *testing.T) {
 	}
 }
 
+func TestSystemHostsPolicyOnBothTunnels(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	one := "[Interface]\nPrivateKey = k\nAddress = 10.8.1.3/32\n[Peer]\nPublicKey = p\nEndpoint = 198.51.100.7:51820\n"
+	two := "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.9.1.3/32\n[Peer]\nPublicKey = AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nEndpoint = 198.51.100.8:51820\n"
+	if err := os.WriteFile(paths.SourceConf2(), []byte(two), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ctl.UpdateSettings(paths.Settings(), func(s *ctl.Settings) error { s.SecondTunnel = true; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Parse(one)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := c.Render()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, flag := range []string{"  use-hosts: true\n", "  use-system-hosts: true\n", "  system-hosts-direct-only: true\n"} {
+		if !strings.Contains(out, flag) {
+			t.Fatalf("missing hosts policy %q", flag)
+		}
+	}
+	if strings.Count(out, "    ignore-system-hosts: true\n") != 2 {
+		t.Fatal("hosts bypass must be enabled on both AWG outbounds")
+	}
+	if strings.Count(out, "    dns: "+quoteList(ctl.DefaultSettings().DirectDNS)+"\n") != 2 {
+		t.Fatal("configs without DNS need an explicit resolver inside each tunnel")
+	}
+	if !strings.Contains(out, "  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve") || !strings.Contains(out, "  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve") {
+		t.Fatal("local network exclusions lost")
+	}
+}
+
 // What goes into the config bare is refused unless it is what it says.
 func TestConfCheck(t *testing.T) {
 	good := func() *Conf {

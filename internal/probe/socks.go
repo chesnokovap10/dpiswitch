@@ -13,8 +13,11 @@ import (
 // Minimal SOCKS5 CONNECT. A raw net.Conn is required: we run TLS
 // ourselves to see the certificate and the exact failure mode.
 type Dialer struct {
-	Addr    string // mihomo listener address
-	Timeout time.Duration
+	// RespectHosts prevents direct diagnostic traffic bypassing a hosts pin.
+	RespectHosts bool
+	guardDomain  string
+	Addr         string // mihomo listener address
+	Timeout      time.Duration
 	// resolvers for this path: the same the core uses. Empty -- built-in DoH
 	DNS []Resolver
 	// Established reports whether the core has a live outbound connection for
@@ -97,6 +100,9 @@ func (d Dialer) Alive() bool {
 }
 
 func (d Dialer) dial(host string, port int) (net.Conn, error) {
+	if err := d.checkHosts(d.guardDomain); err != nil {
+		return nil, err
+	}
 	if d.Direct {
 		return net.DialTimeout("tcp", net.JoinHostPort(strings.Trim(host, "[]"), strconv.Itoa(port)), d.Timeout)
 	}

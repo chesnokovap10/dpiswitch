@@ -60,6 +60,8 @@ if (-not $NoEmbed) {
     $m = Select-String -Path tools\build-mihomo.ps1 -Pattern '\[string\]\$Commit = "([0-9a-f]{40})"'
     if (-not $m) { throw "no pinned commit found in tools\build-mihomo.ps1" }
     $pin = $m.Matches[0].Groups[1].Value
+    $patchHash = (Get-FileHash tools\mihomo-system-hosts.patch -Algorithm SHA256).Hash.ToLower()
+    $pin = "$pin+$patchHash"
     $stamped = $false
     if ((Test-Path dist\mihomo.exe) -and (Test-Path dist\mihomo.commit)) {
         $c, $h = (Get-Content dist\mihomo.commit -Raw).Trim() -split ' '

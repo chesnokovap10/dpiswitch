@@ -19,6 +19,7 @@ import (
 // false "clean" breaks the site -- and a crafted probe yields exactly that if
 // DPI filters on the SNI inside the Initial packet.
 func RunQUIC(d Dialer, ip string, port int, host string) PathResult {
+	d = d.forDomain(host)
 	var r PathResult
 	r.IP = ip
 

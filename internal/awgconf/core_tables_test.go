@@ -129,6 +129,13 @@ func coreCells(t *testing.T, core, peer, mode string, r row, alive map[string]bo
 	} else if out, err = RenderNoFirst(); err != nil {
 		t.Fatal(err)
 	}
+	out, healthURL := localCoreHealth(t, out)
+	// Resolve test-only names without public DNS. TEST-NET stays outside local
+	// routing exceptions; the peer accepts it and a dead/direct dial is logged.
+	out += "\nhosts:\n"
+	for _, host := range []string{hostUnnamed, hostClean, hostPreset, hostAwg2, hostTunnel, hostDirect, hostBlock, hostSplit} {
+		out += fmt.Sprintf("  '%s': 192.0.2.19\n", host)
+	}
 
 	// the health check quick to find a tunnel dead
 	if len(tunnels) > 0 && !strings.Contains(out, "    timeout: 15000\n") {
@@ -143,7 +150,7 @@ func coreCells(t *testing.T, core, peer, mode string, r row, alive map[string]bo
 	for _, tn := range tunnels {
 		deadline := time.Now().Add(20 * time.Second)
 		for {
-			up, checked := ctrl.alive(tn, ctl.HealthURL)
+			up, checked := ctrl.alive(tn, healthURL)
 			if checked && up == alive[tn] {
 				break
 			}
@@ -158,14 +165,14 @@ func coreCells(t *testing.T, core, peer, mode string, r row, alive map[string]bo
 	// with the short timeout, and a slow answer would leave a group with
 	// every member down on its first, a dead tunnel
 	for i := 0; ; i++ {
-		if up, checked := ctrl.alive("DIRECT", ctl.HealthURL); up || !checked {
+		if up, checked := ctrl.alive("DIRECT", healthURL); up || !checked {
 			break
 		}
 		if i == 3 {
 			t.Fatal("DIRECT's health check fails: the internet does not answer it")
 		}
 		var d map[string]any
-		ctrl.get("/proxies/DIRECT/delay?timeout=10000&url="+url.QueryEscape(ctl.HealthURL), &d)
+		ctrl.get("/proxies/DIRECT/delay?timeout=10000&url="+url.QueryEscape(healthURL), &d)
 	}
 
 	cells := []struct {

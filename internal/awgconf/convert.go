@@ -340,6 +340,11 @@ func render(c *Conf) (string, error) {
 	if len(set.TunnelDNS) > 0 {
 		tunDNS = set.TunnelDNS
 	}
+	if len(tunDNS) == 0 {
+		// Keep the selected resolver provider when the .conf has no DNS,
+		// but reach it through this WireGuard outbound, never via DIRECT.
+		tunDNS = set.DirectDNS
+	}
 	// the second tunnel's own: from the settings, otherwise from its .conf
 	// -- names are resolved by the server the traffic goes through
 	var tun2DNS []string
@@ -347,6 +352,9 @@ func render(c *Conf) (string, error) {
 		tun2DNS = c2.DNS()
 		if len(set.TunnelDNS2) > 0 {
 			tun2DNS = set.TunnelDNS2
+		}
+		if len(tun2DNS) == 0 {
+			tun2DNS = set.DirectDNS
 		}
 	}
 	directDNS := set.DirectDNS
@@ -491,6 +499,9 @@ func render(c *Conf) (string, error) {
 	w("dns:")
 	w("  enable: true")
 	w("  prefer-h3: true")
+	w("  use-hosts: true")
+	w("  use-system-hosts: true")
+	w("  system-hosts-direct-only: true")
 	w("  listen: 127.0.0.1:1053")
 	if !ipv6 {
 		// IPv6 found not reaching the adapter: no AAAA answers, or programs
@@ -1071,6 +1082,7 @@ func (c *Conf) writeProxy(w func(string, ...any), name string, tunDNS []string, 
 	w("    persistent-keepalive: %d", ka)
 	w("    udp: true")
 	w("    remote-dns-resolve: true")
+	w("    ignore-system-hosts: true")
 	if ipv6 && !v6Dead {
 		// IPv4 first, IPv6 when a site has only IPv6. The address family a
 		// program chose is not preserved with fake-ip: the core resolves the
