@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,17 +47,21 @@ type dnsResult struct {
 	Caught bool
 }
 
-// DisplayIPs shows resolver exits with the port used for the DNS test.
-func (r dnsResult) DisplayIPs() []string {
+// DisplayServer shows the effective DNS server port; exit IPs have no known port.
+func (r dnsResult) DisplayServer() string {
 	rs, err := probe.ParseResolver(r.Server)
 	if err != nil {
-		return r.IPs
+		return r.Server
 	}
-	ips := make([]string, len(r.IPs))
-	for i, ip := range r.IPs {
-		ips[i] = net.JoinHostPort(ip, strconv.Itoa(rs.Port))
+	prefix, rest := "", r.Server
+	if scheme, address, ok := strings.Cut(rest, "://"); ok {
+		prefix, rest = scheme+"://", address
 	}
-	return ips
+	suffix := ""
+	if i := strings.IndexAny(rest, "/?#"); i >= 0 {
+		suffix = rest[i:]
+	}
+	return prefix + net.JoinHostPort(rs.Host, strconv.Itoa(rs.Port)) + suffix
 }
 
 // caughtBy marks the plain-DNS results the tunnel's server answered itself:
