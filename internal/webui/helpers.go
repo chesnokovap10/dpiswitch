@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"strconv"
 	"sync"
 	"time"
 
@@ -43,6 +44,19 @@ type dnsResult struct {
 	// plain DNS to some other server, answered by the tunnel's own: the
 	// servers catch port 53 and hand it to their resolver (see caughtBy)
 	Caught bool
+}
+
+// DisplayIPs shows resolver exits with the port used for the DNS test.
+func (r dnsResult) DisplayIPs() []string {
+	rs, err := probe.ParseResolver(r.Server)
+	if err != nil {
+		return r.IPs
+	}
+	ips := make([]string, len(r.IPs))
+	for i, ip := range r.IPs {
+		ips[i] = net.JoinHostPort(ip, strconv.Itoa(rs.Port))
+	}
+	return ips
 }
 
 // caughtBy marks the plain-DNS results the tunnel's server answered itself:
