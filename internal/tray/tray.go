@@ -354,7 +354,7 @@ func (t *Tray) wndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr
 			go fn() // the action may take long; the window must not be blocked
 		}
 		return 0
-	case wmQuitReq:
+	case wmQuitReq, wmClose:
 		// the window is destroyed here, on the message loop thread:
 		// from another thread DestroyWindow silently does nothing
 		if err := t.notify(nimDelete); err != nil {

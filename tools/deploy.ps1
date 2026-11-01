@@ -84,7 +84,39 @@ $down = Get-Date
 $trays = @(Get-Process dpiswitch -ErrorAction SilentlyContinue |
     Where-Object { $_.SessionId -ne 0 -and $_.SessionId -eq (Get-Process -Id $PID).SessionId })
 $trayPaths = @($trays | ForEach-Object { $_.Path } | Sort-Object -Unique)
-$trays | Stop-Process -Force
+# A forced termination leaves the icon in Explorer until it is hovered.
+# Find the hidden tray window of each process and let it remove its icon.
+if ($trays.Count) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class DpiSwitchTrayClose {
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string title);
+    [DllImport("user32.dll")]
+    static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr wp, IntPtr lp);
+    public static void Close(uint pid) {
+        IntPtr hwnd = IntPtr.Zero;
+        while ((hwnd = FindWindowEx(IntPtr.Zero, hwnd, "dpiswitchTrayClass", null)) != IntPtr.Zero) {
+            uint owner;
+            GetWindowThreadProcessId(hwnd, out owner);
+            // Use the existing quit message so older installed builds also
+            // remove their icon before exiting.
+            if (owner == pid && !PostMessage(hwnd, 0x0402, IntPtr.Zero, IntPtr.Zero))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        }
+    }
+}
+'@
+    foreach ($trayProcess in $trays) { [DpiSwitchTrayClose]::Close($trayProcess.Id) }
+    if (-not (Wait-Until {
+        @($trays | Where-Object { -not $_.HasExited }).Count -eq 0
+    } 15)) {
+        throw "the tray did not close within 15 seconds; nothing was replaced"
+    }
+}
 
 # The trays come back whatever happens below. The administrator prompt
 # declined, or left to expire with nobody at the computer, threw here with
