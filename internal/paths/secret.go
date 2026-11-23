@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"os/user"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -28,16 +27,32 @@ import (
 // SYSTEM (the service), Administrators and the current user -- what
 // Restrict gives.
 func WriteSecret(path string, data []byte) error {
-	u, err := user.Current()
+	sid, err := currentSID()
 	if err != nil {
 		return fmt.Errorf("current user unknown: %w", err)
 	}
 	sd, err := windows.SecurityDescriptorFromString(
-		"D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;" + u.Uid + ")")
+		"D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;" + sid + ")")
 	if err != nil {
 		return fmt.Errorf("permissions for %s: %w", path, err)
 	}
 	return writeWith(path, data, sd)
+}
+
+// currentSID reads the security identity Windows is actually using for this
+// process. os/user.Current ultimately needs account lookup data that may be
+// unavailable to a service, a stripped-down test runner or a domain account
+// temporarily away from its controller; the access token is authoritative
+// and already contains the SID needed in an ACL.
+func currentSID() (string, error) {
+	u, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		return "", err
+	}
+	if u.User.Sid == nil || !u.User.Sid.IsValid() {
+		return "", fmt.Errorf("invalid SID in process token")
+	}
+	return u.User.Sid.String(), nil
 }
 
 // WriteServiceSecret writes a key-bearing file of the service's: SYSTEM and

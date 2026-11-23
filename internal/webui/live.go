@@ -814,7 +814,7 @@ func liveRoute(chains []string) string {
 		return "split"
 	case "awg1", "tunnel", "tunnel-rest", "tunnel-soft-any", "tunnel-lists", "tunnel-one", "tunnel-any":
 		return "awg1"
-	case "awg2", "tunnel2", "tunnel2-soft", "tunnel2-strict":
+	case "awg2", "tunnel2", "tunnel2-soft", "tunnel2-strict", "tunnel2-only":
 		return "awg2"
 	case "REJECT", "REJECT-DROP":
 		return "reject"

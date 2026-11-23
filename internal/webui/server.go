@@ -129,6 +129,7 @@ func (s *Server) Handler() http.Handler {
 		"/act/detach2":       s.actDetach2,
 		"/act/delete1":       s.actDelete1,
 		"/act/awg2":          s.actAwg2,
+		"/act/awg2fallback":  s.actAwg2Fallback,
 		"/act/second":        s.actSecond,
 		"/act/reset":         s.actReset,
 		"/act/forget":        s.actForget,

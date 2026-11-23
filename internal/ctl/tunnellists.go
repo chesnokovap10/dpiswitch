@@ -23,7 +23,8 @@ import (
 //     switched on -- the first and then the second; never direct, in every
 //     mode.
 //   - the second tunnel's presets and list: the second, then the first,
-//     then direct -- or, in tunnel only, refused instead of direct.
+//     then direct -- or, in tunnel only, refused instead of direct. With
+//     Awg2NoFallback, the second alone; connections fail when it is down.
 //   - what no list names: the first tunnel, then -- switched on -- the
 //     second, then direct; in tunnel only the same tunnels, never direct.
 //
@@ -40,6 +41,7 @@ const (
 	TunnelSoftAnyGroup = "tunnel-soft-any" // the first, then the second, then direct
 	Tunnel2SoftGroup   = "tunnel2-soft"    // the second, then the first, then direct
 	Tunnel2StrictGroup = "tunnel2-strict"  // the second, then the first; nothing else
+	Tunnel2OnlyGroup   = "tunnel2-only"    // the second alone; nothing else
 )
 
 // Awg2Attached: whether the core's config has a second tunnel. Set by
@@ -69,12 +71,31 @@ func RouteChoice(s Settings) map[string]string {
 		}
 		return b
 	}
+	two := pick(strict, Tunnel2StrictGroup, Tunnel2SoftGroup)
+	if s.Awg2NoFallback {
+		two = Tunnel2OnlyGroup
+	}
 	return map[string]string{
 		TunnelListsGroup: pick(on, TunnelAnyGroup, TunnelOneGroup),
-		Tunnel2Group:     pick(strict, Tunnel2StrictGroup, Tunnel2SoftGroup),
+		Tunnel2Group:     two,
 		TunnelRestGroup: pick(strict, pick(on, TunnelAnyGroup, TunnelOneGroup),
 			pick(on, TunnelSoftAnyGroup, TunnelSoftGroup)),
 	}
+}
+
+// Awg2RouteSynced reports whether the core has taken the current fallback
+// choice for the second tunnel. The UI waits for this before closing open
+// preset/list connections, so their immediate reconnect cannot take the old
+// route again.
+func Awg2RouteSynced(apiAddr, secret string) bool {
+	b, err := newAPI(apiAddr, secret).do("GET", "/proxies/"+url.PathEscape(Tunnel2Group), nil)
+	if err != nil {
+		return false
+	}
+	var g struct {
+		Now string `json:"now"`
+	}
+	return json.Unmarshal(b, &g) == nil && g.Now == RouteChoice(LoadSettings(paths.Settings()))[Tunnel2Group]
 }
 
 // routesSet: the member last chosen in the core, by group; listMu held. A

@@ -1086,8 +1086,7 @@ func TestDNSTestCoreDown(t *testing.T) {
 	}
 }
 
-// The second tunnel's switch is kept per auto-switch mode, and observe only
-// starts off each time it is chosen.
+// The second tunnel's switch is shared by every auto-switch mode.
 func TestAwg2Switch(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
@@ -1130,6 +1129,21 @@ func TestAwg2Switch(t *testing.T) {
 	mode(ctl.ModeObserve)
 	if !active() {
 		t.Fatal("observe only switched awg2 off")
+	}
+}
+
+func TestAwg2FallbackSwitch(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	secondOn(t)
+	for _, value := range []string{"1", "0"} {
+		w := do(t, h, "POST", "/act/awg2fallback", url.Values{"field": {"awg2fallback"}, "value": {value}}, nil)
+		if w.Code != http.StatusOK || strings.Contains(w.Body.String(), `class="msg bad"`) {
+			t.Fatalf("switch %s: %d %s", value, w.Code, w.Body.String())
+		}
+		if got := ctl.LoadSettings(paths.Settings()).Awg2NoFallback; got != (value == "1") {
+			t.Fatalf("switch %s saved %v", value, got)
+		}
 	}
 }
 

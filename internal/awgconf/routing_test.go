@@ -625,16 +625,16 @@ func TestRenderGroups(t *testing.T) {
 	}{
 		{"no tunnel", false, false, map[string]string{
 			"tunnel": "DIRECT", "tunnel-soft-any": "DIRECT", "tunnel-one": "REJECT", "tunnel-any": "REJECT",
-			"tunnel2-soft": "DIRECT", "tunnel2-strict": "REJECT"}},
+			"tunnel2-soft": "DIRECT", "tunnel2-strict": "REJECT", "tunnel2-only": "REJECT"}},
 		{"the second alone", false, true, map[string]string{
 			"tunnel": "DIRECT", "tunnel-soft-any": "DIRECT", "tunnel-one": "REJECT", "tunnel-any": "awg2",
-			"tunnel2-soft": "awg2 DIRECT", "tunnel2-strict": "awg2"}},
+			"tunnel2-soft": "awg2 DIRECT", "tunnel2-strict": "awg2", "tunnel2-only": "awg2"}},
 		{"the first alone", true, false, map[string]string{
 			"tunnel": "awg1 DIRECT", "tunnel-soft-any": "awg1 DIRECT", "tunnel-one": "awg1", "tunnel-any": "awg1",
-			"tunnel2-soft": "awg1 DIRECT", "tunnel2-strict": "awg1"}},
+			"tunnel2-soft": "awg1 DIRECT", "tunnel2-strict": "awg1", "tunnel2-only": "REJECT"}},
 		{"both", true, true, map[string]string{
 			"tunnel": "awg1 DIRECT", "tunnel-soft-any": "awg1 awg2 DIRECT", "tunnel-one": "awg1", "tunnel-any": "awg1 awg2",
-			"tunnel2-soft": "awg2 awg1 DIRECT", "tunnel2-strict": "awg2 awg1"}},
+			"tunnel2-soft": "awg2 awg1 DIRECT", "tunnel2-strict": "awg2 awg1", "tunnel2-only": "awg2"}},
 	} {
 		os.Remove(paths.SourceConf2())
 		if c.awg2 {
@@ -657,7 +657,7 @@ func TestRenderGroups(t *testing.T) {
 			}
 			// a group that never goes direct refuses even with no member at
 			// all; the others take their members' last, DIRECT, anyway
-			strict := g == "tunnel-one" || g == "tunnel-any" || g == "tunnel2-strict"
+			strict := g == "tunnel-one" || g == "tunnel-any" || g == "tunnel2-strict" || g == "tunnel2-only"
 			if got := groupBlock(t, out, g); strings.Contains(got, "empty-fallback: REJECT\n") != strict {
 				t.Errorf("%s: group %s, empty-fallback REJECT wanted %v:\n%s", c.name, g, strict, got)
 			}
@@ -691,18 +691,22 @@ func TestRouteChoice(t *testing.T) {
 	for _, c := range []struct {
 		mode             string
 		awg2             bool
+		noFallback       bool
 		lists, two, rest string
 	}{
-		{ctl.ModeOn, true, ctl.TunnelAnyGroup, ctl.Tunnel2SoftGroup, ctl.TunnelSoftAnyGroup},
-		{ctl.ModeOn, false, ctl.TunnelOneGroup, ctl.Tunnel2SoftGroup, ctl.TunnelSoftGroup},
-		{ctl.ModeObserve, true, ctl.TunnelAnyGroup, ctl.Tunnel2SoftGroup, ctl.TunnelSoftAnyGroup},
-		{ctl.ModeTunnel, true, ctl.TunnelAnyGroup, ctl.Tunnel2StrictGroup, ctl.TunnelAnyGroup},
-		{ctl.ModeTunnel, false, ctl.TunnelOneGroup, ctl.Tunnel2StrictGroup, ctl.TunnelOneGroup},
+		{ctl.ModeOn, true, false, ctl.TunnelAnyGroup, ctl.Tunnel2SoftGroup, ctl.TunnelSoftAnyGroup},
+		{ctl.ModeOn, true, true, ctl.TunnelAnyGroup, ctl.Tunnel2OnlyGroup, ctl.TunnelSoftAnyGroup},
+		{ctl.ModeOn, false, false, ctl.TunnelOneGroup, ctl.Tunnel2SoftGroup, ctl.TunnelSoftGroup},
+		{ctl.ModeObserve, true, false, ctl.TunnelAnyGroup, ctl.Tunnel2SoftGroup, ctl.TunnelSoftAnyGroup},
+		{ctl.ModeTunnel, true, false, ctl.TunnelAnyGroup, ctl.Tunnel2StrictGroup, ctl.TunnelAnyGroup},
+		{ctl.ModeTunnel, true, true, ctl.TunnelAnyGroup, ctl.Tunnel2OnlyGroup, ctl.TunnelAnyGroup},
+		{ctl.ModeTunnel, false, false, ctl.TunnelOneGroup, ctl.Tunnel2StrictGroup, ctl.TunnelOneGroup},
 	} {
 		s := ctl.DefaultSettings()
 		s.SecondTunnel = true
 		s.SetMode(c.mode)
 		s.SetAwg2(c.awg2)
+		s.Awg2NoFallback = c.noFallback
 		got := ctl.RouteChoice(s)
 		if got[ctl.TunnelListsGroup] != c.lists || got[ctl.Tunnel2Group] != c.two || got[ctl.TunnelRestGroup] != c.rest {
 			t.Errorf("%s, awg2 %v: %v", c.mode, c.awg2, got)

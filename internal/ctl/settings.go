@@ -67,6 +67,10 @@ type Settings struct {
 	Awg2Presets []string `json:"awg2_presets"`
 	// One manual switch shared by all modes.
 	Awg2On bool `json:"awg2_enabled"`
+	// Awg2NoFallback keeps the second tunnel's presets and own list on awg2
+	// alone. If it is unavailable, their connections fail instead of falling
+	// back to awg1 and then, outside Tunnel only, direct.
+	Awg2NoFallback bool `json:"awg2_no_fallback"`
 	// direct-path resolvers: the core and the prober reach them directly,
 	// so CDNs hand out nodes closest to the user's ISP
 	DirectDNS []string `json:"direct_dns"`

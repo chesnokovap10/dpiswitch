@@ -21,7 +21,7 @@ import (
 const DirectListener = "127.0.0.1:7892"
 
 // noFirstTunnel: no first tunnel's config is loaded, see Config.alone
-func noFirstTunnel() bool {
+var noFirstTunnel = func() bool {
 	_, err := os.Stat(paths.SourceConf())
 	return err != nil
 }

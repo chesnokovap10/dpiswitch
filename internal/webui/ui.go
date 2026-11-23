@@ -406,20 +406,21 @@ type status struct {
 	NetworkUp   bool           `json:"network_up"`
 	Version     string         `json:"version"`
 	// Commit: the build's, see version.Commit; shown beside the version
-	Commit      string `json:"commit,omitempty"`
-	Mode        string `json:"-"` // see ctl.Settings.Mode
-	Endpoint    string `json:"-"`
-	Second      bool   `json:"-"` // the second tunnel is on in the settings: off, the pages say nothing of it
-	Awg2        bool   `json:"-"` // a second tunnel is attached
-	Awg2Err     string `json:"-"` // why the .conf loaded for it is not
-	Awg2On      bool   `json:"-"` // switched on in the mode chosen, see ctl.Settings.Awg2Active
-	IPv6Blocked bool   `json:"-"` // IPv6 found not to reach the TUN adapter, see ctl.TunKey
-	TunBlocked  bool   `json:"-"` // no traffic found to reach it, see ctl.Tun4Key
-	Awg2Alive   bool   `json:"-"`
-	Awg2Note    string `json:"-"`
-	Endpoint2   string `json:"-"`
-	Presets     int    `json:"-"`
-	Awg2Hosts   int    `json:"-"`
+	Commit         string `json:"commit,omitempty"`
+	Mode           string `json:"-"` // see ctl.Settings.Mode
+	Endpoint       string `json:"-"`
+	Second         bool   `json:"-"` // the second tunnel is on in the settings: off, the pages say nothing of it
+	Awg2           bool   `json:"-"` // a second tunnel is attached
+	Awg2Err        string `json:"-"` // why the .conf loaded for it is not
+	Awg2On         bool   `json:"-"` // switched on in the mode chosen, see ctl.Settings.Awg2Active
+	Awg2NoFallback bool   `json:"-"` // presets/list fail closed when awg2 is unavailable
+	IPv6Blocked    bool   `json:"-"` // IPv6 found not to reach the TUN adapter, see ctl.TunKey
+	TunBlocked     bool   `json:"-"` // no traffic found to reach it, see ctl.Tun4Key
+	Awg2Alive      bool   `json:"-"`
+	Awg2Note       string `json:"-"`
+	Endpoint2      string `json:"-"`
+	Presets        int    `json:"-"`
+	Awg2Hosts      int    `json:"-"`
 }
 
 // apiAddr: the core's controller; a var so tests can point it away from
@@ -508,7 +509,7 @@ func filesInto(st *status) {
 		st.Awg2Err = c.SecondErr.Error()
 	}
 	set := loadSettings()
-	st.Mode, st.Second, st.Awg2On = set.Mode(), set.SecondTunnel, set.Awg2Active()
+	st.Mode, st.Second, st.Awg2On, st.Awg2NoFallback = set.Mode(), set.SecondTunnel, set.Awg2Active(), set.Awg2NoFallback
 	// a tunnel not to be asked of is not alive: no config, or switched off
 	if !st.HasConfig {
 		st.TunnelAlive, st.TunnelNote = false, ""

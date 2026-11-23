@@ -3,7 +3,6 @@ package paths
 import (
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,14 +14,14 @@ import (
 // as an owner needs rights a test does not have.
 func asUser(t *testing.T) string {
 	t.Helper()
-	u, err := user.Current()
+	sid, err := currentSID()
 	if err != nil {
 		t.Fatal(err)
 	}
 	old := svcSID
-	svcSID = u.Uid
+	svcSID = sid
 	t.Cleanup(func() { svcSID = old })
-	return u.Uid
+	return sid
 }
 
 func junction(t *testing.T, link, target string) {
@@ -37,6 +36,17 @@ func junction(t *testing.T, link, target string) {
 // was), the user's files move to UserDir, and nobody but the owner may
 // write anywhere.
 func TestSecureDataDir(t *testing.T) {
+	restricted, err := windows.GetCurrentProcessToken().IsRestricted()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restricted {
+		// A sandbox token needs capability ACEs that the production ACL is
+		// deliberately meant to remove. Once the test locks its temporary
+		// root like the real ProgramData directory, that runner can no longer
+		// traverse it, so the remainder cannot exercise the service's ACLs.
+		t.Skip("restricted Windows token cannot traverse the production ACL under test")
+	}
 	me := asUser(t)
 	t.Setenv("ProgramData", t.TempDir())
 	root := DataDir()

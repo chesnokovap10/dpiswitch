@@ -23,7 +23,7 @@ func TestSyncRoutes(t *testing.T) {
 	now := map[string]string{TunnelListsGroup: TunnelOneGroup, Tunnel2Group: Tunnel2SoftGroup, TunnelRestGroup: TunnelSoftGroup}
 	all := map[string]string{
 		TunnelListsGroup: `["tunnel-one","tunnel-any"]`,
-		Tunnel2Group:     `["tunnel2-soft","tunnel2-strict"]`,
+		Tunnel2Group:     `["tunnel2-soft","tunnel2-strict","tunnel2-only"]`,
 		TunnelRestGroup:  `["tunnel","tunnel-soft-any","tunnel-one","tunnel-any"]`,
 	}
 	puts := 0
@@ -74,26 +74,36 @@ func TestSyncRoutes(t *testing.T) {
 	check(map[string]string{TunnelListsGroup: TunnelAnyGroup, TunnelRestGroup: TunnelSoftAnyGroup}, 2)
 	set(ModeTunnel, true)
 	check(map[string]string{Tunnel2Group: Tunnel2StrictGroup, TunnelRestGroup: TunnelAnyGroup}, 4)
+	if _, err := UpdateSettings(paths.Settings(), func(s *Settings) error { s.Awg2NoFallback = true; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if Awg2RouteSynced(strings.TrimPrefix(srv.URL, "http://"), "") {
+		t.Fatal("the old second-tunnel route reported as synchronized")
+	}
+	check(map[string]string{Tunnel2Group: Tunnel2OnlyGroup}, 5)
+	if !Awg2RouteSynced(strings.TrimPrefix(srv.URL, "http://"), "") {
+		t.Fatal("the new second-tunnel route did not report as synchronized")
+	}
 	// a core from before, without the member: nothing sent
 	mu.Lock()
 	all[TunnelRestGroup] = `["tunnel"]`
 	mu.Unlock()
 	routesSet = map[string]string{}
 	set(ModeTunnel, false)
-	check(map[string]string{TunnelListsGroup: TunnelOneGroup}, 5)
+	check(map[string]string{TunnelListsGroup: TunnelOneGroup}, 6)
 	// the member comes -- a core rebuilt with it: the choice goes now. It
 	// was taken as made while missing, and never sent
 	mu.Lock()
 	all[TunnelRestGroup] = `["tunnel","tunnel-soft-any","tunnel-one","tunnel-any"]`
 	now[TunnelRestGroup] = "tunnel"
 	mu.Unlock()
-	check(map[string]string{TunnelRestGroup: TunnelOneGroup}, 6)
+	check(map[string]string{TunnelRestGroup: TunnelOneGroup}, 7)
 	// a core started on an old config took another member: remembered as
 	// made, it is put right once the memory is checked again
 	mu.Lock()
 	now[TunnelRestGroup] = TunnelSoftGroup
 	mu.Unlock()
-	check(map[string]string{TunnelRestGroup: TunnelSoftGroup}, 6)
+	check(map[string]string{TunnelRestGroup: TunnelSoftGroup}, 7)
 	routesChecked = time.Time{}
-	check(map[string]string{TunnelRestGroup: TunnelOneGroup}, 7)
+	check(map[string]string{TunnelRestGroup: TunnelOneGroup}, 8)
 }

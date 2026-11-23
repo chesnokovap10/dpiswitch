@@ -74,7 +74,7 @@ func TestCoreFailClosed(t *testing.T) {
 	// select groups as tunnel only chooses their members. "tunnel" (the
 	// first tunnel, then direct) is the control: once the check finds the
 	// tunnel down it must go direct -- or this test sees no leak at all.
-	strict := []string{ctl.TunnelOneGroup, ctl.TunnelAnyGroup, ctl.Tunnel2StrictGroup,
+	strict := []string{ctl.TunnelOneGroup, ctl.TunnelAnyGroup, ctl.Tunnel2StrictGroup, ctl.Tunnel2OnlyGroup,
 		ctl.TunnelListsGroup, ctl.Tunnel2Group, ctl.TunnelRestGroup}
 	control := ctl.TunnelSoftGroup
 	groups := append(append([]string{}, strict...), control)
@@ -134,7 +134,7 @@ func TestCoreFailClosed(t *testing.T) {
 	}
 	// and what the core says it is on: a tunnel or REJECT (a group left
 	// with no member), never DIRECT or COMPATIBLE
-	for _, g := range []string{ctl.TunnelOneGroup, ctl.TunnelAnyGroup, ctl.Tunnel2StrictGroup} {
+	for _, g := range []string{ctl.TunnelOneGroup, ctl.TunnelAnyGroup, ctl.Tunnel2StrictGroup, ctl.Tunnel2OnlyGroup} {
 		if now := ctrl.now(g); now != "awg1" && now != "awg2" && now != "REJECT" {
 			t.Errorf("both tunnels down: %s is on %q", g, now)
 		}

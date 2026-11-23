@@ -85,6 +85,13 @@ func newScenario(t *testing.T) *scenario {
 	old := checkProto
 	checkProto = s.check
 	t.Cleanup(func() { checkProto = old })
+	// Scenario tests model a loaded first tunnel. Do not let their result
+	// depend on whether the machine running the tests has a real source.conf:
+	// fastLane otherwise switches to the direct-only prober and waits on the
+	// network instead of using the scripted check above.
+	oldNoFirstTunnel := noFirstTunnel
+	noFirstTunnel = func() bool { return false }
+	t.Cleanup(func() { noFirstTunnel = oldNoFirstTunnel })
 	// QUIC probed ahead changes when a verdict comes, not which: off in the
 	// scenarios, whose scripts have no QUIC for most names (see
 	// TestCycleQUICAhead)
