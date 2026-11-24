@@ -268,8 +268,14 @@ func ParseEntry(s string) (kind int, v string, err error) {
 			}
 			labels[i] = a
 		}
+		if len(labels[i]) > 63 {
+			return 0, "", fmt.Errorf("%q: a domain label is longer than 63 bytes", s)
+		}
 		check[i] = labels[i]
 		own = append(own, labels[i])
+	}
+	if len(strings.Join(labels, ".")) > 253 {
+		return 0, "", fmt.Errorf("%q: a domain name is longer than 253 bytes", s)
 	}
 	// a name of wildcards alone would take every site; digits and dots
 	// alone are an address gone wrong, not a name

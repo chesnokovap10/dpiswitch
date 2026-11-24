@@ -173,6 +173,46 @@ func TestDomainRuleRelation(t *testing.T) {
 	}
 }
 
+func TestParseEntryDomainLimits(t *testing.T) {
+	for _, line := range []string{
+		strings.Repeat("a", 64) + ".example",
+		strings.Repeat("a.", 126) + "aa",
+	} {
+		if _, _, err := ParseEntry(line); err == nil {
+			t.Errorf("accepted an overlong domain: %q", line)
+		}
+	}
+}
+
+func FuzzParseListRoundTrip(f *testing.F) {
+	for _, seed := range []string{
+		"example.com\n10.0.0.1\ntelegram.exe",
+		"DOMAIN-SUFFIX,Example.org\nIP-CIDR,192.168.1.7/24,no-resolve\nAWG2_RULE",
+		"0.0.0.0 ads.example\n||tracker.example^\n# comment",
+		"bad host\nDOMAIN,too,many",
+		"+.пример.рф\nC:/Program Files/App/app.exe",
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, text string) {
+		if len(text) > 1<<20 {
+			t.Skip()
+		}
+		d := ParseList(text, ListPolicy{AllowAwg2Rule: true})
+		if len(d.Issues) != 0 {
+			return
+		}
+		canonical := strings.Join(d.Values(), "\n")
+		again := ParseList(canonical, ListPolicy{AllowAwg2Rule: true})
+		if len(again.Issues) != 0 || len(again.Duplicates) != 0 {
+			t.Fatalf("canonical list did not parse cleanly: %+v", again)
+		}
+		if got := strings.Join(again.Values(), "\n"); got != canonical {
+			t.Fatalf("round trip changed canonical list:\n%s\ninto:\n%s", canonical, got)
+		}
+	})
+}
+
 // The programs' list of its own from before is taken into the direct list
 // until that is saved.
 func TestSyncOldApps(t *testing.T) {
