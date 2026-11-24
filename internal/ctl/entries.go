@@ -145,21 +145,40 @@ func ParseList(text string, policy ListPolicy) ListDocument {
 
 // importedListLine removes only file-format framing, not routing syntax.
 // A YAML rule-provider is commonly a payload: followed by "- rule" lines.
-// An inline comment starts with whitespace plus #, so a URL fragment remains
-// part of a URL and is normalized by ParseEntry as before.
+// Hash comments are removed from YAML framing here and from hosts lines in
+// parseListEntries. Native entries keep them: # can be part of a quoted or
+// unquoted Windows program path, or a URL fragment ParseEntry understands.
 func importedListLine(source string) (line string, skip bool) {
-	if source == "" || strings.HasPrefix(source, "#") || strings.HasPrefix(source, ";") || strings.EqualFold(source, "payload:") {
+	if source == "" || strings.HasPrefix(source, "#") || strings.HasPrefix(source, ";") || strings.HasPrefix(source, "!") ||
+		strings.HasPrefix(strings.ToLower(source), "[adblock") || strings.EqualFold(stripHashComment(source), "payload:") {
 		return "", true
 	}
 	line = source
-	if i := strings.Index(line, " #"); i >= 0 {
-		line = strings.TrimSpace(line[:i])
-	}
-	if strings.HasPrefix(line, "- ") {
+	if len(line) > 1 && line[0] == '-' && (line[1] == ' ' || line[1] == '\t') {
 		line = strings.TrimSpace(line[2:])
+		line = stripHashComment(line)
 	}
 	line = trimEntryQuotes(line)
 	return line, line == ""
+}
+
+// stripHashComment cuts a whitespace-prefixed # outside single or double
+// quotes. It deliberately does not implement all YAML escaping: list entries
+// need no escapes, while keeping a # inside either quote is essential for
+// valid Windows paths and URLs.
+func stripHashComment(s string) string {
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case quote != 0 && c == quote && (i == 0 || s[i-1] != '\\'):
+			quote = 0
+		case quote == 0 && (c == '\'' || c == '"'):
+			quote = c
+		case quote == 0 && c == '#' && i > 0 && (s[i-1] == ' ' || s[i-1] == '\t'):
+			return strings.TrimSpace(s[:i])
+		}
+	}
+	return strings.TrimSpace(s)
 }
 
 func trimEntryQuotes(s string) string {
@@ -173,7 +192,7 @@ func parseListEntries(line, raw string, number int, policy ListPolicy) ([]ListEn
 	// A hosts line may map one address to several names. Only sink and
 	// loopback addresses describe a block-style host list; importing an
 	// arbitrary address as a domain list would change its meaning.
-	if fields := strings.Fields(line); len(fields) >= 2 {
+	if fields := strings.Fields(stripHashComment(line)); len(fields) >= 2 {
 		if a, err := netip.ParseAddr(fields[0]); err == nil && (a.IsUnspecified() || a.IsLoopback()) {
 			entries := make([]ListEntry, 0, len(fields)-1)
 			for _, host := range fields[1:] {
@@ -234,8 +253,11 @@ func parseListEntry(line, raw string, number int, policy ListPolicy) (ListEntry,
 			}
 			converted = value
 		}
-	} else if strings.HasPrefix(line, "||") && strings.HasSuffix(line, "^") {
-		converted = "+." + strings.TrimSuffix(strings.TrimPrefix(line, "||"), "^")
+	} else if strings.HasPrefix(line, "||") {
+		adblock := strings.TrimPrefix(line, "||")
+		if end := strings.IndexByte(adblock, '^'); end > 0 && (end == len(adblock)-1 || adblock[end+1] == '$') {
+			converted = "+." + adblock[:end]
+		}
 	}
 	kind, value, err := ParseEntry(converted)
 	if err != nil {
