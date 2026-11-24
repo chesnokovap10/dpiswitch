@@ -29,10 +29,11 @@ var listFile = map[string]string{
 
 // entryList: what a list's block shows
 type entryList struct {
-	V                 *view
-	Kind, Title, Hint string
-	Entries           []string
-	Online            []netprocs.Proc
+	V           *view
+	Kind, Title string
+	Hint        any // string, or trusted translated markup from view.TH
+	Entries     []string
+	Online      []netprocs.Proc
 }
 
 // readEntriesFile: a user list as the box shows it -- each line written the

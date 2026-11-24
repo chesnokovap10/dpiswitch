@@ -10,7 +10,7 @@ them. When in doubt a site stays in the tunnel: a wrong "clean" breaks a site, a
 only costs a detour.</div>
 
 {{if .St.Second}}
-<h4>Where a connection goes</h4>
+<h4 id="h-routes">Where a connection goes</h4>
 <p>Every new connection is matched against these rules from the top; the first one that fits decides.</p>
 <table>
 <tr><th>#</th><th>Rule</th><th>Route</th></tr>
@@ -74,7 +74,7 @@ compare with.</p>
 open connections the change moves are closed, and the programs reconnect over the new route. Turning
 auto-switch off closes the connections the detector sent direct.</p>
 {{else}}
-<h4>Where a connection goes</h4>
+<h4 id="h-routes">Where a connection goes</h4>
 <p>Every new connection is matched against these rules from the top; the first one that fits decides.</p>
 <table>
 <tr><th>#</th><th>Rule</th><th>Route</th></tr>

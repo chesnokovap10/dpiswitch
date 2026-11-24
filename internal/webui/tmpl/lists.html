@@ -5,7 +5,7 @@
     <div class="box" id="list-direct" data-fresh="/frag/lists/list-direct">{{template "list-direct" .}}</div>
     <div class="box tunnel-lists">
       <div class="tunnel-head">
-        <h3>{{.T "Always via"}}</h3>
+        <h3><a class="hl" href="/help#h-routes">{{.T "Always via"}}</a></h3>
         <div class="tabs" data-tabs="tunnel-list">
           <a href="/lists?tunnel-list=tunnels" data-tab="tunnels" class="on">{{.T "Tunnels"}}</a>
           {{if .St.Second}}

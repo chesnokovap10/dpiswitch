@@ -54,8 +54,8 @@ func init() {
 		// row: a verdict row with the page, for the templates that need both
 		"row": func(v *view, r vrow) rowArg { return rowArg{v, r} },
 		// dl: one of the domain lists for the "domainlist" template
-		"el": func(v *view, kind, title, hint string, entries []string, online []netprocs.Proc) entryList {
-			return entryList{v, kind, title, hint, entries, online}
+		"el": func(v *view, kind, title string, hint any, entries []string, online []netprocs.Proc) entryList {
+			return entryList{V: v, Kind: kind, Title: title, Hint: hint, Entries: entries, Online: online}
 		},
 		"json": func(v any) (string, error) {
 			b, err := json.Marshal(v)

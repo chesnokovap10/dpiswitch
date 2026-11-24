@@ -73,6 +73,25 @@ func TestSettingsHelpLinks(t *testing.T) {
 	}
 }
 
+// The three route-list blocks lead back to the help table that explains
+// their priority. The table has the same anchor with either tunnel layout.
+func TestRouteListHelpLinks(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	for _, l := range []string{"en", "ru"} {
+		c := map[string]string{"Cookie": "lang=" + l}
+		page := do(t, h, "GET", "/lists", nil, c).Body.String()
+		// Three block headings and the awg2_rule explanation in Tunnel2.
+		if n := strings.Count(page, `href="/help#h-routes"`); n != 4 {
+			t.Errorf("%s: %d route-list help links, want 4", l, n)
+		}
+		help := do(t, h, "GET", "/help", nil, c).Body.String()
+		if !strings.Contains(help, `id="h-routes"`) {
+			t.Errorf("%s: route help anchor is missing", l)
+		}
+	}
+}
+
 // The settings are six groups -- five of the form's and DNS -- each opened on
 // its title, all closed as the page comes; the header names the build's
 // commit beside the version.

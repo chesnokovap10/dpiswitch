@@ -44,7 +44,7 @@
 
 {{define "presets"}}{{$v := .}}
   <h3>{{.T "Presets"}}</h3>
-  <p class="hint">{{.T "Through the second tunnel while it is loaded and switched on, in every mode. If awg2 is down, through awg1; if both are down, direct -- in Tunnel only refused. Below Forbidden, Always via tunnels and Always direct; above the detector. Put awg2_rule in Always via Tunnel2 to send the enabled presets and this page's own list through awg2 only. A switch applies at once, open connections included."}}</p>
+  <p class="hint">{{.TH "Through the second tunnel while it is loaded and switched on, in every mode. If awg2 is down, through awg1; if both are down, direct -- in Tunnel only refused. Below Forbidden, Always via tunnels and Always direct; above the detector. Put <a class=\"hl\" href=\"/help#h-routes\"><code>awg2_rule</code></a> in Always via Tunnel2 to send the enabled presets and this page's own list through awg2 only. A switch applies at once, open connections included."}}</p>
   <form method="post" action="/act/preset" data-swap="presets" data-instant="1" class="presets" data-preset-tree>
     {{range .PresetGroups}}
     <details data-grp="presets-{{.ID}}" class="preset-group">
@@ -109,4 +109,4 @@
 {{end}}
 
 
-{{define "list-awg2"}}{{template "entrylist" (el . "awg2" (.T "Your own list") (.T "Through the second tunnel, beside the presets and with their priority and fallback: below Forbidden, the three Always via lists and Always direct; above the detector. awg2_rule in Always via Tunnel2 also makes every entry here use awg2 only.") .Data.Hosts .Data.Online)}}{{end}}
+{{define "list-awg2"}}{{template "entrylist" (el . "awg2" (.T "Your own list") (.TH "Through the second tunnel, beside the presets and with their priority and fallback: below Forbidden, the three Always via lists and Always direct; above the detector. <a class=\"hl\" href=\"/help#h-routes\"><code>awg2_rule</code></a> in Always via Tunnel2 also makes every entry here use awg2 only.") .Data.Hosts .Data.Online)}}{{end}}
