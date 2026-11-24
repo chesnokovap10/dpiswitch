@@ -412,7 +412,28 @@ func listIssues(l string, issues []ctl.ListIssue) string {
 	}
 	parts := make([]string, 0, len(shown)+1)
 	for _, issue := range shown {
-		parts = append(parts, fmt.Sprintf(tr(l, "line %d: %q is neither a site, an address nor a program"), issue.Line, issue.Raw))
+		line := fmt.Sprintf(tr(l, "line %d: %q is neither a site, an address nor a program"), issue.Line, issue.Raw)
+		var reason string
+		switch {
+		case errors.Is(issue.Err, ctl.ErrListAwg2Scope):
+			reason = tr(l, "awg2_rule is allowed only in Always via Tunnel2")
+		case errors.Is(issue.Err, ctl.ErrListRuleFields):
+			reason = tr(l, "the rule has the wrong number of fields")
+		case errors.Is(issue.Err, ctl.ErrListIPOption):
+			reason = tr(l, "the IP rule has an unsupported option")
+		case errors.Is(issue.Err, ctl.ErrListHostsAlias):
+			reason = tr(l, "a hosts alias is not a domain")
+		case errors.Is(issue.Err, ctl.ErrListProgramComma):
+			reason = tr(l, "commas in a program name are not supported")
+		case errors.Is(issue.Err, ctl.ErrListDomainLabel):
+			reason = tr(l, "a domain label is longer than 63 bytes")
+		case errors.Is(issue.Err, ctl.ErrListDomainName):
+			reason = tr(l, "a domain name is longer than 253 bytes")
+		}
+		if reason != "" {
+			line += ": " + reason
+		}
+		parts = append(parts, line)
 	}
 	if rest := len(issues) - len(shown); rest > 0 {
 		parts = append(parts, fmt.Sprintf(tr(l, "and %d more errors"), rest))

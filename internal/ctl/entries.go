@@ -54,6 +54,18 @@ type ListIssue struct {
 	Err  error
 }
 
+// Typed causes let the UI explain a rejected imported line without parsing
+// or exposing the parser's English diagnostic text.
+var (
+	ErrListAwg2Scope    = errors.New("awg2 rule outside Tunnel2")
+	ErrListRuleFields   = errors.New("wrong number of rule fields")
+	ErrListIPOption     = errors.New("unsupported IP rule option")
+	ErrListHostsAlias   = errors.New("hosts alias is not a domain")
+	ErrListProgramComma = errors.New("comma in program name")
+	ErrListDomainLabel  = errors.New("domain label too long")
+	ErrListDomainName   = errors.New("domain name too long")
+)
+
 type ListChange struct {
 	Line       int
 	Raw, Value string
@@ -168,7 +180,7 @@ func parseListEntries(line, raw string, number int, policy ListPolicy) ([]ListEn
 				e, err := parseListEntry(host, raw, number, policy)
 				if err != nil || e.Kind != EntryName {
 					if err == nil {
-						err = fmt.Errorf("%q: a hosts alias is not a domain", host)
+						err = fmt.Errorf("%w: %q", ErrListHostsAlias, host)
 					}
 					return nil, err
 				}
@@ -188,7 +200,7 @@ func parseListEntry(line, raw string, number int, policy ListPolicy) (ListEntry,
 	e := ListEntry{Raw: raw, Line: number}
 	if strings.EqualFold(line, Awg2Rule) {
 		if !policy.AllowAwg2Rule {
-			return e, fmt.Errorf("%s is allowed only in Tunnel2", Awg2Rule)
+			return e, fmt.Errorf("%w: %s is allowed only in Tunnel2", ErrListAwg2Scope, Awg2Rule)
 		}
 		e.Value, e.Awg2Rule = Awg2Rule, true
 		return e, nil
@@ -199,12 +211,12 @@ func parseListEntry(line, raw string, number int, policy ListPolicy) (ListEntry,
 		switch kind {
 		case "DOMAIN":
 			if len(fields) < 2 || len(fields) > 3 || len(fields) == 3 && strings.TrimSpace(fields[2]) == "" {
-				return e, fmt.Errorf("%q: DOMAIN takes a value and an optional policy", line)
+				return e, fmt.Errorf("%w: %q: DOMAIN takes a value and an optional policy", ErrListRuleFields, line)
 			}
 			converted = value
 		case "DOMAIN-SUFFIX":
 			if len(fields) < 2 || len(fields) > 3 || len(fields) == 3 && strings.TrimSpace(fields[2]) == "" {
-				return e, fmt.Errorf("%q: DOMAIN-SUFFIX takes a value and an optional policy", line)
+				return e, fmt.Errorf("%w: %q: DOMAIN-SUFFIX takes a value and an optional policy", ErrListRuleFields, line)
 			}
 			converted = "+." + strings.TrimPrefix(value, "+.")
 		case "IP-CIDR", "IP-CIDR6":
@@ -213,12 +225,12 @@ func parseListEntry(line, raw string, number int, policy ListPolicy) (ListEntry,
 				options = options[:len(options)-1]
 			}
 			if len(options) > 1 || len(options) == 1 && strings.TrimSpace(options[0]) == "" {
-				return e, fmt.Errorf("%q: unsupported IP rule option", line)
+				return e, fmt.Errorf("%w: %q", ErrListIPOption, line)
 			}
 			converted = value
 		case "PROCESS-NAME", "PROCESS-PATH":
 			if len(fields) < 2 || len(fields) > 3 || len(fields) == 3 && strings.TrimSpace(fields[2]) == "" {
-				return e, fmt.Errorf("%q: commas in a program's name are not supported", line)
+				return e, fmt.Errorf("%w: %q", ErrListProgramComma, line)
 			}
 			converted = value
 		}
@@ -248,7 +260,7 @@ func ParseEntry(s string) (kind int, v string, err error) {
 	if strings.HasSuffix(strings.ToLower(s), ".exe") && !strings.Contains(s, "://") {
 		// a comma is the field separator in a core rule
 		if strings.Contains(s, ",") {
-			return 0, "", fmt.Errorf("%q: commas in a program's name are not supported", s)
+			return 0, "", fmt.Errorf("%w: %q", ErrListProgramComma, s)
 		}
 		if strings.ContainsAny(s, `\/`) {
 			return EntryApp, filepath.Clean(s), nil
@@ -325,13 +337,13 @@ func ParseEntry(s string) (kind int, v string, err error) {
 			labels[i] = a
 		}
 		if len(labels[i]) > 63 {
-			return 0, "", fmt.Errorf("%q: a domain label is longer than 63 bytes", s)
+			return 0, "", fmt.Errorf("%w: %q", ErrListDomainLabel, s)
 		}
 		check[i] = labels[i]
 		own = append(own, labels[i])
 	}
 	if len(strings.Join(labels, ".")) > 253 {
-		return 0, "", fmt.Errorf("%q: a domain name is longer than 253 bytes", s)
+		return 0, "", fmt.Errorf("%w: %q", ErrListDomainName, s)
 	}
 	// a name of wildcards alone would take every site; digits and dots
 	// alone are an address gone wrong, not a name

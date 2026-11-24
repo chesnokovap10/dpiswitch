@@ -711,6 +711,23 @@ func TestListReportsEveryBadLine(t *testing.T) {
 	}
 }
 
+func TestListReportsSpecificParseReasons(t *testing.T) {
+	s, _ := testServer(t)
+	w := do(t, s.Handler(), "POST", "/act/list", url.Values{
+		"kind": {"direct"}, "entries": {"awg2_rule\nIP-CIDR,10.0.0.0/8,DIRECT,bad-option\nDOMAIN,example.com,DIRECT,extra"},
+	}, map[string]string{"Cookie": "lang=ru"})
+	body := html.UnescapeString(w.Body.String())
+	for _, want := range []string{
+		"awg2_rule разрешено только во «Всегда через: Туннель2»",
+		"в IP-правиле неподдерживаемая опция",
+		"в правиле неверное количество полей",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("response lacks %q: %s", want, body)
+		}
+	}
+}
+
 func TestListParseReport(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
