@@ -89,6 +89,10 @@ func TestRouteListHelpLinks(t *testing.T) {
 		if !strings.Contains(help, `id="h-routes"`) {
 			t.Errorf("%s: route help anchor is missing", l)
 		}
+		awg2 := do(t, h, "GET", "/awg2", nil, c).Body.String()
+		if n := strings.Count(awg2, `href="/lists?tunnel-list=tunnel2#list-tunnel2"`); n != 2 {
+			t.Errorf("%s: %d links from awg2 explanations to Tunnel2, want 2", l, n)
+		}
 	}
 }
 
