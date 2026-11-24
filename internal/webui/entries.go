@@ -254,29 +254,142 @@ func (s *Server) actList(w http.ResponseWriter, r *http.Request) {
 	if kind == "awg2" {
 		page = "awg2"
 	}
-	lines := splitLines(r.FormValue("entries"))
+	text := r.FormValue("entries")
 	if r.FormValue("op") == "add" {
 		a := strings.TrimSpace(r.FormValue("add"))
 		if a == "" {
-			s.refuse(w, r, page, kind, lines, tr(lang(r), "Pick a program from the list first"))
+			s.refuse(w, r, page, kind, splitLines(text), tr(lang(r), "Pick a program from the list first"))
 			return
 		}
-		lines = append(lines, a)
+		if text = strings.TrimRight(text, "\r\n"); text != "" {
+			text += "\n"
+		}
+		text += a
 	}
-	entries, issues := normEntriesFor(lines, kind == "tunnel2")
-	if len(issues) != 0 {
-		s.refuse(w, r, page, kind, lines,
-			listIssues(lang(r), issues))
+	doc := ctl.ParseList(text, ctl.ListPolicy{AllowAwg2Rule: kind == "tunnel2"})
+	entries := doc.Values()
+	if len(doc.Issues) != 0 {
+		s.refuse(w, r, page, kind, splitLines(text), listIssues(lang(r), doc.Issues))
 		return
 	}
 	// what was pasted stays in the box to be cut down
 	if len(listBody(entries)) > ctl.UserListMax {
-		s.refuse(w, r, page, kind, lines, tr(lang(r), errListTooLarge.Error()))
+		s.refuse(w, r, page, kind, splitLines(text), tr(lang(r), errListTooLarge.Error()))
 		return
 	}
 	n, err, cerr := s.saveEntries(name, entries)
 	ok, msg := saved(r, err, n, cerr)
+	if err == nil {
+		msg = listParseReport(lang(r), msg, doc, redundantListEntries(entries), shadowedListEntries(kind, entries))
+	}
 	s.part(w, r, page, "list-"+kind, ok, msg)
+}
+
+type listShadow struct{ entry, list string }
+
+type listRedundant struct{ entry, coveredBy string }
+
+func redundantListEntries(entries []string) []listRedundant {
+	var out []listRedundant
+	for i, entry := range entries {
+		if strings.EqualFold(entry, ctl.Awg2Rule) {
+			continue
+		}
+		for j, wider := range entries {
+			if i == j || strings.EqualFold(wider, ctl.Awg2Rule) {
+				continue
+			}
+			_, in := liveOverlap(wider)(entry)
+			if !in {
+				continue
+			}
+			_, reverse := liveOverlap(entry)(wider)
+			if !reverse || j < i {
+				out = append(out, listRedundant{entry: entry, coveredBy: wider})
+				break
+			}
+		}
+	}
+	return out
+}
+
+func shadowedListEntries(kind string, entries []string) []listShadow {
+	var out []listShadow
+	for _, entry := range entries {
+		if strings.EqualFold(entry, ctl.Awg2Rule) {
+			continue
+		}
+		for _, higher := range []string{"block", "tunnel", "tunnel1", "tunnel2", "direct", "awg2"} {
+			if liveRank(higher, 0) >= liveRank(kind, 0) {
+				continue
+			}
+			covered := false
+			for _, line := range readEntries(listFile[higher]) {
+				if _, in := liveOverlap(line)(entry); in {
+					covered = true
+					break
+				}
+			}
+			if covered {
+				out = append(out, listShadow{entry: entry, list: liveListNames[higher]})
+				break
+			}
+		}
+	}
+	return out
+}
+
+func listParseReport(l, saved string, doc ctl.ListDocument, redundant []listRedundant, shadows []listShadow) string {
+	var notes []string
+	if n := len(doc.Normalized); n > 0 {
+		shown := make([]string, 0, min(3, n))
+		for _, change := range doc.Normalized[:min(3, n)] {
+			shown = append(shown, shortListText(change.Raw)+" → "+shortListText(change.Value))
+		}
+		more := ""
+		if rest := n - len(shown); rest > 0 {
+			more = fmt.Sprintf(" +%d", rest)
+		}
+		notes = append(notes, fmt.Sprintf(tr(l, "normalized: %d (%s)"), n, strings.Join(shown, "; ")+more))
+	}
+	if n := len(doc.Duplicates); n > 0 {
+		notes = append(notes, fmt.Sprintf(tr(l, "duplicates removed: %d"), n))
+	}
+	if len(redundant) > 0 {
+		shown := make([]string, 0, min(3, len(redundant)))
+		for _, r := range redundant[:min(3, len(redundant))] {
+			shown = append(shown, r.entry+" ← "+r.coveredBy)
+		}
+		more := ""
+		if n := len(redundant) - len(shown); n > 0 {
+			more = fmt.Sprintf(" +%d", n)
+		}
+		notes = append(notes, fmt.Sprintf(tr(l, "redundant inside the list: %d (%s)"), len(redundant), strings.Join(shown, "; ")+more))
+	}
+	if len(shadows) > 0 {
+		shown := make([]string, 0, min(3, len(shadows)))
+		for _, s := range shadows[:min(3, len(shadows))] {
+			shown = append(shown, s.entry+" — «"+tr(l, s.list)+"»")
+		}
+		more := ""
+		if n := len(shadows) - len(shown); n > 0 {
+			more = fmt.Sprintf(" +%d", n)
+		}
+		notes = append(notes, fmt.Sprintf(tr(l, "shadowed by higher-priority lists: %d (%s)"), len(shadows), strings.Join(shown, "; ")+more))
+	}
+	if len(notes) == 0 {
+		return saved
+	}
+	return saved + "; " + strings.Join(notes, "; ")
+}
+
+func shortListText(s string) string {
+	const limit = 48
+	r := []rune(s)
+	if len(r) <= limit {
+		return s
+	}
+	return string(r[:limit-1]) + "…"
 }
 
 func (s *Server) handleListExport(w http.ResponseWriter, r *http.Request) {

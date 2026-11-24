@@ -706,6 +706,22 @@ func TestListReportsEveryBadLine(t *testing.T) {
 	}
 }
 
+func TestListParseReport(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	do(t, h, "POST", "/act/list", url.Values{"kind": {"block"}, "entries": {"+.example.com"}}, nil)
+	w := do(t, h, "POST", "/act/list", url.Values{
+		"kind": {"direct"}, "entries": {"DOMAIN,Api.Example.com\napi.example.com\nhttps://other.example/path\n+.other.example"},
+	}, nil)
+	body := html.UnescapeString(w.Body.String())
+	for _, want := range []string{"normalized: 2", "DOMAIN,Api.Example.com → api.example.com", "duplicates removed: 1",
+		"redundant inside the list: 1", "other.example ← +.other.example", "shadowed by higher-priority lists: 1", "api.example.com", "Forbidden"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("response lacks %q: %s", want, body)
+		}
+	}
+}
+
 // A list the service would not read -- larger than it takes -- is refused,
 // what was pasted kept in the box; it used to be saved, and never taken.
 // A name in its own letters is kept as the core sees it, in punycode.

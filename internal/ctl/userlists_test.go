@@ -128,15 +128,18 @@ func TestSplitList(t *testing.T) {
 func TestParseList(t *testing.T) {
 	in := strings.Join([]string{
 		"# comment", "DOMAIN,Example.com", "DOMAIN-SUFFIX,example.org", "IP-CIDR,192.168.12.3/24,no-resolve",
-		"PROCESS-NAME,Telegram.exe", "0.0.0.0 hosts.example", "||ads.example^", "AWG2_RULE", "bad host",
+		"PROCESS-NAME,Telegram.exe", "0.0.0.0 hosts.example", "||ads.example^", "AWG2_RULE", "example.com", "bad host",
 	}, "\n")
 	d := ParseList(in, ListPolicy{AllowAwg2Rule: true})
 	want := "awg2_rule\n+.ads.example\n+.example.org\nexample.com\nhosts.example\n192.168.12.0/24\nTelegram.exe"
 	if got := strings.Join(d.Values(), "\n"); got != want {
 		t.Errorf("parsed list:\n%s\nwant:\n%s", got, want)
 	}
-	if len(d.Issues) != 1 || d.Issues[0].Line != 9 || d.Issues[0].Raw != "bad host" {
+	if len(d.Issues) != 1 || d.Issues[0].Line != 10 || d.Issues[0].Raw != "bad host" {
 		t.Fatalf("issues: %+v", d.Issues)
+	}
+	if len(d.Normalized) != 7 || len(d.Duplicates) != 1 || d.Duplicates[0].FirstLine != 2 || d.Duplicates[0].Line != 9 {
+		t.Fatalf("normalization: changes %+v, duplicates %+v", d.Normalized, d.Duplicates)
 	}
 	if d := ParseList("awg2_rule", ListPolicy{}); len(d.Entries) != 0 || len(d.Issues) != 1 {
 		t.Fatalf("macro outside Tunnel2: %+v", d)

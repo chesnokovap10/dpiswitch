@@ -54,12 +54,24 @@ type ListIssue struct {
 	Err  error
 }
 
+type ListChange struct {
+	Line       int
+	Raw, Value string
+}
+
+type ListDuplicate struct {
+	Line, FirstLine int
+	Value           string
+}
+
 // ListDocument is the normalized meaning of a list. Entries are unique and
 // sorted in the same order the UI stores them: the macro, domains, addresses,
 // programs. Comments and blank lines do not become entries.
 type ListDocument struct {
-	Entries []ListEntry
-	Issues  []ListIssue
+	Entries    []ListEntry
+	Issues     []ListIssue
+	Normalized []ListChange
+	Duplicates []ListDuplicate
 }
 
 // Values returns the canonical lines suitable for the user file.
@@ -77,7 +89,7 @@ func (d ListDocument) Values() []string {
 // 0.0.0.0/127.0.0.1 hosts entries, and ||example.com^ AdBlock domains.
 func ParseList(text string, policy ListPolicy) ListDocument {
 	var d ListDocument
-	seen := map[string]bool{}
+	seen := map[string]int{}
 	for i, raw := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
 		line := strings.TrimSpace(strings.TrimPrefix(raw, "\ufeff"))
 		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
@@ -88,9 +100,14 @@ func ParseList(text string, policy ListPolicy) ListDocument {
 			d.Issues = append(d.Issues, ListIssue{Line: i + 1, Raw: line, Err: err})
 			continue
 		}
+		if e.Raw != e.Value {
+			d.Normalized = append(d.Normalized, ListChange{Line: e.Line, Raw: e.Raw, Value: e.Value})
+		}
 		key := strings.ToLower(e.Value)
-		if !seen[key] {
-			seen[key] = true
+		if first := seen[key]; first != 0 {
+			d.Duplicates = append(d.Duplicates, ListDuplicate{Line: e.Line, FirstLine: first, Value: e.Value})
+		} else {
+			seen[key] = e.Line
 			d.Entries = append(d.Entries, e)
 		}
 	}
