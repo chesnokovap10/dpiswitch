@@ -111,9 +111,9 @@ func TestSplitList(t *testing.T) {
 		"C:/a b/x.exe", "PROCESS-NAME,old.exe", "DOMAIN-SUFFIX,evil.com", "MATCH,DIRECT", "bad host"}, "\n")
 	got := splitList([]byte(in)).bodies(paths.DirectList)
 	want := map[string]string{
-		paths.DirectList:                "example.com\n",
+		paths.DirectList:                "+.evil.com\nexample.com\n",
 		paths.IPList(paths.DirectList):  "1.2.3.4/32\n192.168.0.0/16\n",
-		paths.AppList(paths.DirectList): "PROCESS-NAME,telegram.exe\nPROCESS-PATH,C:\\a b\\x.exe\nPROCESS-NAME,old.exe\n",
+		paths.AppList(paths.DirectList): "PROCESS-PATH,C:\\a b\\x.exe\nPROCESS-NAME,old.exe\nPROCESS-NAME,telegram.exe\n",
 	}
 	for f, w := range want {
 		if string(got[f]) != w {
@@ -122,6 +122,24 @@ func TestSplitList(t *testing.T) {
 	}
 	if b := splitList(nil).bodies(paths.TunnelList); string(b[paths.TunnelList]) != "# empty\n" {
 		t.Fatalf("empty: %q", b[paths.TunnelList])
+	}
+}
+
+func TestParseList(t *testing.T) {
+	in := strings.Join([]string{
+		"# comment", "DOMAIN,Example.com", "DOMAIN-SUFFIX,example.org", "IP-CIDR,192.168.12.3/24,no-resolve",
+		"PROCESS-NAME,Telegram.exe", "0.0.0.0 hosts.example", "||ads.example^", "AWG2_RULE", "bad host",
+	}, "\n")
+	d := ParseList(in, ListPolicy{AllowAwg2Rule: true})
+	want := "awg2_rule\n+.ads.example\n+.example.org\nexample.com\nhosts.example\n192.168.12.0/24\nTelegram.exe"
+	if got := strings.Join(d.Values(), "\n"); got != want {
+		t.Errorf("parsed list:\n%s\nwant:\n%s", got, want)
+	}
+	if len(d.Issues) != 1 || d.Issues[0].Line != 9 || d.Issues[0].Raw != "bad host" {
+		t.Fatalf("issues: %+v", d.Issues)
+	}
+	if d := ParseList("awg2_rule", ListPolicy{}); len(d.Entries) != 0 || len(d.Issues) != 1 {
+		t.Fatalf("macro outside Tunnel2: %+v", d)
 	}
 }
 

@@ -94,7 +94,12 @@ func wantCopies(name string, s Settings) (map[string][]byte, bool, error) {
 	if !have {
 		return nil, false, nil
 	}
-	return splitList(u).bodies(name), true, nil
+	doc := ParseList(string(u), ListPolicy{AllowAwg2Rule: name == paths.Tunnel2List})
+	if len(doc.Issues) != 0 {
+		i := doc.Issues[0]
+		return nil, false, fmt.Errorf("line %d (%q): %w", i.Line, i.Raw, i.Err)
+	}
+	return listFilesFrom(doc).bodies(name), true, nil
 }
 
 // Synced: whether the service's copies of a user list are what the user's

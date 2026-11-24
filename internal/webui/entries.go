@@ -8,7 +8,6 @@ import (
 	"net/netip"
 	"os"
 	"slices"
-	"sort"
 	"strings"
 
 	"dpiswitch/internal/ctl"
@@ -55,52 +54,13 @@ func readEntriesFile(name string) []string {
 
 // normEntries: the lines as they are kept, each once, sorted by kind; bad is
 // the first line that is none of the kinds
-func normEntries(lines []string) (out []string, bad string) {
+func normEntries(lines []string) (out []string, issues []ctl.ListIssue) {
 	return normEntriesFor(lines, false)
 }
 
-func normEntriesFor(lines []string, allowAwg2Rule bool) (out []string, bad string) {
-	type entry struct {
-		kind int
-		v    string
-	}
-	var es []entry
-	seen := map[string]bool{}
-	for _, l := range lines {
-		if strings.EqualFold(strings.TrimSpace(l), ctl.Awg2Rule) {
-			if allowAwg2Rule {
-				if !seen[ctl.Awg2Rule] {
-					seen[ctl.Awg2Rule] = true
-					es = append(es, entry{-1, ctl.Awg2Rule})
-				}
-			} else if bad == "" {
-				bad = ctl.Awg2Rule
-			}
-			continue
-		}
-		kind, v, err := ctl.ParseEntry(l)
-		if err != nil {
-			if bad == "" {
-				bad = strings.TrimSpace(l)
-			}
-			continue
-		}
-		if k := strings.ToLower(v); !seen[k] {
-			seen[k] = true
-			es = append(es, entry{kind, v})
-		}
-	}
-	sort.SliceStable(es, func(i, j int) bool {
-		if es[i].kind != es[j].kind {
-			return es[i].kind < es[j].kind
-		}
-		return strings.ToLower(es[i].v) < strings.ToLower(es[j].v)
-	})
-	out = []string{}
-	for _, e := range es {
-		out = append(out, e.v)
-	}
-	return out, bad
+func normEntriesFor(lines []string, allowAwg2Rule bool) (out []string, issues []ctl.ListIssue) {
+	d := ctl.ParseList(strings.Join(lines, "\n"), ctl.ListPolicy{AllowAwg2Rule: allowAwg2Rule})
+	return d.Values(), d.Issues
 }
 
 // errListTooLarge: a list the service would not read -- it used to be saved,
@@ -297,10 +257,10 @@ func (s *Server) actList(w http.ResponseWriter, r *http.Request) {
 		}
 		lines = append(lines, a)
 	}
-	entries, bad := normEntriesFor(lines, kind == "tunnel2")
-	if bad != "" {
+	entries, issues := normEntriesFor(lines, kind == "tunnel2")
+	if len(issues) != 0 {
 		s.refuse(w, r, page, kind, lines,
-			fmt.Sprintf(tr(lang(r), "%q is neither a site, an address nor a program: nothing saved"), bad))
+			listIssues(lang(r), issues))
 		return
 	}
 	// what was pasted stays in the box to be cut down
@@ -311,6 +271,22 @@ func (s *Server) actList(w http.ResponseWriter, r *http.Request) {
 	n, err, cerr := s.saveEntries(name, entries)
 	ok, msg := saved(r, err, n, cerr)
 	s.part(w, r, page, "list-"+kind, ok, msg)
+}
+
+func listIssues(l string, issues []ctl.ListIssue) string {
+	const maxShown = 5
+	shown := issues
+	if len(shown) > maxShown {
+		shown = shown[:maxShown]
+	}
+	parts := make([]string, 0, len(shown)+1)
+	for _, issue := range shown {
+		parts = append(parts, fmt.Sprintf(tr(l, "line %d: %q is neither a site, an address nor a program"), issue.Line, issue.Raw))
+	}
+	if rest := len(issues) - len(shown); rest > 0 {
+		parts = append(parts, fmt.Sprintf(tr(l, "and %d more errors"), rest))
+	}
+	return strings.Join(parts, "; ") + ": " + tr(l, "nothing saved")
 }
 
 // refuse: the block again with what was sent still in the box -- the saved

@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -26,6 +27,138 @@ const (
 	EntryIP          // an address or a network: 1.2.3.4, 10.0.0.0/8, 2001:db8::/32
 	EntryApp         // a program: telegram.exe, or C:\Games\x.exe for that copy only
 )
+
+// ListPolicy is the small part of a list's grammar that depends on the
+// block it belongs to. All six user lists otherwise use exactly the same
+// parser. The strict Tunnel2 list alone accepts awg2_rule.
+type ListPolicy struct {
+	AllowAwg2Rule bool
+}
+
+// ListEntry is one parsed and canonical line of a user list. Raw and Line
+// let the UI explain normalization without making the routing code parse the
+// text again.
+type ListEntry struct {
+	Kind     int
+	Value    string
+	Raw      string
+	Line     int
+	Awg2Rule bool
+}
+
+// ListIssue is one line the document parser could not understand. A whole
+// document is parsed so the UI can report every bad line at once.
+type ListIssue struct {
+	Line int
+	Raw  string
+	Err  error
+}
+
+// ListDocument is the normalized meaning of a list. Entries are unique and
+// sorted in the same order the UI stores them: the macro, domains, addresses,
+// programs. Comments and blank lines do not become entries.
+type ListDocument struct {
+	Entries []ListEntry
+	Issues  []ListIssue
+}
+
+// Values returns the canonical lines suitable for the user file.
+func (d ListDocument) Values() []string {
+	out := make([]string, len(d.Entries))
+	for i, e := range d.Entries {
+		out[i] = e.Value
+	}
+	return out
+}
+
+// ParseList parses a complete user list. Beside the native syntax it accepts
+// safe, unambiguous lines commonly pasted from hosts and Mihomo lists:
+// DOMAIN, DOMAIN-SUFFIX, IP-CIDR/IP-CIDR6, PROCESS-NAME/PROCESS-PATH,
+// 0.0.0.0/127.0.0.1 hosts entries, and ||example.com^ AdBlock domains.
+func ParseList(text string, policy ListPolicy) ListDocument {
+	var d ListDocument
+	seen := map[string]bool{}
+	for i, raw := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
+		line := strings.TrimSpace(strings.TrimPrefix(raw, "\ufeff"))
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			continue
+		}
+		e, err := parseListEntry(line, i+1, policy)
+		if err != nil {
+			d.Issues = append(d.Issues, ListIssue{Line: i + 1, Raw: line, Err: err})
+			continue
+		}
+		key := strings.ToLower(e.Value)
+		if !seen[key] {
+			seen[key] = true
+			d.Entries = append(d.Entries, e)
+		}
+	}
+	sort.SliceStable(d.Entries, func(i, j int) bool {
+		a, b := d.Entries[i], d.Entries[j]
+		ak, bk := a.Kind, b.Kind
+		if a.Awg2Rule {
+			ak = -1
+		}
+		if b.Awg2Rule {
+			bk = -1
+		}
+		if ak != bk {
+			return ak < bk
+		}
+		return strings.ToLower(a.Value) < strings.ToLower(b.Value)
+	})
+	return d
+}
+
+func parseListEntry(line string, number int, policy ListPolicy) (ListEntry, error) {
+	e := ListEntry{Raw: line, Line: number}
+	if strings.EqualFold(line, Awg2Rule) {
+		if !policy.AllowAwg2Rule {
+			return e, fmt.Errorf("%s is allowed only in Tunnel2", Awg2Rule)
+		}
+		e.Value, e.Awg2Rule = Awg2Rule, true
+		return e, nil
+	}
+	converted := line
+	if fields := strings.Split(line, ","); len(fields) >= 2 {
+		kind, value := strings.ToUpper(strings.TrimSpace(fields[0])), strings.TrimSpace(fields[1])
+		switch kind {
+		case "DOMAIN":
+			if len(fields) != 2 {
+				return e, fmt.Errorf("%q: DOMAIN takes one value", line)
+			}
+			converted = value
+		case "DOMAIN-SUFFIX":
+			if len(fields) != 2 {
+				return e, fmt.Errorf("%q: DOMAIN-SUFFIX takes one value", line)
+			}
+			converted = "+." + strings.TrimPrefix(value, "+.")
+		case "IP-CIDR", "IP-CIDR6":
+			if len(fields) > 3 || len(fields) == 3 && !strings.EqualFold(strings.TrimSpace(fields[2]), "no-resolve") {
+				return e, fmt.Errorf("%q: unsupported IP rule option", line)
+			}
+			converted = value
+		case "PROCESS-NAME", "PROCESS-PATH":
+			if len(fields) != 2 {
+				return e, fmt.Errorf("%q: commas in a program's name are not supported", line)
+			}
+			converted = value
+		}
+	} else if strings.HasPrefix(line, "||") && strings.HasSuffix(line, "^") {
+		converted = "+." + strings.TrimSuffix(strings.TrimPrefix(line, "||"), "^")
+	} else if fields := strings.Fields(line); len(fields) == 2 {
+		if a, err := netip.ParseAddr(fields[0]); err == nil && (a.IsUnspecified() || a.IsLoopback()) {
+			converted = fields[1]
+		}
+	}
+	kind, value, err := ParseEntry(converted)
+	if err != nil {
+		return e, err
+	}
+	e.Kind, e.Value = kind, value
+	return e, nil
+}
 
 // domainRule: a name, "+." / "." / "*." before one allowed -- a "*" in
 // another place is checked as a letter, see ParseEntry
@@ -152,27 +285,22 @@ func parseIP(s string) (string, bool) {
 type listFiles struct{ names, ips, apps []string }
 
 func splitList(b []byte) listFiles {
+	return listFilesFrom(ParseList(string(b), ListPolicy{}))
+}
+
+func listFilesFrom(d ListDocument) listFiles {
 	var f listFiles
-	for _, l := range strings.Split(string(b), "\n") {
-		l = strings.TrimSpace(l)
-		if l == "" || strings.HasPrefix(l, "#") {
+	for _, e := range d.Entries {
+		if e.Awg2Rule {
 			continue
 		}
-		// a line of the program list from before: "PROCESS-NAME,x.exe"
-		if k, v, ok := strings.Cut(l, ","); ok && (strings.EqualFold(k, "PROCESS-NAME") || strings.EqualFold(k, "PROCESS-PATH")) {
-			l = v
-		}
-		kind, v, err := ParseEntry(l)
-		if err != nil {
-			continue
-		}
-		switch kind {
+		switch e.Kind {
 		case EntryName:
-			f.names = append(f.names, v)
+			f.names = append(f.names, e.Value)
 		case EntryIP:
-			f.ips = append(f.ips, v)
+			f.ips = append(f.ips, e.Value)
 		case EntryApp:
-			f.apps = append(f.apps, v)
+			f.apps = append(f.apps, e.Value)
 		}
 	}
 	return f
