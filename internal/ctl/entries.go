@@ -280,6 +280,72 @@ func ParseEntry(s string) (kind int, v string, err error) {
 	return 0, "", fmt.Errorf("%q: neither a site, an address nor a program", s)
 }
 
+type domainPattern struct {
+	labels         []string
+	minLen, maxLen int // maxLen -1 means no upper bound
+}
+
+func parseDomainPattern(rule string) domainPattern {
+	rule = strings.ToLower(strings.TrimSpace(rule))
+	minExtra, maxExtra := 0, 0
+	switch {
+	case strings.HasPrefix(rule, "+."):
+		rule, maxExtra = rule[2:], -1
+	case strings.HasPrefix(rule, "."):
+		rule, minExtra, maxExtra = rule[1:], 1, -1
+	}
+	labels := strings.Split(rule, ".")
+	minLen := len(labels) + minExtra
+	maxLen := len(labels) + maxExtra
+	if maxExtra < 0 {
+		maxLen = -1
+	}
+	return domainPattern{labels: labels, minLen: minLen, maxLen: maxLen}
+}
+
+// DomainRuleRelation compares the exact language of two domain rules.
+// overlap says at least one host matches both. within says every host matched
+// by rule is also matched by container. It handles +., ., and a one-label *
+// in any position without enumerating example hosts.
+func DomainRuleRelation(rule, container string) (overlap, within bool) {
+	a, b := parseDomainPattern(rule), parseDomainPattern(container)
+	maxMin := max(a.minLen, b.minLen)
+	minMax := func(x, y int) int {
+		if x < 0 {
+			return y
+		}
+		if y < 0 {
+			return x
+		}
+		return min(x, y)
+	}
+	upper := minMax(a.maxLen, b.maxLen)
+	overlap = upper < 0 || maxMin <= upper
+	if overlap {
+		for i := 1; i <= min(len(a.labels), len(b.labels)); i++ {
+			x, y := a.labels[len(a.labels)-i], b.labels[len(b.labels)-i]
+			if x != "*" && y != "*" && x != y {
+				overlap = false
+				break
+			}
+		}
+	}
+	within = a.minLen >= b.minLen && (b.maxLen < 0 || a.maxLen >= 0 && a.maxLen <= b.maxLen)
+	if within {
+		for i := 1; i <= len(b.labels); i++ {
+			y := b.labels[len(b.labels)-i]
+			if y == "*" {
+				continue
+			}
+			if i > len(a.labels) || a.labels[len(a.labels)-i] != y {
+				within = false
+				break
+			}
+		}
+	}
+	return overlap, within
+}
+
 // parseIP: an address or a network, written the one way: a network by its
 // first address, an address without its /32
 func parseIP(s string) (string, bool) {

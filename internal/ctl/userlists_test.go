@@ -146,6 +146,33 @@ func TestParseList(t *testing.T) {
 	}
 }
 
+func TestDomainRuleRelation(t *testing.T) {
+	for _, c := range []struct {
+		rule, container string
+		overlap, within bool
+	}{
+		{"example.com", "example.com", true, true},
+		{"api.example.com", "+.example.com", true, true},
+		{"+.example.com", ".example.com", true, false},
+		{".example.com", "+.example.com", true, true},
+		{"*.example.com", ".example.com", true, true},
+		{"example.com", ".example.com", false, false},
+		{"a.*.example.com", "+.example.com", true, true},
+		{"+.example.*", "+.example.com", true, false},
+		{"+.example.com", "+.example.*", true, true},
+		{"+.foo.*", "+.bar.com", false, false},
+		{"+.example.com", "*.example.com", true, false},
+		{"*.example.com", "+.example.com", true, true},
+		{"+.a.example.com", "*.example.com", true, false},
+		{"API.Example.COM", "+.example.com", true, true},
+	} {
+		overlap, within := DomainRuleRelation(c.rule, c.container)
+		if overlap != c.overlap || within != c.within {
+			t.Errorf("%s in %s: overlap %v, within %v; want %v, %v", c.rule, c.container, overlap, within, c.overlap, c.within)
+		}
+	}
+}
+
 // The programs' list of its own from before is taken into the direct list
 // until that is saved.
 func TestSyncOldApps(t *testing.T) {
