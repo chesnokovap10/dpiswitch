@@ -115,7 +115,8 @@ func Synced(name string) bool {
 		}
 	}
 	if name == paths.Tunnel2List {
-		if d, err := os.ReadFile(paths.Awg2Rule()); err != nil || !bytes.Equal(d, wantAwg2Rule(LoadSettings(paths.Settings()))) {
+		want, werr := wantAwg2Rule(LoadSettings(paths.Settings()))
+		if d, err := os.ReadFile(paths.Awg2Rule()); err != nil || werr != nil || !bytes.Equal(d, want) {
 			return false
 		}
 	}
@@ -176,8 +177,13 @@ func SyncUserFiles() []string {
 	if replaced(paths.Presets(), wantPresets(set), "presets") {
 		changed = append(changed, PresetsProvider)
 	}
-	if replaced(paths.Awg2Rule(), wantAwg2Rule(set), "awg2_rule") {
-		changed = append(changed, Awg2RuleProvider)
+	if want, err := wantAwg2Rule(set); err != nil {
+		logOnce(Awg2RuleProvider, "awg2_rule not generated: %v", err)
+	} else {
+		logOnce(Awg2RuleProvider, "")
+		if replaced(paths.Awg2Rule(), want, "awg2_rule") {
+			changed = append(changed, Awg2RuleProvider)
+		}
 	}
 	return changed
 }
@@ -185,10 +191,10 @@ func SyncUserFiles() []string {
 // wantAwg2Rule generates the strict awg2 provider. Without the marker in the
 // Tunnel2 list it is empty. With it, it follows the currently enabled presets
 // and the second tunnel's own list without copying their lines into the UI.
-func wantAwg2Rule(s Settings) []byte {
+func wantAwg2Rule(s Settings) ([]byte, error) {
 	b, err := paths.ReadUserFile(paths.User(paths.Tunnel2List), UserListMax)
 	if err != nil || !hasAwg2Rule(b) {
-		return []byte("# awg2_rule is not in Always via Tunnel2\n")
+		return []byte("# awg2_rule is not in Always via Tunnel2\n"), nil
 	}
 	on := map[string]bool{}
 	for _, id := range s.Awg2Presets {
@@ -201,7 +207,14 @@ func wantAwg2Rule(s Settings) []byte {
 		}
 	}
 	if own, err := paths.ReadUserFile(paths.User(paths.Awg2List), UserListMax); err == nil {
-		rules = append(rules, splitList(own).rules()...)
+		doc := ParseList(string(own), ListPolicy{})
+		if len(doc.Issues) != 0 {
+			i := doc.Issues[0]
+			return nil, fmt.Errorf("%s line %d (%q): %w", paths.Awg2List, i.Line, i.Raw, i.Err)
+		}
+		rules = append(rules, listFilesFrom(doc).rules()...)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
 	}
 	seen := map[string]bool{}
 	var out strings.Builder
@@ -212,7 +225,7 @@ func wantAwg2Rule(s Settings) []byte {
 			out.WriteString(r + "\n")
 		}
 	}
-	return []byte(out.String())
+	return []byte(out.String()), nil
 }
 
 func hasAwg2Rule(b []byte) bool {
@@ -255,7 +268,8 @@ func Awg2Synced() bool {
 // follows the current preset selection and own list.
 func Awg2RuleSynced() bool {
 	d, err := os.ReadFile(paths.Awg2Rule())
-	return err == nil && bytes.Equal(d, wantAwg2Rule(LoadSettings(paths.Settings())))
+	want, werr := wantAwg2Rule(LoadSettings(paths.Settings()))
+	return err == nil && werr == nil && bytes.Equal(d, want)
 }
 
 // ObserveProvider: the rule-provider of paths.ObserveAll
