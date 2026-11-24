@@ -43,3 +43,18 @@ func TestAllEmbeddedListsUsed(t *testing.T) {
 		}
 	}
 }
+
+func TestTelegramDomains(t *testing.T) {
+	for _, p := range Builtin() {
+		if p.ID != "telegram-app" {
+			continue
+		}
+		for _, line := range p.Lines {
+			if line == "+.telegram.dog" {
+				return
+			}
+		}
+		t.Fatal("Telegram preset lacks +.telegram.dog")
+	}
+	t.Fatal("Telegram preset is missing")
+}

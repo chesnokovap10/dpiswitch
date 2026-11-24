@@ -3,6 +3,7 @@
 # (from core.telegram.org/resources/cidr.txt).
 +.telegram.org
 +.telegram.me
++.telegram.dog
 +.t.me
 +.telegra.ph
 +.graph.org
