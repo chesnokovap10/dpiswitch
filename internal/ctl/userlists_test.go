@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"dpiswitch/internal/paths"
+	"dpiswitch/internal/presets"
 )
 
 // A line of a user list is a site, an address or a program, written the one
@@ -57,6 +58,48 @@ func TestParseEntry(t *testing.T) {
 		if _, _, err := ParseEntry(bad); err == nil {
 			t.Errorf("%q taken", bad)
 		}
+	}
+}
+
+// awg2_rule follows the enabled presets and the second tunnel's own list,
+// and disappears from the generated provider when the marker is removed.
+func TestAwg2Rule(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	all := presets.Load()
+	if len(all) == 0 || len(PresetRules(all[0])) == 0 {
+		t.Fatal("no shipped preset with rules")
+	}
+	if _, err := UpdateSettings(paths.Settings(), func(s *Settings) error {
+		s.Awg2Presets = []string{all[0].ID}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(paths.User(paths.Awg2List), []byte("own.example\nown.exe\n"), 0o644)
+	os.WriteFile(paths.User(paths.Tunnel2List), []byte(Awg2Rule+"\nstrict.example\n"), 0o644)
+	changed := SyncUserFiles()
+	if !contains(changed, Awg2RuleProvider) || !Synced(paths.Tunnel2List) {
+		t.Fatalf("changed %v, synced %v", changed, Synced(paths.Tunnel2List))
+	}
+	b, err := os.ReadFile(paths.Awg2Rule())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(b)
+	for _, want := range []string{PresetRules(all[0])[0], "DOMAIN,own.example", "PROCESS-NAME,own.exe"} {
+		if !strings.Contains(body, want+"\n") {
+			t.Errorf("generated awg2_rule lacks %q:\n%s", want, body)
+		}
+	}
+	os.WriteFile(paths.User(paths.Tunnel2List), []byte("strict.example\n"), 0o644)
+	if got := SyncUserFiles(); !contains(got, Awg2RuleProvider) {
+		t.Fatalf("marker removal did not change provider: %v", got)
+	}
+	if b, _ := os.ReadFile(paths.Awg2Rule()); strings.Contains(string(b), "own.example") {
+		t.Fatalf("marker removed, rules remain:\n%s", b)
 	}
 }
 

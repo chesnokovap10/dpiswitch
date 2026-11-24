@@ -19,21 +19,21 @@ import (
 // route has a select group, whose member the controller picks within a
 // second of a change, as the lists follow the settings:
 //
-//   - the always-tunnel list: the first tunnel alone, or -- the second
+//   - the always-tunnels list: the first tunnel alone, or -- the second
 //     switched on -- the first and then the second; never direct, in every
 //     mode.
 //   - the second tunnel's presets and list: the second, then the first,
-//     then direct -- or, in tunnel only, refused instead of direct. With
-//     Awg2NoFallback, the second alone; connections fail when it is down.
+//     then direct -- or, in tunnel only, refused instead of direct.
 //   - what no list names: the first tunnel, then -- switched on -- the
 //     second, then direct; in tunnel only the same tunnels, never direct.
 //
 // The config lists the member the settings ask for first: a core started
 // meanwhile begins with it.
 const (
-	TunnelListsGroup = "tunnel-lists" // select: the always-tunnel list
-	Tunnel2Group     = "tunnel2"      // select: the presets and the awg2 list
-	TunnelRestGroup  = "tunnel-rest"  // select: MATCH
+	TunnelListsGroup  = "tunnel-lists"  // select: the always-tunnel list
+	Tunnel2ListsGroup = "tunnel2-lists" // select: the strict Tunnel2 list
+	Tunnel2Group      = "tunnel2"       // select: the presets and the awg2 list
+	TunnelRestGroup   = "tunnel-rest"   // select: MATCH
 
 	TunnelOneGroup     = "tunnel-one"      // the first; nothing else
 	TunnelAnyGroup     = "tunnel-any"      // the first, then the second; nothing else
@@ -71,31 +71,13 @@ func RouteChoice(s Settings) map[string]string {
 		}
 		return b
 	}
-	two := pick(strict, Tunnel2StrictGroup, Tunnel2SoftGroup)
-	if s.Awg2NoFallback {
-		two = Tunnel2OnlyGroup
-	}
 	return map[string]string{
-		TunnelListsGroup: pick(on, TunnelAnyGroup, TunnelOneGroup),
-		Tunnel2Group:     two,
+		TunnelListsGroup:  pick(on, TunnelAnyGroup, TunnelOneGroup),
+		Tunnel2ListsGroup: pick(on, Tunnel2OnlyGroup, "REJECT"),
+		Tunnel2Group:      pick(strict, Tunnel2StrictGroup, Tunnel2SoftGroup),
 		TunnelRestGroup: pick(strict, pick(on, TunnelAnyGroup, TunnelOneGroup),
 			pick(on, TunnelSoftAnyGroup, TunnelSoftGroup)),
 	}
-}
-
-// Awg2RouteSynced reports whether the core has taken the current fallback
-// choice for the second tunnel. The UI waits for this before closing open
-// preset/list connections, so their immediate reconnect cannot take the old
-// route again.
-func Awg2RouteSynced(apiAddr, secret string) bool {
-	b, err := newAPI(apiAddr, secret).do("GET", "/proxies/"+url.PathEscape(Tunnel2Group), nil)
-	if err != nil {
-		return false
-	}
-	var g struct {
-		Now string `json:"now"`
-	}
-	return json.Unmarshal(b, &g) == nil && g.Now == RouteChoice(LoadSettings(paths.Settings()))[Tunnel2Group]
 }
 
 // routesSet: the member last chosen in the core, by group; listMu held. A

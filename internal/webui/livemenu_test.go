@@ -29,7 +29,7 @@ func liveAct(t *testing.T, s *Server, path string, form url.Values, hdr map[stri
 }
 
 // The menu sends a row's line to one list, and takes it out of the others:
-// "Always via tunnel" stands above "Always direct", and a line left there
+// "Always via Tunnels" stands above "Always direct", and a line left there
 // would keep the site in the tunnel. The same twice is said, a line of no
 // kind refused.
 func TestLiveAdd(t *testing.T) {
@@ -40,18 +40,29 @@ func TestLiveAdd(t *testing.T) {
 	}
 	list := func(name string) string { return strings.Join(readEntries(name), ",") }
 
-	if a := add("tunnel", "+.example.com"); !a.OK || a.Msg != "Added to “Always via tunnel”: +.example.com" {
+	if a := add("tunnel", "+.example.com"); !a.OK || a.Msg != "Added to “Always via Tunnels”: +.example.com" {
 		t.Fatalf("to the tunnel: %+v", a)
 	}
 	if got := list(paths.TunnelList); got != "+.example.com" {
 		t.Fatalf("the tunnel's list: %s", got)
 	}
 	a := add("direct", "+.example.com")
-	if !a.OK || !strings.Contains(a.Msg, "taken out of «Always via tunnel»") {
+	if !a.OK || !strings.Contains(a.Msg, "taken out of «Always via Tunnels»") {
 		t.Fatalf("direct: %+v", a)
 	}
 	if list(paths.TunnelList) != "" || list(paths.DirectList) != "+.example.com" {
 		t.Fatalf("moved: tunnel %q, direct %q", list(paths.TunnelList), list(paths.DirectList))
+	}
+	if err := writeEntries(paths.Tunnel1List, []string{"strict.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeEntries(paths.Tunnel2List, []string{"strict.example"}); err != nil {
+		t.Fatal(err)
+	}
+	a = add("direct", "strict.example")
+	if !a.OK || !strings.Contains(a.Msg, "Always via Tunnel1") || !strings.Contains(a.Msg, "Always via Tunnel2") ||
+		list(paths.Tunnel1List) != "" || list(paths.Tunnel2List) != "" {
+		t.Fatalf("strict lists not cleared before Direct: %+v, tunnel1 %q, tunnel2 %q", a, list(paths.Tunnel1List), list(paths.Tunnel2List))
 	}
 	if a = add("direct", "+.EXAMPLE.com"); !a.OK || a.Msg != "“Always direct” has +.example.com already" {
 		t.Fatalf("again: %+v", a)
@@ -107,7 +118,7 @@ func TestLiveAddPreset(t *testing.T) {
 }
 
 // A line sent to a list goes out of the lists that would route it before
-// that one -- by a wider line as well: "+.example.com" in Always via tunnel
+// that one -- by a wider line as well: "+.example.com" in Always via Tunnels
 // kept api.example.com, sent direct, in the tunnel; "+.example.com" in
 // Forbidden kept it refused; 10.0.0.0/8 kept 10.20.30.40. A list after it
 // keeps a wider line -- it routes other names, and the line sent routes
@@ -133,7 +144,7 @@ func TestLiveAddOverlap(t *testing.T) {
 		t.Fatalf("a wider line before: %+v; tunnel %q, forbidden %q, direct %q", a,
 			list(paths.TunnelList), list(paths.BlockList), list(paths.DirectList))
 	}
-	if !strings.Contains(a.Msg, "«Always via tunnel»: +.example.com") || !strings.Contains(a.Msg, "«Forbidden»: +.example.com") {
+	if !strings.Contains(a.Msg, "«Always via Tunnels»: +.example.com") || !strings.Contains(a.Msg, "«Forbidden»: +.example.com") {
 		t.Fatalf("what was taken out is not said: %s", a.Msg)
 	}
 
@@ -190,7 +201,7 @@ func TestLiveAddSaid(t *testing.T) {
 	}
 	a := add("direct", "api.example.com")
 	if !strings.HasPrefix(a.Msg, "“Always direct” has api.example.com already") ||
-		!strings.Contains(a.Msg, "taken out of «Always via tunnel»: +.example.com") || len(readEntries(paths.TunnelList)) != 0 {
+		!strings.Contains(a.Msg, "taken out of «Always via Tunnels»: +.example.com") || len(readEntries(paths.TunnelList)) != 0 {
 		t.Fatalf("there already, the others cleaned: %+v", a)
 	}
 
@@ -313,7 +324,7 @@ func TestLiveAddBelowLists(t *testing.T) {
 		}
 	}
 	a := add(url.Values{"to": {"preset"}, "preset": {"claude"}, "entry": {"+.claude.ai"}})
-	if !a.OK || !strings.Contains(a.Msg, "taken out of «Always via tunnel»") || len(readEntries(paths.TunnelList)) != 0 {
+	if !a.OK || !strings.Contains(a.Msg, "taken out of «Always via Tunnels»") || len(readEntries(paths.TunnelList)) != 0 {
 		t.Fatalf("to the preset: %+v", a)
 	}
 }

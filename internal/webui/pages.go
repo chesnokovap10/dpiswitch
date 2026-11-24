@@ -248,14 +248,16 @@ func (v *view) VName(verdict string) string {
 // --- routing lists ---
 
 type lists struct {
-	Direct, Tunnel, Block []string
-	Online                []netprocs.Proc
+	Direct, Tunnel, Tunnel1, Tunnel2, Block []string
+	Online                                  []netprocs.Proc
 }
 
 func listsData() lists {
 	l := lists{Direct: readEntries(paths.DirectList), Tunnel: readEntries(paths.TunnelList),
+		Tunnel1: readEntries(paths.Tunnel1List), Tunnel2: readEntries(paths.Tunnel2List),
 		Block: readEntries(paths.BlockList)}
-	l.Online = onlineApps(append(append(append([]string{}, l.Direct...), l.Tunnel...), l.Block...))
+	listed := append(append(append(append(append([]string{}, l.Direct...), l.Tunnel...), l.Tunnel1...), l.Tunnel2...), l.Block...)
+	l.Online = onlineApps(listed)
 	return l
 }
 

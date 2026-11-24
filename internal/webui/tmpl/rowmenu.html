@@ -5,7 +5,7 @@
   <div class="cmenu" id="lmenu" hidden>
     <div class="cm-what" id="lwhat" title="{{.T "What to send"}}"></div>
     <button type="button" data-to="direct" title="{{.T "Adds it to “Always direct”"}}">{{.T "Direct"}}</button>
-    <button type="button" data-to="tunnel" title="{{.T "Adds it to “Always via tunnel”"}}">{{.T "Via the tunnel"}}</button>
+    <button type="button" data-to="tunnel" title="{{if .St.Second}}{{.T "Adds it to “Always via Tunnels”"}}{{else}}{{.T "Adds it to “Always via tunnel”"}}{{end}}">{{if .St.Second}}{{.T "Via the tunnels"}}{{else}}{{.T "Via the tunnel"}}{{end}}</button>
     {{/* the second tunnel's list and presets: only while it is on in the settings */}}
     {{if .St.Second}}<button type="button" data-to="awg2" title="{{.T "Adds it to the second tunnel's own list"}}">{{.T "Via the second tunnel"}}</button>
     <div class="cm-sub">

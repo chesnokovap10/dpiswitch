@@ -203,3 +203,32 @@ func (f listFiles) bodies(list string) map[string][]byte {
 	}
 	return map[string][]byte{list: body(f.names), paths.IPList(list): body(cidrs), paths.AppList(list): body(rules)}
 }
+
+// rules is the same list as one classical rule-provider. It is used by
+// awg2_rule, which joins the second tunnel's enabled presets and own list in
+// one provider routed strictly through awg2.
+func (f listFiles) rules() []string {
+	var out []string
+	for _, n := range f.names {
+		out = append(out, nameRule(n))
+	}
+	for _, ip := range f.ips {
+		if !strings.Contains(ip, "/") {
+			a := netip.MustParseAddr(ip)
+			ip = netip.PrefixFrom(a, a.BitLen()).String()
+		}
+		kind := "IP-CIDR"
+		if netip.MustParsePrefix(ip).Addr().Is6() {
+			kind = "IP-CIDR6"
+		}
+		out = append(out, kind+","+ip+",no-resolve")
+	}
+	for _, a := range f.apps {
+		kind := "PROCESS-NAME"
+		if strings.ContainsAny(a, `\\/`) {
+			kind = "PROCESS-PATH"
+		}
+		out = append(out, kind+","+a)
+	}
+	return out
+}

@@ -78,17 +78,19 @@ func User(name string) string { return filepath.Join(UserDir(), name) }
 // directory, one per kind -- the names under the list's own name, the
 // addresses in IPList, the programs in AppList.
 const (
-	DirectList = "force-direct.txt"
-	TunnelList = "force-tunnel.txt"
-	BlockList  = "force-block.txt"
-	Awg2List   = "awg2-hosts.txt"
+	DirectList  = "force-direct.txt"
+	TunnelList  = "force-tunnel.txt"
+	Tunnel1List = "force-tunnel1.txt"
+	Tunnel2List = "force-tunnel2.txt"
+	BlockList   = "force-block.txt"
+	Awg2List    = "awg2-hosts.txt"
 	// AppsList: the programs bypassing the tunnel, a user list of its own
 	// before the direct list took programs; read until that list is saved
 	AppsList = "force-direct-apps.txt"
 )
 
 // UserLists: every list the user edits
-var UserLists = []string{DirectList, TunnelList, BlockList, Awg2List}
+var UserLists = []string{DirectList, TunnelList, Tunnel1List, Tunnel2List, BlockList, Awg2List}
 
 // IPList, AppList: the files of a user list's addresses and programs
 func IPList(list string) string  { return strings.TrimSuffix(list, ".txt") + "-ip.txt" }
@@ -174,6 +176,7 @@ func SourceConf2() string { return User("source2.conf") }
 func Awg2Hosts() string   { return Data(Awg2List) }
 func UserPresets() string { return User("presets.json") }
 func Presets() string     { return Data("presets.txt") }
+func Awg2Rule() string    { return Data("awg2-rule.txt") }
 func ForceTunnel() string { return Data(TunnelList) }
 func TunnelIPv6() string  { return Data("tunnel-ipv6.json") }
 

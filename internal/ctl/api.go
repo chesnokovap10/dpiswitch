@@ -123,7 +123,8 @@ func Defaults() Config {
 // the forbidden ones too: a probe would reach them past the rules. The
 // presets' file holds the ones switched on only.
 func pinnedLists() []string {
-	return []string{paths.Awg2Hosts(), paths.ForceTunnel(), paths.ForceBlock(), paths.Presets()}
+	return []string{paths.Awg2Hosts(), paths.ForceTunnel(), paths.Data(paths.Tunnel1List),
+		paths.Data(paths.Tunnel2List), paths.Awg2Rule(), paths.ForceBlock(), paths.Presets()}
 }
 
 // Run loops until the context is cancelled. It is the single

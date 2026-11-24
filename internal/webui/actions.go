@@ -600,13 +600,13 @@ func (s *Server) actPreset(w http.ResponseWriter, r *http.Request) {
 	n := 0
 	var cerr error
 	if err == nil {
-		n, cerr = closeMoved([]string{ctl.PresetsProvider}, rulesMatch(rules), func() bool {
+		n, cerr = closeMoved([]string{ctl.PresetsProvider, ctl.Awg2RuleProvider}, rulesMatch(rules), func() bool {
 			for _, p := range selected {
 				if !ctl.PresetWritten(p, on) {
 					return false
 				}
 			}
-			return true
+			return ctl.Awg2RuleSynced()
 		})
 	}
 	ok, msg := saved(r, err, n, cerr)
@@ -667,30 +667,6 @@ func (s *Server) actAwg2(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		providers := append([]string{ctl.PresetsProvider}, ctl.ListProviders(paths.Awg2List)...)
 		n, cerr = closeMoved(providers, ctl.Awg2Moved(), ctl.Awg2Synced)
-	}
-	ok, msg := saved(r, err, n, cerr)
-	s.part(w, r, "awg2", "awg2state", ok, msg)
-}
-
-// actAwg2Fallback makes the second tunnel's presets and own list fail closed,
-// or restores their normal awg2 -> awg1 -> direct fallback. The controller
-// changes the select group without restarting the core. Open connections are
-// closed only after the core reports the new choice, so they reconnect by it.
-func (s *Server) actAwg2Fallback(w http.ResponseWriter, r *http.Request) {
-	on := r.FormValue("value") == "1"
-	err := paths.UserReady()
-	if err == nil {
-		_, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
-			set.Awg2NoFallback = on
-			return nil
-		})
-	}
-	n := 0
-	var cerr error
-	if err == nil {
-		secret := ctl.SecretFromConfig(paths.Config())
-		taken := func() bool { return ctl.Awg2RouteSynced(apiAddr, secret) }
-		n, cerr = closeMoved(nil, ctl.Awg2Moved(), taken)
 	}
 	ok, msg := saved(r, err, n, cerr)
 	s.part(w, r, "awg2", "awg2state", ok, msg)

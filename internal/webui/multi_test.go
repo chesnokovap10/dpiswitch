@@ -73,11 +73,11 @@ func TestLiveAddMany(t *testing.T) {
 	}
 	list := func(name string) string { return strings.Join(readEntries(name), ",") }
 
-	if a := add("tunnel", "+.a.example", "b.example"); !a.OK || a.Msg != "Added to “Always via tunnel”: 2 of 2" {
+	if a := add("tunnel", "+.a.example", "b.example"); !a.OK || a.Msg != "Added to “Always via Tunnels”: 2 of 2" {
 		t.Fatalf("two lines: %+v", a)
 	}
 	a := add("direct", "+.a.example", "c.example", "C.example", "Telegram.exe")
-	if !a.OK || !strings.HasPrefix(a.Msg, "Added to “Always direct”: 3 of 3") || !strings.Contains(a.Msg, "(taken out of «Always via tunnel»: +.a.example)") {
+	if !a.OK || !strings.HasPrefix(a.Msg, "Added to “Always direct”: 3 of 3") || !strings.Contains(a.Msg, "(taken out of «Always via Tunnels»: +.a.example)") {
 		t.Fatalf("moved out of the tunnel: %+v", a)
 	}
 	if list(paths.TunnelList) != "b.example" {

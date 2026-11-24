@@ -19,6 +19,13 @@ import (
 // SyncUserFiles brings the copies up to date and writes the presets the
 // settings ask for.
 
+// Awg2Rule is the special line accepted in the strict Tunnel2 list. It
+// dynamically means the enabled second-tunnel presets and its own list.
+const Awg2Rule = "awg2_rule"
+
+// Awg2RuleProvider is the generated classical provider behind Awg2Rule.
+const Awg2RuleProvider = "awg2-rule"
+
 // setAside: the body a user list's copies are written with when the
 // settings set it aside, nil when they take it. The second tunnel not
 // loaded, or switched off, routes nothing, its list included. (Tunnel only
@@ -102,6 +109,11 @@ func Synced(name string) bool {
 			return false
 		}
 	}
+	if name == paths.Tunnel2List {
+		if d, err := os.ReadFile(paths.Awg2Rule()); err != nil || !bytes.Equal(d, wantAwg2Rule(LoadSettings(paths.Settings()))) {
+			return false
+		}
+	}
 	return true
 }
 
@@ -114,7 +126,11 @@ func providerOf(name string) string { return strings.TrimSuffix(name, ".txt") }
 
 // ListProviders: the core's rule-providers of a user list
 func ListProviders(name string) []string {
-	return []string{providerOf(name), providerOf(paths.IPList(name)), providerOf(paths.AppList(name))}
+	p := []string{providerOf(name), providerOf(paths.IPList(name)), providerOf(paths.AppList(name))}
+	if name == paths.Tunnel2List || name == paths.Awg2List {
+		p = append(p, Awg2RuleProvider)
+	}
+	return p
 }
 
 // SyncUserFiles copies what changed and returns the rule-providers whose
@@ -155,7 +171,52 @@ func SyncUserFiles() []string {
 	if replaced(paths.Presets(), wantPresets(set), "presets") {
 		changed = append(changed, PresetsProvider)
 	}
+	if replaced(paths.Awg2Rule(), wantAwg2Rule(set), "awg2_rule") {
+		changed = append(changed, Awg2RuleProvider)
+	}
 	return changed
+}
+
+// wantAwg2Rule generates the strict awg2 provider. Without the marker in the
+// Tunnel2 list it is empty. With it, it follows the currently enabled presets
+// and the second tunnel's own list without copying their lines into the UI.
+func wantAwg2Rule(s Settings) []byte {
+	b, err := paths.ReadUserFile(paths.User(paths.Tunnel2List), UserListMax)
+	if err != nil || !hasAwg2Rule(b) {
+		return []byte("# awg2_rule is not in Always via Tunnel2\n")
+	}
+	on := map[string]bool{}
+	for _, id := range s.Awg2Presets {
+		on[id] = true
+	}
+	var rules []string
+	for _, p := range presets.Load() {
+		if on[p.ID] {
+			rules = append(rules, PresetRules(p)...)
+		}
+	}
+	if own, err := paths.ReadUserFile(paths.User(paths.Awg2List), UserListMax); err == nil {
+		rules = append(rules, splitList(own).rules()...)
+	}
+	seen := map[string]bool{}
+	var out strings.Builder
+	out.WriteString("# awg2_rule: enabled second-tunnel presets and its own list -- generated, do not edit\n")
+	for _, r := range rules {
+		if k := strings.ToLower(r); !seen[k] {
+			seen[k] = true
+			out.WriteString(r + "\n")
+		}
+	}
+	return []byte(out.String())
+}
+
+func hasAwg2Rule(b []byte) bool {
+	for _, line := range strings.Split(string(b), "\n") {
+		if strings.EqualFold(strings.TrimSpace(line), Awg2Rule) {
+			return true
+		}
+	}
+	return false
 }
 
 // wantPresets: the core's presets file as the settings make it -- the ones
@@ -175,11 +236,21 @@ func Awg2Synced() bool {
 	if d, err := os.ReadFile(paths.Presets()); err != nil || !bytes.Equal(d, wantPresets(set)) {
 		return false
 	}
+	if !Awg2RuleSynced() {
+		return false
+	}
 	// no list of the user's: the copies are left as they are, nothing to wait for
 	if _, ok, err := wantCopies(paths.Awg2List, set); err == nil && !ok {
 		return true
 	}
 	return Synced(paths.Awg2List)
+}
+
+// Awg2RuleSynced reports whether the generated expansion of awg2_rule
+// follows the current preset selection and own list.
+func Awg2RuleSynced() bool {
+	d, err := os.ReadFile(paths.Awg2Rule())
+	return err == nil && bytes.Equal(d, wantAwg2Rule(LoadSettings(paths.Settings())))
 }
 
 // ObserveProvider: the rule-provider of paths.ObserveAll

@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
 	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/netprocs"
 	"dpiswitch/internal/paths"
+	"dpiswitch/internal/presets"
 )
 
 // The user's lists -- always direct, always via the tunnel, forbidden, via
@@ -21,7 +23,8 @@ import (
 
 // listFile: the user list behind each block, by the block's kind
 var listFile = map[string]string{
-	"direct": paths.DirectList, "tunnel": paths.TunnelList, "block": paths.BlockList, "awg2": paths.Awg2List,
+	"direct": paths.DirectList, "tunnel": paths.TunnelList, "tunnel1": paths.Tunnel1List,
+	"tunnel2": paths.Tunnel2List, "block": paths.BlockList, "awg2": paths.Awg2List,
 }
 
 // entryList: what a list's block shows
@@ -45,13 +48,17 @@ func readEntriesFile(name string) []string {
 			}
 		}
 	}
-	out, _ := normEntries(lines)
+	out, _ := normEntriesFor(lines, name == paths.Tunnel2List)
 	return out
 }
 
 // normEntries: the lines as they are kept, each once, sorted by kind; bad is
 // the first line that is none of the kinds
 func normEntries(lines []string) (out []string, bad string) {
+	return normEntriesFor(lines, false)
+}
+
+func normEntriesFor(lines []string, allowAwg2Rule bool) (out []string, bad string) {
 	type entry struct {
 		kind int
 		v    string
@@ -59,6 +66,17 @@ func normEntries(lines []string) (out []string, bad string) {
 	var es []entry
 	seen := map[string]bool{}
 	for _, l := range lines {
+		if strings.EqualFold(strings.TrimSpace(l), ctl.Awg2Rule) {
+			if allowAwg2Rule {
+				if !seen[ctl.Awg2Rule] {
+					seen[ctl.Awg2Rule] = true
+					es = append(es, entry{-1, ctl.Awg2Rule})
+				}
+			} else if bad == "" {
+				bad = ctl.Awg2Rule
+			}
+			continue
+		}
 		kind, v, err := ctl.ParseEntry(l)
 		if err != nil {
 			if bad == "" {
@@ -152,6 +170,60 @@ func entryMatch(entries []string) func(ctl.Conn) bool {
 	}
 }
 
+// awg2SourceMatch matches the sources awg2_rule expands: the currently
+// enabled presets and the second tunnel's own user list. It reads the user
+// sources rather than their active core copies, which are empty while awg2 is
+// switched off; adding the marker then must still close and block connections.
+func awg2SourceMatch() func(ctl.Conn) bool {
+	set := loadSettings()
+	on := map[string]bool{}
+	for _, id := range set.Awg2Presets {
+		on[id] = true
+	}
+	entries := readEntries(paths.Awg2List)
+	for _, p := range presets.Load() {
+		if on[p.ID] {
+			entries = append(entries, p.Lines...)
+		}
+	}
+	entries, _ = normEntries(entries)
+	return entryMatch(entries)
+}
+
+// awg2RuleChangeMatch picks only connections whose effective route changes
+// when the awg2_rule marker is added or removed. Merely matching one of its
+// source rules is not enough: while awg2 is healthy those connections already
+// use awg2, and rules in Tunnels or Tunnel1 still stand above the marker.
+func awg2RuleChangeMatch(adding, awg2Active, awg2Alive bool, source func(ctl.Conn) bool) func(ctl.Conn) bool {
+	higher := append(ctl.ListProviders(paths.TunnelList), ctl.ListProviders(paths.Tunnel1List)...)
+	return func(c ctl.Conn) bool {
+		if adding {
+			if !source(c) || slices.Contains(higher, c.RulePayload) {
+				return false
+			}
+			// The new strict rule still selects awg2. An existing connection
+			// already using it complies even if the latest health check failed.
+			return !awg2Active || !strings.EqualFold(c.Outbound, "awg2")
+		}
+		if c.RulePayload != ctl.Awg2RuleProvider {
+			return false
+		}
+		// On removal the normal second-tunnel group falls back while awg2 is
+		// down, so its strict connection must reconnect then.
+		return !awg2Active || !awg2Alive || !strings.EqualFold(c.Outbound, "awg2")
+	}
+}
+
+func awg2RouteState() (active, alive bool) {
+	active = loadSettings().Awg2Active()
+	if !active {
+		return false, false
+	}
+	secret := ctl.SecretFromConfig(paths.Config())
+	alive, _ = ctl.TunnelHealth(apiAddr, secret, "awg2")
+	return true, alive
+}
+
 // saveEntries writes the user's copy of a list and closes what the change
 // moved. err is the list's own, closeErr the connections'.
 func (s *Server) saveEntries(name string, entries []string) (n int, err, closeErr error) {
@@ -185,7 +257,18 @@ func (s *Server) saveEntries(name string, entries []string) (n int, err, closeEr
 	if err != nil {
 		return 0, err, nil
 	}
-	n, closeErr = closeMoved(ctl.ListProviders(name), entryMatch(changed(old, entries)),
+	moved := changed(old, entries)
+	isRule := func(s string) bool { return strings.EqualFold(s, ctl.Awg2Rule) }
+	plain := slices.DeleteFunc(slices.Clone(moved), isRule)
+	match := entryMatch(plain)
+	oldRule, newRule := slices.ContainsFunc(old, isRule), slices.ContainsFunc(entries, isRule)
+	if name == paths.Tunnel2List && oldRule != newRule {
+		active, alive := awg2RouteState()
+		marker := awg2RuleChangeMatch(newRule, active, alive, awg2SourceMatch())
+		byLine := match
+		match = func(c ctl.Conn) bool { return byLine(c) || marker(c) }
+	}
+	n, closeErr = closeMoved(ctl.ListProviders(name), match,
 		func() bool { return ctl.Synced(name) })
 	return n, nil, closeErr
 }
@@ -213,7 +296,7 @@ func (s *Server) actList(w http.ResponseWriter, r *http.Request) {
 		}
 		lines = append(lines, a)
 	}
-	entries, bad := normEntries(lines)
+	entries, bad := normEntriesFor(lines, kind == "tunnel2")
 	if bad != "" {
 		s.refuse(w, r, page, kind, lines,
 			fmt.Sprintf(tr(lang(r), "%q is neither a site, an address nor a program: nothing saved"), bad))
@@ -240,6 +323,10 @@ func (s *Server) refuse(w http.ResponseWriter, r *http.Request, page, kind strin
 			d.Direct = lines
 		case "tunnel":
 			d.Tunnel = lines
+		case "tunnel1":
+			d.Tunnel1 = lines
+		case "tunnel2":
+			d.Tunnel2 = lines
 		case "block":
 			d.Block = lines
 		}

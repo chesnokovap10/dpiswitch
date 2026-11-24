@@ -25,7 +25,8 @@ import (
 
 // liveListNames: the lists the menu sends to, as its messages name them
 var liveListNames = map[string]string{
-	"direct": "Always direct", "tunnel": "Always via tunnel",
+	"direct": "Always direct", "tunnel": "Always via Tunnels",
+	"tunnel1": "Always via Tunnel1", "tunnel2": "Always via Tunnel2",
 	"awg2": "Second tunnel: your own list", "block": "Forbidden",
 }
 
@@ -388,21 +389,25 @@ func (s *Server) moveLines(to, id string, vs []string) (mvs []liveMove, movedCon
 }
 
 // liveRank: where a list's rules of a kind stand among the core's rules --
-// the lower, the sooner they route (see awgconf): Forbidden, Always via
-// tunnel, Always direct, the second tunnel (its presets, then its own
-// list). Each list takes its programs, sites and addresses together.
+// the lower, the sooner they route (see awgconf): Forbidden, Tunnels,
+// Tunnel1, Tunnel2, Always direct, the second tunnel (its presets, then its
+// own list). Each list takes its programs, sites and addresses together.
 func liveRank(list string, kind int) int {
 	switch list {
 	case "block":
 		return 0
 	case "tunnel":
 		return 1
-	case "direct":
+	case "tunnel1":
 		return 2
-	case "preset", "awg2":
+	case "tunnel2":
 		return 3
+	case "direct":
+		return 4
+	case "preset", "awg2":
+		return 5
 	}
-	return 5
+	return 7
 }
 
 // liveOverlap: how a list's line stands to the line v, as the lists read

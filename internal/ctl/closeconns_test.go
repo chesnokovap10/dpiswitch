@@ -26,7 +26,9 @@ func TestCloseConnsLeavesProbes(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	n, err := CloseConns(strings.TrimPrefix(srv.URL, "http://"), "", func(c Conn) bool { return c.Host == "a.example" })
+	n, err := CloseConns(strings.TrimPrefix(srv.URL, "http://"), "", func(c Conn) bool {
+		return c.Host == "a.example" && c.Outbound == "DIRECT"
+	})
 	if err != nil || n != 1 || len(closed) != 1 || closed[0] != "app" {
 		t.Fatalf("closed %v (%d, %v), want the application's only", closed, n, err)
 	}

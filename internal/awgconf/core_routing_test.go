@@ -75,7 +75,7 @@ func TestCoreFailClosed(t *testing.T) {
 	// first tunnel, then direct) is the control: once the check finds the
 	// tunnel down it must go direct -- or this test sees no leak at all.
 	strict := []string{ctl.TunnelOneGroup, ctl.TunnelAnyGroup, ctl.Tunnel2StrictGroup, ctl.Tunnel2OnlyGroup,
-		ctl.TunnelListsGroup, ctl.Tunnel2Group, ctl.TunnelRestGroup}
+		ctl.TunnelListsGroup, ctl.Tunnel2ListsGroup, ctl.Tunnel2Group, ctl.TunnelRestGroup}
 	control := ctl.TunnelSoftGroup
 	groups := append(append([]string{}, strict...), control)
 

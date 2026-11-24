@@ -106,7 +106,7 @@
 |---|---|
 | **Обзор** | Сколько сайтов идёт напрямую, заблокировано, медленнее, не проверено; состояние обоих туннелей, замена `.conf`; последние события |
 | **Вердикты** | Все вердикты по вкладкам «Напрямую», «Заблокированы», «Медленнее», «Не проверено», фильтр по имени (русские имена ищутся и показываются как есть); строка выделяется кликом, правый клик отправляет её в список, ✕ сбрасывает её вердикт; «Сбросить вердикты…» — выбранной сети; сеть в шапке раскрывает список сетей |
-| **Списки маршрутов** | «Всегда напрямую», «Всегда через туннель», «Запрещено»: сайты, адреса и программы в каждом |
+| **Списки маршрутов** | «Всегда напрямую», «Всегда через» с отдельными списками «Туннели», «Туннель1», «Туннель2», «Запрещено»: сайты, адреса и программы в каждом |
 | **Второй туннель** | Только когда он включён в настройках. Подключение awg2, пресеты (YouTube, Telegram и WhatsApp, Discord, ИИ-сервисы, Instagram/Facebook/X; их можно изменить, удалить и добавить свои) и свои сайты |
 | **Настройки** | Детектор, сроки, IPv6, DNS; каждое изменение применяется сразу |
 | **Логи** | Лог контроллера и службы, ядра, трея и интерфейса; последние 400 строк, вместе с предыдущим файлом после ротации |
@@ -153,20 +153,22 @@
 | 2 | Адреса внутри туннелей (их DNS-сервер) | этот туннель |
 | 3 | Запрещено: программы, сайты, адреса | отказ, в любом режиме |
 | 4 | Локальные сети: роутер, принтеры, общие папки, имена `.local` и `.lan` | напрямую |
-| 5 | Всегда через туннель: программы, сайты, адреса | awg1; если он лежит — awg2, пока он включён; напрямую никогда |
-| 6 | Всегда напрямую: программы (`qbittorrent.exe` и т. п.), сайты, адреса | напрямую, в любом режиме |
-| 7 | Второй туннель, пока загружен и включён: пресеты и ваш список | awg2; если он лежит — awg1; затем напрямую, а в «Только в туннель» отклоняется |
-| 8 | Всё остальное, пока выбрано «Только наблюдать» | напрямую |
-| 9 | Вердикты детектора: чистые имена и адреса, на которых их проверяли (для соединений без имени) | напрямую |
-| 10 | Всё остальное | по режиму: во «Вкл» awg1, затем awg2 (если включён), затем напрямую; в «Только в туннель» те же туннели, но никогда напрямую |
+| 5 | Всегда через — Туннели: программы, сайты, адреса | awg1; если он лежит — awg2, пока он включён; напрямую никогда |
+| 6 | Всегда через — Туннель1 | только awg1; если он лежит, соединение отклоняется |
+| 7 | Всегда через — Туннель2 | только awg2; если он лежит или выключен, соединение отклоняется; `awg2_rule` охватывает включённые пресеты и свой список awg2 |
+| 8 | Всегда напрямую: программы (`qbittorrent.exe` и т. п.), сайты, адреса | напрямую, в любом режиме |
+| 9 | Второй туннель, пока загружен и включён: пресеты и ваш список | awg2; если он лежит — awg1; затем напрямую, а в «Только в туннель» отклоняется |
+| 10 | Всё остальное, пока выбрано «Только наблюдать» | напрямую |
+| 11 | Вердикты детектора: чистые имена и адреса, на которых их проверяли (для соединений без имени) | напрямую |
+| 12 | Всё остальное | по режиму: во «Вкл» awg1, затем awg2 (если включён), затем напрямую; в «Только в туннель» те же туннели, но никогда напрямую |
 
 Без конфига первого туннеля служба всё равно работает: Live показывает трафик, списки действуют, а детектор
 ничего не проверяет — ему не с чем сравнивать. Второй туннель, если загружен только он, берёт свои пресеты и
-список и «Всегда через туннель», а в «Только в туннель» — всё. Подробные таблицы для каждого режима и набора
+список, «Туннели» и «Туннель2», а в «Только в туннель» — всё; «Туннель1» без awg1 отклоняется. Подробные таблицы для каждого режима и набора
 загруженных конфигов — в справке программы.
 
-Строка, вписанная в несколько списков, идёт по тому, что выше в таблице: «Запрещено» → «Всегда через
-туннель» → «Всегда напрямую» → пресеты и список awg2 → детектор.
+Строка, вписанная в несколько списков, идёт по тому, что выше в таблице: «Запрещено» → «Туннели» →
+«Туннель1» → «Туннель2» → «Всегда напрямую» → пресеты и список awg2 → детектор.
 
 Ядро решает один раз — когда соединение открывается. Когда вы меняете список или пресет, открытые
 соединения, которые это изменение переносит, закрываются, и программы переподключаются уже по новому
@@ -393,11 +395,11 @@ OpenVPN, IKEv2), звонок или игра, которым привязка �
 
 Второй сервер AmneziaWG только для выбранных сервисов: YouTube, Telegram и WhatsApp, Discord, ИИ-сервисов (ChatGPT,
 Claude, Google AI, Grok, Meta AI, Copilot и общего входа ИИ-сервисов), Instagram, Facebook, X и вашего списка. Он стоит ниже
-«Запрещено», «Всегда через туннель» и «Всегда напрямую» и выше детектора — детектор его имена не трогает.
+«Запрещено», трёх списков «Всегда через» и «Всегда напрямую» и выше детектора — детектор его имена не трогает.
 Обычно, если он лежит, его сайты идут через первый туннель; если лежат оба — напрямую, а в «Только в туннель»
-отклоняются. Флажок **Запретить перенаправление при недоступности второго туннеля** оставляет пресеты и свой
-список только в awg2: когда он недоступен, их соединения не проходят и не переходят на awg1 или напрямую.
-Переключение применяется сразу, включая открытые соединения. Детектор сравнивает прямой путь только с первым туннелем: то, что идёт в awg2, не проверяется никогда, а без awg1 не проверяется ничего, даже при включённом «Вкл». Пока он не подключён, пресеты
+отклоняются. Специальная строка **`awg2_rule`** в списке «Всегда через — Туннель2» направляет только через awg2
+все включённые пресеты и весь свой список второго туннеля. Если awg2 недоступен или выключен, такие соединения
+не проходят; изменения пресетов и своего списка учитываются автоматически. Детектор сравнивает прямой путь только с первым туннелем: то, что идёт в awg2, не проверяется никогда, а без awg1 не проверяется ничего, даже при включённом «Вкл». Пока он не подключён, пресеты
 и свой список ничего не маршрутизируют. Все
 пресеты по умолчанию выключены. Переключение пресета применяется сразу, включая открытые соединения.
 
@@ -454,10 +456,12 @@ GitHub и Reddit. Маски вида `+.claude.ai` покрывают доме�
 сработали бы раньше. Правила ядра проверяются в таком порядке:
 
 1. «Запрещено»;
-2. «Всегда через туннель»;
-3. «Всегда напрямую»;
-4. второй туннель: включённые пресеты, затем его свой список;
-5. вердикты детектора.
+2. «Всегда через — Туннели»;
+3. «Всегда через — Туннель1»;
+4. «Всегда через — Туннель2»;
+5. «Всегда напрямую»;
+6. второй туннель: включённые пресеты, затем его свой список;
+7. вердикты детектора.
 
 Из списков, чьи правила стоят **раньше** выбранного, убираются все строки, которые её направляют, в том
 числе более широкие: `+.example.com` для `api.example.com`, `10.0.0.0/8` для адреса из этой сети,
@@ -471,7 +475,7 @@ GitHub и Reddit. Маски вида `+.claude.ai` покрывают доме�
 ### Если сайт не открывается
 
 1. Найдите его фильтром на странице **Вердикты**. Если он идёт напрямую, а не должен, добавьте его во
-   **Всегда через туннель** (`+.example.com` — весь домен). Правый клик по строке отправляет его в список
+   **Всегда через — Туннели** (`+.example.com` — весь домен). Правый клик по строке отправляет его в список
    сразу, как на Live; ✕ в строке сбрасывает один вердикт: сайт идёт через туннель, пока детектор не
    проверит его заново.
 2. Если сломалось сразу много сайтов (провайдер ввёл новую блокировку), **сбросьте все вердикты** —
@@ -650,7 +654,7 @@ their own port and access key).
 |---|---|
 | **Overview** | How many sites go direct, are blocked, slower, unverified; both tunnels' state, replacing a `.conf`; recent events |
 | **Verdicts** | Every verdict in the "Direct", "Blocked", "Slower", "Unverified" tabs, a name filter (names in Russian letters are found and shown as written); a click pins a row, a right-click sends it to a list, ✕ resets its verdict; "Reset verdicts…" of the network shown; the network in the header opens the list of networks |
-| **Routing lists** | "Always direct", "Always via tunnel", "Forbidden": sites, addresses and programs in each |
+| **Routing lists** | "Always direct", "Always via" with separate Tunnels, Tunnel1 and Tunnel2 lists, "Forbidden": sites, addresses and programs in each |
 | **Second tunnel** | Only while it is switched on in the settings. Attaching awg2, presets (YouTube, Telegram and WhatsApp, Discord, AI services, Instagram/Facebook/X; edit them, delete them, add your own) and your own list |
 | **Settings** | Detector, terms, IPv6, DNS; every change applies at once |
 | **Logs** | The controller and service log, the core's, the tray and UI's; the last 400 lines, the previous file's included after a rotation |
@@ -697,20 +701,22 @@ Every new connection is matched against these rules from the top; the first one 
 | 2 | Addresses inside the tunnels (their DNS server) | that tunnel |
 | 3 | Forbidden: programs, sites, addresses | refused, in every mode |
 | 4 | Local networks: the router, printers, shares, `.local` and `.lan` names | direct |
-| 5 | Always via tunnel: programs, sites, addresses | awg1; if it is down, awg2 while switched on; never direct |
-| 6 | Always direct: programs (`qbittorrent.exe`, etc.), sites, addresses | direct, in every mode |
-| 7 | Second tunnel, while loaded and switched on: presets and your list | awg2; if it is down, awg1; then direct — in Tunnel only refused |
-| 8 | Everything else, while "Observe only" is chosen | direct |
-| 9 | Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name) | direct |
-| 10 | Everything else | by the mode: in On awg1, then awg2 (if switched on), then direct; in Tunnel only the same tunnels, never direct |
+| 5 | Always via — Tunnels: programs, sites, addresses | awg1; if it is down, awg2 while switched on; never direct |
+| 6 | Always via — Tunnel1 | awg1 only; if it is down, the connection is refused |
+| 7 | Always via — Tunnel2 | awg2 only; if it is down or switched off, the connection is refused; `awg2_rule` covers the enabled presets and awg2 own list |
+| 8 | Always direct: programs (`qbittorrent.exe`, etc.), sites, addresses | direct, in every mode |
+| 9 | Second tunnel, while loaded and switched on: presets and your list | awg2; if it is down, awg1; then direct — in Tunnel only refused |
+| 10 | Everything else, while "Observe only" is chosen | direct |
+| 11 | Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name) | direct |
+| 12 | Everything else | by the mode: in On awg1, then awg2 (if switched on), then direct; in Tunnel only the same tunnels, never direct |
 
 Without the first tunnel's config the service runs all the same: Live shows the traffic, the lists apply,
 and the detector checks nothing, having no tunnel to compare with. The second tunnel, loaded alone, takes
-its presets and list and Always via tunnel -- in Tunnel only, everything. The program's help has a table
+its presets and list, Always via — Tunnels and Tunnel2 -- in Tunnel only, everything; Tunnel1 is refused without awg1. The program's help has a table
 for each mode and each set of configs loaded.
 
-A line written in several lists goes by the one higher in the table: Forbidden → Always via tunnel →
-Always direct → the presets and the awg2 list → the detector.
+A line written in several lists goes by the one higher in the table: Forbidden → Tunnels → Tunnel1 →
+Tunnel2 → Always direct → the presets and the awg2 list → the detector.
 
 The core decides once, when a connection opens. When you change a list or a preset, the open
 connections the change moves are closed, and the programs reconnect over the new route. Turning
@@ -938,8 +944,11 @@ switched on. The rest of this section, and what the others say of awg2, is of th
 
 A second AmneziaWG server for chosen services only: YouTube, Telegram and WhatsApp, Discord, AI services (ChatGPT, Claude,
 Google AI, Grok, Meta AI, Copilot and shared AI sign-in), Instagram, Facebook, X and your own list. It stands below
-Forbidden, Always via tunnel and Always direct and above the detector, which leaves its names alone. If it
-is down, its sites go through the first tunnel; if both are down, direct — in Tunnel only refused. **Prevent rerouting when the second tunnel is unavailable** keeps the presets and own list on awg2 alone: while it is unavailable, their connections fail without falling back to awg1 or direct. The switch applies at once, open connections included. The detector measures the direct path against the first tunnel only: what goes to awg2 is never checked, and without awg1 nothing is, even with auto-switch On. Until it is attached, its presets and list route
+Forbidden, the three Always via lists and Always direct and above the detector, which leaves its names alone. If it
+is down, its sites go through the first tunnel; if both are down, direct — in Tunnel only refused. The special
+**`awg2_rule`** line in Always via — Tunnel2 sends every enabled preset and the whole awg2 own list through awg2
+only. If awg2 is unavailable or switched off, those connections fail; changes to the presets and own list are
+followed automatically. The detector measures the direct path against the first tunnel only: what goes to awg2 is never checked, and without awg1 nothing is, even with auto-switch On. Until it is attached, its presets and list route
 nothing. Every
 preset is off by default. A preset switch applies at once, open connections included.
 
@@ -996,10 +1005,12 @@ For it to take that route, the menu takes it out of wherever a rule would route 
 rules come in this order:
 
 1. Forbidden;
-2. Always via tunnel;
-3. Always direct;
-4. the second tunnel: its presets switched on, then its own list;
-5. the detector's verdicts.
+2. Always via — Tunnels;
+3. Always via — Tunnel1;
+4. Always via — Tunnel2;
+5. Always direct;
+6. the second tunnel: its presets switched on, then its own list;
+7. the detector's verdicts.
 
 A list whose rules come **before** the one chosen loses every line routing it, a wider one too:
 `+.example.com` for `api.example.com`, `10.0.0.0/8` for an address in it, a program by its name for a
@@ -1012,7 +1023,7 @@ and the presets change as one: a file failing to write puts back the ones writte
 ### When a site does not open
 
 1. Look it up on the **Verdicts** page with the filter. If it goes direct and should not, add it to
-   **Always via tunnel** (`+.example.com` for the whole domain). A right-click on its row sends it to a
+   **Always via — Tunnels** (`+.example.com` for the whole domain). A right-click on its row sends it to a
    list straight away, as on Live; the ✕ in the row resets that one verdict: the site goes through the
    tunnel until the detector checks it again.
 2. If many sites broke at once (a new block by the ISP), **reset all verdicts** — on the Verdicts

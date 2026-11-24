@@ -34,14 +34,16 @@ import (
 
 // the names a connection is made to, one for each place in the tables
 const (
-	hostUnnamed = "u.example" // no list names it
-	hostClean   = "c.example" // the detector found it clean
-	hostPreset  = "p.example" // in a preset switched on
-	hostAwg2    = "w.example" // in the awg2 list
-	hostTunnel  = "t.example" // in Always via tunnel
-	hostDirect  = "d.example" // in Always direct
-	hostBlock   = "b.example" // in Forbidden
-	hostSplit   = "s.example" // the detector found it blocked by name, clean with the ClientHello cut
+	hostUnnamed = "u.example"  // no list names it
+	hostClean   = "c.example"  // the detector found it clean
+	hostPreset  = "p.example"  // in a preset switched on
+	hostAwg2    = "w.example"  // in the awg2 list
+	hostTunnel  = "t.example"  // in Always via Tunnels
+	hostTunnel1 = "t1.example" // in strict Tunnel1
+	hostTunnel2 = "t2.example" // in strict Tunnel2
+	hostDirect  = "d.example"  // in Always direct
+	hostBlock   = "b.example"  // in Forbidden
+	hostSplit   = "s.example"  // the detector found it blocked by name, clean with the ClientHello cut
 )
 
 // A route as the tables write it: the tunnels in the order they are tried,
@@ -273,6 +275,8 @@ func setupRouting(t *testing.T, mode, loaded string) (*simCore, []string) {
 	}
 	// the user's lists, and a preset of their own switched on
 	write(paths.User(paths.TunnelList), hostTunnel+"\n")
+	write(paths.User(paths.Tunnel1List), hostTunnel1+"\n")
+	write(paths.User(paths.Tunnel2List), hostTunnel2+"\n")
 	write(paths.User(paths.DirectList), hostDirect+"\n")
 	write(paths.User(paths.BlockList), hostBlock+"\n")
 	write(paths.User(paths.Awg2List), hostAwg2+"\n")
@@ -331,6 +335,69 @@ func setupRouting(t *testing.T, mode, loaded string) (*simCore, []string) {
 		}
 	}
 	return core, tunnels
+}
+
+// The two strict lists use only their named tunnel, in every mode. The
+// generated awg2_rule provider makes the enabled presets and awg2 own list
+// strict too, without changing those source lists.
+func TestStrictTunnelLists(t *testing.T) {
+	core, loaded := setupRouting(t, ctl.ModeOn, "both on")
+	render := func() *simCore {
+		t.Helper()
+		c, err := ParseFile(paths.SourceConf())
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := c.Render()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return parseSimCore(t, out)
+	}
+	for _, c := range []struct {
+		host string
+		want route
+	}{{hostTunnel1, "awg1 > REJECT"}, {hostTunnel2, "awg2 > REJECT"}} {
+		for _, alive := range aliveSets(loaded) {
+			if got, why := core.route(c.host, alive); got != c.want.want(alive) {
+				t.Errorf("%s, alive %v: %s, want %s\n  %s", c.host, alive, got, c.want.want(alive), why)
+			}
+		}
+	}
+	// Duplicates take the first of Tunnels -> Tunnel1 -> Tunnel2.
+	dup := "duplicate.example\n"
+	for _, name := range []string{paths.TunnelList, paths.Tunnel1List, paths.Tunnel2List} {
+		if err := os.WriteFile(paths.User(name), []byte(dup), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctl.SyncUserFiles()
+	core = render()
+	secondOnly := map[string]bool{"awg1": false, "awg2": true}
+	if got, why := core.route("duplicate.example", secondOnly); got != "awg2" {
+		t.Errorf("Tunnels did not win over Tunnel1 and Tunnel2: %s\n  %s", got, why)
+	}
+	if err := os.WriteFile(paths.User(paths.TunnelList), []byte("# empty\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctl.SyncUserFiles()
+	core = render()
+	if got, why := core.route("duplicate.example", secondOnly); got != "REJECT" {
+		t.Errorf("Tunnel1 did not win over Tunnel2: %s\n  %s", got, why)
+	}
+	if err := os.WriteFile(paths.User(paths.Tunnel2List), []byte(ctl.Awg2Rule+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctl.SyncUserFiles()
+	core = render()
+	for _, host := range []string{hostPreset, hostAwg2} {
+		for _, alive := range aliveSets(loaded) {
+			want := route("awg2 > REJECT").want(alive)
+			if got, why := core.route(host, alive); got != want {
+				t.Errorf("awg2_rule %s, alive %v: %s, want %s\n  %s", host, alive, got, want, why)
+			}
+		}
+	}
 }
 
 // aliveSets: every way the tunnels loaded can be up or down
@@ -594,6 +661,8 @@ func TestRenderRuleOrder(t *testing.T) {
 	}
 	order := []string{"RULE-SET,force-block-apps,REJECT", "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
 		"RULE-SET,force-tunnel-apps,tunnel-lists", "RULE-SET,force-tunnel-ip,tunnel-lists,no-resolve",
+		"RULE-SET,force-tunnel1-apps,tunnel-one", "RULE-SET,force-tunnel1-ip,tunnel-one,no-resolve",
+		"RULE-SET,awg2-rule,tunnel2-lists", "RULE-SET,force-tunnel2-apps,tunnel2-lists", "RULE-SET,force-tunnel2-ip,tunnel2-lists,no-resolve",
 		"RULE-SET,force-direct-apps,DIRECT", "RULE-SET,force-direct-ip,DIRECT,no-resolve",
 		"RULE-SET,presets,tunnel2", "RULE-SET,awg2-hosts-ip,tunnel2,no-resolve",
 		"RULE-SET,direct-split-verified,direct-split", "RULE-SET,direct-verified,DIRECT",
@@ -689,26 +758,22 @@ func TestRenderGroups(t *testing.T) {
 // switch: tunnel only never goes direct.
 func TestRouteChoice(t *testing.T) {
 	for _, c := range []struct {
-		mode             string
-		awg2             bool
-		noFallback       bool
-		lists, two, rest string
+		mode                      string
+		awg2                      bool
+		lists, strict2, two, rest string
 	}{
-		{ctl.ModeOn, true, false, ctl.TunnelAnyGroup, ctl.Tunnel2SoftGroup, ctl.TunnelSoftAnyGroup},
-		{ctl.ModeOn, true, true, ctl.TunnelAnyGroup, ctl.Tunnel2OnlyGroup, ctl.TunnelSoftAnyGroup},
-		{ctl.ModeOn, false, false, ctl.TunnelOneGroup, ctl.Tunnel2SoftGroup, ctl.TunnelSoftGroup},
-		{ctl.ModeObserve, true, false, ctl.TunnelAnyGroup, ctl.Tunnel2SoftGroup, ctl.TunnelSoftAnyGroup},
-		{ctl.ModeTunnel, true, false, ctl.TunnelAnyGroup, ctl.Tunnel2StrictGroup, ctl.TunnelAnyGroup},
-		{ctl.ModeTunnel, true, true, ctl.TunnelAnyGroup, ctl.Tunnel2OnlyGroup, ctl.TunnelAnyGroup},
-		{ctl.ModeTunnel, false, false, ctl.TunnelOneGroup, ctl.Tunnel2StrictGroup, ctl.TunnelOneGroup},
+		{ctl.ModeOn, true, ctl.TunnelAnyGroup, ctl.Tunnel2OnlyGroup, ctl.Tunnel2SoftGroup, ctl.TunnelSoftAnyGroup},
+		{ctl.ModeOn, false, ctl.TunnelOneGroup, "REJECT", ctl.Tunnel2SoftGroup, ctl.TunnelSoftGroup},
+		{ctl.ModeObserve, true, ctl.TunnelAnyGroup, ctl.Tunnel2OnlyGroup, ctl.Tunnel2SoftGroup, ctl.TunnelSoftAnyGroup},
+		{ctl.ModeTunnel, true, ctl.TunnelAnyGroup, ctl.Tunnel2OnlyGroup, ctl.Tunnel2StrictGroup, ctl.TunnelAnyGroup},
+		{ctl.ModeTunnel, false, ctl.TunnelOneGroup, "REJECT", ctl.Tunnel2StrictGroup, ctl.TunnelOneGroup},
 	} {
 		s := ctl.DefaultSettings()
 		s.SecondTunnel = true
 		s.SetMode(c.mode)
 		s.SetAwg2(c.awg2)
-		s.Awg2NoFallback = c.noFallback
 		got := ctl.RouteChoice(s)
-		if got[ctl.TunnelListsGroup] != c.lists || got[ctl.Tunnel2Group] != c.two || got[ctl.TunnelRestGroup] != c.rest {
+		if got[ctl.TunnelListsGroup] != c.lists || got[ctl.Tunnel2ListsGroup] != c.strict2 || got[ctl.Tunnel2Group] != c.two || got[ctl.TunnelRestGroup] != c.rest {
 			t.Errorf("%s, awg2 %v: %v", c.mode, c.awg2, got)
 		}
 		// off in the settings, whatever the mode was switched to by hand:

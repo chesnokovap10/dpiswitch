@@ -92,7 +92,7 @@ func TestPagesRender(t *testing.T) {
 	frags := map[string][]string{
 		"overview": {"summary", "events"},
 		"verdicts": {"tabs", "table", "vnote"},
-		"lists":    {"list-direct", "list-tunnel", "list-block"},
+		"lists":    {"list-direct", "list-tunnel", "list-tunnel1", "list-tunnel2", "list-block"},
 		"awg2":     {"awg2state", "presets", "list-awg2"},
 		"settings": {"form", "dns", "guard"},
 		"logs":     {"log"},
@@ -782,6 +782,33 @@ func TestEntryMatch(t *testing.T) {
 	}
 }
 
+func TestAwg2RuleChangeMatch(t *testing.T) {
+	source := func(c ctl.Conn) bool { return c.Host == "source.example" }
+	higher := ctl.ListProviders(paths.TunnelList)[0]
+	for _, tc := range []struct {
+		name                  string
+		adding, active, alive bool
+		conn                  ctl.Conn
+		want                  bool
+	}{
+		{"add already on awg2", true, true, true, ctl.Conn{Host: "source.example", Outbound: "awg2", RulePayload: ctl.PresetsProvider}, false},
+		{"add already on unhealthy awg2", true, true, false, ctl.Conn{Host: "source.example", Outbound: "awg2", RulePayload: ctl.PresetsProvider}, false},
+		{"add from fallback", true, true, false, ctl.Conn{Host: "source.example", Outbound: "awg1", RulePayload: ctl.PresetsProvider}, true},
+		{"add while switched off", true, false, false, ctl.Conn{Host: "source.example", Outbound: "DIRECT"}, true},
+		{"add below higher list", true, true, true, ctl.Conn{Host: "source.example", Outbound: "awg1", RulePayload: higher}, false},
+		{"add unrelated", true, true, true, ctl.Conn{Host: "other.example", Outbound: "DIRECT"}, false},
+		{"remove healthy", false, true, true, ctl.Conn{Outbound: "awg2", RulePayload: ctl.Awg2RuleProvider}, false},
+		{"remove after failure", false, true, false, ctl.Conn{Outbound: "awg2", RulePayload: ctl.Awg2RuleProvider}, true},
+		{"remove unrelated", false, true, false, ctl.Conn{Outbound: "awg2", RulePayload: ctl.PresetsProvider}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := awg2RuleChangeMatch(tc.adding, tc.active, tc.alive, source)(tc.conn); got != tc.want {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // Another web page cannot drive the UI: a form it sends to 127.0.0.1 names
 // it in Origin, and DNS rebinding shows as another Host.
 func TestGuard(t *testing.T) {
@@ -1132,18 +1159,19 @@ func TestAwg2Switch(t *testing.T) {
 	}
 }
 
-func TestAwg2FallbackSwitch(t *testing.T) {
+func TestTunnel2Awg2Rule(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
-	secondOn(t)
-	for _, value := range []string{"1", "0"} {
-		w := do(t, h, "POST", "/act/awg2fallback", url.Values{"field": {"awg2fallback"}, "value": {value}}, nil)
-		if w.Code != http.StatusOK || strings.Contains(w.Body.String(), `class="msg bad"`) {
-			t.Fatalf("switch %s: %d %s", value, w.Code, w.Body.String())
-		}
-		if got := ctl.LoadSettings(paths.Settings()).Awg2NoFallback; got != (value == "1") {
-			t.Fatalf("switch %s saved %v", value, got)
-		}
+	w := do(t, h, "POST", "/act/list", url.Values{"kind": {"tunnel2"}, "entries": {"example.com\nAWG2_RULE"}}, nil)
+	if w.Code != http.StatusOK || strings.Contains(w.Body.String(), `class="msg bad"`) {
+		t.Fatalf("Tunnel2 list: %d %s", w.Code, w.Body.String())
+	}
+	if got := strings.Join(readEntries(paths.Tunnel2List), ","); got != "awg2_rule,example.com" {
+		t.Fatalf("Tunnel2 list saved as %q", got)
+	}
+	w = do(t, h, "POST", "/act/list", url.Values{"kind": {"tunnel1"}, "entries": {ctl.Awg2Rule}}, nil)
+	if !strings.Contains(w.Body.String(), `class="msg bad"`) {
+		t.Fatalf("awg2_rule accepted outside Tunnel2: %s", w.Body.String())
 	}
 }
 

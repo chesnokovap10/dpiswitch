@@ -17,6 +17,7 @@ type Conn struct {
 	Process     string // the program's file name
 	ProcessPath string
 	RulePayload string // the rule-provider that routed it, for RuleSet rules
+	Outbound    string // the actual outbound selected by the core (the first chain member)
 }
 
 // CloseConns closes the open connections match picks and says how many.
@@ -39,6 +40,9 @@ func CloseConns(apiAddr, secret string, match func(Conn) bool) (int, error) {
 	for _, c := range conns {
 		v := Conn{Host: c.domain(), IP: c.Metadata.DestinationIP,
 			Process: c.Metadata.Process, ProcessPath: c.Metadata.ProcessPath}
+		if len(c.Chains) > 0 {
+			v.Outbound = c.Chains[0]
+		}
 		if c.Rule == "RuleSet" {
 			v.RulePayload = c.RulePayload
 		}

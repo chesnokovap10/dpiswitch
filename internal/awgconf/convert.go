@@ -660,14 +660,15 @@ func render(c *Conf) (string, error) {
 	fallback(ctl.TunnelOneGroup, orReject(first), true)
 	fallback(ctl.TunnelAnyGroup, orReject(cat(first, second)), true)
 	w("  # the presets and the awg2 list: the second tunnel, then the first; then")
-	w("  # direct, or in tunnel only refused. The no-fallback choice takes it")
-	w("  # alone, so connections fail while it is down")
+	w("  # direct, or in tunnel only refused. A separate strict list takes the")
+	w("  # second alone, so connections fail while it is down")
 	fallback(ctl.Tunnel2SoftGroup, cat(second, first, direct), false)
 	fallback(ctl.Tunnel2StrictGroup, orReject(cat(second, first)), true)
 	fallback(ctl.Tunnel2OnlyGroup, orReject(second), true)
 	w("")
 	selectGroup(ctl.TunnelListsGroup, ctl.TunnelOneGroup, ctl.TunnelAnyGroup)
-	selectGroup(ctl.Tunnel2Group, ctl.Tunnel2SoftGroup, ctl.Tunnel2StrictGroup, ctl.Tunnel2OnlyGroup)
+	selectGroup(ctl.Tunnel2ListsGroup, ctl.Tunnel2OnlyGroup, "REJECT")
+	selectGroup(ctl.Tunnel2Group, ctl.Tunnel2SoftGroup, ctl.Tunnel2StrictGroup)
 	selectGroup(ctl.TunnelRestGroup, ctl.TunnelSoftGroup, ctl.TunnelSoftAnyGroup, ctl.TunnelOneGroup, ctl.TunnelAnyGroup)
 	w("")
 	w("rule-providers:")
@@ -679,6 +680,13 @@ func render(c *Conf) (string, error) {
 	w("    behavior: classical")
 	w("    format: text")
 	w("    path: ./%s", filepath.Base(paths.Presets()))
+	w("  # awg2_rule in the strict Tunnel2 list: the enabled presets and awg2's")
+	w("  # own list, generated together so either source can change live")
+	w("  %s:", ctl.Awg2RuleProvider)
+	w("    type: file")
+	w("    behavior: classical")
+	w("    format: text")
+	w("    path: ./%s", filepath.Base(paths.Awg2Rule()))
 	w("  # observe only: everything goes direct -- the service writes the")
 	w("  # catch-all here in that mode and leaves the file empty otherwise")
 	w("  observe-all:")
@@ -853,11 +861,19 @@ func render(c *Conf) (string, error) {
 		w("  - IP-CIDR6,::/0,REJECT,no-resolve")
 	}
 	w("")
-	w("  # 5. the user's always-tunnel list: programs, names, addresses -- above")
-	w("  #    every other list but Forbidden, in every mode; never direct")
+	w("  # 5. the user's three always-tunnel lists, in priority order. Tunnels")
+	w("  #    keeps the existing awg1 -> awg2 fallback; Tunnel1 and Tunnel2 are")
+	w("  #    strict and fail closed. All stand above the direct and awg2 lists")
 	w("  - RULE-SET,force-tunnel-apps,%s", ctl.TunnelListsGroup)
 	w("  - RULE-SET,force-tunnel,%s", ctl.TunnelListsGroup)
 	w("  - RULE-SET,force-tunnel-ip,%s,no-resolve", ctl.TunnelListsGroup)
+	w("  - RULE-SET,force-tunnel1-apps,%s", ctl.TunnelOneGroup)
+	w("  - RULE-SET,force-tunnel1,%s", ctl.TunnelOneGroup)
+	w("  - RULE-SET,force-tunnel1-ip,%s,no-resolve", ctl.TunnelOneGroup)
+	w("  - RULE-SET,%s,%s", ctl.Awg2RuleProvider, ctl.Tunnel2ListsGroup)
+	w("  - RULE-SET,force-tunnel2-apps,%s", ctl.Tunnel2ListsGroup)
+	w("  - RULE-SET,force-tunnel2,%s", ctl.Tunnel2ListsGroup)
+	w("  - RULE-SET,force-tunnel2-ip,%s,no-resolve", ctl.Tunnel2ListsGroup)
 	w("")
 	w("  # 6. the user's always-direct list: programs, names, addresses -- in")
 	w("  #    every mode; in tunnel only the one way out past the tunnels")
@@ -1178,7 +1194,7 @@ func Regenerate() (bool, error) {
 // EnsureLists creates missing list files: a provider without
 // its file prevents the core from starting
 func EnsureLists() {
-	files := []string{paths.Verified(), paths.VerifiedAddr(), paths.VerifiedSplit(), paths.VerifiedSplitNoQUIC(), paths.VerifiedSplitNoTCP(), paths.QUICDecoyOff(), paths.ObserveAll(), paths.ObserveSplit(), paths.Presets(),
+	files := []string{paths.Verified(), paths.VerifiedAddr(), paths.VerifiedSplit(), paths.VerifiedSplitNoQUIC(), paths.VerifiedSplitNoTCP(), paths.QUICDecoyOff(), paths.ObserveAll(), paths.ObserveSplit(), paths.Presets(), paths.Awg2Rule(),
 		paths.Inherit(), paths.InheritIP(), paths.Hold(), paths.Refuse(), paths.FamilyDirect(), paths.FamilyTunnel()}
 	for _, l := range paths.UserLists {
 		files = append(files, paths.Data(l), paths.Data(paths.IPList(l)), paths.Data(paths.AppList(l)))
