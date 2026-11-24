@@ -3,6 +3,7 @@ package ctl
 import (
 	"os"
 	"os/exec"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -427,5 +428,18 @@ func TestPresetWildcard(t *testing.T) {
 		if back := PresetNameLine(re); back != line {
 			t.Errorf("%s read back as %q", re, back)
 		}
+	}
+}
+
+func TestClassifyListLines(t *testing.T) {
+	text := "\n# note\nexample.com\n192.0.2.1\n192.0.2.0/24\ngame.exe\nawg2_rule\nbad host\n0.0.0.0 one.example two.example"
+	got := ClassifyListLines(text, ListPolicy{AllowAwg2Rule: true})
+	want := []ListLineClass{
+		{Kind: "blank"}, {Kind: "comment"}, {Kind: "site"}, {Kind: "ip"},
+		{Kind: "network"}, {Kind: "program"}, {Kind: "rule"}, {Kind: "error"},
+		{Kind: "site", Count: 2},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("classes:\n got %#v\nwant %#v", got, want)
 	}
 }

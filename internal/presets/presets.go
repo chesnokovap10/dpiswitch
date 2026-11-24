@@ -178,6 +178,58 @@ func decode(b []byte) ([]Preset, error) {
 	return f.Presets, nil
 }
 
+// DecodeFile validates a presets.json selected for import. Unlike Load, a
+// bad file is reported instead of silently falling back to the shipped set.
+func DecodeFile(b []byte) ([]Preset, error) {
+	if len(b) >= fileMax {
+		return nil, ErrTooLarge
+	}
+	ps, err := decode(b)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	for i := range ps {
+		if !ValidID(ps[i].ID) || seen[ps[i].ID] {
+			return nil, errors.New("a preset without an ID of its own")
+		}
+		seen[ps[i].ID] = true
+		if ps[i].Lines == nil {
+			ps[i].Lines = []string{}
+		}
+	}
+	return ps, nil
+}
+
+// EncodeFile is the complete effective preset set in presets.json format.
+func EncodeFile(ps []Preset) ([]byte, error) {
+	seen := map[string]bool{}
+	for _, p := range ps {
+		if !ValidID(p.ID) || seen[p.ID] {
+			return nil, errors.New("a preset without an ID of its own")
+		}
+		seen[p.ID] = true
+	}
+	if ps == nil {
+		ps = []Preset{}
+	}
+	b, err := json.MarshalIndent(file{Version: fileVersion, Presets: ps}, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	if len(b) >= fileMax {
+		return nil, ErrTooLarge
+	}
+	return append(b, '\n'), nil
+}
+
+// Replace replaces the whole user preset set in one write.
+func Replace(ps []Preset) error {
+	mu.Lock()
+	defer mu.Unlock()
+	return write(ps)
+}
+
 // Known: the IDs of the presets there are
 func Known() map[string]bool {
 	ids := map[string]bool{}
@@ -264,23 +316,9 @@ func Restore() ([]Preset, error) {
 
 // write: the whole set into the user's file; mu held
 func write(ps []Preset) error {
-	seen := map[string]bool{}
-	for _, p := range ps {
-		if !ValidID(p.ID) || seen[p.ID] {
-			return errors.New("a preset without an ID of its own")
-		}
-		seen[p.ID] = true
-	}
-	if ps == nil {
-		ps = []Preset{}
-	}
-	b, err := json.MarshalIndent(file{Version: fileVersion, Presets: ps}, "", "  ")
+	b, err := EncodeFile(ps)
 	if err != nil {
 		return err
 	}
-	// a file Load would not read gives the shipped presets in its place
-	if len(b) >= fileMax {
-		return ErrTooLarge
-	}
-	return paths.ReplaceFile(paths.UserPresets(), append(b, '\n'))
+	return paths.ReplaceFile(paths.UserPresets(), b)
 }

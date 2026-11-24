@@ -31,6 +31,7 @@ function paintTunnels(root = document) {
 function replacePart(el, html) {
   el.innerHTML = html;
   paintTunnels(el);
+  initEntryEditors(el);
 }
 
 // Answers can come back out of order: a refresh started before a change
@@ -135,11 +136,51 @@ function init(sec) {
     try { f(sec); } catch (e) { console.error(e); }
   }
   for (const el of sec.querySelectorAll('[data-follow]')) if (follows(el, true)) el.scrollTop = el.scrollHeight;
+  initEntryEditors(sec);
   // a page's tabs not shown are fetched now, to show at once when picked
   for (const p of sec.querySelectorAll('[data-panels] > [data-poll]')) {
     if (p.childNodes.length) continue;
     due.set(p, Date.now() + period(p));
     poll(p);
+  }
+}
+
+// A list line and its interpretation stay beside each other. Classification
+// comes from the Go parser itself, so imported formats and errors are labelled
+// exactly as Save will understand them rather than by a second JS grammar.
+function initEntryEditors(root) {
+  for (const box of root.querySelectorAll('[data-entry-editor]')) {
+    if (box._entryKinds) continue;
+    box._entryKinds = true;
+    const t = box.querySelector('textarea');
+    const side = box.querySelector('.entry-types');
+    if (!t || !side) continue;
+    let timer, serial = 0;
+    const draw = rows => {
+      side.replaceChildren(...rows.map(row => {
+        const line = document.createElement('div');
+        if (row.kind === 'blank') return line;
+        line.className = row.kind;
+        const label = box.dataset[row.kind] || row.kind;
+        line.textContent = label + (row.count > 1 ? ' ×' + row.count : '');
+        line.title = line.textContent;
+        return line;
+      }));
+      side.scrollTop = t.scrollTop;
+    };
+    const classify = async () => {
+      const mine = ++serial;
+      const r = await fetch('/api/listclassify?kind=' + encodeURIComponent(box.dataset.kind || ''), {
+        method: 'POST', headers: {'Content-Type': 'text/plain; charset=utf-8'}, body: t.value
+      }).catch(() => null);
+      if (mine !== serial || !r || !r.ok) return;
+      const rows = await r.json().catch(() => null);
+      if (mine === serial && rows) draw(rows);
+    };
+    const later = () => { clearTimeout(timer); timer = setTimeout(classify, 120); };
+    t.addEventListener('input', later);
+    t.addEventListener('scroll', () => { side.scrollTop = t.scrollTop; });
+    classify();
   }
 }
 
@@ -437,6 +478,29 @@ async function send(url, body, target, changed, presetOp) {
 document.addEventListener('submit', e => {
   if (e.defaultPrevented) return;
   const f = e.target;
+  if (f.matches('[data-transfer-import],[data-transfer-export]')) {
+    const chosen = [...f.querySelectorAll('input[name="item"]:checked')];
+    const err = f.querySelector('.transfer-error');
+    let message = chosen.length ? '' : f.dataset.selectError;
+    if (!message && f.matches('[data-transfer-import]') && !f.elements.bundle.files.length) {
+      const missing = chosen.some(c => !f.elements['file_' + c.value].files.length);
+      if (missing) message = f.dataset.fileError;
+    }
+    if (message) {
+      e.preventDefault();
+      err.textContent = message;
+      err.hidden = false;
+      return;
+    }
+    err.hidden = true;
+  }
+  if (f.matches('[data-settings-archive]') && !f.elements.archive.files.length) {
+    e.preventDefault();
+    const err = f.querySelector('.transfer-error');
+    err.textContent = f.dataset.fileError;
+    err.hidden = false;
+    return;
+  }
   const q = (e.submitter && e.submitter.dataset.confirm) || f.dataset.confirm;
   if (q && !confirm(q)) { e.preventDefault(); return; }
   const b = e.submitter, label = b && b.textContent;
@@ -458,6 +522,10 @@ document.addEventListener('submit', e => {
 });
 
 document.addEventListener('change', e => {
+  if (e.target.matches('[data-transfer-file]') && e.target.files.length) {
+    const row = e.target.closest('.transfer-row');
+    if (row) row.querySelector('input[name="item"]').checked = true;
+  }
   const el = e.target, f = el.form;
   if (!f || !f.dataset.instant || !el.name) return;
   const fd = new URLSearchParams();

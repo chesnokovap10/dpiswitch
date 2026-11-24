@@ -7,6 +7,7 @@
   </div>
 </div>
 {{template "confdialog" .Dlg "config2"}}
+{{template "transferdialogs" .}}
 {{end}}
 
 {{define "awg2state"}}{{$s := .St}}
@@ -34,6 +35,7 @@
       <span class="spacer"></span>
       <button type="button" class="primary" data-open="dlg-config2">{{.T "Attach…"}}</button>
     {{end}}
+    {{template "transferbuttons" .}}
     {{template "msg" .}}
   </div>
   {{if and $s.Awg2 (not $s.HasConfig)}}<p class="hint warn-t" style="margin:0">{{.T "The first tunnel (awg1) is not loaded: while the second is switched on, it takes its presets and own list, Tunnels and Tunnel2; Tunnel1 is refused. Everything else goes direct."}}</p>{{end}}
@@ -97,7 +99,12 @@
       <label>{{$v.T "Category"}}{{$category := .Category}}<select name="category">{{range .V.PresetCategories}}<option value="{{.ID}}" {{if eq .ID $category}}selected{{end}}>{{$v.T .Title}}</option>{{end}}</select></label>
     </div>
     <p class="hint">{{$v.T "One per line, as in the lists: a site (example.com; +.example.com for the domain and all under it; * for any one label: +.example.*), an address or a network (1.2.3.4, 192.168.0.0/16: for connections made to it by address), a program (telegram.exe; a full path for that copy only). A line starting with # is a comment."}}</p>
-    <textarea name="lines" rows="14" spellcheck="false" placeholder="example.com&#10;+.example.org&#10;192.168.1.0/24&#10;telegram.exe">{{.Text}}</textarea>
+    <div class="entry-editor" data-entry-editor data-kind="preset"
+      data-site="{{$v.T "site"}}" data-ip="{{$v.T "IP address"}}" data-network="{{$v.T "network"}}"
+      data-program="{{$v.T "program"}}" data-comment="{{$v.T "comment"}}" data-rule="{{$v.T "rule"}}" data-error="{{$v.T "error"}}">
+      <textarea name="lines" rows="14" wrap="off" spellcheck="false" placeholder="example.com&#10;+.example.org&#10;192.168.1.0/24&#10;telegram.exe">{{.Text}}</textarea>
+      <div class="entry-types" aria-label="{{$v.T "Recognized as"}}"></div>
+    </div>
     <div class="actions">
       {{if .Err}}<span class="msg bad">{{.Err}}</span>{{end}}
       <span class="spacer"></span>

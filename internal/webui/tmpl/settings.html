@@ -11,12 +11,32 @@
   <details class="grp" id="dns" data-grp="dns" data-fresh="/frag/settings/dns">{{template "dns" .}}</details>
   </div>
   <div class="actions" style="padding-top:0">
+    <button type="button" data-open="dlg-settings-archive">{{.T "Load / save settings…"}}</button>
     <form method="post" action="/act/defaults" data-confirm="{{if .St.Second}}{{.T "Put every setting on this page back to its default? DNS included, and the second tunnel switched off. Presets and lists are not touched."}}{{else}}{{.T "Put every setting on this page back to its default? DNS included. Lists are not touched."}}{{end}}">
       <button>{{.T "Reset to defaults…"}}</button>
     </form>
     <span class="muted">{{.T "Every change applies at once: the detector picks it up within a second."}}</span>
   </div>
 </div>
+<dialog id="dlg-settings-archive" class="settings-archive-dlg">
+  <h2>{{.T "Load or save all settings"}}</h2>
+  <div class="archive-warning">
+    <b>{{.T "The archive contains confidential data"}}</b>
+    <p>{{.T "It is a complete portable copy of DPI Switch: program settings, both tunnel connection files with private keys, routing lists and presets. Anyone who gets the archive may be able to use your tunnel credentials. Store it as securely as a password and do not send it to others."}}</p>
+  </div>
+  <div class="archive-choice">
+    <div><b>{{.T "Save settings"}}</b><span class="hint">{{.T "Download the current complete configuration as one ZIP archive."}}</span></div>
+    <a class="button primary" href="/settings/archive" download>{{.T "Download ZIP"}}</a>
+  </div>
+  <form method="post" action="/act/settingsarchive" enctype="multipart/form-data" data-settings-archive data-reset
+    data-file-error="{{.T "Choose a DPI Switch settings ZIP archive."}}">
+    <div class="archive-choice">
+      <div><b>{{.T "Load settings"}}</b><span class="hint">{{.T "The current settings, tunnel files, lists and presets will be replaced only after the entire archive passes validation."}}</span></div>
+      <input type="file" name="archive" accept=".zip,application/zip" required>
+    </div>
+    <div class="actions"><span class="msg bad transfer-error" hidden></span><span class="spacer"></span><button type="button" data-close>{{.T "Cancel"}}</button><button class="primary" data-busy="{{.T "Loading…"}}">{{.T "Load ZIP"}}</button></div>
+  </form>
+</dialog>
 {{end}}
 
 {{define "rowmsg"}}{{with .}}<span class="msg {{if .OK}}ok{{else}}bad{{end}}">{{.Text}}</span>{{end}}{{end}}

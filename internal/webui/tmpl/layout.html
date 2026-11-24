@@ -138,6 +138,59 @@
 
 {{define "msg"}}{{if .Msg}}<span class="msg {{if .Msg.OK}}ok{{else}}bad{{end}}">{{.Msg.Text}}</span>{{end}}{{end}}
 
+{{define "transferbuttons"}}
+  <span class="transfer-buttons">
+    <button type="button" data-open="dlg-import-{{.Page}}">{{.T "Import…"}}</button>
+    <button type="button" data-open="dlg-export-{{.Page}}">{{.T "Export…"}}</button>
+  </span>
+{{end}}
+
+{{define "transferdialogs"}}{{$v := .}}
+<dialog id="dlg-import-{{.Page}}" class="transferdlg">
+  <form method="post" action="/act/listsimport" enctype="multipart/form-data" data-transfer-import data-reset
+    data-select-error="{{.T "Select at least one item."}}" data-file-error="{{.T "Choose a file for every selected item, or add a ZIP archive containing it."}}">
+    <h2>{{.T "Import routing data"}}</h2>
+    <p class="hint">{{.T "Select one or several items. Each selected item is replaced completely. All selected files are checked first: if one is invalid, nothing is imported."}}</p>
+    <label class="bundle-file"><span>{{.T "ZIP archive (optional)"}}<small>dpi-switch-routing.zip</small></span><input type="file" name="bundle" accept=".zip,application/zip"></label>
+    <p class="hint">{{.T "A separate file below overrides the same file from the ZIP archive."}}</p>
+    <div class="transfer-group {{if eq .Page "lists"}}current{{end}}">
+      <h3>{{.T "Routing lists"}} <small>5</small></h3>
+      <label class="transfer-row"><input type="checkbox" name="item" value="direct"><span>{{.T "Always direct"}}<small>always-direct.txt</small></span><input type="file" name="file_direct" data-transfer-file accept=".txt,.yaml,.yml,text/plain,application/yaml"></label>
+      <label class="transfer-row"><input type="checkbox" name="item" value="tunnel"><span>{{.T "Always via Tunnels"}}<small>always-via-tunnels.txt</small></span><input type="file" name="file_tunnel" data-transfer-file accept=".txt,.yaml,.yml,text/plain,application/yaml"></label>
+      <label class="transfer-row"><input type="checkbox" name="item" value="tunnel1"><span>{{.T "Always via Tunnel1"}}<small>always-via-tunnel1.txt</small></span><input type="file" name="file_tunnel1" data-transfer-file accept=".txt,.yaml,.yml,text/plain,application/yaml"></label>
+      <label class="transfer-row"><input type="checkbox" name="item" value="tunnel2"><span>{{.T "Always via Tunnel2"}}<small>always-via-tunnel2.txt</small></span><input type="file" name="file_tunnel2" data-transfer-file accept=".txt,.yaml,.yml,text/plain,application/yaml"></label>
+      <label class="transfer-row"><input type="checkbox" name="item" value="block"><span>{{.T "Forbidden"}}<small>forbidden.txt</small></span><input type="file" name="file_block" data-transfer-file accept=".txt,.yaml,.yml,text/plain,application/yaml"></label>
+    </div>
+    <div class="transfer-group {{if eq .Page "awg2"}}current{{end}}">
+      <h3>{{.T "Second tunnel"}} <small>2</small></h3>
+      <label class="transfer-row"><input type="checkbox" name="item" value="awg2"><span>{{.T "Your own list"}}<small>second-tunnel-own-list.txt</small></span><input type="file" name="file_awg2" data-transfer-file accept=".txt,.yaml,.yml,text/plain,application/yaml"></label>
+      <label class="transfer-row"><input type="checkbox" name="item" value="presets"><span>{{.T "Presets"}}<small>presets.json</small></span><input type="file" name="file_presets" data-transfer-file accept=".json,application/json"></label>
+    </div>
+    <div class="actions"><span class="msg bad transfer-error" hidden></span><span class="spacer"></span><button type="button" data-close>{{.T "Cancel"}}</button><button class="primary" data-busy="{{.T "Importing…"}}">{{.T "Import"}}</button></div>
+  </form>
+</dialog>
+<dialog id="dlg-export-{{.Page}}" class="transferdlg">
+  <form method="get" action="/lists/export" data-transfer-export data-reset data-select-error="{{.T "Select at least one item."}}">
+    <h2>{{.T "Export routing data"}}</h2>
+    <p class="hint">{{.T "One selected item is downloaded as its original file; several items are downloaded together as a ZIP archive."}}</p>
+    <div class="transfer-group {{if eq .Page "lists"}}current{{end}}">
+      <h3>{{.T "Routing lists"}} <small>5</small></h3>
+      <label class="transfer-row compact"><input type="checkbox" name="item" value="direct"><span>{{.T "Always direct"}}<small>always-direct.txt</small></span></label>
+      <label class="transfer-row compact"><input type="checkbox" name="item" value="tunnel"><span>{{.T "Always via Tunnels"}}<small>always-via-tunnels.txt</small></span></label>
+      <label class="transfer-row compact"><input type="checkbox" name="item" value="tunnel1"><span>{{.T "Always via Tunnel1"}}<small>always-via-tunnel1.txt</small></span></label>
+      <label class="transfer-row compact"><input type="checkbox" name="item" value="tunnel2"><span>{{.T "Always via Tunnel2"}}<small>always-via-tunnel2.txt</small></span></label>
+      <label class="transfer-row compact"><input type="checkbox" name="item" value="block"><span>{{.T "Forbidden"}}<small>forbidden.txt</small></span></label>
+    </div>
+    <div class="transfer-group {{if eq .Page "awg2"}}current{{end}}">
+      <h3>{{.T "Second tunnel"}} <small>2</small></h3>
+      <label class="transfer-row compact"><input type="checkbox" name="item" value="awg2"><span>{{.T "Your own list"}}<small>second-tunnel-own-list.txt</small></span></label>
+      <label class="transfer-row compact"><input type="checkbox" name="item" value="presets"><span>{{.T "Presets"}}<small>presets.json</small></span></label>
+    </div>
+    <div class="actions"><span class="msg bad transfer-error" hidden></span><span class="spacer"></span><button type="button" data-close>{{.T "Cancel"}}</button><button class="primary">{{.T "Export"}}</button></div>
+  </form>
+</dialog>
+{{end}}
+
 {{/* one of the user's lists: sites, addresses and programs, see entries.go */}}
 {{define "entrylist"}}{{$v := .V}}
   {{with .Title}}<h3>{{if or (eq $.Kind "direct") (eq $.Kind "block")}}<a class="hl" href="/help#h-routes">{{.}}</a>{{else}}{{.}}{{end}}</h3>{{end}}
@@ -155,18 +208,13 @@
       </select>
       <button name="op" value="add">{{$v.T "Add"}}</button>
     </div>
-    <textarea name="entries" class="grow" spellcheck="false" placeholder="{{if eq .Kind "tunnel2"}}awg2_rule&#10;{{end}}example.com&#10;+.example.org&#10;192.168.1.0/24&#10;telegram.exe">{{lines .Entries}}</textarea>
+    <div class="entry-editor grow" data-entry-editor data-kind="{{.Kind}}"
+      data-site="{{$v.T "site"}}" data-ip="{{$v.T "IP address"}}" data-network="{{$v.T "network"}}"
+      data-program="{{$v.T "program"}}" data-comment="{{$v.T "comment"}}" data-rule="{{$v.T "rule"}}" data-error="{{$v.T "error"}}">
+      <textarea name="entries" wrap="off" spellcheck="false" placeholder="{{if eq .Kind "tunnel2"}}awg2_rule&#10;{{end}}example.com&#10;+.example.org&#10;192.168.1.0/24&#10;telegram.exe">{{lines .Entries}}</textarea>
+      <div class="entry-types" aria-label="{{$v.T "Recognized as"}}"></div>
+    </div>
     <div class="actions"><button class="primary" name="op" value="save">{{$v.T "Save"}}</button>{{template "msg" $v}}<span class="spacer"></span>
-      <span class="list-tools">
-        <label class="iconbtn" title="{{$v.T "Import list"}}" aria-label="{{$v.T "Import list"}}"><input type="file" accept=".txt,.yaml,.yml,text/plain,application/yaml" data-list-import data-max-bytes="4194304"
-          data-too-large="{{$v.T "The list is too large: 4 MB at most"}}" data-read-error="{{$v.T "Could not read the list file"}}"
-          data-replace="{{$v.T "Replace the unsaved edits with the imported list?"}}" hidden>
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v8m0 0L4.5 6.5M8 10l3.5-3.5M2.5 11v2.5h11V11"/></svg>
-        </label>
-        <a class="iconbtn" href="/lists/export?kind={{.Kind}}" download title="{{$v.T "Export list"}}" aria-label="{{$v.T "Export list"}}">
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 11V3m0 0L4.5 6.5M8 3l3.5 3.5M2.5 11v2.5h11V11"/></svg>
-        </a>
-      </span>
       <span class="muted">{{$v.Tf "%d entries" (len .Entries)}}</span></div>
   </form>
 {{end}}

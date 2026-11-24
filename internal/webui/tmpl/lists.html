@@ -1,6 +1,6 @@
 {{define "content"}}
 <div class="page">
-  <p class="hint" style="margin:0">{{.T "One per line: a site (example.com; +.example.com for the domain and all under it; * for any one label: +.example.*), an address or a network (1.2.3.4, 192.168.0.0/16: for connections made to it by address), a program (telegram.exe; a full path for that copy only)."}}<br>{{if .St.Second}}{{.T "Written in several lists, a line goes by the highest: Forbidden → Always via Tunnels → Tunnel1 → Tunnel2 → Always direct → the second tunnel (its presets and list, while loaded and switched on) → the detector. The table for each mode is in the help."}}{{else}}{{.T "Written in several lists, a line goes by the highest: Forbidden → Always via Tunnels → Tunnel1 → Tunnel2 → Always direct → the detector. The table for each mode is in the help."}}{{end}}</p>
+  <div class="lists-intro"><p class="hint">{{.T "One per line: a site (example.com; +.example.com for the domain and all under it; * for any one label: +.example.*), an address or a network (1.2.3.4, 192.168.0.0/16: for connections made to it by address), a program (telegram.exe; a full path for that copy only)."}}<br>{{if .St.Second}}{{.T "Written in several lists, a line goes by the highest: Forbidden → Always via Tunnels → Tunnel1 → Tunnel2 → Always direct → the second tunnel (its presets and list, while loaded and switched on) → the detector. The table for each mode is in the help."}}{{else}}{{.T "Written in several lists, a line goes by the highest: Forbidden → Always via Tunnels → Tunnel1 → Tunnel2 → Always direct → the detector. The table for each mode is in the help."}}{{end}}</p><div class="lists-transfer">{{template "transferbuttons" .}}</div></div>
   <div class="cols3 fill lists">
     <div class="box" id="list-direct" data-fresh="/frag/lists/list-direct">{{template "list-direct" .}}</div>
     <div class="box tunnel-lists">
@@ -25,6 +25,7 @@
     <div class="box" id="list-block" data-fresh="/frag/lists/list-block">{{template "list-block" .}}</div>
   </div>
 </div>
+{{template "transferdialogs" .}}
 {{end}}
 
 {{define "list-direct"}}{{if .St.Second}}{{template "entrylist" (el . "direct" (.T "Always direct") (.T "Never through a tunnel, whatever the detector finds, in every mode -- in Tunnel only the one way out past the tunnels: banks, government services, whatever must see your real address. A program here goes direct entirely. Below Forbidden and the three Always via lists, above the second tunnel.") .Data.Direct .Data.Online)}}{{else}}{{template "entrylist" (el . "direct" (.T "Always direct") (.T "Never through the tunnel, whatever the detector finds, in every mode -- in Tunnel only the one way out past the tunnel: banks, government services, whatever must see your real address. A program here goes direct entirely. Below Forbidden and Always via tunnel, above the detector.") .Data.Direct .Data.Online)}}{{end}}{{end}}

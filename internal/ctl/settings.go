@@ -208,6 +208,31 @@ func LoadSettings(path string) Settings {
 	return s
 }
 
+// DecodeSettings reads an exported settings file without writing it. Missing
+// fields keep their defaults, just as they do for the settings file on disk,
+// but invalid JSON and invalid values are refused instead of being clamped.
+func DecodeSettings(b []byte) (Settings, error) {
+	return decodeSettings(b, nil)
+}
+
+// DecodeSettingsWithPresets validates settings against the preset set from
+// the same portable archive, which may differ from the set installed now.
+func DecodeSettingsWithPresets(b []byte, known map[string]bool) (Settings, error) {
+	return decodeSettings(b, known)
+}
+
+func decodeSettings(b []byte, known map[string]bool) (Settings, error) {
+	s := DefaultSettings()
+	if err := json.Unmarshal(b, &s); err != nil {
+		return s, err
+	}
+	oldObserve(b, &s)
+	if err := s.validate(known); err != nil {
+		return s, err
+	}
+	return s, nil
+}
+
 // oldSecond: up to 1.9.1 a second tunnel was there once its .conf was
 // loaded, with no switch in the settings. A file those versions wrote -- or
 // none, the settings never touched -- lacks second_tunnel, and read as off it
@@ -322,6 +347,10 @@ func (s Settings) TermRange(field string) (lo, hi int) {
 }
 
 func (s Settings) Validate() error {
+	return s.validate(nil)
+}
+
+func (s Settings) validate(known map[string]bool) error {
 	switch {
 	case s.CleanTTLMin < cleanTTLMin || s.CleanTTLMin > cleanTTLMax:
 		return fmt.Errorf("direct TTL: from 10 minutes to 30 days")
@@ -340,7 +369,9 @@ func (s Settings) Validate() error {
 	case len(s.DirectDNS) == 0:
 		return fmt.Errorf("at least one DNS server for direct sites is required")
 	}
-	known := presets.Known()
+	if known == nil {
+		known = presets.Known()
+	}
 	for _, id := range s.Awg2Presets {
 		if !known[id] {
 			return fmt.Errorf("unknown preset %q", id)

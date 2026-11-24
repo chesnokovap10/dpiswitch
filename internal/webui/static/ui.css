@@ -106,12 +106,17 @@ h3{font-size:12px;margin:0 0 8px;color:var(--muted);font-weight:600;text-transfo
 .actions form{margin:0}
 .grow{flex:1;min-height:0}
 .box textarea.grow{min-height:120px}
+.entry-editor{display:grid;grid-template-columns:minmax(0,1fr) 106px;min-height:0;border:1px solid var(--line);
+  border-radius:7px;overflow:hidden;background:var(--bg)}
+.entry-editor.grow{flex:1;min-height:120px}
+.entry-editor:focus-within{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.entry-editor textarea{height:100%;min-height:0;border:0;border-radius:0;outline:0;resize:none;overflow:auto}
+.entry-types{border-left:1px solid var(--line);padding:8px 7px;overflow:hidden;pointer-events:none;
+  color:var(--muted);font:11px/1.636 Consolas,monospace;white-space:nowrap;background:var(--panel)}
+.entry-types div{height:1.636em;overflow:hidden;text-overflow:ellipsis}
+.entry-types .error{color:var(--bad)}
+.entry-types .comment{opacity:.7}
 .actions{margin-top:auto;padding-top:10px;display:flex;gap:8px;align-items:center;min-height:40px}
-.list-tools{display:inline-flex;align-items:center;gap:2px}
-.iconbtn{width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;
-  color:var(--muted);cursor:pointer}
-.iconbtn:hover{color:var(--accent);background:var(--accent-bg)}
-.iconbtn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.35;stroke-linecap:round;stroke-linejoin:round}
 .hint{color:var(--muted);font-size:12px;margin:0 0 8px}
 .muted{color:var(--muted)}
 .ok-t{color:var(--ok)}.bad-t{color:var(--bad)}.warn-t{color:var(--warn)}
@@ -139,6 +144,10 @@ h3{font-size:12px;margin:0 0 8px;color:var(--muted);font-weight:600;text-transfo
 .cols3.lists .actions{align-items:flex-end}
 .fill{flex:1;min-height:0}
 .row{display:flex;gap:8px;align-items:center}
+.transfer-buttons{display:inline-flex;gap:6px;white-space:nowrap}
+.lists-intro{display:flex;align-items:stretch;gap:14px}
+.lists-intro>.hint{margin:0;flex:1}
+.lists-transfer{display:flex;align-items:center;border-left:1px solid var(--line);padding-left:14px}
 .pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;background:var(--bg)}
 .pill.ok{background:var(--ok-bg);color:var(--ok)}.pill.bad{background:var(--bad-bg);color:var(--bad)}
 .pill.warn{background:var(--warn-bg);color:var(--warn)}
@@ -386,6 +395,27 @@ dialog{border:1px solid var(--line);border-radius:10px;padding:16px;width:580px;
 dialog::backdrop{background:rgba(0,0,0,.35)}
 dialog h2{font-size:15px;margin:0 0 8px}
 dialog form{margin:0}
+.transferdlg{width:720px;max-height:calc(100vh - 48px);overflow:auto}
+.transferdlg .bundle-file{display:flex;align-items:center;gap:16px;border:1px solid var(--line);border-radius:7px;padding:8px 10px;margin:10px 0 5px}
+.transferdlg .bundle-file>span{display:flex;flex-direction:column;min-width:210px}
+.transferdlg small{color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0}
+.transfer-group{border:1px solid var(--line);border-radius:8px;margin-top:10px;overflow:hidden}
+.transfer-group.current{border-color:var(--accent)}
+.transfer-group h3{margin:0;padding:7px 10px;background:var(--bg)}
+.transfer-row{display:grid;grid-template-columns:18px minmax(190px,1fr) minmax(210px,1fr);gap:9px;align-items:center;
+  min-height:42px;padding:6px 10px;border-top:1px solid var(--line);cursor:pointer}
+.transfer-row>span{display:flex;flex-direction:column;min-width:0}
+.transfer-row input[type=file]{min-width:0;width:100%;font-size:12px}
+.transfer-row.compact{grid-template-columns:18px minmax(0,1fr)}
+.transferdlg .actions{min-height:0}
+.settings-archive-dlg{width:660px}
+.archive-warning{border:1px solid var(--warn);background:var(--warn-bg);border-radius:8px;padding:10px 12px;margin:10px 0 12px}
+.archive-warning p{margin:5px 0 0;line-height:1.45}
+.archive-choice{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:16px;padding:11px 0;border-top:1px solid var(--line)}
+.archive-choice>div{display:flex;flex-direction:column;gap:3px}
+.archive-choice input[type=file]{max-width:300px}
+a.button{display:inline-flex;align-items:center;text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:6px 12px;color:var(--fg);background:var(--panel)}
+a.button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 /* a preset's dialog: name and description side by side, its lines below */
 .presetdlg .fields{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:10px;margin-bottom:10px}
 .presetdlg .fields label{display:flex;flex-direction:column;gap:4px;color:var(--muted);font-size:12px}

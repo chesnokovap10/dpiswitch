@@ -663,17 +663,20 @@ func TestListSave(t *testing.T) {
 func TestListImportExport(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
-	for path, want := range map[string]int{"/lists": 5, "/awg2": 1} {
+	for _, path := range []string{"/lists", "/awg2"} {
 		body := do(t, h, "GET", path, nil, nil).Body.String()
-		if got := strings.Count(body, "data-list-import"); got != want {
-			t.Errorf("%s: %d import icons, want %d", path, got, want)
+		if got := strings.Count(body, "data-transfer-import"); got != 1 {
+			t.Errorf("%s: %d import dialogs, want 1", path, got)
 		}
-		if got := strings.Count(body, `href="/lists/export?kind=`); got != want {
-			t.Errorf("%s: %d export icons, want %d", path, got, want)
+		if got := strings.Count(body, "data-transfer-export"); got != 1 {
+			t.Errorf("%s: %d export dialogs, want 1", path, got)
 		}
-		for _, attr := range []string{`accept=".txt,.yaml,.yml,text/plain,application/yaml"`, `data-max-bytes="4194304"`, `data-too-large=`, `data-read-error=`, `data-replace=`} {
-			if got := strings.Count(body, attr); got != want {
-				t.Errorf("%s: %d %s attributes, want %d", path, got, attr, want)
+		if got := strings.Count(body, `name="item"`); got != 14 {
+			t.Errorf("%s: %d item choices, want 14 (seven in each dialog)", path, got)
+		}
+		for _, want := range []string{`data-open="dlg-import-`, `data-open="dlg-export-`, `name="bundle"`, `name="file_presets"`} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s lacks %s", path, want)
 			}
 		}
 	}
@@ -1586,6 +1589,7 @@ func TestSecondTunnelHidden(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := regexp.MustCompile(`(?s)<script[^>]*>.*?</script>`)
+	dialog := regexp.MustCompile(`(?s)<dialog[^>]*>.*?</dialog>`)
 	said := regexp.MustCompile(`(?i)awg2|second tunnel|second server|tunnel 2|втор(ой|ого|ому|ым|ом) (туннел|сервер)|туннель 2|preset|пресет`)
 	// the settings' row and the help's section on it: the one place it is named
 	row := regexp.MustCompile(`(?s)<div><a class="hl" href="/help#h-awg2">.*?<div><a class="hl" href="/help#h-ipv6">|<h4 id="h-awg2">.*?</p>`)
@@ -1610,6 +1614,7 @@ func TestSecondTunnelHidden(t *testing.T) {
 					t.Fatalf("%s %s: %d", lang, target, w.Code)
 				}
 				body := script.ReplaceAllString(w.Body.String(), "")
+				body = dialog.ReplaceAllString(body, "")
 				kept := row.FindAllString(body, -1)
 				if p != "settings" && p != "help" && len(kept) > 0 {
 					t.Errorf("%s %s: the settings' row is on this page", lang, target)

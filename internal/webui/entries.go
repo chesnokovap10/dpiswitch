@@ -26,12 +26,6 @@ var listFile = map[string]string{
 	"tunnel2": paths.Tunnel2List, "block": paths.BlockList, "awg2": paths.Awg2List,
 }
 
-var listExportName = map[string]string{
-	"direct": "always-direct.txt", "tunnel": "always-via-tunnels.txt",
-	"tunnel1": "always-via-tunnel1.txt", "tunnel2": "always-via-tunnel2.txt",
-	"block": "forbidden.txt", "awg2": "second-tunnel-own-list.txt",
-}
-
 // entryList: what a list's block shows
 type entryList struct {
 	V           *view
@@ -224,6 +218,14 @@ func (s *Server) saveEntries(name string, entries []string) (n int, err, closeEr
 	if err != nil {
 		return 0, err, nil
 	}
+	n, closeErr = closeEntriesChange(name, old, entries)
+	return n, nil, closeErr
+}
+
+// closeEntriesChange moves connections affected by a list already written.
+// The bundle importer writes several files first, then uses the same route
+// transition logic as an ordinary Save for each changed list.
+func closeEntriesChange(name string, old, entries []string) (int, error) {
 	moved := changed(old, entries)
 	isRule := func(s string) bool { return strings.EqualFold(s, ctl.Awg2Rule) }
 	plain := slices.DeleteFunc(slices.Clone(moved), isRule)
@@ -235,9 +237,8 @@ func (s *Server) saveEntries(name string, entries []string) (n int, err, closeEr
 		byLine := match
 		match = func(c ctl.Conn) bool { return byLine(c) || marker(c) }
 	}
-	n, closeErr = closeMoved(ctl.ListProviders(name), match,
+	return closeMoved(ctl.ListProviders(name), match,
 		func() bool { return ctl.Synced(name) })
-	return n, nil, closeErr
 }
 
 // actList saves one of the lists; "add" puts a program from the online list
@@ -390,18 +391,6 @@ func shortListText(s string) string {
 		return s
 	}
 	return string(r[:limit-1]) + "…"
-}
-
-func (s *Server) handleListExport(w http.ResponseWriter, r *http.Request) {
-	kind := r.URL.Query().Get("kind")
-	name, filename := listFile[kind], listExportName[kind]
-	if name == "" || filename == "" {
-		http.Error(w, "unknown list", http.StatusBadRequest)
-		return
-	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
-	w.Write(listBody(readEntries(name)))
 }
 
 func listIssues(l string, issues []ctl.ListIssue) string {

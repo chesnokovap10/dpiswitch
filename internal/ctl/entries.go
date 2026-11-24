@@ -76,6 +76,14 @@ type ListDuplicate struct {
 	Value           string
 }
 
+// ListLineClass is the UI's exact interpretation of one physical editor
+// line. Kind is stable and language-neutral; Count is greater than one for
+// a hosts-format line that contains several site names.
+type ListLineClass struct {
+	Kind  string `json:"kind"`
+	Count int    `json:"count,omitempty"`
+}
+
 // ListDocument is the normalized meaning of a list. Entries are unique and
 // sorted in the same order the UI stores them: the macro, domains, addresses,
 // programs. Comments and blank lines do not become entries.
@@ -141,6 +149,47 @@ func ParseList(text string, policy ListPolicy) ListDocument {
 		return strings.ToLower(a.Value) < strings.ToLower(b.Value)
 	})
 	return d
+}
+
+// ClassifyListLines uses the same parser as ParseList, but keeps blank and
+// comment lines so the type column beside an editor stays line-for-line.
+func ClassifyListLines(text string, policy ListPolicy) []ListLineClass {
+	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	out := make([]ListLineClass, 0, len(lines))
+	for i, raw := range lines {
+		source := strings.TrimSpace(strings.TrimPrefix(raw, "\ufeff"))
+		line, skip := importedListLine(source)
+		if skip {
+			kind := "blank"
+			if source != "" {
+				kind = "comment"
+			}
+			out = append(out, ListLineClass{Kind: kind})
+			continue
+		}
+		entries, err := parseListEntries(line, source, i+1, policy)
+		if err != nil || len(entries) == 0 {
+			out = append(out, ListLineClass{Kind: "error"})
+			continue
+		}
+		kind := "site"
+		switch {
+		case entries[0].Awg2Rule:
+			kind = "rule"
+		case entries[0].Kind == EntryIP && strings.Contains(entries[0].Value, "/"):
+			kind = "network"
+		case entries[0].Kind == EntryIP:
+			kind = "ip"
+		case entries[0].Kind == EntryApp:
+			kind = "program"
+		}
+		count := 0
+		if len(entries) > 1 {
+			count = len(entries)
+		}
+		out = append(out, ListLineClass{Kind: kind, Count: count})
+	}
+	return out
 }
 
 // importedListLine removes only file-format framing, not routing syntax.
