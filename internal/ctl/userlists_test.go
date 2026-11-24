@@ -146,6 +146,39 @@ func TestParseList(t *testing.T) {
 	}
 }
 
+func TestParseImportedListFormats(t *testing.T) {
+	in := strings.Join([]string{
+		"payload:",
+		"  - 'DOMAIN-SUFFIX,Example.net,Proxy'",
+		`  - "IP-CIDR,192.168.7.9/24,DIRECT,no-resolve"`,
+		"  - PROCESS-NAME,Telegram.exe,REJECT",
+		"0.0.0.0 ads.example tracker.example # hosts aliases",
+		"127.0.0.1 localhost.example ads.example",
+		"https://www.example.org/path#fragment # imported URL",
+	}, "\n")
+	d := ParseList(in, ListPolicy{})
+	if len(d.Issues) != 0 {
+		t.Fatalf("issues: %+v", d.Issues)
+	}
+	want := "+.example.net\nads.example\nlocalhost.example\ntracker.example\nwww.example.org\n192.168.7.0/24\nTelegram.exe"
+	if got := strings.Join(d.Values(), "\n"); got != want {
+		t.Errorf("parsed import:\n%s\nwant:\n%s", got, want)
+	}
+	if len(d.Duplicates) != 1 || d.Duplicates[0].Value != "ads.example" || d.Duplicates[0].FirstLine != 5 || d.Duplicates[0].Line != 6 {
+		t.Fatalf("duplicates: %+v", d.Duplicates)
+	}
+	if len(d.Normalized) != 8 {
+		t.Fatalf("normalizations: %+v", d.Normalized)
+	}
+}
+
+func TestParseImportedListRejectsUnknownRules(t *testing.T) {
+	d := ParseList("payload:\n  - GEOIP,CN,DIRECT\n  - IP-CIDR,10.0.0.0/8,DIRECT,bad-option", ListPolicy{})
+	if len(d.Entries) != 0 || len(d.Issues) != 2 || d.Issues[0].Line != 2 || d.Issues[1].Line != 3 {
+		t.Fatalf("unknown rules: %+v", d)
+	}
+}
+
 func TestDomainRuleRelation(t *testing.T) {
 	for _, c := range []struct {
 		rule, container string

@@ -112,6 +112,11 @@ auto-switch off closes the connections the detector sent direct.</p>
 <h4 id="h-syntax">What a list takes</h4>
 <p>One entry per line; sites, addresses and programs in any mix. Case does not matter, repeats go, and
 a saved list is sorted: sites, addresses, programs. Sites are written as the core (mihomo) reads them.</p>
+<p>The import icon also accepts hosts files (including several names after one address), AdBlock entries
+such as <code>||example.com^</code>, and plain or YAML Mihomo rule-provider lists: <code>DOMAIN</code>,
+<code>DOMAIN-SUFFIX</code>, <code>IP-CIDR</code>, <code>IP-CIDR6</code>, <code>PROCESS-NAME</code>, and
+<code>PROCESS-PATH</code>. A rule's policy is ignored: the block receiving the import sets its route.
+Import first puts the text in the field; nothing is applied until Save is pressed.</p>
 <table>
 <tr><th>Entry</th><th>What it takes</th></tr>
 <tr><td><code>example.com</code></td><td>that name alone</td></tr>

@@ -91,24 +91,27 @@ func ParseList(text string, policy ListPolicy) ListDocument {
 	var d ListDocument
 	seen := map[string]int{}
 	for i, raw := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
-		line := strings.TrimSpace(strings.TrimPrefix(raw, "\ufeff"))
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+		source := strings.TrimSpace(strings.TrimPrefix(raw, "\ufeff"))
+		line, skip := importedListLine(source)
+		if skip {
 			continue
 		}
-		e, err := parseListEntry(line, i+1, policy)
+		entries, err := parseListEntries(line, source, i+1, policy)
 		if err != nil {
-			d.Issues = append(d.Issues, ListIssue{Line: i + 1, Raw: line, Err: err})
+			d.Issues = append(d.Issues, ListIssue{Line: i + 1, Raw: source, Err: err})
 			continue
 		}
-		if e.Raw != e.Value {
-			d.Normalized = append(d.Normalized, ListChange{Line: e.Line, Raw: e.Raw, Value: e.Value})
-		}
-		key := strings.ToLower(e.Value)
-		if first := seen[key]; first != 0 {
-			d.Duplicates = append(d.Duplicates, ListDuplicate{Line: e.Line, FirstLine: first, Value: e.Value})
-		} else {
-			seen[key] = e.Line
-			d.Entries = append(d.Entries, e)
+		for _, e := range entries {
+			if e.Raw != e.Value {
+				d.Normalized = append(d.Normalized, ListChange{Line: e.Line, Raw: e.Raw, Value: e.Value})
+			}
+			key := strings.ToLower(e.Value)
+			if first := seen[key]; first != 0 {
+				d.Duplicates = append(d.Duplicates, ListDuplicate{Line: e.Line, FirstLine: first, Value: e.Value})
+			} else {
+				seen[key] = e.Line
+				d.Entries = append(d.Entries, e)
+			}
 		}
 	}
 	sort.SliceStable(d.Entries, func(i, j int) bool {
@@ -128,8 +131,61 @@ func ParseList(text string, policy ListPolicy) ListDocument {
 	return d
 }
 
-func parseListEntry(line string, number int, policy ListPolicy) (ListEntry, error) {
-	e := ListEntry{Raw: line, Line: number}
+// importedListLine removes only file-format framing, not routing syntax.
+// A YAML rule-provider is commonly a payload: followed by "- rule" lines.
+// An inline comment starts with whitespace plus #, so a URL fragment remains
+// part of a URL and is normalized by ParseEntry as before.
+func importedListLine(source string) (line string, skip bool) {
+	if source == "" || strings.HasPrefix(source, "#") || strings.HasPrefix(source, ";") || strings.EqualFold(source, "payload:") {
+		return "", true
+	}
+	line = source
+	if i := strings.Index(line, " #"); i >= 0 {
+		line = strings.TrimSpace(line[:i])
+	}
+	if strings.HasPrefix(line, "- ") {
+		line = strings.TrimSpace(line[2:])
+	}
+	line = trimEntryQuotes(line)
+	return line, line == ""
+}
+
+func trimEntryQuotes(s string) string {
+	if len(s) >= 2 && (s[0] == '\'' && s[len(s)-1] == '\'' || s[0] == '"' && s[len(s)-1] == '"') {
+		return s[1 : len(s)-1]
+	}
+	return s
+}
+
+func parseListEntries(line, raw string, number int, policy ListPolicy) ([]ListEntry, error) {
+	// A hosts line may map one address to several names. Only sink and
+	// loopback addresses describe a block-style host list; importing an
+	// arbitrary address as a domain list would change its meaning.
+	if fields := strings.Fields(line); len(fields) >= 2 {
+		if a, err := netip.ParseAddr(fields[0]); err == nil && (a.IsUnspecified() || a.IsLoopback()) {
+			entries := make([]ListEntry, 0, len(fields)-1)
+			for _, host := range fields[1:] {
+				e, err := parseListEntry(host, raw, number, policy)
+				if err != nil || e.Kind != EntryName {
+					if err == nil {
+						err = fmt.Errorf("%q: a hosts alias is not a domain", host)
+					}
+					return nil, err
+				}
+				entries = append(entries, e)
+			}
+			return entries, nil
+		}
+	}
+	e, err := parseListEntry(line, raw, number, policy)
+	if err != nil {
+		return nil, err
+	}
+	return []ListEntry{e}, nil
+}
+
+func parseListEntry(line, raw string, number int, policy ListPolicy) (ListEntry, error) {
+	e := ListEntry{Raw: raw, Line: number}
 	if strings.EqualFold(line, Awg2Rule) {
 		if !policy.AllowAwg2Rule {
 			return e, fmt.Errorf("%s is allowed only in Tunnel2", Awg2Rule)
@@ -142,32 +198,32 @@ func parseListEntry(line string, number int, policy ListPolicy) (ListEntry, erro
 		kind, value := strings.ToUpper(strings.TrimSpace(fields[0])), strings.TrimSpace(fields[1])
 		switch kind {
 		case "DOMAIN":
-			if len(fields) != 2 {
-				return e, fmt.Errorf("%q: DOMAIN takes one value", line)
+			if len(fields) < 2 || len(fields) > 3 || len(fields) == 3 && strings.TrimSpace(fields[2]) == "" {
+				return e, fmt.Errorf("%q: DOMAIN takes a value and an optional policy", line)
 			}
 			converted = value
 		case "DOMAIN-SUFFIX":
-			if len(fields) != 2 {
-				return e, fmt.Errorf("%q: DOMAIN-SUFFIX takes one value", line)
+			if len(fields) < 2 || len(fields) > 3 || len(fields) == 3 && strings.TrimSpace(fields[2]) == "" {
+				return e, fmt.Errorf("%q: DOMAIN-SUFFIX takes a value and an optional policy", line)
 			}
 			converted = "+." + strings.TrimPrefix(value, "+.")
 		case "IP-CIDR", "IP-CIDR6":
-			if len(fields) > 3 || len(fields) == 3 && !strings.EqualFold(strings.TrimSpace(fields[2]), "no-resolve") {
+			options := fields[2:]
+			if len(options) > 0 && strings.EqualFold(strings.TrimSpace(options[len(options)-1]), "no-resolve") {
+				options = options[:len(options)-1]
+			}
+			if len(options) > 1 || len(options) == 1 && strings.TrimSpace(options[0]) == "" {
 				return e, fmt.Errorf("%q: unsupported IP rule option", line)
 			}
 			converted = value
 		case "PROCESS-NAME", "PROCESS-PATH":
-			if len(fields) != 2 {
+			if len(fields) < 2 || len(fields) > 3 || len(fields) == 3 && strings.TrimSpace(fields[2]) == "" {
 				return e, fmt.Errorf("%q: commas in a program's name are not supported", line)
 			}
 			converted = value
 		}
 	} else if strings.HasPrefix(line, "||") && strings.HasSuffix(line, "^") {
 		converted = "+." + strings.TrimSuffix(strings.TrimPrefix(line, "||"), "^")
-	} else if fields := strings.Fields(line); len(fields) == 2 {
-		if a, err := netip.ParseAddr(fields[0]); err == nil && (a.IsUnspecified() || a.IsLoopback()) {
-			converted = fields[1]
-		}
 	}
 	kind, value, err := ParseEntry(converted)
 	if err != nil {
