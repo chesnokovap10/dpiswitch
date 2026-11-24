@@ -1,2 +1,11 @@
++.cursor-cdn.com
++.cursor.com
++.cursor.sh
++.cursorapi.com
++.cursorvm.com
 +.grok.com
++.grokipedia.com
++.grokusercontent.com
++.spacexsi.com
 +.x.ai
+Cursor.exe

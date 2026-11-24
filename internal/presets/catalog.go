@@ -23,7 +23,7 @@ var shipped = []struct {
 	{"openai", "ChatGPT / Codex / Sora", "ai", []string{"openai.txt"}},
 	{"claude", "Claude", "ai", []string{"claude.txt"}},
 	{"google-ai", "Google AI", "ai", []string{"google-ai.txt"}},
-	{"grok", "Grok", "ai", []string{"grok.txt"}},
+	{"grok", "Grok / Cursor", "ai", []string{"grok.txt"}},
 	{"meta-ai", "Meta AI", "ai", []string{"meta-ai.txt"}},
 	{"copilot", "Microsoft Copilot / Designer", "ai", []string{"copilot.txt"}},
 	{"ai-shared", "Shared AI sign-in", "ai", []string{"ai-shared.txt"}},

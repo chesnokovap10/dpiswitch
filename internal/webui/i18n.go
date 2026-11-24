@@ -32,7 +32,7 @@ var ru = map[string]string{
 	"Designify":                    "Designify",
 	"ElevenLabs / ElevenReader":    "ElevenLabs / ElevenReader",
 	"Google AI":                    "Google AI",
-	"Grok":                         "Grok",
+	"Grok / Cursor":                "Grok / Cursor",
 	"Manus":                        "Manus",
 	"Meta AI":                      "Meta AI",
 	"Microsoft Copilot / Designer": "Microsoft Copilot / Designer",
