@@ -156,7 +156,6 @@
       <button name="op" value="add">{{$v.T "Add"}}</button>
     </div>
     <textarea name="entries" class="grow" spellcheck="false" placeholder="{{if eq .Kind "tunnel2"}}awg2_rule&#10;{{end}}example.com&#10;+.example.org&#10;192.168.1.0/24&#10;telegram.exe">{{lines .Entries}}</textarea>
-    {{if eq .Kind "tunnel2"}}<div class="muted"><a class="hl" href="/help#h-routes"><code>awg2_rule</code></a> — {{$v.T "enabled presets and the second tunnel's own list"}}</div>{{end}}
     <div class="actions"><button class="primary" name="op" value="save">{{$v.T "Save"}}</button>{{template "msg" $v}}<span class="spacer"></span><span class="muted">{{$v.Tf "%d entries" (len .Entries)}}</span></div>
   </form>
 {{end}}

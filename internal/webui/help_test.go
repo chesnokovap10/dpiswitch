@@ -81,9 +81,9 @@ func TestRouteListHelpLinks(t *testing.T) {
 	for _, l := range []string{"en", "ru"} {
 		c := map[string]string{"Cookie": "lang=" + l}
 		page := do(t, h, "GET", "/lists", nil, c).Body.String()
-		// Three block headings and the awg2_rule explanation in Tunnel2.
-		if n := strings.Count(page, `href="/help#h-routes"`); n != 4 {
-			t.Errorf("%s: %d route-list help links, want 4", l, n)
+		// The three route-list block headings.
+		if n := strings.Count(page, `href="/help#h-routes"`); n != 3 {
+			t.Errorf("%s: %d route-list help links, want 3", l, n)
 		}
 		help := do(t, h, "GET", "/help", nil, c).Body.String()
 		if !strings.Contains(help, `id="h-routes"`) {

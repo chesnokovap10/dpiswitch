@@ -268,7 +268,6 @@ var ru = map[string]string{
 	"%d rules":      "правил: %d",
 	"Your own list": "Свой список",
 	"Through the second tunnel, beside the presets and with their priority and fallback: below Forbidden, the three Always via lists and Always direct; above the detector. <a class=\"hl\" href=\"/help#h-routes\"><code>awg2_rule</code></a> in <a class=\"hl\" href=\"/lists?tunnel-list=tunnel2#list-tunnel2\">Always via Tunnel2</a> also makes every entry here use awg2 only.": "Через второй туннель, рядом с пресетами, с их приоритетом и запасным маршрутом: ниже «Запрещено», трёх списков «Всегда через» и «Всегда напрямую»; выше детектора. Строка <a class=\"hl\" href=\"/help#h-routes\"><code>awg2_rule</code></a> во «<a class=\"hl\" href=\"/lists?tunnel-list=tunnel2#list-tunnel2\">Всегда через: Туннель2</a>» также направляет каждую запись отсюда только через awg2.",
-	"enabled presets and the second tunnel's own list": "включённые пресеты и свой список второго туннеля",
 	"YouTube":                       "YouTube",
 	"site, video, thumbnails, apps": "сайт, видео, превью, приложения",
 	"Telegram":                      "Telegram",
