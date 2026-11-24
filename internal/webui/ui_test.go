@@ -671,6 +671,11 @@ func TestListImportExport(t *testing.T) {
 		if got := strings.Count(body, `href="/lists/export?kind=`); got != want {
 			t.Errorf("%s: %d export icons, want %d", path, got, want)
 		}
+		for _, attr := range []string{`accept=".txt,.yaml,.yml,text/plain,application/yaml"`, `data-max-bytes="4194304"`, `data-too-large=`, `data-read-error=`, `data-replace=`} {
+			if got := strings.Count(body, attr); got != want {
+				t.Errorf("%s: %d %s attributes, want %d", path, got, attr, want)
+			}
+		}
 	}
 
 	in := strings.Join([]string{"# imported", "DOMAIN,Example.com", "DOMAIN-SUFFIX,example.org",

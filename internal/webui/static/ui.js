@@ -556,17 +556,39 @@ document.addEventListener('change', e => {
   if (p.type !== 'file' || !p.form || !p.files[0]) return;
   if (p.dataset.listImport !== undefined) {
     const t = p.form.querySelector('textarea[name="entries"]');
-    if (t) {
-      const current = ticket(t);
-      const fr = new FileReader();
-      fr.onload = () => {
-        if (!current()) return;
-        t.value = fr.result;
-        t.focus();
-        t.setSelectionRange(0, 0);
-      };
-      fr.readAsText(p.files[0]);
+    const file = p.files[0];
+    const showError = text => {
+      let m = p.form.querySelector('.list-import-error');
+      if (!m) {
+        m = document.createElement('div');
+        m.className = 'msg bad list-import-error';
+        p.form.append(m);
+      }
+      m.textContent = text;
+    };
+    if (!t) { p.value = ''; return; }
+    if (file.size > +(p.dataset.maxBytes || 0)) {
+      showError(p.dataset.tooLarge);
+      p.value = '';
+      return;
     }
+    if (dirty(p.form) && !confirm(p.dataset.replace)) {
+      p.value = '';
+      return;
+    }
+    const current = ticket(t);
+    const fr = new FileReader();
+    fr.onload = () => {
+      if (!current()) return;
+      const m = p.form.querySelector('.list-import-error');
+      if (m) m.remove();
+      t.value = fr.result;
+      t.dispatchEvent(new Event('input', {bubbles: true}));
+      t.focus();
+      t.setSelectionRange(0, 0);
+    };
+    fr.onerror = () => { if (current()) showError(p.dataset.readError); };
+    fr.readAsText(file);
     p.value = '';
     return;
   }
