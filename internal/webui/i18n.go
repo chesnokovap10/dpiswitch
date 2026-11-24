@@ -229,6 +229,8 @@ var ru = map[string]string{
 
 	// routing lists
 	"Save":          "Сохранить",
+	"Import list":   "Импортировать список",
+	"Export list":   "Экспортировать список",
 	"%d entries":    "записей: %d",
 	"Always direct": "Всегда напрямую",
 	"Never through a tunnel, whatever the detector finds, in every mode -- in Tunnel only the one way out past the tunnels: banks, government services, whatever must see your real address. A program here goes direct entirely. Below Forbidden and the three Always via lists, above the second tunnel.": "Никогда не через туннель, что бы ни нашёл детектор, в любом режиме — в «Только в туннель» это единственный выход мимо туннелей: банки, госуслуги, всё, что должно видеть ваш настоящий адрес. Программа здесь идёт напрямую целиком. Ниже «Запрещено» и трёх списков «Всегда через», выше второго туннеля.",

@@ -119,6 +119,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/tunnels", s.handleTunnels)
 	mux.HandleFunc("/live/stream", s.handleLive)
 	mux.HandleFunc("/live/presets", s.handleLivePresets)
+	mux.HandleFunc("/lists/export", s.handleListExport)
 	mux.HandleFunc(helloPath, s.handleHello)
 	for path, h := range map[string]http.HandlerFunc{
 		"/act/auto":          s.actAuto,

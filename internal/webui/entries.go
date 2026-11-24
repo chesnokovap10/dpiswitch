@@ -26,6 +26,12 @@ var listFile = map[string]string{
 	"tunnel2": paths.Tunnel2List, "block": paths.BlockList, "awg2": paths.Awg2List,
 }
 
+var listExportName = map[string]string{
+	"direct": "always-direct.txt", "tunnel": "always-via-tunnels.txt",
+	"tunnel1": "always-via-tunnel1.txt", "tunnel2": "always-via-tunnel2.txt",
+	"block": "forbidden.txt", "awg2": "second-tunnel-own-list.txt",
+}
+
 // entryList: what a list's block shows
 type entryList struct {
 	V           *view
@@ -271,6 +277,18 @@ func (s *Server) actList(w http.ResponseWriter, r *http.Request) {
 	n, err, cerr := s.saveEntries(name, entries)
 	ok, msg := saved(r, err, n, cerr)
 	s.part(w, r, page, "list-"+kind, ok, msg)
+}
+
+func (s *Server) handleListExport(w http.ResponseWriter, r *http.Request) {
+	kind := r.URL.Query().Get("kind")
+	name, filename := listFile[kind], listExportName[kind]
+	if name == "" || filename == "" {
+		http.Error(w, "unknown list", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.Write(listBody(readEntries(name)))
 }
 
 func listIssues(l string, issues []ctl.ListIssue) string {

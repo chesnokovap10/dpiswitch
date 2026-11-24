@@ -554,6 +554,22 @@ document.addEventListener('drop', e => {
 document.addEventListener('change', e => {
   const p = e.target;
   if (p.type !== 'file' || !p.form || !p.files[0]) return;
+  if (p.dataset.listImport !== undefined) {
+    const t = p.form.querySelector('textarea[name="entries"]');
+    if (t) {
+      const current = ticket(t);
+      const fr = new FileReader();
+      fr.onload = () => {
+        if (!current()) return;
+        t.value = fr.result;
+        t.focus();
+        t.setSelectionRange(0, 0);
+      };
+      fr.readAsText(p.files[0]);
+    }
+    p.value = '';
+    return;
+  }
   const t = p.form.querySelector('[data-drop]');
   if (t) readInto(t, p.files[0]);
 });

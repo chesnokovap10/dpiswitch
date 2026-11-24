@@ -660,6 +660,52 @@ func TestListSave(t *testing.T) {
 	}
 }
 
+func TestListImportExport(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	for path, want := range map[string]int{"/lists": 5, "/awg2": 1} {
+		body := do(t, h, "GET", path, nil, nil).Body.String()
+		if got := strings.Count(body, "data-list-import"); got != want {
+			t.Errorf("%s: %d import icons, want %d", path, got, want)
+		}
+		if got := strings.Count(body, `href="/lists/export?kind=`); got != want {
+			t.Errorf("%s: %d export icons, want %d", path, got, want)
+		}
+	}
+
+	in := strings.Join([]string{"# imported", "DOMAIN,Example.com", "DOMAIN-SUFFIX,example.org",
+		"IP-CIDR,192.168.12.3/24,no-resolve", "PROCESS-NAME,Telegram.exe", "0.0.0.0 hosts.example", "||ads.example^"}, "\n")
+	w := do(t, h, "POST", "/act/list", url.Values{"kind": {"direct"}, "entries": {in}}, nil)
+	if w.Code != http.StatusOK || strings.Contains(w.Body.String(), `class="msg bad"`) {
+		t.Fatalf("import: %d %s", w.Code, w.Body.String())
+	}
+	w = do(t, h, "GET", "/lists/export?kind=direct", nil, nil)
+	if cd := w.Header().Get("Content-Disposition"); cd != `attachment; filename="always-direct.txt"` {
+		t.Errorf("content disposition: %q", cd)
+	}
+	for _, line := range []string{"+.ads.example", "+.example.org", "example.com", "hosts.example", "192.168.12.0/24", "Telegram.exe"} {
+		if !strings.Contains(w.Body.String(), "\n"+line+"\n") {
+			t.Errorf("export lacks %q:\n%s", line, w.Body.String())
+		}
+	}
+	if w := do(t, h, "GET", "/lists/export?kind=nope", nil, nil); w.Code != http.StatusBadRequest {
+		t.Errorf("unknown export: %d", w.Code)
+	}
+}
+
+func TestListReportsEveryBadLine(t *testing.T) {
+	s, _ := testServer(t)
+	w := do(t, s.Handler(), "POST", "/act/list", url.Values{
+		"kind": {"block"}, "entries": {"bad host\nexample.com\nMATCH,DIRECT"},
+	}, map[string]string{"Cookie": "lang=ru"})
+	body := w.Body.String()
+	for _, want := range []string{"строка 1", "bad host", "строка 3", "MATCH,DIRECT", "ничего не сохранено"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("response lacks %q: %s", want, body)
+		}
+	}
+}
+
 // A list the service would not read -- larger than it takes -- is refused,
 // what was pasted kept in the box; it used to be saved, and never taken.
 // A name in its own letters is kept as the core sees it, in punycode.
