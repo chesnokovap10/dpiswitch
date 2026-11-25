@@ -1,35 +1,41 @@
 {{define "content"}}
 <div class="page">
-  <div class="lists-intro"><p class="hint">{{.T "One per line: a site (example.com; +.example.com for the domain and all under it; * for any one label: +.example.*), an address or a network (1.2.3.4, 192.168.0.0/16: for connections made to it by address), a program (telegram.exe; a full path for that copy only)."}}<br>{{if .St.Second}}{{.T "Written in several lists, a line goes by the highest: Forbidden → Always via Tunnels → Tunnel1 → Tunnel2 → Always direct → the second tunnel (its presets and list, while loaded and switched on) → the detector. The table for each mode is in the help."}}{{else}}{{.T "Written in several lists, a line goes by the highest: Forbidden → Always via Tunnels → Tunnel1 → Tunnel2 → Always direct → the detector. The table for each mode is in the help."}}{{end}}</p><div class="lists-transfer">{{template "transferbuttons" .}}</div></div>
-  <div class="cols3 fill lists">
+  <div class="lists-intro"><p class="hint">{{.T "One per line: a site (example.com; +.example.com for the domain and all under it; * for any one label: +.example.*), an address or a network (1.2.3.4, 192.168.0.0/16: for connections made to it by address), a program (telegram.exe; a full path for that copy only)."}}</p><div class="lists-transfer">{{template "transferbuttons" .}}</div></div>
+  <div class="cols2 fill lists lists4">
     <div class="box" id="list-direct" data-fresh="/frag/lists/list-direct">{{template "list-direct" .}}</div>
-    <div class="box tunnel-lists">
-      <div class="tunnel-head">
-        <h3><a class="hl" href="/help#h-routes">{{.T "Always via"}}</a></h3>
-        <div class="tabs" data-tabs="tunnel-list">
-          <a href="/lists?tunnel-list=tunnels" data-tab="tunnels" class="on">{{.T "Tunnels"}}</a>
-          {{if .St.Second}}
-          <a href="/lists?tunnel-list=tunnel1" data-tab="tunnel1">{{.T "Tunnel1"}}</a>
-          <a href="/lists?tunnel-list=tunnel2" data-tab="tunnel2">{{.T "Tunnel2"}}</a>
-          {{end}}
-        </div>
-      </div>
-      <div class="stack tunnel-panels" data-panels="tunnel-list">
-        <div id="list-tunnel" data-tab="tunnels" data-fresh="/frag/lists/list-tunnel">{{template "list-tunnel" .}}</div>
-        {{if .St.Second}}
-        <div id="list-tunnel1" data-tab="tunnel1" data-fresh="/frag/lists/list-tunnel1" class="away">{{template "list-tunnel1" .}}</div>
-        <div id="list-tunnel2" data-tab="tunnel2" data-fresh="/frag/lists/list-tunnel2" class="away">{{template "list-tunnel2" .}}</div>
-        {{end}}
-      </div>
-    </div>
+    <div class="box" id="list-tunnel" data-fresh="/frag/lists/list-tunnel">{{template "list-tunnel" .}}</div>
     <div class="box" id="list-block" data-fresh="/frag/lists/list-block">{{template "list-block" .}}</div>
+    <div class="box" id="presets" data-fresh="/frag/lists/presets">{{template "presets" .}}</div>
   </div>
 </div>
 {{template "transferdialogs" .}}
 {{end}}
 
-{{define "list-direct"}}{{if .St.Second}}{{template "entrylist" (el . "direct" (.T "Always direct") (.T "Never through a tunnel, whatever the detector finds, in every mode -- in Tunnel only the one way out past the tunnels: banks, government services, whatever must see your real address. A program here goes direct entirely. Below Forbidden and the three Always via lists, above the second tunnel.") .Data.Direct .Data.Online)}}{{else}}{{template "entrylist" (el . "direct" (.T "Always direct") (.T "Never through the tunnel, whatever the detector finds, in every mode -- in Tunnel only the one way out past the tunnel: banks, government services, whatever must see your real address. A program here goes direct entirely. Below Forbidden and Always via tunnel, above the detector.") .Data.Direct .Data.Online)}}{{end}}{{end}}
-{{define "list-tunnel"}}{{if .St.Second}}{{template "entrylist" (el . "tunnel" "" (.T "Through Tunnel1 first; if it is unavailable, through Tunnel2 while it is switched on. Never direct. Highest priority of the three tunnel lists.") .Data.Tunnel .Data.Online)}}{{else}}{{template "entrylist" (el . "tunnel" "" (.T "Through the tunnel and never direct. If it is unavailable, the connection fails. Highest priority of the three tunnel lists.") .Data.Tunnel .Data.Online)}}{{end}}{{end}}
-{{define "list-tunnel1"}}{{template "entrylist" (el . "tunnel1" "" (.T "Through Tunnel1 only, in every mode, and never direct. If Tunnel1 is unavailable, the connection fails. Below Tunnels and above Tunnel2.") .Data.Tunnel1 .Data.Online)}}{{end}}
-{{define "list-tunnel2"}}{{template "entrylist" (el . "tunnel2" "" (.T "Through Tunnel2 only, in every mode, and never direct. If Tunnel2 is unavailable or switched off, the connection fails. Lowest priority of the three tunnel lists.") .Data.Tunnel2 .Data.Online)}}{{end}}
-{{define "list-block"}}{{template "entrylist" (el . "block" (.T "Forbidden") (.T "Refused in every mode: the connection is closed at once. Above every other list: a line here and in another is refused. A program here is cut off from the network entirely.") .Data.Block .Data.Online)}}{{end}}
+{{define "list-direct"}}{{template "entrylist" (el . "direct" (.T "Always direct") (.T "Never through a tunnel, whatever the detector finds, in every mode. Below Forbidden and Always via; above presets and the detector.") .Data.Direct .Data.Online)}}{{end}}
+
+{{define "list-tunnel"}}{{$v := .}}
+  <h3><a class="hl" href="/help#h-routes">{{.T "Always via"}}</a></h3>
+  <p class="hint">{{.T "Each row uses its selected route in every mode. Routes without direct fail closed when every enabled tunnel in the chain is unavailable."}}</p>
+  <form method="post" action="/act/list" data-swap="list-tunnel">
+    <input type="hidden" name="kind" value="tunnel">
+    <div class="row" style="margin-bottom:8px">
+      <select name="add" style="flex:1;min-width:0"><option value="">{{.Tf "Online now: %d programs" (len .Data.Online)}}</option>{{range .Data.Online}}<option value="{{.Name}}" title="{{.Path}}">{{.Name}} · {{$v.Tf "%d conn." .Conns}}</option>{{end}}</select>
+      <button name="op" value="add">{{.T "Add"}}</button>
+    </div>
+    <div class="entry-editor routed grow" data-entry-editor data-kind="tunnel" data-default="{{.Data.DefaultTunnel}}"
+      data-site="{{.T "site"}}" data-ip="{{.T "IP address"}}" data-network="{{.T "network"}}" data-program="{{.T "program"}}" data-comment="{{.T "comment"}}" data-rule="{{.T "rule"}}" data-error="{{.T "error"}}">
+      <textarea name="entries" wrap="off" spellcheck="false" placeholder="example.com&#10;+.example.org&#10;telegram.exe">{{lines .Data.TunnelEntries}}</textarea>
+      <textarea name="routes" class="route-values" hidden>{{lines .Data.Routes}}</textarea>
+      <div class="entry-routes" aria-label="{{.T "Route"}}"></div>
+      <div class="entry-types" aria-label="{{.T "Recognized as"}}"></div>
+      <template class="route-options"><select aria-label="{{.T "Route"}}">
+        <option value="awg1">awg1</option><option value="awg2">awg2</option>
+        <option value="awg1-awg2">awg1→awg2</option><option value="awg2-awg1">awg2→awg1</option>
+        <option value="awg1-awg2-direct">awg1→awg2→direct</option><option value="awg2-awg1-direct">awg2→awg1→direct</option>
+      </select></template>
+    </div>
+    <div class="actions"><button class="primary" name="op" value="save">{{.T "Save"}}</button>{{template "msg" .}}<span class="spacer"></span><span class="muted">{{.Tf "%d entries" (len .Data.TunnelEntries)}}</span></div>
+  </form>
+{{end}}
+
+{{define "list-block"}}{{template "entrylist" (el . "block" (.T "Forbidden") (.T "Refused in every mode. Above every other list: a row here and elsewhere is refused.") .Data.Block .Data.Online)}}{{end}}

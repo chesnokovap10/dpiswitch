@@ -22,7 +22,7 @@
   </div>
 </div>
 {{template "confdialog" .Dlg "config"}}
-{{if .St.Second}}{{template "confdialog" .Dlg "config2"}}{{end}}
+{{template "confdialog" .Dlg "config2"}}
 {{end}}
 
 {{define "summary"}}{{$s := .St}}
@@ -33,15 +33,15 @@
     <a class="tile" href="/verdicts?cat=unknown"><b>{{$s.Unverified}}</b><span>{{.T "could not verify"}}</span></a>
   </div>
   {{- template "vnote" .}}
-  <div class="{{if $s.Second}}cols2{{else}}cols1{{end}}">
+  <div class="cols2">
     <div class="box">
-      <h3>{{if $s.Second}}{{.T "Main tunnel"}}{{else}}{{.T "Tunnel"}}{{end}} · awg1</h3>
+      <h3 class="tunnel-title"><form method="post" action="/act/tunnel" data-swap="summary" data-instant="1"><input type="hidden" name="name" value="awg1"><label><input type="checkbox" name="enabled" {{if $s.Awg1On}}checked{{end}} {{if not $s.HasConfig}}disabled{{end}}> {{.T "Tunnel"}} · awg1</label></form></h3>
       {{if $s.HasConfig}}
       <div class="kv">
         <span>{{.T "State"}}</span><div>{{template "tunstate" (tun . "awg1" $s.TunnelAlive $s.TunnelNote)}}</div>
         <span>Endpoint</span><div>{{$s.Endpoint}}</div>
         <span>DNS</span><div>{{with .Data.DNS}}{{.}}{{if $.Data.DNSSet}} <a class="muted" href="/settings#dns">({{$.T "from the settings"}})</a>{{end}}{{else}}<span class="muted">—</span>{{end}}</div>
-        <span>{{.T "Carries"}}</span><div>{{if $s.Second}}{{.T "everything not sent direct or to awg2"}}{{else}}{{.T "everything not sent direct"}}{{end}}</div>
+        <span>{{.T "Carries"}}</span><div>{{.T "traffic selected by the default route and matching Always via rows"}}</div>
       </div>
       <div class="actions">
         <button type="button" data-open="dlg-config">{{.T "Replace config…"}}</button>
@@ -49,15 +49,13 @@
       </div>
       {{else}}<p class="hint">{{.T "No config loaded yet."}} {{.T "Without it what the lists do not name goes direct"}}.</p>{{end}}
     </div>
-    {{if $s.Second}}
     <div class="box">
-      <h3>{{.T "Second tunnel"}} · awg2</h3>
+      <h3 class="tunnel-title"><form method="post" action="/act/tunnel" data-swap="summary" data-instant="1"><input type="hidden" name="name" value="awg2"><label><input type="checkbox" name="enabled" {{if $s.Awg2On}}checked{{end}} {{if not $s.Awg2}}disabled{{end}}> {{.T "Tunnel"}} · awg2</label></form></h3>
       {{if $s.Awg2}}
       <div class="kv">
         <span>{{.T "State"}}</span><div>{{template "awg2pill" .}}</div>
         <span>Endpoint</span><div>{{$s.Endpoint2}}</div>
-        <span>{{.T "Carries"}}</span><div><a href="/awg2#presets">{{.Tf "%d presets" $s.Presets}}</a>, <a href="/awg2#list-awg2">{{.Tf "%d in your own list" $s.Awg2Hosts}}</a></div>
-        <span>{{.T "If it is down"}}</span><div>{{.T "its sites go through awg1; if both are down, direct -- in Tunnel only refused"}}</div>
+        <span>{{.T "Carries"}}</span><div><a href="/lists#presets">{{.Tf "%d presets" $s.Presets}}</a>, {{.T "traffic selected by the default route and matching Always via rows"}}</div>
       </div>
       <div class="actions">
         <button type="button" data-open="dlg-config2">{{.T "Replace config…"}}</button>
@@ -65,11 +63,10 @@
       </div>
       {{else}}
       {{if $s.Awg2Err}}<p class="bad-t">{{.T "The config loaded cannot be used:"}} {{.T $s.Awg2Err}}</p>{{end}}
-      <p class="hint">{{.T "Not attached. A second server for chosen services only: YouTube, Telegram, AI services, your own sites. Until it is attached, its presets and list route nothing."}}</p>
+      <p class="hint">{{.T "No config loaded yet."}}</p>
       <div class="actions"><button type="button" data-open="dlg-config2">{{.T "Attach…"}}</button></div>
       {{end}}
     </div>
-    {{end}}
   </div>
 {{end}}
 

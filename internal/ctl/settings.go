@@ -3,8 +3,6 @@ package ctl
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -56,17 +54,19 @@ type Settings struct {
 	// switch again since 09.10 (one with the cut from 07.10). direct-split
 	// always carries the decoy -- only the lists change, no core restart.
 	QUICFake bool `json:"quic_fake"`
-	// SecondTunnel: the program works with a second tunnel (awg2). Off by
-	// default, and off there is none: no awg2 in the core's config whatever
-	// .conf is loaded for it, its presets and list set aside, and nothing of
-	// it in the UI -- one tunnel, as most use the program. A core setting
-	// while a .conf is loaded for it, see SameCore; a file written before the
-	// switch existed is read in LoadSettings.
-	SecondTunnel bool `json:"second_tunnel"`
+	// SecondTunnel is kept only so older internal callers and tests can read
+	// old values. Two tunnel slots are always available now; this field is
+	// neither saved nor used for routing.
+	SecondTunnel bool `json:"-"`
 	// second tunnel (awg2): the IDs of the presets switched on
 	Awg2Presets []string `json:"awg2_presets"`
-	// One manual switch shared by all modes.
+	// Independent tunnel switches, shared by all modes. A missing config keeps
+	// its switch harmless; the UI disables it until the config is loaded.
+	Awg1On bool `json:"awg1_enabled"`
 	Awg2On bool `json:"awg2_enabled"`
+	// DefaultTunnel is the fallback order for presets and traffic not pinned
+	// by an Always via row.
+	DefaultTunnel string `json:"default_tunnel"`
 	// direct-path resolvers: the core and the prober reach them directly,
 	// so CDNs hand out nodes closest to the user's ISP
 	DirectDNS []string `json:"direct_dns"`
@@ -113,16 +113,12 @@ const (
 // first; the certificate names these as well.
 var defaultDirectDNS = []string{"tls://8.8.8.8", "tls://8.8.4.4", "tls://[2001:4860:4860::8888]", "tls://[2001:4860:4860::8844]"}
 
-// SameCore: whether anything that goes into the core config changed (resolvers,
-// IPv6, the second tunnel). Such settings need a core restart; the rest
-// are picked up on the fly. The second tunnel switched on or off is one only
-// with a .conf loaded for it: the config gains or loses awg2 then, and with
-// none it is the same either way.
+// SameCore: whether anything that goes into the core config changed. Tunnel
+// switches and their default order are select-group choices and apply live.
 func (s Settings) SameCore(o Settings) bool {
 	return reflect.DeepEqual(s.DirectDNS, o.DirectDNS) &&
 		reflect.DeepEqual(s.TunnelDNS, o.TunnelDNS) && reflect.DeepEqual(s.TunnelDNS2, o.TunnelDNS2) &&
-		s.IPv6 == o.IPv6 && s.DNSCache == o.DNSCache &&
-		(s.SecondTunnel == o.SecondTunnel || !Awg2Loaded())
+		s.IPv6 == o.IPv6 && s.DNSCache == o.DNSCache
 }
 
 func (s Settings) Equal(o Settings) bool { return reflect.DeepEqual(s, o) }
@@ -158,10 +154,8 @@ func (s *Settings) SetMode(m string) bool {
 	return false
 }
 
-// Awg2Active reports the manual switch independently of auto-switch mode.
-func (s Settings) Awg2Active() bool {
-	return s.SecondTunnel && s.Awg2On
-}
+func (s Settings) Awg1Active() bool { return s.Awg1On }
+func (s Settings) Awg2Active() bool { return s.Awg2On }
 
 // SetAwg2 changes the shared manual switch.
 func (s *Settings) SetAwg2(on bool) {
@@ -170,10 +164,13 @@ func (s *Settings) SetAwg2(on bool) {
 
 func DefaultSettings() Settings {
 	return Settings{
-		AutoSwitch: true,
-		Awg2On:     true,
-		Families:   true,
-		IPv6:       true,
+		AutoSwitch:    true,
+		SecondTunnel:  true, // deprecated compatibility value
+		Awg1On:        true,
+		Awg2On:        true,
+		DefaultTunnel: DefaultTunnel12,
+		Families:      true,
+		IPv6:          true,
 		// every preset off by default: the second tunnel is optional, and a
 		// preset silently pinning traffic to a tunnel the user has not set up
 		// is worse than no preset at all
@@ -203,7 +200,6 @@ func LoadSettings(path string) Settings {
 		_ = json.Unmarshal(b, &s)
 		oldObserve(b, &s)
 	}
-	oldSecond(path, b, &s)
 	s.clamp()
 	return s
 }
@@ -231,24 +227,6 @@ func decodeSettings(b []byte, known map[string]bool) (Settings, error) {
 		return s, err
 	}
 	return s, nil
-}
-
-// oldSecond: up to 1.9.1 a second tunnel was there once its .conf was
-// loaded, with no switch in the settings. A file those versions wrote -- or
-// none, the settings never touched -- lacks second_tunnel, and read as off it
-// would have taken a user's second tunnel away on update. With a .conf for
-// it beside the file it is read as on; the next save writes second_tunnel.
-func oldSecond(path string, b []byte, s *Settings) {
-	var raw map[string]json.RawMessage
-	if json.Unmarshal(b, &raw) == nil {
-		if _, has := raw["second_tunnel"]; has {
-			return
-		}
-	}
-	conf2 := filepath.Join(filepath.Dir(path), filepath.Base(paths.SourceConf2()))
-	if _, err := os.Stat(conf2); err == nil {
-		s.SecondTunnel = true
-	}
 }
 
 // oldObserve: auto-switch off meant everything through the tunnel, with the
@@ -366,6 +344,8 @@ func (s Settings) validate(known map[string]bool) error {
 		return fmt.Errorf("latency tolerance: from 0 to 500%%")
 	case s.Attempts < 1 || s.Attempts > 10:
 		return fmt.Errorf("attempts: from 1 to 10")
+	case s.DefaultTunnel != DefaultTunnel12 && s.DefaultTunnel != DefaultTunnel21:
+		return fmt.Errorf("unknown default tunnel route %q", s.DefaultTunnel)
 	case len(s.DirectDNS) == 0:
 		return fmt.Errorf("at least one DNS server for direct sites is required")
 	}
@@ -398,6 +378,9 @@ func (s Settings) validate(known map[string]bool) error {
 // negative term.
 func (s *Settings) clamp() {
 	d := DefaultSettings()
+	if s.DefaultTunnel != DefaultTunnel12 && s.DefaultTunnel != DefaultTunnel21 {
+		s.DefaultTunnel = d.DefaultTunnel
+	}
 	s.SetMode(s.Mode())
 	if s.CleanTTLMin < cleanTTLMin || s.CleanTTLMin > cleanTTLMax {
 		s.CleanTTLMin = d.CleanTTLMin

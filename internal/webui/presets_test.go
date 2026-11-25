@@ -129,7 +129,7 @@ func TestPresetRestore(t *testing.T) {
 		}
 		return w.Body.String()
 	}
-	page := func() string { return do(t, h, "GET", "/frag/awg2/presets", nil, nil).Body.String() }
+	page := func() string { return do(t, h, "GET", "/frag/lists/presets", nil, nil).Body.String() }
 	if strings.Contains(page(), "/act/presetrestore") {
 		t.Fatal("nothing to restore, yet the button shows")
 	}

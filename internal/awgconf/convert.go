@@ -233,17 +233,12 @@ func (c *Conf) Usable() error {
 var ErrSameKey = errors.New("this is the same config as the first tunnel")
 
 // Second: the second tunnel's .conf as the config takes it. nil and no
-// error when none is loaded, or the second tunnel is off in the settings
-// (ctl.Settings.SecondTunnel): the program works with one tunnel then, a
-// .conf kept for the second or not. nil and why, when one is loaded and the
+// error when none is loaded. nil and why, when one is loaded and the
 // core could not use it -- the first tunnel's key included, first given. The
 // config, the UI's state of the tunnel and the service's IPv6 check go by it
 // alike: the UI said "attached" of a .conf the service had left out.
 func Second(first *Conf) (*Conf, error) {
 	if _, err := os.Stat(paths.SourceConf2()); err != nil {
-		return nil, nil
-	}
-	if !ctl.LoadSettings(paths.Settings()).SecondTunnel {
 		return nil, nil
 	}
 	c, err := ParseFile(paths.SourceConf2())
@@ -650,12 +645,8 @@ func render(c *Conf) (string, error) {
 	w("  # internet at all. With no first tunnel, direct -- the second one takes")
 	w("  # only its own lists.")
 	fallback(ctl.TunnelSoftGroup, cat(first, direct), false)
-	// the second takes what no list names only behind the first
-	var behind []string
-	if c != nil {
-		behind = second
-	}
-	fallback(ctl.TunnelSoftAnyGroup, cat(first, behind, direct), false)
+	fallback(ctl.TunnelSoftAnyGroup, cat(first, second, direct), false)
+	fallback(ctl.Tunnel2OnlySoftGroup, cat(second, direct), false)
 	w("  # the tunnels alone, never direct: the always-tunnel list, and tunnel only")
 	fallback(ctl.TunnelOneGroup, orReject(first), true)
 	fallback(ctl.TunnelAnyGroup, orReject(cat(first, second)), true)
@@ -666,10 +657,15 @@ func render(c *Conf) (string, error) {
 	fallback(ctl.Tunnel2StrictGroup, orReject(cat(second, first)), true)
 	fallback(ctl.Tunnel2OnlyGroup, orReject(second), true)
 	w("")
-	selectGroup(ctl.TunnelListsGroup, ctl.TunnelOneGroup, ctl.TunnelAnyGroup)
-	selectGroup(ctl.Tunnel2ListsGroup, ctl.Tunnel2OnlyGroup, "REJECT")
-	selectGroup(ctl.Tunnel2Group, ctl.Tunnel2SoftGroup, ctl.Tunnel2StrictGroup)
-	selectGroup(ctl.TunnelRestGroup, ctl.TunnelSoftGroup, ctl.TunnelSoftAnyGroup, ctl.TunnelOneGroup, ctl.TunnelAnyGroup)
+	strictMembers := []string{ctl.TunnelOneGroup, ctl.Tunnel2OnlyGroup, ctl.TunnelAnyGroup, ctl.Tunnel2StrictGroup, "REJECT"}
+	softMembers := []string{ctl.TunnelSoftGroup, ctl.Tunnel2OnlySoftGroup, ctl.TunnelSoftAnyGroup, ctl.Tunnel2SoftGroup, "DIRECT"}
+	selectGroup(ctl.RouteAwg1Group, strictMembers...)
+	selectGroup(ctl.RouteAwg2Group, strictMembers...)
+	selectGroup(ctl.Route12Group, strictMembers...)
+	selectGroup(ctl.Route21Group, strictMembers...)
+	selectGroup(ctl.Route12DirectGroup, softMembers...)
+	selectGroup(ctl.Route21DirectGroup, softMembers...)
+	selectGroup(ctl.DefaultRouteGroup, append(softMembers, strictMembers...)...)
 	w("")
 	w("rule-providers:")
 	w("  # second-tunnel presets: the rules of the ones switched on, in one file")
@@ -861,19 +857,21 @@ func render(c *Conf) (string, error) {
 		w("  - IP-CIDR6,::/0,REJECT,no-resolve")
 	}
 	w("")
-	w("  # 5. the user's three always-tunnel lists, in priority order. Tunnels")
-	w("  #    keeps the existing awg1 -> awg2 fallback; Tunnel1 and Tunnel2 are")
-	w("  #    strict and fail closed. All stand above the direct and awg2 lists")
-	w("  - RULE-SET,force-tunnel-apps,%s", ctl.TunnelListsGroup)
-	w("  - RULE-SET,force-tunnel,%s", ctl.TunnelListsGroup)
-	w("  - RULE-SET,force-tunnel-ip,%s,no-resolve", ctl.TunnelListsGroup)
-	w("  - RULE-SET,force-tunnel1-apps,%s", ctl.TunnelOneGroup)
-	w("  - RULE-SET,force-tunnel1,%s", ctl.TunnelOneGroup)
-	w("  - RULE-SET,force-tunnel1-ip,%s,no-resolve", ctl.TunnelOneGroup)
-	w("  - RULE-SET,%s,%s", ctl.Awg2RuleProvider, ctl.Tunnel2ListsGroup)
-	w("  - RULE-SET,force-tunnel2-apps,%s", ctl.Tunnel2ListsGroup)
-	w("  - RULE-SET,force-tunnel2,%s", ctl.Tunnel2ListsGroup)
-	w("  - RULE-SET,force-tunnel2-ip,%s,no-resolve", ctl.Tunnel2ListsGroup)
+	w("  # 5. the common Always via list, one route per row. Every route stands")
+	w("  #    above Always direct, presets and detector decisions.")
+	for _, route := range []struct{ file, group string }{
+		{paths.Tunnel1List, ctl.RouteAwg1Group},
+		{paths.Tunnel2List, ctl.RouteAwg2Group},
+		{paths.TunnelList, ctl.Route12Group},
+		{paths.Tunnel21List, ctl.Route21Group},
+		{paths.Tunnel12DirectList, ctl.Route12DirectGroup},
+		{paths.Awg2List, ctl.Route21DirectGroup},
+	} {
+		provider := strings.TrimSuffix(route.file, ".txt")
+		w("  - RULE-SET,%s-apps,%s", provider, route.group)
+		w("  - RULE-SET,%s,%s", provider, route.group)
+		w("  - RULE-SET,%s-ip,%s,no-resolve", provider, route.group)
+	}
 	w("")
 	w("  # 6. the user's always-direct list: programs, names, addresses -- in")
 	w("  #    every mode; in tunnel only the one way out past the tunnels")
@@ -881,19 +879,14 @@ func render(c *Conf) (string, error) {
 	w("  - RULE-SET,force-direct,DIRECT")
 	w("  - RULE-SET,force-direct-ip,DIRECT,no-resolve")
 	w("")
-	w("  # 7. second tunnel: presets and the user's awg2 list -- the detector leaves")
-	w("  #    them alone. The service writes them empty while awg2 is not loaded")
-	w("  #    or switched off.")
-	w("  - RULE-SET,%s,%s", ctl.PresetsProvider, ctl.Tunnel2Group)
-	w("  - RULE-SET,awg2-hosts-apps,%s", ctl.Tunnel2Group)
-	w("  - RULE-SET,awg2-hosts,%s", ctl.Tunnel2Group)
-	w("  - RULE-SET,awg2-hosts-ip,%s,no-resolve", ctl.Tunnel2Group)
+	w("  # 7. presets use the configured default tunnel order.")
+	w("  - RULE-SET,%s,%s", ctl.PresetsProvider, ctl.DefaultRouteGroup)
 	w("")
 	w("  # 7a. a CDN family going the tunnel's way (ctl/cdnfam.go): its page")
 	w("  #     and CDN hosts all through the tunnel, the ones the cut gets")
 	w("  #     through included -- a media URL is signed for the address the")
 	w("  #     page came from. Written in On only.")
-	w("  - RULE-SET,%s,%s", ctl.FamilyTunnelProvider, ctl.TunnelRestGroup)
+	w("  - RULE-SET,%s,%s", ctl.FamilyTunnelProvider, ctl.DefaultRouteGroup)
 	w("")
 	w("  # 8. the detector's names blocked by name and clean with the ClientHello")
 	w("  #    cut: direct through the outbound that cuts it -- above observe only's")
@@ -939,7 +932,7 @@ func render(c *Conf) (string, error) {
 	w("  #     on these lent ways is refused, as on the cut's own names")
 	w("  - AND,((DST-PORT,443),(RULE-SET,%s),(RULE-SET,%s)),REJECT", ctl.QUICOffProvider, ctl.FamilyDirectProvider)
 	w("  - RULE-SET,%s,%s", ctl.FamilyDirectProvider, ctl.SplitOutbound)
-	w("  - RULE-SET,%s,%s", ctl.HoldProvider, ctl.TunnelRestGroup)
+	w("  - RULE-SET,%s,%s", ctl.HoldProvider, ctl.DefaultRouteGroup)
 	w("  - AND,((DST-PORT,443),(RULE-SET,%s),(RULE-SET,%s)),REJECT", ctl.QUICOffProvider, ctl.InheritProvider)
 	w("  - RULE-SET,%s,%s", ctl.InheritProvider, ctl.SplitOutbound)
 	w("  - AND,((DOMAIN-REGEX,.+),(DST-PORT,443),(RULE-SET,%s),(RULE-SET,%s)),REJECT", ctl.QUICOffProvider, ctl.InheritIPProvider)
@@ -947,7 +940,7 @@ func render(c *Conf) (string, error) {
 	w("")
 	w("  # 12. everything else: the tunnels as the mode says -- in tunnel only")
 	w("  #     never direct")
-	w("  - MATCH,%s", ctl.TunnelRestGroup)
+	w("  - MATCH,%s", ctl.DefaultRouteGroup)
 	return b.String(), nil
 }
 

@@ -164,9 +164,31 @@ func makeSettingsArchivePlan(b []byte, language string) (settingsArchivePlan, er
 	if !ok {
 		return plan, errors.New("settings.json is missing from the archive")
 	}
-	plan.transfer = importPlan{kinds: append([]string(nil), transferOrder...), lists: map[string][]string{}}
+	plan.transfer = importPlan{kinds: append([]string(nil), transferOrder...), lists: map[string][]string{}, routes: map[string][]string{}}
 	for _, kind := range transferOrder {
 		b, ok := files[transferName[kind]]
+		if kind == "routes" && !ok {
+			legacy := []struct{ archive, list string }{
+				{"always-via-tunnels.txt", paths.TunnelList}, {"always-via-tunnel1.txt", paths.Tunnel1List},
+				{"always-via-tunnel2.txt", paths.Tunnel2List}, {"second-tunnel-own-list.txt", paths.Awg2List},
+			}
+			for _, old := range legacy {
+				body, found := files[old.archive]
+				if !found {
+					return plan, fmt.Errorf("%s is missing from the archive", transferName[kind])
+				}
+				doc := ctl.ParseList(string(body), ctl.ListPolicy{AllowAwg2Rule: old.list == paths.Tunnel2List})
+				if len(doc.Issues) != 0 {
+					return plan, fmt.Errorf("%s: %s", old.archive, listIssues(language, doc.Issues))
+				}
+				for _, entry := range doc.Values() {
+					if !strings.EqualFold(entry, ctl.Awg2Rule) {
+						plan.transfer.routes[old.list] = append(plan.transfer.routes[old.list], entry)
+					}
+				}
+			}
+			continue
+		}
 		if !ok {
 			return plan, fmt.Errorf("%s is missing from the archive", transferName[kind])
 		}
@@ -239,13 +261,20 @@ func restoreSettingsArchive(snaps []fileSnapshot, oldPresets []presets.Preset) e
 }
 
 func (s *Server) applySettingsArchive(plan settingsArchivePlan) (appliedImport, error) {
-	result := appliedImport{oldLists: map[string][]string{}, oldPresets: presets.Load(), oldSettings: loadSettings(), newPresets: plan.transfer.presets, newSettings: plan.settings}
+	result := appliedImport{oldLists: map[string][]string{}, oldRoutes: map[string][]string{}, oldPresets: presets.Load(), oldSettings: loadSettings(), newPresets: plan.transfer.presets, newSettings: plan.settings}
 	if err := paths.UserReady(); err != nil {
 		return result, err
 	}
 	var snaps []fileSnapshot
 	files := []string{paths.Settings(), paths.SourceConf(), paths.SourceConf2(), paths.User(paths.AppsList), paths.UserPresets()}
 	for _, kind := range transferOrder {
+		if kind == "routes" {
+			for _, spec := range routeSpecs {
+				files = append(files, paths.User(spec.List))
+				result.oldRoutes[spec.List] = readEntries(spec.List)
+			}
+			continue
+		}
 		if name := listFile[kind]; name != "" {
 			files = append(files, paths.User(name))
 			result.oldLists[kind] = readEntries(name)
@@ -267,6 +296,14 @@ func (s *Server) applySettingsArchive(plan settingsArchivePlan) (appliedImport, 
 	s.listMu.Lock()
 	defer s.listMu.Unlock()
 	for _, kind := range transferOrder {
+		if kind == "routes" {
+			for _, spec := range routeSpecs {
+				if err := writeEntries(spec.List, plan.transfer.routes[spec.List]); err != nil {
+					return fail(err)
+				}
+			}
+			continue
+		}
 		if name := listFile[kind]; name != "" {
 			if err := writeEntries(name, plan.transfer.lists[kind]); err != nil {
 				return fail(err)

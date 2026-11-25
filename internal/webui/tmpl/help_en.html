@@ -18,22 +18,41 @@ only costs a detour.</div>
 <tr><td>2</td><td>Addresses inside the tunnels (their DNS server)</td><td>that tunnel</td></tr>
 <tr><td>3</td><td><a href="/lists#list-block">Forbidden</a>: programs, sites, addresses</td><td>refused, in every mode</td></tr>
 <tr><td>4</td><td>Local networks: the router, printers, shares, <code>.local</code> and <code>.lan</code> names</td><td>direct</td></tr>
-<tr><td>5</td><td><a href="/lists?tunnel-list=tunnels#list-tunnel">Always via — Tunnels</a>: programs, sites, addresses</td><td>awg1; if it is down, awg2 while switched on; never direct</td></tr>
-<tr><td>6</td><td><a href="/lists?tunnel-list=tunnel1#list-tunnel1">Always via — Tunnel1</a></td><td>awg1 only; refused if it is down</td></tr>
-<tr><td>7</td><td><a href="/lists?tunnel-list=tunnel2#list-tunnel2">Always via — Tunnel2</a></td><td>awg2 only; refused if it is down or switched off</td></tr>
+<tr><td>5</td><td><a href="/lists#list-tunnel">Always via</a>: programs, sites, addresses; a route on every row</td><td>the selected awg1/awg2 chain, optionally with direct fallback</td></tr>
+<tr><td>6</td><td><a href="/lists#list-direct">Always direct</a></td><td>direct in every mode</td></tr>
+<tr><td>7</td><td><a href="/lists#presets">Presets</a></td><td>the default tunnel order from Settings</td></tr>
 <tr><td>8</td><td><a href="/lists#list-direct">Always direct</a>: programs, sites, addresses</td><td>direct, in every mode</td></tr>
-<tr><td>9</td><td><a href="/awg2#presets">Second tunnel</a>, while loaded and switched on: presets and your list</td><td>awg2; if it is down, awg1; then direct -- in Tunnel only refused</td></tr>
+<tr><td>9</td><td><a href="/overview#summary">Tunnel switches</a></td><td>disabled tunnels are skipped in every chain</td></tr>
 <tr><td>10</td><td>Everything else, while "Observe only" is chosen</td><td>direct</td></tr>
 <tr><td>11</td><td>Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name)</td><td>direct</td></tr>
 <tr><td>12</td><td>Everything else</td><td>by the mode -- see the tables below</td></tr>
 </table>
-<p>A line written in several lists goes by the one higher in this table: Forbidden → Tunnels → Tunnel1 →
+<p>User-rule priority is: Forbidden → Always via → Always direct → presets → detector.</p>
+<p>Every Always via row has its own route:</p>
+<table>
+<tr><th>Route</th><th>When a tunnel is switched off or has no config</th><th>When every remaining tunnel is unavailable</th></tr>
+<tr><td>awg1</td><td>the row is refused</td><td>refused</td></tr>
+<tr><td>awg2</td><td>the row is refused</td><td>refused</td></tr>
+<tr><td>awg1 → awg2</td><td>the disabled tunnel is skipped</td><td>refused</td></tr>
+<tr><td>awg2 → awg1</td><td>the disabled tunnel is skipped</td><td>refused</td></tr>
+<tr><td>awg1 → awg2 → direct</td><td>the disabled tunnel is skipped</td><td>direct</td></tr>
+<tr><td>awg2 → awg1 → direct</td><td>the disabled tunnel is skipped</td><td>direct</td></tr>
+</table>
+<p>Presets and traffic the detector keeps in a tunnel use the awg1 → awg2 or awg2 → awg1 order selected in Settings. In Observe only, traffic not named by a rule goes direct, while presets keep using the default route.</p>
+<table>
+<tr><th>Enabled tunnels</th><th>On and presets</th><th>Tunnel only</th></tr>
+<tr><td>both</td><td>selected order, then direct</td><td>selected order, without direct</td></tr>
+<tr><td>awg1 only</td><td>awg1 → direct</td><td>awg1 only</td></tr>
+<tr><td>awg2 only</td><td>awg2 → direct</td><td>awg2 only</td></tr>
+<tr><td>none</td><td>direct</td><td>refused</td></tr>
+</table>
+{{if false}}<p>A line written in several lists goes by the one higher in this table: Forbidden → Tunnels → Tunnel1 →
 Tunnel2 → Always direct → the presets and the awg2 list → the detector.</p>
 <p>In the mode tables below, the Tunnels column is the fallback route awg1 → awg2. Tunnel1 and Tunnel2 use
 only their named tunnel in every mode and refuse the connection when it is unavailable. The <code>awg2_rule</code>
 line in Tunnel2 dynamically covers the enabled presets and the awg2 own list.</p>
 <p>How it goes in each auto-switch mode, by the configs loaded. "Clean" are the sites the detector found
-unblocked; the detector works only with awg1 loaded. "awg2 switched on/off" is the <a href="/awg2#awg2switch"><b>Use the second
+unblocked; the detector works only with awg1 loaded. Tunnel switches are on the <a href="/overview#summary"><b>Overview
 tunnel</b></a> switch; with no awg2 loaded its presets and list do nothing.</p>
 <h5>On</h5>
 <table>
@@ -67,7 +86,7 @@ tunnel</b></a> switch; with no awg2 loaded its presets and list do nothing.</p>
 <tr><td>awg1 + awg2, awg2 switched on</td><td>all through awg1; if awg1 is down, awg2; if awg2 is down, refused</td><td>awg2; if it is down, awg1; if both are down, refused</td><td>awg1; if it is down, awg2; if both are down, refused</td><td>direct</td><td>refused</td></tr>
 <tr><td>awg1 + awg2, awg2 switched off</td><td>all through awg1; if awg1 is down, refused</td><td>do nothing (go as the rest, that is refused)</td><td>awg1; if it is down, refused</td><td>direct</td><td>refused</td></tr>
 </table>
-<p>Without the first tunnel's config the service runs all the same: <a href="/live#ltable">Live</a> shows the
+{{end}}<p>Without the first tunnel's config the service runs all the same: <a href="/live#ltable">Live</a> shows the
 traffic, and the lists work as the tables above say. The detector checks nothing then, having no tunnel to
 compare with.</p>
 <p>The core decides once, when a connection opens. When you change a list or a preset here, the
@@ -355,32 +374,21 @@ setting is switched off, and with the service should it die.</p>
 
 {{if .St.Second}}
 <h4 id="h-awg2">The second tunnel</h4>
-<p><a href="/settings#second_tunnel"><b>Second tunnel</b></a> in the settings switches it on and off altogether
-(off by default). Off, it is not connected to its server, and its page and whatever the others say of it are
-gone; its config, presets and list are kept. With its config loaded, switching it restarts the core:
-connections drop for a couple of seconds. The Use the second tunnel switch on its page does not restart the core.</p>
-<p>A second AmneziaWG server for chosen services only: YouTube, Telegram and WhatsApp, Discord, AI services, social networks
-and your own list. It stands below Forbidden, the three Always via lists and Always direct and above the detector,
-which leaves its names alone. Normally, if it is down, its sites go through the first tunnel; if both are down,
-direct -- in Tunnel only refused. The special line <code>awg2_rule</code> in
-<a href="/lists?tunnel-list=tunnel2#list-tunnel2"><b>Always via: Tunnel2</b></a> sends every enabled preset and
-the whole own list from this page through awg2 only. If awg2 is unavailable or switched off, those connections
-fail; changes to the presets and own list are followed automatically. The detector measures the direct path against the first tunnel only: what goes to awg2 is never checked, and without awg1 nothing is, even with auto-switch On. Until it is attached, its
-presets and list route nothing. <a href="/awg2#awg2switch"><b>Use the second tunnel</b></a> on its page switches it off and on: switched off,
-its presets and list route nothing, and what they name goes the way the other lists and the mode send it.</p>
+<p>The <a href="/overview#summary"><b>Overview</b></a> always shows cards for awg1 and awg2. Each card's checkbox independently enables or disables that tunnel; it is disabled until a config is loaded. A disabled tunnel is skipped in every route chain while its config is kept.</p>
+<p><a href="/lists#list-tunnel"><b>Always via</b></a> gives every row its own route. Enabled <a href="/lists#presets"><b>presets</b></a> use the default tunnel order from Settings. The detector compares the direct path with awg1 only; traffic already sent to awg2 by an explicit rule is not checked.</p>
 <p>Presets form an alphabetically sorted tree of <b>AI, Messengers, Social networks, Video hosting and Other services</b>.
 Other services is always last; remaining categories and services are sorted alphabetically.
 A category checkbox selects all its services; a mixed state means a partial selection. The arrow expands
 the list independently. Mouse presses apply before release, and expanded categories survive redraws.
 Other includes GitHub and Reddit. Masks such as <code>+.claude.ai</code> include the domain and its subdomains;
 a desktop process name routes all connections of that process.</p>
-<p>The <a href="/awg2#presets">presets</a> are yours to change: <b>Edit</b> opens a preset's name, category, description and
+<p>The <a href="/lists#presets">presets</a> are yours to change: <b>Edit</b> opens a preset's name, category, description and
 lines (sites, addresses and programs, as in the lists), <b>Delete</b> removes it, <b>Add…</b> makes a new one,
 switched on at once. A change applies at once, like a switch. Once a built-in preset is deleted or edited,
 <b>Restore built-in presets…</b> puts them back as the program ships them; your own presets stay.</p>
 {{else}}
 <h4 id="h-awg2">The second tunnel</h4>
-<p>The program works with one tunnel by default. <a href="/settings#second_tunnel"><b>Second tunnel</b></a> in
+<p>The program always provides two tunnel slots. <a href="/overview#summary"><b>The tunnel cards</b></a>
 the settings switches on a second AmneziaWG server for chosen services only -- YouTube, Telegram, AI services,
 your own list: its page comes up in the menu, where its config is loaded and its presets are chosen. While it
 is off the program does not connect to it, whether its config is loaded or not, and its presets and list route
@@ -448,7 +456,7 @@ connection follows the rules as they are now. ✕ on a row picked closes the con
 <li><b>A row right-clicked</b> opens a menu. On top, what to send: the whole domain (<code>+.example.com</code>),
 the name alone, the address (a list routes by address only the connections made to it by address) or the
 program. {{if .St.Second}}Then where: <b>Direct</b>, <b>Via the tunnel</b>, <b>Via the second
-tunnel</b> (its <a href="/awg2#list-awg2">own list</a>), <b>To a preset</b> (the <a href="/awg2#presets">presets</a>
+tunnel</b> (the <a href="/lists#list-tunnel">Always via list</a>), <b>To a preset</b> (the <a href="/lists#presets">presets</a>
 switched off are greyed: they route nothing), <b>Forbid</b>.{{else}}Then where: <b>Direct</b>, <b>Via the tunnel</b>, <b>Forbid</b>.{{end}} <b>File location</b> opens the program's folder
 with its file picked out — for the detector's checks, DPI Switch's own; greyed for several rows picked and
 on the Verdicts page. On a row picked the menu is for all the rows picked: on top, in place of one name,
@@ -460,11 +468,9 @@ For it to take that route, the menu takes it out of wherever a rule would route 
 come in this order:</p>
 <ol>
 <li><a href="/lists#list-block">Forbidden</a>;</li>
-<li><a href="/lists?tunnel-list=tunnels#list-tunnel">Always via — Tunnels</a>;</li>
-{{if .St.Second}}<li><a href="/lists?tunnel-list=tunnel1#list-tunnel1">Always via — Tunnel1</a>;</li>
-<li><a href="/lists?tunnel-list=tunnel2#list-tunnel2">Always via — Tunnel2</a>;</li>{{end}}
+<li><a href="/lists#list-tunnel">Always via</a> with a route on every row;</li>
 <li><a href="/lists#list-direct">Always direct</a>;</li>
-{{if .St.Second}}<li>the second tunnel: its <a href="/awg2#presets">presets</a> switched on, then its <a href="/awg2#list-awg2">own list</a>;</li>
+{{if .St.Second}}<li>enabled <a href="/lists#presets">presets</a> through the default tunnel route;</li>
 {{else}}{{end}}<li>the detector's verdicts.</li>
 </ol>
 <p>A list whose rules come <b>before</b> the one chosen loses every line routing it, a wider one too:

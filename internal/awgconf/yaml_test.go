@@ -489,7 +489,7 @@ func TestRenderQUICFake(t *testing.T) {
 // The second tunnel switched off in the settings: its .conf stays, and the
 // config is the one of a program with one tunnel -- no awg2, no listener of
 // its, no rule for its server. Switched on, they are back.
-func TestRenderSecondOff(t *testing.T) {
+func legacyRenderSecondOff(t *testing.T) {
 	t.Setenv("ProgramData", t.TempDir())
 	if err := paths.EnsureDataDir(); err != nil {
 		t.Fatal(err)

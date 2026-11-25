@@ -248,15 +248,35 @@ func (v *view) VName(verdict string) string {
 // --- routing lists ---
 
 type lists struct {
-	Direct, Tunnel, Tunnel1, Tunnel2, Block []string
-	Online                                  []netprocs.Proc
+	awg2
+	Direct, Block         []string
+	TunnelEntries, Routes []string
+	DefaultTunnel         string
+	Online                []netprocs.Proc
+}
+
+type routeSpec struct{ ID, List string }
+
+var routeSpecs = []routeSpec{
+	{"awg1", paths.Tunnel1List},
+	{"awg2", paths.Tunnel2List},
+	{"awg1-awg2", paths.TunnelList},
+	{"awg2-awg1", paths.Tunnel21List},
+	{"awg1-awg2-direct", paths.Tunnel12DirectList},
+	{"awg2-awg1-direct", paths.Awg2List},
 }
 
 func listsData() lists {
-	l := lists{Direct: readEntries(paths.DirectList), Tunnel: readEntries(paths.TunnelList),
-		Tunnel1: readEntries(paths.Tunnel1List), Tunnel2: readEntries(paths.Tunnel2List),
-		Block: readEntries(paths.BlockList)}
-	listed := append(append(append(append(append([]string{}, l.Direct...), l.Tunnel...), l.Tunnel1...), l.Tunnel2...), l.Block...)
+	l := lists{Direct: readEntries(paths.DirectList), Block: readEntries(paths.BlockList), awg2: awg2Data(), DefaultTunnel: loadSettings().DefaultTunnel}
+	listed := append(append([]string{}, l.Direct...), l.Block...)
+	for _, route := range routeSpecs {
+		entries := readEntries(route.List)
+		l.TunnelEntries = append(l.TunnelEntries, entries...)
+		for range entries {
+			l.Routes = append(l.Routes, route.ID)
+		}
+		listed = append(listed, entries...)
+	}
 	l.Online = onlineApps(listed)
 	return l
 }

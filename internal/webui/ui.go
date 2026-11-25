@@ -37,7 +37,7 @@ var uiFS embed.FS
 
 // pageNames: the pages of the menu, in its order; help sits apart below
 // it, and the live connections below help
-var pageNames = []string{"overview", "verdicts", "lists", "awg2", "settings", "logs", "help", "live"}
+var pageNames = []string{"overview", "lists", "verdicts", "logs", "settings", "help", "live"}
 
 var pageTmpl = map[string]*template.Template{}
 
@@ -66,6 +66,9 @@ func init() {
 		t := template.New("").Funcs(funcs)
 		// the rows' menu is the layout's: Live and Verdicts share it
 		pats := []string{"tmpl/layout.html", "tmpl/rowmenu.html", "tmpl/" + p + ".html"}
+		if p == "lists" {
+			pats = append(pats, "tmpl/awg2.html")
+		}
 		if p == "help" {
 			pats = append(pats, "tmpl/help_en.html", "tmpl/help_ru.html")
 		}
@@ -146,17 +149,8 @@ func (v *view) Dlg(name string) dlg {
 
 func (v *view) T(en string) string { return tr(v.Lang, en) }
 
-// PageList: the pages the document holds, see layout.html -- the second
-// tunnel's only while it is switched on in the settings
-func (v *view) PageList() string {
-	var out []string
-	for _, p := range pageNames {
-		if p != "awg2" || v.St.Second {
-			out = append(out, p)
-		}
-	}
-	return strings.Join(out, " ")
-}
+// PageList: the pages the one-page document holds, see layout.html.
+func (v *view) PageList() string { return strings.Join(pageNames, " ") }
 
 // Note: a tunnel's state as the core said it, in the page's language
 func (v *view) Note(note string) string { return TunnelNote(v.Lang, note) }
@@ -263,12 +257,6 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v := s.newView(r, page)
-	if page == "awg2" && !v.St.Second {
-		// no such page while the second tunnel is off: a link kept to it
-		// leads to the switch
-		http.Redirect(w, r, "/settings#second_tunnel", http.StatusFound)
-		return
-	}
 	v.Data = s.pageData(r, page, v)
 	render(w, v, "layout")
 }
@@ -285,8 +273,6 @@ func (s *Server) pageData(r *http.Request, page string, v *view) any {
 		return d
 	case "lists":
 		return listsData()
-	case "awg2":
-		return awg2Data()
 	case "settings":
 		return settingsData()
 	case "logs":
@@ -312,12 +298,6 @@ func (s *Server) handleFrag(w http.ResponseWriter, r *http.Request) {
 	// the page the fragment is on, not the fragment's own path: the language
 	// links in a refreshed header must lead back to the page
 	v := &view{Lang: lang(r), Page: page, Path: back(r), St: s.status()}
-	// the second tunnel's page while it is off: none of its parts, but the
-	// frame's -- a window left on it learns from the menu that it is gone
-	if page == "awg2" && !v.St.Second && name != "header" && name != "navitems" && name != "svcbox" {
-		http.NotFound(w, r)
-		return
-	}
 	v.Data = s.pageData(r, page, v)
 	render(w, v, name)
 }
@@ -410,6 +390,7 @@ type status struct {
 	Mode        string `json:"-"` // see ctl.Settings.Mode
 	Endpoint    string `json:"-"`
 	Second      bool   `json:"-"` // the second tunnel is on in the settings: off, the pages say nothing of it
+	Awg1On      bool   `json:"-"`
 	Awg2        bool   `json:"-"` // a second tunnel is attached
 	Awg2Err     string `json:"-"` // why the .conf loaded for it is not
 	Awg2On      bool   `json:"-"` // switched on in the mode chosen, see ctl.Settings.Awg2Active
@@ -508,9 +489,10 @@ func filesInto(st *status) {
 		st.Awg2Err = c.SecondErr.Error()
 	}
 	set := loadSettings()
-	st.Mode, st.Second, st.Awg2On = set.Mode(), set.SecondTunnel, set.Awg2Active()
+	st.Mode, st.Second = set.Mode(), true
+	st.Awg1On, st.Awg2On = set.Awg1Active(), set.Awg2Active()
 	// a tunnel not to be asked of is not alive: no config, or switched off
-	if !st.HasConfig {
+	if !st.HasConfig || !st.Awg1On {
 		st.TunnelAlive, st.TunnelNote = false, ""
 	}
 	if !st.Awg2 || !st.Awg2On {

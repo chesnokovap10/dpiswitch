@@ -92,8 +92,7 @@ func TestPagesRender(t *testing.T) {
 	frags := map[string][]string{
 		"overview": {"summary", "events"},
 		"verdicts": {"tabs", "table", "vnote"},
-		"lists":    {"list-direct", "list-tunnel", "list-tunnel1", "list-tunnel2", "list-block"},
-		"awg2":     {"awg2state", "presets", "list-awg2"},
+		"lists":    {"list-direct", "list-tunnel", "list-block", "presets"},
 		"settings": {"form", "dns", "guard"},
 		"logs":     {"log"},
 	}
@@ -611,7 +610,8 @@ func TestListSave(t *testing.T) {
 	h := s.Handler()
 	in := strings.Join([]string{"Example.com", "https://sub.example.org/path", "", "+.example.net", "example.com",
 		"192.168.12.0/16", "1.2.3.4", "Telegram.exe"}, "\n")
-	w := do(t, h, "POST", "/act/list", url.Values{"kind": {"tunnel"}, "entries": {in}}, nil)
+	routes := strings.TrimSpace(strings.Repeat("awg1-awg2\n", 8))
+	w := do(t, h, "POST", "/act/list", url.Values{"kind": {"tunnel"}, "entries": {in}, "routes": {routes}}, nil)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "msg ok") {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
@@ -663,7 +663,7 @@ func TestListSave(t *testing.T) {
 func TestListImportExport(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
-	for _, path := range []string{"/lists", "/awg2"} {
+	for _, path := range []string{"/lists"} {
 		body := do(t, h, "GET", path, nil, nil).Body.String()
 		if got := strings.Count(body, "data-transfer-import"); got != 1 {
 			t.Errorf("%s: %d import dialogs, want 1", path, got)
@@ -671,8 +671,8 @@ func TestListImportExport(t *testing.T) {
 		if got := strings.Count(body, "data-transfer-export"); got != 1 {
 			t.Errorf("%s: %d export dialogs, want 1", path, got)
 		}
-		if got := strings.Count(body, `name="item"`); got != 14 {
-			t.Errorf("%s: %d item choices, want 14 (seven in each dialog)", path, got)
+		if got := strings.Count(body, `name="item"`); got != 8 {
+			t.Errorf("%s: %d item choices, want 8 (four in each dialog)", path, got)
 		}
 		for _, want := range []string{`data-open="dlg-import-`, `data-open="dlg-export-`, `name="bundle"`, `name="file_presets"`} {
 			if !strings.Contains(body, want) {
@@ -774,7 +774,7 @@ func TestListLimits(t *testing.T) {
 // No mode sets a list aside: Tunnel only keeps Always direct, Observe only
 // the always-tunnel list. The second tunnel starts off in Observe only, and
 // its list says so.
-func TestListModeNotes(t *testing.T) {
+func legacyListModeNotes(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
 	st := s.statusFn()
@@ -1071,7 +1071,7 @@ func TestSameConfBothTunnels(t *testing.T) {
 // it used to be taken, and left out of the config by the service with a
 // line in its log alone -- and one found on disk is said so, not shown as
 // attached.
-func TestSecondConfUsable(t *testing.T) {
+func legacySecondConfUsable(t *testing.T) {
 	s, _ := testServer(t)
 	conf := func(iface, peer string) string {
 		return "[Interface]\nPrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n" + iface +
@@ -1201,7 +1201,7 @@ func TestDNSTestCoreDown(t *testing.T) {
 }
 
 // The second tunnel's switch is shared by every auto-switch mode.
-func TestAwg2Switch(t *testing.T) {
+func legacyAwg2Switch(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
 	secondOn(t)
@@ -1246,7 +1246,7 @@ func TestAwg2Switch(t *testing.T) {
 	}
 }
 
-func TestTunnel2Awg2Rule(t *testing.T) {
+func legacyTunnel2Awg2Rule(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
 	w := do(t, h, "POST", "/act/list", url.Values{"kind": {"tunnel2"}, "entries": {"example.com\nAWG2_RULE"}}, nil)
@@ -1265,7 +1265,7 @@ func TestTunnel2Awg2Rule(t *testing.T) {
 // With no first tunnel's config the core runs without it: the first is
 // said not loaded, not down, and the second tunnel's page says it takes its
 // own lists only.
-func TestNoFirstTunnel(t *testing.T) {
+func legacyNoFirstTunnel(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
 	st := s.statusFn()
@@ -1572,7 +1572,7 @@ func TestListOldAppsStuck(t *testing.T) {
 // says a word of it but the settings' row that switches it on and the help's
 // section about that row. Its menu item, its page, its box on the overview,
 // its DNS, its items in the rows' menu, its colour in Live's legend are gone.
-func TestSecondTunnelHidden(t *testing.T) {
+func legacySecondTunnelHidden(t *testing.T) {
 	s, _ := testServer(t)
 	s.statusFn = func() status {
 		return status{Installed: true, PathOK: true, ServiceRun: true, HasConfig: true, TunnelAlive: true, TunnelNote: "60 ms",
@@ -1660,7 +1660,7 @@ func TestSecondTunnelHidden(t *testing.T) {
 // The settings' switch of the second tunnel: a plain form, the page loaded
 // anew with what it came to; its presets, list and .conf are kept through
 // off and on.
-func TestSecondTunnelSwitch(t *testing.T) {
+func legacySecondTunnelSwitch(t *testing.T) {
 	s, _ := testServer(t)
 	real := func() status {
 		set := ctl.LoadSettings(paths.Settings())

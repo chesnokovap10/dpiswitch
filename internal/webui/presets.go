@@ -42,7 +42,7 @@ func (v *view) PresetCategories() []presets.Category {
 }
 
 func (v *view) PresetGroups() []presetGroup {
-	a, _ := v.Data.(awg2)
+	a := presetsViewData(v.Data)
 	var out []presetGroup
 	for _, c := range v.PresetCategories() {
 		g := presetGroup{ID: c.ID, Title: c.Title}
@@ -99,7 +99,7 @@ type presetDlg struct {
 // A shipped preset's name and note are shown in the page's language.
 func (v *view) PresetDlg(id string) presetDlg {
 	d := presetDlg{V: v, Key: "new", ID: id, Category: "other"}
-	a, _ := v.Data.(awg2)
+	a := presetsViewData(v.Data)
 	if id != "" {
 		d.Key = id
 		for _, p := range a.Presets {
@@ -114,6 +114,17 @@ func (v *view) PresetDlg(id string) presetDlg {
 		d.Category = dr.Category
 	}
 	return d
+}
+
+func presetsViewData(data any) awg2 {
+	switch d := data.(type) {
+	case awg2:
+		return d
+	case lists:
+		return d.awg2
+	default:
+		return awg2{}
+	}
 }
 
 // presetLines: a preset's box as it is kept -- a site, an address or a
@@ -227,20 +238,22 @@ func (s *Server) actPresetSave(w http.ResponseWriter, r *http.Request) {
 	if ok && n == 0 && id == "" {
 		ok, msg = done(r, nil, "Preset added and switched on")
 	}
-	s.part(w, r, "awg2", "presets", ok, msg)
+	s.part(w, r, "lists", "presets", ok, msg)
 }
 
 // refusePreset: the presets again, the dialog open on what was sent, with
 // why it was not saved -- the list in its place lost what had been typed
 func (s *Server) refusePreset(w http.ResponseWriter, r *http.Request, d presetDraft) {
-	v := &view{Lang: lang(r), Page: "awg2", Path: back(r), St: s.status()}
+	v := &view{Lang: lang(r), Page: "lists", Path: back(r), St: s.status()}
 	a := awg2Data()
 	if _, ok := findPreset(presetsOf(a), d.ID); d.ID != "" && !ok {
 		v.Msg = &flash{false, tr(lang(r), errPresetGone.Error())}
 	} else {
 		a.Draft = &d
 	}
-	v.Data = a
+	pageData := listsData()
+	pageData.awg2 = a
+	v.Data = pageData
 	render(w, v, "presets")
 }
 
@@ -296,7 +309,7 @@ func (s *Server) actPresetDel(w http.ResponseWriter, r *http.Request) {
 	if ok && n == 0 {
 		ok, msg = done(r, nil, "Preset deleted")
 	}
-	s.part(w, r, "awg2", "presets", ok, msg)
+	s.part(w, r, "lists", "presets", ok, msg)
 }
 
 // actPresetRestore puts the shipped presets back as the program ships them:
@@ -360,5 +373,5 @@ func (s *Server) actPresetRestore(w http.ResponseWriter, r *http.Request) {
 	if ok && n == 0 {
 		ok, msg = done(r, nil, "Built-in presets restored")
 	}
-	s.part(w, r, "awg2", "presets", ok, msg)
+	s.part(w, r, "lists", "presets", ok, msg)
 }

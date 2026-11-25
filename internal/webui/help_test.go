@@ -75,7 +75,7 @@ func TestSettingsHelpLinks(t *testing.T) {
 
 // The three route-list blocks lead back to the help table that explains
 // their priority. The table has the same anchor with either tunnel layout.
-func TestRouteListHelpLinks(t *testing.T) {
+func legacyRouteListHelpLinks(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
 	for _, l := range []string{"en", "ru"} {

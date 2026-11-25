@@ -26,15 +26,9 @@ const Awg2Rule = "awg2_rule"
 // Awg2RuleProvider is the generated classical provider behind Awg2Rule.
 const Awg2RuleProvider = "awg2-rule"
 
-// setAside: the body a user list's copies are written with when the
-// settings set it aside, nil when they take it. The second tunnel not
-// loaded, or switched off, routes nothing, its list included. (Tunnel only
-// set the direct list aside up to 1.5: it is the way out past the tunnels
-// in that mode now.)
+// setAside is retained as the hook used by list synchronization. Tunnel
+// switches now change select groups, so no user list is hidden.
 func setAside(name string, s Settings) []byte {
-	if name == paths.Awg2List && !s.Awg2Carries() {
-		return awg2OffBody
-	}
 	return nil
 }
 
@@ -132,11 +126,7 @@ func providerOf(name string) string { return strings.TrimSuffix(name, ".txt") }
 
 // ListProviders: the core's rule-providers of a user list
 func ListProviders(name string) []string {
-	p := []string{providerOf(name), providerOf(paths.IPList(name)), providerOf(paths.AppList(name))}
-	if name == paths.Tunnel2List || name == paths.Awg2List {
-		p = append(p, Awg2RuleProvider)
-	}
-	return p
+	return []string{providerOf(name), providerOf(paths.IPList(name)), providerOf(paths.AppList(name))}
 }
 
 // SyncUserFiles copies what changed and returns the rule-providers whose
@@ -237,12 +227,9 @@ func hasAwg2Rule(b []byte) bool {
 	return false
 }
 
-// wantPresets: the core's presets file as the settings make it -- the ones
-// switched on, none while the second tunnel is not loaded or switched off
+// wantPresets: the core's presets file as the settings make it. Presets use
+// the default tunnel route and therefore are not tied to AWG2 availability.
 func wantPresets(s Settings) []byte {
-	if !s.Awg2Carries() {
-		return awg2OffBody
-	}
 	return presetsBody(presets.Load(), s.Awg2Presets)
 }
 

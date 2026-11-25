@@ -1,7 +1,6 @@
 package ctl
 
 import (
-	"fmt"
 	"os"
 	"sort"
 
@@ -124,7 +123,8 @@ func Defaults() Config {
 // presets' file holds the ones switched on only.
 func pinnedLists() []string {
 	return []string{paths.Awg2Hosts(), paths.ForceTunnel(), paths.Data(paths.Tunnel1List),
-		paths.Data(paths.Tunnel2List), paths.Awg2Rule(), paths.ForceBlock(), paths.Presets()}
+		paths.Data(paths.Tunnel2List), paths.Data(paths.Tunnel21List), paths.Data(paths.Tunnel12DirectList),
+		paths.Awg2Rule(), paths.ForceBlock(), paths.Presets()}
 }
 
 // Run loops until the context is cancelled. It is the single
@@ -223,20 +223,8 @@ func Run(ctx context.Context, cfg Config) {
 			return
 		}
 		if coreChanged(ns, set, haveSet) && cfg.OnCoreChange != nil {
-			// the overview shows these lines: with the second tunnel off, not
-			// a word of it but that it was switched
-			dns2, switched := "", ""
-			if ns.SecondTunnel {
-				dns2 = fmt.Sprintf(", second tunnel %v", ns.TunnelDNS2)
-			}
-			switch {
-			case haveSet && ns.SecondTunnel && !set.SecondTunnel:
-				switched = "; second tunnel switched on"
-			case haveSet && !ns.SecondTunnel && set.SecondTunnel:
-				switched = "; second tunnel switched off"
-			}
-			log.Printf("core settings changed (DNS: direct %v, tunnel %v%s; IPv6 %v; DNS cache %v%s) -- restarting the core",
-				ns.DirectDNS, ns.TunnelDNS, dns2, ns.IPv6, ns.DNSCache, switched)
+			log.Printf("core settings changed (DNS: direct %v, awg1 %v, awg2 %v; IPv6 %v; DNS cache %v) -- restarting the core",
+				ns.DirectDNS, ns.TunnelDNS, ns.TunnelDNS2, ns.IPv6, ns.DNSCache)
 			cfg.OnCoreChange()
 		}
 		cfg = onSettingsChanged(cfg, ns, a, st, netID)
@@ -520,7 +508,6 @@ func LoadCachedNet(path, id string) Snapshot {
 func coreChanged(ns, set Settings, haveSet bool) bool {
 	if !haveSet {
 		set = DefaultSettings()
-		set.SecondTunnel = Awg2Loaded()
 	}
 	return !ns.SameCore(set)
 }

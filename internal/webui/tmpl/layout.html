@@ -42,6 +42,8 @@
     <span class="chip"><span class="dot ok"></span>{{.T "Service running"}}</span>
     {{if not $s.HasConfig}}
     <span class="chip" title="{{.T "Without it what the lists do not name goes direct"}}"><span class="dot warn"></span>awg1 {{.T "no config loaded"}}</span>
+    {{else if not $s.Awg1On}}
+    <span class="chip" title="{{$s.Endpoint}}"><span class="dot"></span>awg1 {{.T "switched off"}}</span>
     {{else}}
     <span class="chip" data-tunnel="awg1" title="{{$s.Endpoint}}">{{template "tunchip" (tun . "awg1" $s.TunnelAlive $s.TunnelNote)}}</span>
     {{end}}
@@ -72,19 +74,13 @@
   {{end}}
 {{end}}
 
-{{/* data-second: whether the second tunnel is on in the settings. The
-   document is drawn with it or without -- this menu, the pages, the rows'
-   menu -- and one drawn the other way is loaded anew (see static/ui.js). */}}
 {{define "navitems"}}{{$s := .St}}
-  <a href="/overview" data-second="{{if $s.Second}}1{{else}}0{{end}}" class="{{if eq .Page "overview"}}on{{end}}">{{.T "Overview"}}</a>
-  <a href="/verdicts" class="{{if eq .Page "verdicts"}}on{{end}}">{{.T "Verdicts"}} <span class="n">{{$s.DirectCount}} · {{$s.Blocked}}</span></a>
+  <a href="/overview" class="{{if eq .Page "overview"}}on{{end}}">{{.T "Overview"}}</a>
   <a href="/lists" class="{{if eq .Page "lists"}}on{{end}}">{{.T "Routing lists"}}</a>
-  {{if $s.Second}}<a href="/awg2" class="{{if eq .Page "awg2"}}on{{end}}">{{.T "Second tunnel"}} <span class="n">{{if $s.Awg2}}{{$s.Presets}} · {{$s.Awg2Hosts}}{{else}}{{.T "off"}}{{end}}</span></a>{{end}}
-  <a href="/settings" class="{{if eq .Page "settings"}}on{{end}}">{{.T "Settings"}}</a>
+  <a href="/verdicts" class="{{if eq .Page "verdicts"}}on{{end}}">{{.T "Verdicts"}} <span class="n">{{$s.DirectCount}} · {{$s.Blocked}}</span></a>
   <a href="/logs" class="{{if eq .Page "logs"}}on{{end}}">{{.T "Logs"}}</a>
-  <hr>
+  <a href="/settings" class="{{if eq .Page "settings"}}on{{end}}">{{.T "Settings"}}</a>
   <a href="/help" class="{{if eq .Page "help"}}on{{end}}">{{.T "Help"}}</a>
-  <hr>
   <a href="/live" class="{{if eq .Page "live"}}on{{end}}">Live</a>
 {{end}}
 
@@ -154,16 +150,10 @@
     <label class="bundle-file"><span>{{.T "ZIP archive (optional)"}}<small>dpi-switch-routing.zip</small></span><input type="file" name="bundle" accept=".zip,application/zip"></label>
     <p class="hint">{{.T "A separate file below overrides the same file from the ZIP archive."}}</p>
     <div class="transfer-group {{if eq .Page "lists"}}current{{end}}">
-      <h3>{{.T "Routing lists"}} <small>5</small></h3>
+      <h3>{{.T "Routing lists"}} <small>4</small></h3>
       <label class="transfer-row"><input type="checkbox" name="item" value="direct"><span>{{.T "Always direct"}}<small>always-direct.txt</small></span><input type="file" name="file_direct" data-transfer-file accept=".txt,.yaml,.yml,text/plain,application/yaml"></label>
-      <label class="transfer-row"><input type="checkbox" name="item" value="tunnel"><span>{{.T "Always via Tunnels"}}<small>always-via-tunnels.txt</small></span><input type="file" name="file_tunnel" data-transfer-file accept=".txt,.yaml,.yml,text/plain,application/yaml"></label>
-      <label class="transfer-row"><input type="checkbox" name="item" value="tunnel1"><span>{{.T "Always via Tunnel1"}}<small>always-via-tunnel1.txt</small></span><input type="file" name="file_tunnel1" data-transfer-file accept=".txt,.yaml,.yml,text/plain,application/yaml"></label>
-      <label class="transfer-row"><input type="checkbox" name="item" value="tunnel2"><span>{{.T "Always via Tunnel2"}}<small>always-via-tunnel2.txt</small></span><input type="file" name="file_tunnel2" data-transfer-file accept=".txt,.yaml,.yml,text/plain,application/yaml"></label>
+      <label class="transfer-row"><input type="checkbox" name="item" value="routes"><span>{{.T "Always via"}}<small>always-via.json</small></span><input type="file" name="file_routes" data-transfer-file accept=".json,application/json"></label>
       <label class="transfer-row"><input type="checkbox" name="item" value="block"><span>{{.T "Forbidden"}}<small>forbidden.txt</small></span><input type="file" name="file_block" data-transfer-file accept=".txt,.yaml,.yml,text/plain,application/yaml"></label>
-    </div>
-    <div class="transfer-group {{if eq .Page "awg2"}}current{{end}}">
-      <h3>{{.T "Second tunnel"}} <small>2</small></h3>
-      <label class="transfer-row"><input type="checkbox" name="item" value="awg2"><span>{{.T "Your own list"}}<small>second-tunnel-own-list.txt</small></span><input type="file" name="file_awg2" data-transfer-file accept=".txt,.yaml,.yml,text/plain,application/yaml"></label>
       <label class="transfer-row"><input type="checkbox" name="item" value="presets"><span>{{.T "Presets"}}<small>presets.json</small></span><input type="file" name="file_presets" data-transfer-file accept=".json,application/json"></label>
     </div>
     <div class="actions"><span class="msg bad transfer-error" hidden></span><span class="spacer"></span><button type="button" data-close>{{.T "Cancel"}}</button><button class="primary" data-busy="{{.T "Importing…"}}">{{.T "Import"}}</button></div>
@@ -174,16 +164,10 @@
     <h2>{{.T "Export routing data"}}</h2>
     <p class="hint">{{.T "One selected item is downloaded as its original file; several items are downloaded together as a ZIP archive."}}</p>
     <div class="transfer-group {{if eq .Page "lists"}}current{{end}}">
-      <h3>{{.T "Routing lists"}} <small>5</small></h3>
+      <h3>{{.T "Routing lists"}} <small>4</small></h3>
       <label class="transfer-row compact"><input type="checkbox" name="item" value="direct"><span>{{.T "Always direct"}}<small>always-direct.txt</small></span></label>
-      <label class="transfer-row compact"><input type="checkbox" name="item" value="tunnel"><span>{{.T "Always via Tunnels"}}<small>always-via-tunnels.txt</small></span></label>
-      <label class="transfer-row compact"><input type="checkbox" name="item" value="tunnel1"><span>{{.T "Always via Tunnel1"}}<small>always-via-tunnel1.txt</small></span></label>
-      <label class="transfer-row compact"><input type="checkbox" name="item" value="tunnel2"><span>{{.T "Always via Tunnel2"}}<small>always-via-tunnel2.txt</small></span></label>
+      <label class="transfer-row compact"><input type="checkbox" name="item" value="routes"><span>{{.T "Always via"}}<small>always-via.json</small></span></label>
       <label class="transfer-row compact"><input type="checkbox" name="item" value="block"><span>{{.T "Forbidden"}}<small>forbidden.txt</small></span></label>
-    </div>
-    <div class="transfer-group {{if eq .Page "awg2"}}current{{end}}">
-      <h3>{{.T "Second tunnel"}} <small>2</small></h3>
-      <label class="transfer-row compact"><input type="checkbox" name="item" value="awg2"><span>{{.T "Your own list"}}<small>second-tunnel-own-list.txt</small></span></label>
       <label class="transfer-row compact"><input type="checkbox" name="item" value="presets"><span>{{.T "Presets"}}<small>presets.json</small></span></label>
     </div>
     <div class="actions"><span class="msg bad transfer-error" hidden></span><span class="spacer"></span><button type="button" data-close>{{.T "Cancel"}}</button><button class="primary">{{.T "Export"}}</button></div>

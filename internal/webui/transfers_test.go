@@ -103,7 +103,7 @@ func TestTransferMultiExportZIP(t *testing.T) {
 	if err := writeEntries(paths.DirectList, []string{"one.example"}); err != nil {
 		t.Fatal(err)
 	}
-	rec := do(t, s.Handler(), http.MethodGet, "/lists/export?item=direct&item=awg2", nil, nil)
+	rec := do(t, s.Handler(), http.MethodGet, "/lists/export?item=direct&item=routes", nil, nil)
 	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/zip" {
 		t.Fatalf("export: %d %s", rec.Code, rec.Header().Get("Content-Type"))
 	}
@@ -115,7 +115,7 @@ func TestTransferMultiExportZIP(t *testing.T) {
 	for _, f := range zr.File {
 		names = append(names, f.Name)
 	}
-	if !slices.Equal(names, []string{"always-direct.txt", "second-tunnel-own-list.txt"}) {
+	if !slices.Equal(names, []string{"always-direct.txt", "always-via.json"}) {
 		t.Fatalf("zip files: %v", names)
 	}
 }

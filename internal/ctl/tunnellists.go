@@ -13,42 +13,43 @@ import (
 	"dpiswitch/internal/paths"
 )
 
-// Where a connection goes past the lists that name it depends on the mode
-// and on the second tunnel switched on or off, and a group's members are
-// fixed in the config: changing them there would restart the core. So each
-// route has a select group, whose member the controller picks within a
-// second of a change, as the lists follow the settings:
-//
-//   - the always-tunnels list: the first tunnel alone, or -- the second
-//     switched on -- the first and then the second; never direct, in every
-//     mode.
-//   - the second tunnel's presets and list: the second, then the first,
-//     then direct -- or, in tunnel only, refused instead of direct.
-//   - what no list names: the first tunnel, then -- switched on -- the
-//     second, then direct; in tunnel only the same tunnels, never direct.
-//
-// The config lists the member the settings ask for first: a core started
-// meanwhile begins with it.
+// Every route is a select group over fixed fallback groups. The controller
+// changes the selected member within a second when either tunnel switch, the
+// global mode or the default order changes; the core need not restart.
 const (
-	TunnelListsGroup  = "tunnel-lists"  // select: the always-tunnel list
-	Tunnel2ListsGroup = "tunnel2-lists" // select: the strict Tunnel2 list
-	Tunnel2Group      = "tunnel2"       // select: the presets and the awg2 list
-	TunnelRestGroup   = "tunnel-rest"   // select: MATCH
+	DefaultTunnel12 = "awg1-awg2"
+	DefaultTunnel21 = "awg2-awg1"
 
-	TunnelOneGroup     = "tunnel-one"      // the first; nothing else
-	TunnelAnyGroup     = "tunnel-any"      // the first, then the second; nothing else
-	TunnelSoftGroup    = "tunnel"          // the first, then direct
-	TunnelSoftAnyGroup = "tunnel-soft-any" // the first, then the second, then direct
-	Tunnel2SoftGroup   = "tunnel2-soft"    // the second, then the first, then direct
-	Tunnel2StrictGroup = "tunnel2-strict"  // the second, then the first; nothing else
-	Tunnel2OnlyGroup   = "tunnel2-only"    // the second alone; nothing else
+	RouteAwg1Group     = "route-awg1"
+	RouteAwg2Group     = "route-awg2"
+	Route12Group       = "route-awg1-awg2"
+	Route21Group       = "route-awg2-awg1"
+	Route12DirectGroup = "route-awg1-awg2-direct"
+	Route21DirectGroup = "route-awg2-awg1-direct"
+	DefaultRouteGroup  = "tunnel-default"
+
+	// Old names remain for compatibility with older generated configs and
+	// tests; new configs use the Route* and DefaultRoute groups above.
+	TunnelListsGroup  = "tunnel-lists"
+	Tunnel2ListsGroup = "tunnel2-lists"
+	Tunnel2Group      = "tunnel2"
+	TunnelRestGroup   = "tunnel-rest"
+
+	TunnelOneGroup       = "tunnel-one"        // the first; nothing else
+	TunnelAnyGroup       = "tunnel-any"        // the first, then the second; nothing else
+	TunnelSoftGroup      = "tunnel"            // the first, then direct
+	TunnelSoftAnyGroup   = "tunnel-soft-any"   // the first, then the second, then direct
+	Tunnel2SoftGroup     = "tunnel2-soft"      // the second, then the first, then direct
+	Tunnel2OnlySoftGroup = "tunnel2-only-soft" // the second, then direct
+	Tunnel2StrictGroup   = "tunnel2-strict"    // the second, then the first; nothing else
+	Tunnel2OnlyGroup     = "tunnel2-only"      // the second alone; nothing else
 )
 
 // Awg2Attached: whether the core's config has a second tunnel. Set by
 // awgconf, which decides it; this default only looks for the .conf and the
 // settings' switch.
 var Awg2Attached = func() bool {
-	return Awg2Loaded() && LoadSettings(paths.Settings()).SecondTunnel
+	return Awg2Loaded()
 }
 
 // Awg2Loaded: whether a .conf is loaded for the second tunnel, usable or
@@ -64,19 +65,48 @@ func (s Settings) Awg2Carries() bool { return s.Awg2Active() && Awg2Attached() }
 
 // RouteChoice: the member each select group takes under the settings.
 func RouteChoice(s Settings) map[string]string {
-	on, strict := s.Awg2Active(), s.Mode() == ModeTunnel
-	pick := func(yes bool, a, b string) string {
-		if yes {
-			return a
+	one, two := s.Awg1Active(), s.Awg2Active()
+	strict := func(reverse bool) string {
+		switch {
+		case one && two && reverse:
+			return Tunnel2StrictGroup
+		case one && two:
+			return TunnelAnyGroup
+		case one:
+			return TunnelOneGroup
+		case two:
+			return Tunnel2OnlyGroup
+		default:
+			return "REJECT"
 		}
-		return b
+	}
+	soft := func(reverse bool) string {
+		switch {
+		case one && two && reverse:
+			return Tunnel2SoftGroup
+		case one && two:
+			return TunnelSoftAnyGroup
+		case one:
+			return TunnelSoftGroup
+		case two:
+			return Tunnel2OnlySoftGroup
+		default:
+			return "DIRECT"
+		}
+	}
+	reverse := s.DefaultTunnel == DefaultTunnel21
+	def := soft(reverse)
+	if s.Mode() == ModeTunnel {
+		def = strict(reverse)
 	}
 	return map[string]string{
-		TunnelListsGroup:  pick(on, TunnelAnyGroup, TunnelOneGroup),
-		Tunnel2ListsGroup: pick(on, Tunnel2OnlyGroup, "REJECT"),
-		Tunnel2Group:      pick(strict, Tunnel2StrictGroup, Tunnel2SoftGroup),
-		TunnelRestGroup: pick(strict, pick(on, TunnelAnyGroup, TunnelOneGroup),
-			pick(on, TunnelSoftAnyGroup, TunnelSoftGroup)),
+		RouteAwg1Group:     map[bool]string{true: TunnelOneGroup, false: "REJECT"}[one],
+		RouteAwg2Group:     map[bool]string{true: Tunnel2OnlyGroup, false: "REJECT"}[two],
+		Route12Group:       strict(false),
+		Route21Group:       strict(true),
+		Route12DirectGroup: soft(false),
+		Route21DirectGroup: soft(true),
+		DefaultRouteGroup:  def,
 	}
 }
 
@@ -132,4 +162,12 @@ func syncRoutes(a *api) {
 		}
 		routesSet[group] = want
 	}
+}
+
+// SyncRoutesNow applies tunnel switches and route order immediately for a UI
+// action, before existing connections are closed and reconnect.
+func SyncRoutesNow(apiAddr, secret string) {
+	listMu.Lock()
+	defer listMu.Unlock()
+	syncRoutes(newAPI(apiAddr, secret))
 }

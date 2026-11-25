@@ -14,8 +14,18 @@ func tr(lang, en string) string {
 }
 
 var ru = map[string]string{
-	"DoQ cannot use port 53":      "DoQ не может использовать порт 53",
-	"DoQ does not use a URL path": "В адресе DoQ не используется путь URL",
+	"Enabled presets use the default tunnel order from Settings. Always via rows and Always direct have higher priority. A switch applies at once, open connections included.": "Включённые пресеты используют порядок туннелей по умолчанию из настроек. Строки «Всегда через» и «Всегда напрямую» имеют более высокий приоритет. Изменение применяется сразу, включая открытые соединения.",
+	"Never through a tunnel, whatever the detector finds, in every mode. Below Forbidden and Always via; above presets and the detector.":                                      "Никогда не через туннель, что бы ни определил детектор, во всех режимах. Ниже «Запрещено» и «Всегда через», выше пресетов и детектора.",
+	"Each row uses its selected route in every mode. Routes without direct fail closed when every enabled tunnel in the chain is unavailable.":                                 "Каждая строка использует выбранный маршрут во всех режимах. Маршруты без direct блокируются, если все включённые туннели цепочки недоступны.",
+	"Refused in every mode. Above every other list: a row here and elsewhere is refused.":                                                                                      "Блокируется во всех режимах. Выше всех остальных списков: строка здесь и в другом списке блокируется.",
+	"traffic selected by the default route and matching Always via rows":                                                                                                       "трафик маршрута по умолчанию и подходящие строки «Всегда через»",
+	"Put every setting on this page back to its default? DNS included. Presets and lists are not touched.":                                                                     "Вернуть все настройки на этой странице к значениям по умолчанию, включая DNS? Пресеты и списки не изменятся.",
+	"Default tunnel routing": "Маршрутизация: туннель по умолчанию",
+	"Used by enabled presets and traffic the detector sends through a tunnel. Always via rows have higher priority.": "Используется включёнными пресетами и трафиком, который детектор направляет через туннель. Строки «Всегда через» имеют более высокий приоритет.",
+	"Choose a route for every entry":        "Выберите маршрут для каждой строки",
+	"Adds it to Always via with route awg2": "Добавляет в «Всегда через» с маршрутом awg2",
+	"DoQ cannot use port 53":                "DoQ не может использовать порт 53",
+	"DoQ does not use a URL path":           "В адресе DoQ не используется путь URL",
 
 	"":                             "",
 	"Video hosting":                "Видеохостинги",

@@ -155,6 +155,23 @@ function initEntryEditors(root) {
     const t = box.querySelector('textarea');
     const side = box.querySelector('.entry-types');
     if (!t || !side) continue;
+    const routeSide = box.querySelector('.entry-routes');
+    const routeValues = box.querySelector('.route-values');
+    const routeTemplate = box.querySelector('.route-options');
+    let oldLines = t.value.replace(/\r/g, '').split('\n');
+    let routes = routeValues ? routeValues.value.replace(/\r/g, '').split('\n') : [];
+    const syncRouteValue = () => { if (routeValues) routeValues.value = routes.join('\n'); };
+    const reconcileRoutes = () => {
+      if (!routeValues) return;
+      const next = t.value.replace(/\r/g, '').split('\n'), used = new Set(), kept = [];
+      for (let i = 0; i < next.length; i++) {
+        let at = i < oldLines.length && next[i] === oldLines[i] ? i : -1;
+        if (at < 0) at = oldLines.findIndex((line, j) => !used.has(j) && line === next[i]);
+        if (at >= 0) used.add(at);
+        kept.push(at >= 0 && routes[at] ? routes[at] : (box.dataset.default || 'awg1-awg2'));
+      }
+      oldLines = next; routes = kept; syncRouteValue();
+    };
     let timer, serial = 0;
     const draw = rows => {
       side.replaceChildren(...rows.map(row => {
@@ -167,6 +184,17 @@ function initEntryEditors(root) {
         return line;
       }));
       side.scrollTop = t.scrollTop;
+      if (routeSide && routeTemplate) {
+        routeSide.replaceChildren(...rows.map((row, i) => {
+          const line = document.createElement('div');
+          if (row.kind === 'blank' || row.kind === 'comment') return line;
+          const select = routeTemplate.content.querySelector('select').cloneNode(true);
+          select.value = routes[i] || box.dataset.default || 'awg1-awg2';
+          select.addEventListener('change', () => { routes[i] = select.value; syncRouteValue(); });
+          line.append(select); return line;
+        }));
+        routeSide.scrollTop = t.scrollTop;
+      }
     };
     const classify = async () => {
       const mine = ++serial;
@@ -177,9 +205,10 @@ function initEntryEditors(root) {
       const rows = await r.json().catch(() => null);
       if (mine === serial && rows) draw(rows);
     };
-    const later = () => { clearTimeout(timer); timer = setTimeout(classify, 120); };
+    const later = () => { reconcileRoutes(); clearTimeout(timer); timer = setTimeout(classify, 120); };
     t.addEventListener('input', later);
-    t.addEventListener('scroll', () => { side.scrollTop = t.scrollTop; });
+    t.addEventListener('scroll', () => { side.scrollTop = t.scrollTop; if (routeSide) routeSide.scrollTop = t.scrollTop; });
+    syncRouteValue();
     classify();
   }
 }
@@ -543,26 +572,6 @@ document.addEventListener('change', e => {
   swap(f.action, fd, f.dataset.swap, el.name, presetOp);
 });
 
-// A control with data-submit sends its form the moment it changes -- a plain
-// form, whose answer is the page loaded anew: the second tunnel's switch.
-document.addEventListener('change', e => {
-  const el = e.target;
-  if (el.dataset && el.dataset.submit !== undefined && el.form) el.form.requestSubmit();
-});
-
-// The document is drawn with the second tunnel or without it (see
-// layout.html): the menu's item, its page, the items of the rows' menu, what
-// the other pages say of it. The menu, refreshed, says which the settings
-// have now -- switched in another window -- and a document drawn the other
-// way is loaded anew; not over a list being written and not saved.
-const secondDrawn = (document.querySelector('#navitems [data-second]') || {dataset: {}}).dataset.second;
-function secondSeen(nav) {
-  const m = nav.querySelector('[data-second]');
-  if (!m || secondDrawn === undefined || m.dataset.second === secondDrawn) return;
-  for (const t of document.querySelectorAll('textarea')) if (t.value !== t.defaultValue) return;
-  location.reload();
-}
-
 document.addEventListener('click', e => {
   const o = e.target.closest('[data-open]');
   if (o) byId(o.dataset.open).showModal();
@@ -713,7 +722,6 @@ async function poll(el) {
     reblink(el);
     regroup(el);
     el._html = html;
-    if (el.id === 'navitems') secondSeen(el);
     if (follow) el.scrollTop = el.scrollHeight;
     else if (!at || !backTo(el, at)) el.scrollTop = top;
     const sec = el.closest('.pg');

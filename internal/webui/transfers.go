@@ -24,10 +24,11 @@ const (
 	transferRequestMax = 36 << 20
 )
 
-var transferOrder = []string{"direct", "tunnel", "tunnel1", "tunnel2", "block", "awg2", "presets"}
+var transferOrder = []string{"direct", "routes", "block", "presets"}
 
 var transferName = map[string]string{
 	"direct":  "always-direct.txt",
+	"routes":  "always-via.json",
 	"tunnel":  "always-via-tunnels.txt",
 	"tunnel1": "always-via-tunnel1.txt",
 	"tunnel2": "always-via-tunnel2.txt",
@@ -37,6 +38,14 @@ var transferName = map[string]string{
 }
 
 func transferBody(kind string) ([]byte, error) {
+	if kind == "routes" {
+		d := listsData()
+		rows := make([]struct{ Entry, Route string }, len(d.TunnelEntries))
+		for i := range rows {
+			rows[i].Entry, rows[i].Route = d.TunnelEntries[i], d.Routes[i]
+		}
+		return json.MarshalIndent(rows, "", "  ")
+	}
 	if name := listFile[kind]; name != "" {
 		return listBody(readEntries(name)), nil
 	}
@@ -85,7 +94,7 @@ func (s *Server) handleListExport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		contentType := "text/plain; charset=utf-8"
-		if kinds[0] == "presets" {
+		if kinds[0] == "presets" || kinds[0] == "routes" {
 			contentType = "application/json"
 		}
 		w.Header().Set("Content-Type", contentType)
@@ -181,11 +190,41 @@ func transferUpload(r *http.Request, field string) ([]byte, bool, error) {
 type importPlan struct {
 	kinds   []string
 	lists   map[string][]string
+	routes  map[string][]string
 	presets []presets.Preset
 	hasPS   bool
 }
 
 func addTransferToPlan(plan *importPlan, kind string, b []byte, lang string) error {
+	if kind == "routes" {
+		var rows []struct{ Entry, Route string }
+		if err := json.Unmarshal(b, &rows); err != nil {
+			return fmt.Errorf("%s: %w", transferName[kind], err)
+		}
+		valid := map[string]string{}
+		for _, spec := range routeSpecs {
+			valid[spec.ID] = spec.List
+		}
+		seen := map[string]bool{}
+		for i, row := range rows {
+			file := valid[row.Route]
+			if file == "" {
+				return fmt.Errorf("%s: row %d: unknown route %q", transferName[kind], i+1, row.Route)
+			}
+			doc := ctl.ParseList(row.Entry, ctl.ListPolicy{})
+			if len(doc.Issues) != 0 || len(doc.Values()) != 1 {
+				return fmt.Errorf("%s: row %d: invalid entry", transferName[kind], i+1)
+			}
+			entry := doc.Values()[0]
+			key := strings.ToLower(entry)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			plan.routes[file] = append(plan.routes[file], entry)
+		}
+		return nil
+	}
 	if kind == "presets" {
 		ps, err := presets.DecodeFile(b)
 		if err != nil {
@@ -212,7 +251,7 @@ func transferPlan(r *http.Request) (importPlan, error) {
 	if err != nil {
 		return plan, err
 	}
-	plan.kinds, plan.lists = kinds, map[string][]string{}
+	plan.kinds, plan.lists, plan.routes = kinds, map[string][]string{}, map[string][]string{}
 	fromZIP := map[string][]byte{}
 	if b, ok, err := transferUpload(r, "bundle"); err != nil {
 		return plan, err
@@ -274,12 +313,13 @@ func restoreSnapshots(snapshots []fileSnapshot) error {
 
 type appliedImport struct {
 	oldLists                 map[string][]string
+	oldRoutes                map[string][]string
 	oldPresets, newPresets   []presets.Preset
 	oldSettings, newSettings ctl.Settings
 }
 
 func (s *Server) applyImport(plan importPlan) (appliedImport, error) {
-	result := appliedImport{oldLists: map[string][]string{}, oldPresets: presets.Load(), oldSettings: loadSettings()}
+	result := appliedImport{oldLists: map[string][]string{}, oldRoutes: map[string][]string{}, oldPresets: presets.Load(), oldSettings: loadSettings()}
 	result.newPresets, result.newSettings = result.oldPresets, result.oldSettings
 	if err := paths.UserReady(); err != nil {
 		return result, err
@@ -288,6 +328,21 @@ func (s *Server) applyImport(plan importPlan) (appliedImport, error) {
 	defer s.listMu.Unlock()
 	var snapshots []fileSnapshot
 	for _, kind := range plan.kinds {
+		if kind == "routes" {
+			for _, spec := range routeSpecs {
+				result.oldRoutes[spec.List] = readEntries(spec.List)
+				snap, err := takeSnapshot(paths.User(spec.List))
+				if err != nil {
+					return result, err
+				}
+				snapshots = append(snapshots, snap)
+				if err := writeEntries(spec.List, plan.routes[spec.List]); err != nil {
+					restoreSnapshots(snapshots)
+					return result, err
+				}
+			}
+			continue
+		}
 		name := listFile[kind]
 		if name == "" {
 			continue
@@ -412,6 +467,14 @@ func (s *Server) actTransferImport(w http.ResponseWriter, r *http.Request) {
 	moved := 0
 	var closeErrs []error
 	for _, kind := range plan.kinds {
+		if kind == "routes" {
+			for _, spec := range routeSpecs {
+				n, err := closeEntriesChange(spec.List, applied.oldRoutes[spec.List], plan.routes[spec.List])
+				moved += n
+				closeErrs = append(closeErrs, err)
+			}
+			continue
+		}
 		if name := listFile[kind]; name != "" {
 			n, err := closeEntriesChange(name, applied.oldLists[kind], plan.lists[kind])
 			moved += n

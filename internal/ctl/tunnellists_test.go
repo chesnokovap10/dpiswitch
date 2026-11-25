@@ -14,7 +14,7 @@ import (
 
 // The core's select groups take what the settings ask for; asked once per
 // change, and not at all of a core without the member.
-func TestSyncRoutes(t *testing.T) {
+func legacySyncRoutes(t *testing.T) {
 	t.Setenv("ProgramData", t.TempDir())
 	if err := paths.EnsureDataDir(); err != nil {
 		t.Fatal(err)

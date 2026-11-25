@@ -567,7 +567,7 @@ func (s *Server) actPreset(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(selected) == 0 {
 		// deleted in another window meanwhile
-		s.part(w, r, "awg2", "presets", false, tr(lang(r), errPresetGone.Error()))
+		s.part(w, r, "lists", "presets", false, tr(lang(r), errPresetGone.Error()))
 		return
 	}
 	chosen := map[string]bool{}
@@ -610,66 +610,38 @@ func (s *Server) actPreset(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	ok, msg := saved(r, err, n, cerr)
-	s.part(w, r, "awg2", "presets", ok, msg)
+	s.part(w, r, "lists", "presets", ok, msg)
 }
 
-// actSecond switches the second tunnel on or off in the settings (see
-// ctl.Settings.SecondTunnel): off, the program works with one tunnel and
-// the pages say nothing of a second. A plain form, the page loaded anew:
-// the menu, the pages and the rows' menu are drawn with it or without. With
-// a .conf loaded for it the service restarts the core, which gains or loses
-// awg2 -- every open connection goes with the old core, the second tunnel's
-// among them.
-func (s *Server) actSecond(w http.ResponseWriter, r *http.Request) {
-	on := r.FormValue("second_tunnel") == "1"
-	restart := false
-	err := paths.UserReady()
-	if err == nil {
-		_, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
-			was := *set
-			set.SecondTunnel = on
-			restart = !set.SameCore(was)
-			return nil
-		})
-	}
-	restart = restart && s.status().ServiceRun
-	var note string
-	switch {
-	case on && restart:
-		note = "Second tunnel switched on: the core restarts, the tunnel drops for a couple of seconds"
-	case on && !ctl.Awg2Loaded():
-		note = "Second tunnel switched on: attach its config on its page"
-	case on:
-		note = "Second tunnel switched on"
-	case restart:
-		note = "Second tunnel switched off: the core restarts, the tunnel drops for a couple of seconds"
-	default:
-		note = "Second tunnel switched off"
-	}
-	s.redirect(w, r, err, note)
-}
-
-// actAwg2 switches the second tunnel on or off in the auto-switch mode
-// chosen; each mode keeps its own (see ctl.Settings.Awg2Active). Switched
-// off, its presets and list route nothing. What the switch moves is closed,
-// as a preset's switch does.
-func (s *Server) actAwg2(w http.ResponseWriter, r *http.Request) {
+// actTunnel independently enables or disables either loaded tunnel. Route
+// select groups are changed before open connections reconnect.
+func (s *Server) actTunnel(w http.ResponseWriter, r *http.Request) {
+	name := r.FormValue("name")
 	on := r.FormValue("value") == "1"
+	if name != "awg1" && name != "awg2" {
+		http.Error(w, "unknown tunnel", http.StatusBadRequest)
+		return
+	}
 	err := paths.UserReady()
 	if err == nil {
 		_, err = ctl.UpdateSettings(paths.Settings(), func(set *ctl.Settings) error {
-			set.SetAwg2(on)
+			if name == "awg1" {
+				set.Awg1On = on
+			} else {
+				set.SetAwg2(on)
+			}
 			return nil
 		})
 	}
 	n := 0
 	var cerr error
 	if err == nil {
-		providers := append([]string{ctl.PresetsProvider}, ctl.ListProviders(paths.Awg2List)...)
-		n, cerr = closeMoved(providers, ctl.Awg2Moved(), ctl.Awg2Synced)
+		secret := ctl.SecretFromConfig(paths.Config())
+		ctl.SyncRoutesNow(apiAddr, secret)
+		n, cerr = ctl.CloseConns(apiAddr, secret, func(ctl.Conn) bool { return true })
 	}
 	ok, msg := saved(r, err, n, cerr)
-	s.part(w, r, "awg2", "awg2state", ok, msg)
+	s.part(w, r, "overview", "summary", ok, msg)
 }
 
 // rulesMatch: the connections a preset's core rules take, or took
@@ -746,7 +718,7 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 		return n, nil
 	}
 	switch field {
-	case "auto_switch", "families", "split_hello", "quic_fake", "ipv6", "dns_cache", "udp_guard", "nrpt", "ui_open", "clean_ttl_min", "fail_ttl_min", "max_backoff_min", "slow_pct", "attempts":
+	case "auto_switch", "families", "split_hello", "quic_fake", "ipv6", "dns_cache", "udp_guard", "nrpt", "ui_open", "default_tunnel", "clean_ttl_min", "fail_ttl_min", "max_backoff_min", "slow_pct", "attempts":
 	default:
 		http.Error(w, "unknown setting", http.StatusBadRequest)
 		return
@@ -785,6 +757,11 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 					return errors.New("unknown way to open the UI")
 				}
 				set.UIOpen = val
+			case "default_tunnel":
+				if val != ctl.DefaultTunnel12 && val != ctl.DefaultTunnel21 {
+					return errors.New("unknown default tunnel route")
+				}
+				set.DefaultTunnel = val
 			case "clean_ttl_min":
 				set.CleanTTLMin, err = num()
 			case "fail_ttl_min":
@@ -807,6 +784,11 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 	}
 	if field == "ipv6" || field == "dns_cache" {
 		note = s.coreNote(restart)
+	}
+	if err == nil && field == "default_tunnel" {
+		secret := ctl.SecretFromConfig(paths.Config())
+		ctl.SyncRoutesNow(apiAddr, secret)
+		_, err = ctl.CloseConns(apiAddr, secret, func(ctl.Conn) bool { return true })
 	}
 	ok, msg := done(r, err, note)
 	s.partField(w, r, field, ok, msg)

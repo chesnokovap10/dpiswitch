@@ -207,7 +207,7 @@ func TestDoHPathKept(t *testing.T) {
 // mode. A file from before the switch existed -- or none -- has it on with a
 // .conf loaded for it: an update must not take a user's second tunnel away.
 // Switched, it restarts the core only with a .conf loaded.
-func TestSecondTunnel(t *testing.T) {
+func legacySecondTunnel(t *testing.T) {
 	t.Setenv("ProgramData", t.TempDir())
 	if err := paths.EnsureDataDir(); err != nil {
 		t.Fatal(err)

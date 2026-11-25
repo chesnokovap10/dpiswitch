@@ -78,19 +78,25 @@ func User(name string) string { return filepath.Join(UserDir(), name) }
 // directory, one per kind -- the names under the list's own name, the
 // addresses in IPList, the programs in AppList.
 const (
-	DirectList  = "force-direct.txt"
-	TunnelList  = "force-tunnel.txt"
-	Tunnel1List = "force-tunnel1.txt"
-	Tunnel2List = "force-tunnel2.txt"
-	BlockList   = "force-block.txt"
-	Awg2List    = "awg2-hosts.txt"
+	DirectList         = "force-direct.txt"
+	TunnelList         = "force-tunnel.txt"
+	Tunnel1List        = "force-tunnel1.txt"
+	Tunnel2List        = "force-tunnel2.txt"
+	Tunnel21List       = "force-tunnel2-tunnel1.txt"
+	Tunnel12DirectList = "force-tunnel1-tunnel2-direct.txt"
+	BlockList          = "force-block.txt"
+	// Awg2List keeps its historical filename, but is now the common Always
+	// via list's awg2 -> awg1 -> direct route. This migrates every existing
+	// own-list entry without losing it.
+	Awg2List = "awg2-hosts.txt"
 	// AppsList: the programs bypassing the tunnel, a user list of its own
 	// before the direct list took programs; read until that list is saved
 	AppsList = "force-direct-apps.txt"
 )
 
 // UserLists: every list the user edits
-var UserLists = []string{DirectList, TunnelList, Tunnel1List, Tunnel2List, BlockList, Awg2List}
+var UserLists = []string{DirectList, TunnelList, Tunnel1List, Tunnel2List,
+	Tunnel21List, Tunnel12DirectList, Awg2List, BlockList}
 
 // IPList, AppList: the files of a user list's addresses and programs
 func IPList(list string) string  { return strings.TrimSuffix(list, ".txt") + "-ip.txt" }

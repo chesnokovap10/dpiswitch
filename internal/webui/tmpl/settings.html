@@ -4,18 +4,14 @@
      lines to pick from (see regroup in ui.js) */}}
   <div class="sets">
   <div id="sform" data-sync="/frag/settings/form">{{template "form" .}}</div>
-  {{/* the second tunnel's switch sends this form, a plain one: the page comes
-     back whole, drawn with the second tunnel or without it. It cannot sit
-     inside the settings' form, whose controls each save by themselves. */}}
-  <form id="secondform" method="post" action="/act/second" hidden></form>
   <details class="grp" id="dns" data-grp="dns" data-fresh="/frag/settings/dns">{{template "dns" .}}</details>
   </div>
-  <div class="actions" style="padding-top:0">
+  <p class="muted settings-apply-note">{{.T "Every change applies at once: the detector picks it up within a second."}}</p>
+  <div class="actions settings-buttons">
     <button type="button" data-open="dlg-settings-archive">{{.T "Load / save settings…"}}</button>
-    <form method="post" action="/act/defaults" data-confirm="{{if .St.Second}}{{.T "Put every setting on this page back to its default? DNS included, and the second tunnel switched off. Presets and lists are not touched."}}{{else}}{{.T "Put every setting on this page back to its default? DNS included. Lists are not touched."}}{{end}}">
+    <form method="post" action="/act/defaults" data-confirm="{{.T "Put every setting on this page back to its default? DNS included. Presets and lists are not touched."}}">
       <button>{{.T "Reset to defaults…"}}</button>
     </form>
-    <span class="muted">{{.T "Every change applies at once: the detector picks it up within a second."}}</span>
   </div>
 </div>
 <dialog id="dlg-settings-archive" class="settings-archive-dlg">
@@ -92,9 +88,9 @@
 
   <details class="grp" data-grp="network"><summary>{{.T "Network"}}</summary><div class="rows">
 
-  <div><a class="hl" href="/help#h-awg2">{{.T "Second tunnel"}}</a></div>
-  <div><select id="second_tunnel" name="second_tunnel" form="secondform" data-submit><option value="1" {{if $s.SecondTunnel}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.SecondTunnel}}selected{{end}}>{{.T "Off"}}</option></select></div>
-  <div class="h"><span>{{.T "A second server for chosen services only: its presets and your own list. Off: one tunnel, and nothing of the second is shown. Changing it restarts the core while its config is loaded."}}</span></div>
+  <div>{{.T "Default tunnel routing"}}</div>
+  <div><select id="default_tunnel" name="default_tunnel"><option value="awg1-awg2" {{if eq $s.DefaultTunnel "awg1-awg2"}}selected{{end}}>awg1→awg2</option><option value="awg2-awg1" {{if eq $s.DefaultTunnel "awg2-awg1"}}selected{{end}}>awg2→awg1</option></select></div>
+  <div class="h"><span>{{.T "Used by enabled presets and traffic the detector sends through a tunnel. Always via rows have higher priority."}}</span>{{template "rowmsg" ($d.MsgFor "default_tunnel")}}</div>
 
   <div><a class="hl" href="/help#h-ipv6">IPv6</a></div>
   <div><select name="ipv6"><option value="1" {{if $s.IPv6}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.IPv6}}selected{{end}}>{{.T "Off"}}</option></select></div>

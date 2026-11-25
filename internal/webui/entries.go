@@ -48,7 +48,7 @@ func readEntriesFile(name string) []string {
 			}
 		}
 	}
-	out, _ := normEntriesFor(lines, name == paths.Tunnel2List)
+	out, _ := normEntriesFor(lines, false)
 	return out
 }
 
@@ -246,6 +246,10 @@ func closeEntriesChange(name string, old, entries []string) (int, error) {
 // for a Save that was easy to miss.
 func (s *Server) actList(w http.ResponseWriter, r *http.Request) {
 	kind := r.FormValue("kind")
+	if kind == "tunnel" {
+		s.actRouteList(w, r)
+		return
+	}
 	name := listFile[kind]
 	if name == "" {
 		http.Error(w, "unknown list", http.StatusBadRequest)
@@ -284,6 +288,87 @@ func (s *Server) actList(w http.ResponseWriter, r *http.Request) {
 		msg = listParseReport(lang(r), msg, doc, redundantListEntries(entries), shadowedListEntries(kind, entries))
 	}
 	s.part(w, r, page, "list-"+kind, ok, msg)
+}
+
+// actRouteList saves the common Always via editor. The hidden routes field
+// has one route ID for every visible line in entries.
+func (s *Server) actRouteList(w http.ResponseWriter, r *http.Request) {
+	text, routeText := r.FormValue("entries"), r.FormValue("routes")
+	if r.FormValue("op") == "add" {
+		a := strings.TrimSpace(r.FormValue("add"))
+		if a == "" {
+			s.refuse(w, r, "lists", "tunnel", splitLines(text), tr(lang(r), "Pick a program from the list first"))
+			return
+		}
+		if text = strings.TrimRight(text, "\r\n"); text != "" {
+			text += "\n"
+			routeText = strings.TrimRight(routeText, "\r\n") + "\n"
+		}
+		text += a
+		def := loadSettings().DefaultTunnel
+		if def == ctl.DefaultTunnel12 {
+			routeText += "awg1-awg2"
+		} else {
+			routeText += "awg2-awg1"
+		}
+	}
+	raw, rawRoutes := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n"), strings.Split(strings.ReplaceAll(routeText, "\r\n", "\n"), "\n")
+	byFile := map[string][]string{}
+	shown, shownRoutes := []string{}, []string{}
+	valid := map[string]string{}
+	for _, spec := range routeSpecs {
+		valid[spec.ID] = spec.List
+	}
+	seen := map[string]bool{}
+	for i, line := range raw {
+		doc := ctl.ParseList(line, ctl.ListPolicy{})
+		if len(doc.Issues) != 0 {
+			s.refuse(w, r, "lists", "tunnel", raw, listIssues(lang(r), doc.Issues))
+			return
+		}
+		values := doc.Values()
+		if len(values) == 0 {
+			continue
+		}
+		route := ""
+		if i < len(rawRoutes) {
+			route = strings.TrimSpace(rawRoutes[i])
+		}
+		file := valid[route]
+		if file == "" {
+			s.refuse(w, r, "lists", "tunnel", raw, tr(lang(r), "Choose a route for every entry"))
+			return
+		}
+		for _, entry := range values {
+			key := strings.ToLower(entry)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			byFile[file] = append(byFile[file], entry)
+			shown, shownRoutes = append(shown, entry), append(shownRoutes, route)
+		}
+	}
+	if len(listBody(shown)) > ctl.UserListMax {
+		s.refuse(w, r, "lists", "tunnel", raw, tr(lang(r), errListTooLarge.Error()))
+		return
+	}
+	moved := 0
+	var err, closeErr error
+	for _, spec := range routeSpecs {
+		var n int
+		n, err, closeErr = s.saveEntries(spec.List, byFile[spec.List])
+		moved += n
+		if err != nil || closeErr != nil {
+			break
+		}
+	}
+	ok, msg := saved(r, err, moved, closeErr)
+	v := &view{Lang: lang(r), Page: "lists", Path: back(r), St: s.status(), Msg: &flash{ok, msg}}
+	d := listsData()
+	d.TunnelEntries, d.Routes = shown, shownRoutes
+	v.Data = d
+	render(w, v, "list-tunnel")
 }
 
 type listShadow struct{ entry, list string }
@@ -440,11 +525,8 @@ func (s *Server) refuse(w http.ResponseWriter, r *http.Request, page, kind strin
 		case "direct":
 			d.Direct = lines
 		case "tunnel":
-			d.Tunnel = lines
-		case "tunnel1":
-			d.Tunnel1 = lines
-		case "tunnel2":
-			d.Tunnel2 = lines
+			d.TunnelEntries = lines
+			d.Routes = splitLines(r.FormValue("routes"))
 		case "block":
 			d.Block = lines
 		}
