@@ -380,15 +380,17 @@ setting is switched off, and with the service should it die.</p>
 <h4 id="h-awg2">The second tunnel</h4>
 <p>The <a href="/overview#summary"><b>Overview</b></a> always shows cards for awg1 and awg2. Each card's checkbox independently enables or disables that tunnel; it is disabled until a config is loaded. A disabled tunnel is skipped in every route chain while its config is kept.</p>
 <p><a href="/lists#list-tunnel"><b>Routing rules</b></a> give every row its own route. Enabled <a href="/lists#presets"><b>presets</b></a> strictly use the tunnel order from Settings with no direct fallback when no explicit rule or <code>enabled_presets</code> override matches. The detector compares the direct path with awg1 only; traffic already sent to awg2 by an explicit rule is not checked.</p>
-<p>Presets form an alphabetically sorted tree of <b>AI, Messengers, Social networks, Video hosting and Other services</b>.
-Other services is always last; remaining categories and services are sorted alphabetically.
+<p>Presets form an alphabetically sorted tree of <b>AI, Messengers, Social networks, Video hosting and Other services</b>, plus categories you create.
+Other services is always last; remaining categories and services are sorted alphabetically in the selected language.
 A category checkbox selects all its services; a mixed state means a partial selection. The arrow expands
 the list independently. Mouse presses apply before release, and expanded categories survive redraws.
 Other includes GitHub and Reddit. Masks such as <code>+.claude.ai</code> include the domain and its subdomains;
 a desktop process name routes all connections of that process.</p>
 <p>The <a href="/lists#presets">presets</a> are yours to change: <b>Edit</b> opens a preset's name, category, description and
-lines (sites, addresses and programs, as in the lists), <b>Delete</b> removes it, <b>Add…</b> makes a new one,
-switched on at once. A change applies at once, like a switch. Once a built-in preset is deleted or edited,
+lines (sites, addresses and programs, as in the lists), <b>Delete</b> removes it, <b>Add preset…</b> makes a new one,
+switched on at once. <b>Add category…</b> creates a new tree root; a custom root can be renamed or deleted.
+Deleting a root safely moves its presets to Other services. Built-in roots cannot be deleted, but empty ones are hidden.
+A change applies at once, like a switch. Once a built-in preset is deleted or edited,
 <b>Restore built-in presets…</b> puts them back as the program ships them; your own presets stay.</p>
 {{else}}
 <h4 id="h-awg2">The second tunnel</h4>

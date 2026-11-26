@@ -90,6 +90,60 @@ func TestPresetCategoryOrder(t *testing.T) {
 	}
 }
 
+func TestCustomPresetCategoryCRUD(t *testing.T) {
+	s, _ := testServer(t)
+	h := s.Handler()
+	post := func(path string, form url.Values) string {
+		t.Helper()
+		w := do(t, h, http.MethodPost, path, form, map[string]string{"Cookie": "lang=ru"})
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", path, w.Code, w.Body.String())
+		}
+		return w.Body.String()
+	}
+
+	body := post("/act/presetcategorysave", url.Values{"title": {"Игры"}})
+	if !strings.Contains(body, "Категория добавлена") || !strings.Contains(body, "Игры") {
+		t.Fatalf("category not added: %s", body)
+	}
+	catalog := presets.LoadCatalog()
+	if len(catalog.Categories) != 1 || catalog.Categories[0].Title != "Игры" {
+		t.Fatalf("categories: %+v", catalog.Categories)
+	}
+	id := catalog.Categories[0].ID
+	body = post("/act/presetsave", url.Values{"title": {"Мои игры"}, "category": {id}, "lines": {"game.example"}})
+	if !strings.Contains(body, "Пресет добавлен и включён") {
+		t.Fatalf("preset not added: %s", body)
+	}
+	catalog = presets.LoadCatalog()
+	mine := catalog.Presets[len(catalog.Presets)-1]
+	if mine.Category != id {
+		t.Fatalf("preset category %q, want %q", mine.Category, id)
+	}
+
+	body = post("/act/presetcategorysave", url.Values{"id": {id}, "title": {"Игровые сервисы"}})
+	if !strings.Contains(body, "Категория переименована") || presets.LoadCatalog().Categories[0].Title != "Игровые сервисы" {
+		t.Fatalf("category not renamed: %s", body)
+	}
+	body = post("/act/presetcategorydel", url.Values{"id": {id}})
+	if !strings.Contains(body, "пресетов перемещено в «Прочее»: 1") {
+		t.Fatalf("category not deleted: %s", body)
+	}
+	catalog = presets.LoadCatalog()
+	if len(catalog.Categories) != 0 {
+		t.Fatalf("category remains: %+v", catalog.Categories)
+	}
+	got, ok := findPreset(catalog.Presets, mine.ID)
+	if !ok || got.Category != "other" {
+		t.Fatalf("preset lost instead of moved: %+v", got)
+	}
+
+	body = post("/act/presetcategorydel", url.Values{"id": {"ai"}})
+	if !strings.Contains(body, "msg bad") || !presets.BuiltinCategory("ai") {
+		t.Fatalf("built-in category deletion accepted: %s", body)
+	}
+}
+
 // Optional static fixture for browser checks. testServer isolates the real
 // service, API and user settings; the browser gets only rendered HTML/assets.
 func TestPresetTreeBrowserFixture(t *testing.T) {

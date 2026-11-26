@@ -287,5 +287,14 @@ func (s *Server) apiV1Presets(w http.ResponseWriter, r *http.Request) {
 	for _, p := range presets.Load() {
 		out = append(out, item{p, on[p.ID]})
 	}
-	writeJSON(w, map[string]any{"presets": out})
+	type category struct {
+		ID      string `json:"id"`
+		Title   string `json:"title"`
+		Builtin bool   `json:"builtin"`
+	}
+	var categories []category
+	for _, c := range presets.Categories() {
+		categories = append(categories, category{c.ID, c.Title, !c.Custom})
+	}
+	writeJSON(w, map[string]any{"categories": categories, "presets": out})
 }

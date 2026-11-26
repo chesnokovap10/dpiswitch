@@ -237,7 +237,7 @@ func makeSettingsArchivePlan(b []byte, language string) (settingsArchivePlan, er
 	return plan, nil
 }
 
-func restoreSettingsArchive(snaps []fileSnapshot, oldPresets []presets.Preset) error {
+func restoreSettingsArchive(snaps []fileSnapshot, oldCatalog presets.Catalog) error {
 	var errs []error
 	for i := len(snaps) - 1; i >= 0; i-- {
 		snap := snaps[i]
@@ -250,14 +250,15 @@ func restoreSettingsArchive(snaps []fileSnapshot, oldPresets []presets.Preset) e
 		}
 	}
 	err := errors.Join(errs...)
-	if pErr := presets.Replace(oldPresets); pErr != nil {
+	if pErr := presets.ReplaceCatalog(oldCatalog); pErr != nil {
 		err = errors.Join(err, pErr)
 	}
 	return err
 }
 
 func (s *Server) applySettingsArchive(plan settingsArchivePlan) (appliedImport, error) {
-	result := appliedImport{oldLists: map[string][]string{}, oldRoutes: map[string][]string{}, oldPresets: presets.Load(), oldSettings: loadSettings(), newPresets: plan.transfer.presets, newSettings: plan.settings}
+	oldCatalog := presets.LoadCatalog()
+	result := appliedImport{oldLists: map[string][]string{}, oldRoutes: map[string][]string{}, oldCategories: oldCatalog.Categories, oldPresets: oldCatalog.Presets, oldSettings: loadSettings(), newCategories: plan.transfer.categories, newPresets: plan.transfer.presets, newSettings: plan.settings}
 	if err := paths.UserReady(); err != nil {
 		return result, err
 	}
@@ -284,7 +285,7 @@ func (s *Server) applySettingsArchive(plan settingsArchivePlan) (appliedImport, 
 		snaps = append(snaps, snap)
 	}
 	fail := func(err error) (appliedImport, error) {
-		if restoreErr := restoreSettingsArchive(snaps, result.oldPresets); restoreErr != nil {
+		if restoreErr := restoreSettingsArchive(snaps, presets.Catalog{Categories: result.oldCategories, Presets: result.oldPresets}); restoreErr != nil {
 			err = errors.Join(err, fmt.Errorf("rollback: %w", restoreErr))
 		}
 		return result, err
@@ -309,7 +310,7 @@ func (s *Server) applySettingsArchive(plan settingsArchivePlan) (appliedImport, 
 	if err := paths.RemoveRetry(paths.User(paths.AppsList)); err != nil {
 		return fail(err)
 	}
-	if err := presets.Replace(plan.transfer.presets); err != nil {
+	if err := presets.ReplaceCatalog(presets.Catalog{Categories: plan.transfer.categories, Presets: plan.transfer.presets}); err != nil {
 		return fail(err)
 	}
 	for _, c := range []struct {

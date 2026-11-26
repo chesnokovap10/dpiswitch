@@ -10,6 +10,7 @@ import (
 
 	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/paths"
+	"dpiswitch/internal/presets"
 )
 
 func apiRequest(t *testing.T, h http.Handler, method, target string, body any, headers map[string]string) *httptest.ResponseRecorder {
@@ -90,5 +91,15 @@ func TestAPIV1SemanticResources(t *testing.T) {
 		if w.Code != 200 || !strings.Contains(w.Header().Get("Content-Type"), "application/json") {
 			t.Errorf("%s: %d %s", path, w.Code, w.Body.String())
 		}
+	}
+	w := apiRequest(t, h, http.MethodGet, "/api/v1/presets", nil, nil)
+	var catalog struct {
+		Categories []struct {
+			ID      string `json:"id"`
+			Builtin bool   `json:"builtin"`
+		} `json:"categories"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &catalog); err != nil || len(catalog.Categories) != len(presets.BuiltinCategories()) || !catalog.Categories[0].Builtin {
+		t.Fatalf("preset categories API: %s", w.Body.String())
 	}
 }

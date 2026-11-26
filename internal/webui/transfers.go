@@ -51,7 +51,7 @@ func transferBody(kind string) ([]byte, error) {
 		return listBody(readEntries(name)), nil
 	}
 	if kind == "presets" {
-		return presets.EncodeFile(presets.Load())
+		return presets.EncodeCatalogFile(presets.LoadCatalog())
 	}
 	return nil, errors.New("unknown transfer item")
 }
@@ -189,11 +189,12 @@ func transferUpload(r *http.Request, field string) ([]byte, bool, error) {
 }
 
 type importPlan struct {
-	kinds   []string
-	lists   map[string][]string
-	routes  map[string][]string
-	presets []presets.Preset
-	hasPS   bool
+	kinds      []string
+	lists      map[string][]string
+	routes     map[string][]string
+	categories []presets.Category
+	presets    []presets.Preset
+	hasPS      bool
 }
 
 func addTransferToPlan(plan *importPlan, kind string, b []byte, lang string) error {
@@ -227,11 +228,11 @@ func addTransferToPlan(plan *importPlan, kind string, b []byte, lang string) err
 		return nil
 	}
 	if kind == "presets" {
-		ps, err := presets.DecodeFile(b)
+		catalog, err := presets.DecodeCatalogFile(b)
 		if err != nil {
 			return fmt.Errorf("%s: %w", transferName[kind], err)
 		}
-		plan.presets, plan.hasPS = ps, true
+		plan.categories, plan.presets, plan.hasPS = catalog.Categories, catalog.Presets, true
 		return nil
 	}
 	doc := ctl.ParseList(string(b), ctl.ListPolicy{AllowEnabledPresets: listFile[kind] != ""})
@@ -313,15 +314,17 @@ func restoreSnapshots(snapshots []fileSnapshot) error {
 }
 
 type appliedImport struct {
-	oldLists                 map[string][]string
-	oldRoutes                map[string][]string
-	oldPresets, newPresets   []presets.Preset
-	oldSettings, newSettings ctl.Settings
+	oldLists                     map[string][]string
+	oldRoutes                    map[string][]string
+	oldCategories, newCategories []presets.Category
+	oldPresets, newPresets       []presets.Preset
+	oldSettings, newSettings     ctl.Settings
 }
 
 func (s *Server) applyImport(plan importPlan) (appliedImport, error) {
-	result := appliedImport{oldLists: map[string][]string{}, oldRoutes: map[string][]string{}, oldPresets: presets.Load(), oldSettings: loadSettings()}
-	result.newPresets, result.newSettings = result.oldPresets, result.oldSettings
+	oldCatalog := presets.LoadCatalog()
+	result := appliedImport{oldLists: map[string][]string{}, oldRoutes: map[string][]string{}, oldCategories: oldCatalog.Categories, oldPresets: oldCatalog.Presets, oldSettings: loadSettings()}
+	result.newCategories, result.newPresets, result.newSettings = result.oldCategories, result.oldPresets, result.oldSettings
 	if err := paths.UserReady(); err != nil {
 		return result, err
 	}
@@ -374,11 +377,11 @@ func (s *Server) applyImport(plan importPlan) (appliedImport, error) {
 	if !plan.hasPS {
 		return result, nil
 	}
-	if err := presets.Replace(plan.presets); err != nil {
+	if err := presets.ReplaceCatalog(presets.Catalog{Categories: plan.categories, Presets: plan.presets}); err != nil {
 		restoreSnapshots(snapshots)
 		return result, err
 	}
-	result.newPresets = plan.presets
+	result.newCategories, result.newPresets = plan.categories, plan.presets
 	known := map[string]bool{}
 	for _, p := range plan.presets {
 		known[p.ID] = true
@@ -390,7 +393,7 @@ func (s *Server) applyImport(plan importPlan) (appliedImport, error) {
 			return nil
 		})
 		if err != nil {
-			presets.Replace(result.oldPresets)
+			presets.ReplaceCatalog(presets.Catalog{Categories: result.oldCategories, Presets: result.oldPresets})
 			restoreSnapshots(snapshots)
 			return result, err
 		}

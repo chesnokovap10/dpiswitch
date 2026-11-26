@@ -51,9 +51,12 @@
     {{range .PresetGroups}}
     <details data-grp="presets-{{.ID}}" class="preset-group">
       <summary>
-        <label><input type="checkbox" name="category:{{.ID}}" data-preset-group {{if .On}}checked{{end}} {{if .Mixed}}data-mixed="1" aria-checked="mixed"{{else}}aria-checked="{{.On}}"{{end}}>
-          <span>{{$v.T .Title}}</span></label>
+        <label><input type="checkbox" name="category:{{.ID}}" data-preset-group {{if .On}}checked{{end}} {{if not .Presets}}disabled{{end}} {{if .Mixed}}data-mixed="1" aria-checked="mixed"{{else}}aria-checked="{{.On}}"{{end}}>
+          <span>{{.Title}}</span></label>
         <small data-preset-count>{{.Selected}} / {{len .Presets}}</small>
+        {{if .Custom}}<button type="button" data-open="dlg-category-{{.ID}}">{{$v.T "Rename"}}</button>
+        <button class="danger" form="categorydel" name="id" value="{{.ID}}" data-busy="{{$v.T "Deleting…"}}"
+          data-confirm="{{$v.Tf "Delete the category “%s”? Its presets will be moved to Other." .Title}}">{{$v.T "Delete"}}</button>{{end}}
       </summary>
       <div class="preset-children">
     {{range .Presets}}
@@ -72,7 +75,8 @@
     {{end}}
   </form>
   <div class="actions">
-    <button type="button" data-open="dlg-preset-new">{{.T "Add…"}}</button>
+    <button type="button" data-open="dlg-preset-new">{{.T "Add preset…"}}</button>
+    <button type="button" data-open="dlg-category-new-category">{{.T "Add category…"}}</button>
     {{if .Data.Restorable}}
     <form method="post" action="/act/presetrestore" data-swap="presets"
       data-confirm="{{.T "Put the program's presets back as it ships them? The deleted ones come back switched off, the edited ones lose your changes. Your own presets stay as they are."}}">
@@ -82,9 +86,25 @@
     {{template "msg" .}}
     {{/* the rows' delete buttons send this form: one cannot sit inside another */}}
     <form id="presetdel" method="post" action="/act/presetdel" data-swap="presets"></form>
+    <form id="categorydel" method="post" action="/act/presetcategorydel" data-swap="presets"></form>
   </div>
   {{range .Data.Presets}}{{template "presetdlg" ($v.PresetDlg .ID)}}{{end}}
   {{template "presetdlg" (.PresetDlg "")}}
+  {{range .PresetCategories}}{{if .Custom}}{{template "categorydlg" ($v.CategoryDlg .ID)}}{{end}}{{end}}
+  {{template "categorydlg" (.CategoryDlg "")}}
+{{end}}
+
+{{define "categorydlg"}}
+<dialog id="dlg-category-{{.Key}}" class="categorydlg">
+  <form method="post" action="/act/presetcategorysave" data-swap="presets" data-reset>
+    <input type="hidden" name="id" value="{{.ID}}">
+    <h2>{{if .ID}}{{.V.T "Rename category"}}{{else}}{{.V.T "New category"}}{{end}}</h2>
+    <label>{{.V.T "Category name"}}<input type="text" name="title" value="{{.Title}}" maxlength="80" required></label>
+    <p class="hint">{{.V.T "Custom categories are sorted alphabetically. Deleting one moves its presets to Other."}}</p>
+    <div class="actions"><span class="spacer"></span><button type="button" data-close>{{.V.T "Cancel"}}</button>
+      <button class="primary" data-busy="{{.V.T "Saving…"}}">{{if .ID}}{{.V.T "Save"}}{{else}}{{.V.T "Add"}}{{end}}</button></div>
+  </form>
+</dialog>
 {{end}}
 
 {{/* a preset's dialog: its name, what it is about, its lines */}}
@@ -96,7 +116,7 @@
     <div class="fields">
       <label>{{$v.T "Preset name"}}<input type="text" name="title" value="{{.Title}}" maxlength="80" required></label>
       <label>{{$v.T "Description"}}<input type="text" name="note" value="{{.Note}}" maxlength="200" placeholder="{{$v.T "optional"}}"></label>
-      <label>{{$v.T "Category"}}{{$category := .Category}}<select name="category">{{range .V.PresetCategories}}<option value="{{.ID}}" {{if eq .ID $category}}selected{{end}}>{{$v.T .Title}}</option>{{end}}</select></label>
+      <label>{{$v.T "Category"}}{{$category := .Category}}<select name="category">{{range .V.PresetCategories}}<option value="{{.ID}}" {{if eq .ID $category}}selected{{end}}>{{$v.CategoryTitle .}}</option>{{end}}</select></label>
     </div>
     <p class="hint">{{$v.T "One per line, as in the lists: a site (example.com; +.example.com for the domain and all under it; * for any one label: +.example.*), an address or a network (1.2.3.4, 192.168.0.0/16: for connections made to it by address), a program (telegram.exe; a full path for that copy only). A line starting with # is a comment."}}</p>
     <div class="entry-editor" data-entry-editor data-kind="preset"

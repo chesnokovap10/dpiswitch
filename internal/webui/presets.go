@@ -18,17 +18,20 @@ import (
 // of the ones switched on for the core (see ctl.SyncUserFiles).
 
 var errPresetGone = errors.New("This preset is no longer there: it was deleted in another window")
+var errCategoryGone = errors.New("This category is no longer there: it was deleted in another window")
+var errBuiltinCategory = errors.New("Built-in categories cannot be changed or deleted")
 
 type presetGroup struct {
 	ID, Title string
 	Presets   []preset
 	On, Mixed bool
+	Custom    bool
 	Selected  int
 }
 
 // Go supplies the whole tree and its translated order, including user presets.
 func (v *view) PresetCategories() []presets.Category {
-	out := slices.Clone(presets.Categories)
+	out := presets.Categories()
 	slices.SortFunc(out, func(a, b presets.Category) int {
 		if a.ID == "other" && b.ID != "other" {
 			return 1
@@ -36,16 +39,23 @@ func (v *view) PresetCategories() []presets.Category {
 		if b.ID == "other" && a.ID != "other" {
 			return -1
 		}
-		return strings.Compare(v.T(a.Title), v.T(b.Title))
+		return strings.Compare(strings.ToLower(v.CategoryTitle(a)), strings.ToLower(v.CategoryTitle(b)))
 	})
 	return out
+}
+
+func (v *view) CategoryTitle(c presets.Category) string {
+	if c.Custom {
+		return c.Title
+	}
+	return v.T(c.Title)
 }
 
 func (v *view) PresetGroups() []presetGroup {
 	a := presetsViewData(v.Data)
 	var out []presetGroup
 	for _, c := range v.PresetCategories() {
-		g := presetGroup{ID: c.ID, Title: c.Title}
+		g := presetGroup{ID: c.ID, Title: v.CategoryTitle(c), Custom: c.Custom}
 		for _, p := range a.Presets {
 			if presets.CategoryOf(p.Preset) != c.ID {
 				continue
@@ -55,7 +65,7 @@ func (v *view) PresetGroups() []presetGroup {
 				g.Selected++
 			}
 		}
-		if len(g.Presets) == 0 {
+		if len(g.Presets) == 0 && !c.Custom {
 			continue
 		}
 		slices.SortFunc(g.Presets, func(a, b preset) int {
@@ -64,11 +74,32 @@ func (v *view) PresetGroups() []presetGroup {
 			}
 			return strings.Compare(a.ID, b.ID)
 		})
-		g.On = g.Selected == len(g.Presets)
+		g.On = len(g.Presets) > 0 && g.Selected == len(g.Presets)
 		g.Mixed = g.Selected > 0 && !g.On
 		out = append(out, g)
 	}
 	return out
+}
+
+type categoryDlg struct {
+	V       *view
+	Key, ID string
+	Title   string
+}
+
+func (v *view) CategoryDlg(id string) categoryDlg {
+	d := categoryDlg{V: v, Key: "new-category", ID: id}
+	if id == "" {
+		return d
+	}
+	d.Key = id
+	for _, c := range presets.Categories() {
+		if c.Custom && c.ID == id {
+			d.Title = c.Title
+			break
+		}
+	}
+	return d
 }
 
 func findPreset(all []presets.Preset, id string) (presets.Preset, bool) {
@@ -263,6 +294,96 @@ func presetsOf(a awg2) []presets.Preset {
 		out[i] = p.Preset
 	}
 	return out
+}
+
+func categoryTitleTaken(lang, title, except string) bool {
+	for _, c := range presets.Categories() {
+		if c.ID == except {
+			continue
+		}
+		shown := c.Title
+		if !c.Custom {
+			shown = tr(lang, shown)
+		}
+		if strings.EqualFold(strings.TrimSpace(shown), title) {
+			return true
+		}
+	}
+	return false
+}
+
+// actPresetCategorySave adds or renames a custom root category.
+func (s *Server) actPresetCategorySave(w http.ResponseWriter, r *http.Request) {
+	id, title, l := r.FormValue("id"), strings.TrimSpace(r.FormValue("title")), lang(r)
+	var err error
+	switch {
+	case title == "":
+		err = errors.New(tr(l, "Give the category a name"))
+	case len([]rune(title)) > 80:
+		err = errors.New(tr(l, "The category name is too long"))
+	case categoryTitleTaken(l, title, id):
+		err = errors.New(tr(l, "A category with this name already exists"))
+	case presets.BuiltinCategory(id):
+		err = errBuiltinCategory
+	}
+	if err == nil {
+		err = paths.UserReady()
+	}
+	if err == nil {
+		err = presets.UpdateCatalog(func(c presets.Catalog) (presets.Catalog, error) {
+			if categoryTitleTaken(l, title, id) {
+				return c, errors.New(tr(l, "A category with this name already exists"))
+			}
+			if id == "" {
+				c.Categories = append(c.Categories, presets.Category{ID: presets.NewCategoryID(c.Categories), Title: title, Custom: true})
+				return c, nil
+			}
+			for i := range c.Categories {
+				if c.Categories[i].ID == id {
+					c.Categories[i].Title = title
+					return c, nil
+				}
+			}
+			return c, errCategoryGone
+		})
+	}
+	message := "Category renamed"
+	if id == "" {
+		message = "Category added"
+	}
+	ok, msg := done(r, err, message)
+	s.part(w, r, "lists", "presets", ok, msg)
+}
+
+// actPresetCategoryDel deletes a custom root and safely moves its presets to
+// Other. Built-in roots stay stable for shipped presets and translations.
+func (s *Server) actPresetCategoryDel(w http.ResponseWriter, r *http.Request) {
+	id := r.FormValue("id")
+	moved := 0
+	var err error
+	if presets.BuiltinCategory(id) {
+		err = errBuiltinCategory
+	} else {
+		err = paths.UserReady()
+	}
+	if err == nil {
+		err = presets.UpdateCatalog(func(c presets.Catalog) (presets.Catalog, error) {
+			at := slices.IndexFunc(c.Categories, func(x presets.Category) bool { return x.ID == id })
+			if at < 0 {
+				return c, errCategoryGone
+			}
+			c.Categories = slices.Delete(c.Categories, at, at+1)
+			for i := range c.Presets {
+				if c.Presets[i].Category == id {
+					c.Presets[i].Category = "other"
+					moved++
+				}
+			}
+			return c, nil
+		})
+	}
+	ok, msg := done(r, err, "Category deleted; presets moved to Other: %d", moved)
+	s.part(w, r, "lists", "presets", ok, msg)
 }
 
 // actPresetDel deletes a preset. The connections it took are closed: they

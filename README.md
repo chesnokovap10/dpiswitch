@@ -406,15 +406,17 @@ Claude, Google AI, Grok, Meta AI, Copilot и общего входа ИИ-сер
 умолчанию выключены. Переключение пресета и смена маршрута применяются сразу, включая открытые соединения.
 
 Пресеты собраны в раскрывающиеся категории: **Видеохостинги, ИИ, Мессенджеры, Соцсети,
-Прочее**; «Прочее» всегда последнее, остальные категории и сервисы внутри — по алфавиту. Галочка категории выбирает все её сервисы, промежуточное
+Прочее** и созданные вами корни; «Прочее» всегда последнее, остальные категории и сервисы внутри — по алфавиту выбранного языка. Галочка категории выбирает все её сервисы, промежуточное
 состояние означает частичный выбор. Стрелка раскрывает список отдельно от выбора. Раскрытие и галочки
 срабатывают при нажатии мыши, а раскрытые категории сохраняются при обновлении блока. В «Прочее» есть
 GitHub и Reddit. Маски вида `+.claude.ai` покрывают домен и поддомены; у десктопных приложений указаны
 имена процессов. Правило программы направляет через второй туннель все соединения этого процесса.
 
 Пресеты можно менять: **Изменить** открывает во всплывающем окне название, категорию, описание и строки пресета
-(сайты, адреса, программы — как в списках; `#` — комментарий), **Удалить** убирает его, **Добавить…**
-создаёт новый — он сразу включён. Всё это применяется так же сразу, без перезапуска ядра. Пока вы ничего
+(сайты, адреса, программы — как в списках; `#` — комментарий), **Удалить** убирает его, **Добавить пресет…**
+создаёт новый — он сразу включён. **Добавить категорию…** создаёт новый корень дерева. Пользовательские корни
+можно переименовывать и удалять; при удалении их пресеты перемещаются в «Прочее». Встроенные корни защищены,
+но пустые не показываются. Всё это применяется так же сразу, без перезапуска ядра. Пока вы ничего
 не меняли, используются пресеты программы.
 
 Когда встроенный пресет удалён или изменён, появляется кнопка **Вернуть встроенные пресеты…**: она
@@ -500,7 +502,7 @@ GitHub и Reddit. Маски вида `+.claude.ai` покрывают доме�
 - `GET`, `PATCH`, `PUT /api/v1/settings` — настройки;
 - `GET`, `PUT /api/v1/routes` — весь набор правил `{entry, route}` одной атомарной операцией;
 - `GET /api/v1/verdicts?cat=direct|blocked|slow|unknown&net=...&q=...` — вердикты;
-- `GET /api/v1/presets` — каталог пресетов и признак `enabled`.
+- `GET /api/v1/presets` — корневые категории, каталог пресетов и признак `enabled`.
 
 Изменяемые документы возвращают `revision` и `ETag`. При записи передайте `revision` в JSON или
 `If-Match`; устаревшая версия получает `409 Conflict` или `412 Precondition Failed` и не перезаписывает
@@ -976,8 +978,8 @@ applies; explicit rules for individual sites, addresses and programs stand above
 the direct path against the first tunnel only and performs no checks without awg1. Every preset is off by
 default. Preset switches and route changes apply at once, open connections included.
 
-Presets form a tree of **AI, Messengers, Social networks, Video hosting and Other services**,
-with Other services always last and all remaining categories and services sorted alphabetically. A category checkbox selects all its services; a mixed state
+Presets form a tree of **AI, Messengers, Social networks, Video hosting and Other services**, plus roots you create,
+with Other services always last and all remaining categories and services sorted alphabetically in the selected language. A category checkbox selects all its services; a mixed state
 means a partial selection. The arrow expands the list independently. Mouse presses apply immediately,
 before release, and expanded categories survive redraws. Other includes GitHub and Reddit. Broad masks
 such as `+.claude.ai` include the domain and its subdomains; desktop process names route all connections
@@ -985,7 +987,9 @@ of those processes.
 
 The presets are yours to change: **Edit** opens a preset's name, category, description and lines in a dialog
 (sites, addresses and programs, as in the lists; `#` starts a comment), **Delete** removes it,
-**Add…** makes a new one, switched on at once. These apply at once too, with no core restart. Until
+**Add preset…** makes a new one, switched on at once. **Add category…** creates a new tree root. Custom roots
+can be renamed and deleted; deleting one moves its presets to Other services. Built-in roots are protected,
+but empty ones are hidden. These apply at once too, with no core restart. Until
 you change any, the program's own presets are used.
 
 Once a built-in preset is deleted or edited, **Restore built-in presets…** appears: it puts them back
@@ -1069,7 +1073,7 @@ contents of `%LOCALAPPDATA%\dpiswitch\ui.key` in the `X-DPISwitch-Key` header. D
 - `GET`, `PATCH`, `PUT /api/v1/settings` read or change settings;
 - `GET`, `PUT /api/v1/routes` read or atomically replace all `{entry, route}` rules;
 - `GET /api/v1/verdicts?cat=direct|blocked|slow|unknown&net=...&q=...` returns verdicts;
-- `GET /api/v1/presets` returns the preset catalog with each `enabled` state.
+- `GET /api/v1/presets` returns root categories and the preset catalog with each `enabled` state.
 
 Mutable documents return `revision` and `ETag`. Send the revision in JSON or as `If-Match`; a stale
 write gets `409 Conflict` or `412 Precondition Failed` and never overwrites a newer change. A settings

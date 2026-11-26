@@ -5,11 +5,21 @@ import (
 )
 
 // Stable category IDs; labels and ordering belong to the Go UI.
-type Category struct{ ID, Title string }
+type Category struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Custom bool   `json:"-"`
+}
 
-var Categories = []Category{
-	{"video", "Video hosting"}, {"ai", "AI"}, {"messengers", "Messengers"},
-	{"other", "Other services"}, {"social", "Social networks"},
+var builtinCategories = []Category{
+	{ID: "video", Title: "Video hosting"}, {ID: "ai", Title: "AI"}, {ID: "messengers", Title: "Messengers"},
+	{ID: "other", Title: "Other services"}, {ID: "social", Title: "Social networks"},
+}
+
+func BuiltinCategories() []Category { return slices.Clone(builtinCategories) }
+
+func BuiltinCategory(id string) bool {
+	return slices.ContainsFunc(builtinCategories, func(c Category) bool { return c.ID == id })
 }
 
 var shipped = []struct {
@@ -35,7 +45,7 @@ var shipped = []struct {
 }
 
 func ValidCategory(id string) bool {
-	return slices.ContainsFunc(Categories, func(c Category) bool { return c.ID == id })
+	return slices.ContainsFunc(Categories(), func(c Category) bool { return c.ID == id })
 }
 
 func CategoryOf(p Preset) string {

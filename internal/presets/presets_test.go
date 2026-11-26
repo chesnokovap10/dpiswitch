@@ -139,11 +139,42 @@ func TestUnsupportedFileVersion(t *testing.T) {
 	for _, body := range []string{
 		`[{"id":"ai","title":"AI","lines":["example.com"]}]`,
 		`{"version":2,"presets":[{"id":"ai","title":"AI","lines":[]}]}`,
-		`{"version":4,"presets":[]}`,
+		`{"version":5,"presets":[]}`,
 	} {
-		if _, err := decode([]byte(body)); err == nil {
+		if _, err := decodeCatalog([]byte(body)); err == nil {
 			t.Fatalf("accepted unsupported format: %s", body)
 		}
+	}
+}
+
+func TestCustomCategoriesAndVersion3(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdateCatalog(func(c Catalog) (Catalog, error) {
+		id := NewCategoryID(c.Categories)
+		c.Categories = append(c.Categories, Category{ID: id, Title: "Games", Custom: true})
+		c.Presets = append(c.Presets, Preset{ID: "mine", Title: "Mine", Category: id, Lines: []string{"game.example"}})
+		return c, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c := LoadCatalog()
+	if len(c.Categories) != 1 || c.Categories[0].Title != "Games" || !c.Categories[0].Custom || c.Presets[len(c.Presets)-1].Category != c.Categories[0].ID {
+		t.Fatalf("catalog not kept: %+v", c)
+	}
+	b, err := EncodeCatalogFile(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeCatalogFile(b)
+	if err != nil || len(decoded.Categories) != 1 || decoded.Categories[0].Title != "Games" {
+		t.Fatalf("round trip: %+v, %v", decoded, err)
+	}
+	legacy, err := DecodeCatalogFile([]byte(`{"version":3,"presets":[{"id":"old","title":"Old","lines":[]}]}`))
+	if err != nil || len(legacy.Categories) != 0 || len(legacy.Presets) != 1 || legacy.Presets[0].Category != "other" {
+		t.Fatalf("version 3: %+v, %v", legacy, err)
 	}
 }
 

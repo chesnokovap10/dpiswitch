@@ -901,7 +901,7 @@ function paintPresetTree(root) {
     }
     const count = leaves.filter(c => c.checked).length;
     const parent = g.querySelector('[data-preset-group]');
-    parent.checked = count === leaves.length;
+    parent.checked = leaves.length > 0 && count === leaves.length;
     parent.indeterminate = count > 0 && count < leaves.length;
     parent.setAttribute('aria-checked', parent.indeterminate ? 'mixed' : String(parent.checked));
     g.querySelector('[data-preset-count]').textContent = count + ' / ' + leaves.length;

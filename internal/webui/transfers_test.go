@@ -58,7 +58,10 @@ func TestTransferImportSeparateFilesIsAtomic(t *testing.T) {
 	if err := writeEntries(paths.DirectList, []string{"old.example"}); err != nil {
 		t.Fatal(err)
 	}
-	ps, err := presets.EncodeFile([]presets.Preset{{ID: "mine", Title: "Mine", Lines: []string{"preset.example"}}})
+	ps, err := presets.EncodeCatalogFile(presets.Catalog{
+		Categories: []presets.Category{{ID: "games", Title: "Games", Custom: true}},
+		Presets:    []presets.Preset{{ID: "mine", Title: "Mine", Category: "games", Lines: []string{"preset.example"}}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,8 +82,8 @@ func TestTransferImportSeparateFilesIsAtomic(t *testing.T) {
 	if got := strings.Join(readEntries(paths.BlockList), ","); got != "ads.example" {
 		t.Fatalf("block: %q", got)
 	}
-	if got := presets.Load(); len(got) != 1 || got[0].ID != "mine" {
-		t.Fatalf("presets: %+v", got)
+	if got := presets.LoadCatalog(); len(got.Presets) != 1 || got.Presets[0].ID != "mine" || len(got.Categories) != 1 || got.Categories[0].Title != "Games" {
+		t.Fatalf("preset catalog: %+v", got)
 	}
 
 	rec = multipartPost(t, h, "/act/listsimport", map[string][]string{"item": {"direct", "block"}}, map[string]struct {

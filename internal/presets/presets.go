@@ -1,7 +1,7 @@
 // Second-tunnel presets: sets of services that always go through awg2,
 // bypassing the detector.
 //
-// catalog.go defines individual services in five categories. The embedded
+// catalog.go defines individual services in five built-in categories. The embedded
 // lists contain broad service domains, desktop process names and, for calls
 // made by address, the Telegram, WhatsApp and Discord networks.
 //
@@ -42,6 +42,13 @@ type Preset struct {
 	Note     string   `json:"note,omitempty"`
 	Category string   `json:"category,omitempty"`
 	Lines    []string `json:"lines"`
+}
+
+// Catalog is the complete user-editable preset tree. Categories contains
+// only custom roots; the built-in roots are supplied by the program.
+type Catalog struct {
+	Categories []Category
+	Presets    []Preset
 }
 
 // builtin: the shipped presets, read once -- Load gives them every second
@@ -115,105 +122,200 @@ const fileMax = 4 << 20
 // with no usable ID, or with one a preset before it already has, is left
 // out.
 func Load() []Preset {
-	ps, err := read()
+	c, err := readCatalog()
 	if err != nil {
 		return Builtin()
 	}
-	return ps
+	return c.Presets
 }
 
-// read: Load, and the error when the user's file is there and could not be
-// read -- held, refused for what it is. Load gives the shipped presets then;
-// a change made to those and written (see Update) put them in the place of
-// every preset the user had.
-func read() ([]Preset, error) {
+// LoadCatalog returns presets together with custom root categories.
+func LoadCatalog() Catalog {
+	c, err := readCatalog()
+	if err != nil {
+		return Catalog{Presets: Builtin()}
+	}
+	return c
+}
+
+// Categories returns every root category, built-in first and custom after.
+// The UI applies its language-specific sorting and keeps Other last.
+func Categories() []Category {
+	out := BuiltinCategories()
+	for _, c := range LoadCatalog().Categories {
+		c.Custom = true
+		out = append(out, c)
+	}
+	return out
+}
+
+// readCatalog returns the effective tree and an error when the user's file
+// is present but cannot be read safely.
+func readCatalog() (Catalog, error) {
 	// the user's file, read by the service as SYSTEM: not through a link
 	b, err := paths.ReadUserFile(paths.UserPresets(), fileMax)
 	if errors.Is(err, fs.ErrNotExist) {
-		return Builtin(), nil
+		return Catalog{Presets: Builtin()}, nil
 	}
 	if err != nil {
-		return nil, err
+		return Catalog{}, err
 	}
-	ps, err := decode(b)
+	c, err := decodeCatalog(b)
 	if err != nil {
-		return Builtin(), nil
+		return Catalog{Presets: Builtin()}, nil
+	}
+	validCategories := map[string]bool{}
+	for _, x := range builtinCategories {
+		validCategories[x.ID] = true
+	}
+	custom := make([]Category, 0, len(c.Categories))
+	for _, x := range c.Categories {
+		x.ID, x.Title = strings.TrimSpace(x.ID), strings.TrimSpace(x.Title)
+		if !ValidID(x.ID) || x.Title == "" || validCategories[x.ID] {
+			continue
+		}
+		validCategories[x.ID] = true
+		x.Custom = true
+		custom = append(custom, x)
 	}
 	out := []Preset{}
 	seen := map[string]bool{}
-	for _, p := range ps {
+	for _, p := range c.Presets {
 		if !ValidID(p.ID) || seen[p.ID] {
 			continue
 		}
 		seen[p.ID] = true
+		if !validCategories[p.Category] {
+			if shipped, ok := Shipped(p.ID); ok {
+				p.Category = shipped.Category
+			} else {
+				p.Category = "other"
+			}
+		}
 		if p.Lines == nil {
 			p.Lines = []string{}
 		}
 		out = append(out, p)
 	}
-	return out, nil
+	return Catalog{Categories: custom, Presets: out}, nil
 }
 
 // errNotRead: the user's presets could not be read: none is written over them
 var errNotRead = errors.New("The presets could not be read: nothing saved, try again")
 
-// fileVersion is the only supported preset file format.
-const fileVersion = 3
+// fileVersion is the format written now; version 3 is accepted for upgrade.
+const fileVersion = 4
 
 // file: the user's file as it is written
 type file struct {
-	Version int      `json:"version"`
-	Presets []Preset `json:"presets"`
+	Version    int        `json:"version"`
+	Categories []Category `json:"categories,omitempty"`
+	Presets    []Preset   `json:"presets"`
 }
 
-// decode accepts the current format without transforming saved rules.
-func decode(b []byte) ([]Preset, error) {
+// decodeCatalog accepts the current format and version 3, which had presets
+// only. The next successful write upgrades it without touching the rules.
+func decodeCatalog(b []byte) (Catalog, error) {
 	var f file
 	if err := json.Unmarshal(b, &f); err != nil {
-		return nil, err
+		return Catalog{}, err
 	}
-	if f.Version != fileVersion {
-		return nil, errors.New("unsupported preset file version")
+	if f.Version != 3 && f.Version != fileVersion {
+		return Catalog{}, errors.New("unsupported preset file version")
 	}
-	return f.Presets, nil
+	return Catalog{Categories: f.Categories, Presets: f.Presets}, nil
 }
 
 // DecodeFile validates a presets.json selected for import. Unlike Load, a
 // bad file is reported instead of silently falling back to the shipped set.
 func DecodeFile(b []byte) ([]Preset, error) {
+	c, err := DecodeCatalogFile(b)
+	return c.Presets, err
+}
+
+// DecodeCatalogFile validates a complete presets.json, custom roots included.
+func DecodeCatalogFile(b []byte) (Catalog, error) {
 	if len(b) >= fileMax {
-		return nil, ErrTooLarge
+		return Catalog{}, ErrTooLarge
 	}
-	ps, err := decode(b)
+	c, err := decodeCatalog(b)
 	if err != nil {
-		return nil, err
+		return Catalog{}, err
+	}
+	categoryIDs := map[string]bool{}
+	for _, x := range builtinCategories {
+		categoryIDs[x.ID] = true
+	}
+	for i := range c.Categories {
+		x := &c.Categories[i]
+		x.ID, x.Title = strings.TrimSpace(x.ID), strings.TrimSpace(x.Title)
+		if !ValidID(x.ID) || x.Title == "" || categoryIDs[x.ID] {
+			return Catalog{}, errors.New("a category without a name or ID of its own")
+		}
+		categoryIDs[x.ID], x.Custom = true, true
 	}
 	seen := map[string]bool{}
-	for i := range ps {
-		if !ValidID(ps[i].ID) || seen[ps[i].ID] {
-			return nil, errors.New("a preset without an ID of its own")
+	for i := range c.Presets {
+		if !ValidID(c.Presets[i].ID) || seen[c.Presets[i].ID] {
+			return Catalog{}, errors.New("a preset without an ID of its own")
 		}
-		seen[ps[i].ID] = true
-		if ps[i].Lines == nil {
-			ps[i].Lines = []string{}
+		seen[c.Presets[i].ID] = true
+		if !categoryIDs[c.Presets[i].Category] {
+			if shipped, ok := Shipped(c.Presets[i].ID); ok {
+				c.Presets[i].Category = shipped.Category
+			} else {
+				c.Presets[i].Category = "other"
+			}
+		}
+		if c.Presets[i].Lines == nil {
+			c.Presets[i].Lines = []string{}
 		}
 	}
-	return ps, nil
+	return c, nil
 }
 
 // EncodeFile is the complete effective preset set in presets.json format.
 func EncodeFile(ps []Preset) ([]byte, error) {
+	return EncodeCatalogFile(Catalog{Presets: ps})
+}
+
+// EncodeCatalogFile is the complete effective preset tree in presets.json.
+func EncodeCatalogFile(c Catalog) ([]byte, error) {
+	c.Categories = slices.Clone(c.Categories)
+	c.Presets = clone(c.Presets)
+	categoryIDs := map[string]bool{}
+	for _, x := range builtinCategories {
+		categoryIDs[x.ID] = true
+	}
+	for i, x := range c.Categories {
+		c.Categories[i].Title = strings.TrimSpace(x.Title)
+		if !ValidID(x.ID) || strings.TrimSpace(x.Title) == "" || categoryIDs[x.ID] {
+			return nil, errors.New("a category without a name or ID of its own")
+		}
+		categoryIDs[x.ID] = true
+	}
 	seen := map[string]bool{}
-	for _, p := range ps {
+	for i := range c.Presets {
+		p := &c.Presets[i]
 		if !ValidID(p.ID) || seen[p.ID] {
 			return nil, errors.New("a preset without an ID of its own")
 		}
+		if !categoryIDs[p.Category] {
+			if shipped, ok := Shipped(p.ID); ok {
+				p.Category = shipped.Category
+			} else {
+				p.Category = "other"
+			}
+		}
 		seen[p.ID] = true
 	}
-	if ps == nil {
-		ps = []Preset{}
+	if c.Presets == nil {
+		c.Presets = []Preset{}
 	}
-	b, err := json.MarshalIndent(file{Version: fileVersion, Presets: ps}, "", "  ")
+	if c.Categories == nil {
+		c.Categories = []Category{}
+	}
+	b, err := json.MarshalIndent(file{Version: fileVersion, Categories: c.Categories, Presets: c.Presets}, "", "  ")
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +329,19 @@ func EncodeFile(ps []Preset) ([]byte, error) {
 func Replace(ps []Preset) error {
 	mu.Lock()
 	defer mu.Unlock()
-	return write(ps)
+	c, err := readCatalog()
+	if err != nil {
+		return err
+	}
+	c.Presets = ps
+	return writeCatalog(c)
+}
+
+// ReplaceCatalog replaces custom roots and presets in one write.
+func ReplaceCatalog(c Catalog) error {
+	mu.Lock()
+	defer mu.Unlock()
+	return writeCatalog(c)
 }
 
 // Known: the IDs of the presets there are
@@ -259,6 +373,24 @@ func NewID(ps []Preset) string {
 	}
 }
 
+// NewCategoryID returns an ID distinct from every built-in and custom root.
+func NewCategoryID(categories []Category) string {
+	have := map[string]bool{}
+	for _, c := range builtinCategories {
+		have[c.ID] = true
+	}
+	for _, c := range categories {
+		have[c.ID] = true
+	}
+	for {
+		var b [4]byte
+		rand.Read(b[:])
+		if id := "c" + hex.EncodeToString(b[:]); !have[id] {
+			return id
+		}
+	}
+}
+
 // ErrTooLarge: the presets would not fit in what Load reads
 var ErrTooLarge = errors.New("The presets are too large: 4 MB at most, all of them together")
 
@@ -270,18 +402,27 @@ var mu sync.Mutex
 // into the user's file, with no other change in between. Nothing is written
 // if change fails. The service takes the file within a second.
 func Update(change func([]Preset) ([]Preset, error)) error {
+	return UpdateCatalog(func(c Catalog) (Catalog, error) {
+		ps, err := change(c.Presets)
+		c.Presets = ps
+		return c, err
+	})
+}
+
+// UpdateCatalog atomically edits custom roots and presets together.
+func UpdateCatalog(change func(Catalog) (Catalog, error)) error {
 	mu.Lock()
 	defer mu.Unlock()
-	was, err := read()
+	was, err := readCatalog()
 	if err != nil {
 		log.Printf("presets: %s not read, nothing written: %v", paths.UserPresets(), err)
 		return errNotRead
 	}
-	ps, err := change(was)
+	c, err := change(was)
 	if err != nil {
 		return err
 	}
-	return write(ps)
+	return writeCatalog(c)
 }
 
 // Restore puts the shipped presets back as the program ships them -- the
@@ -292,21 +433,23 @@ func Update(change func([]Preset) ([]Preset, error)) error {
 func Restore() ([]Preset, error) {
 	mu.Lock()
 	defer mu.Unlock()
-	was, err := read()
+	wasCatalog, err := readCatalog()
 	if err != nil {
 		// the user's own presets are kept through a restore: not read, they
 		// would go with it
 		log.Printf("presets: %s not read, nothing restored: %v", paths.UserPresets(), err)
 		return Load(), errNotRead
 	}
+	was := wasCatalog.Presets
 	ps := Builtin()
 	for _, p := range was {
 		if _, ok := Shipped(p.ID); !ok {
 			ps = append(ps, p)
 		}
 	}
-	if len(ps) > len(builtin()) {
-		return was, write(ps)
+	if len(ps) > len(builtin()) || len(wasCatalog.Categories) > 0 {
+		wasCatalog.Presets = ps
+		return was, writeCatalog(wasCatalog)
 	}
 	if err := os.Remove(paths.UserPresets()); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return was, err
@@ -314,9 +457,8 @@ func Restore() ([]Preset, error) {
 	return was, nil
 }
 
-// write: the whole set into the user's file; mu held
-func write(ps []Preset) error {
-	b, err := EncodeFile(ps)
+func writeCatalog(c Catalog) error {
+	b, err := EncodeCatalogFile(c)
 	if err != nil {
 		return err
 	}
