@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -665,16 +666,13 @@ func TestListImportExport(t *testing.T) {
 	h := s.Handler()
 	for _, path := range []string{"/lists"} {
 		body := do(t, h, "GET", path, nil, nil).Body.String()
-		if got := strings.Count(body, "data-transfer-import"); got != 1 {
+		if got := strings.Count(body, "data-routing-import"); got != 1 {
 			t.Errorf("%s: %d import dialogs, want 1", path, got)
 		}
-		if got := strings.Count(body, "data-transfer-export"); got != 1 {
-			t.Errorf("%s: %d export dialogs, want 1", path, got)
+		if strings.Contains(body, `name="item"`) || strings.Contains(body, "dpi-switch-routing.zip") {
+			t.Errorf("%s still has the old multi-file transfer UI", path)
 		}
-		if got := strings.Count(body, `name="item"`); got != 8 {
-			t.Errorf("%s: %d item choices, want 8 (four in each dialog)", path, got)
-		}
-		for _, want := range []string{`data-open="dlg-import-`, `data-open="dlg-export-`, `name="bundle"`, `name="file_presets"`} {
+		for _, want := range []string{`data-open="dlg-import-`, `href="/lists/export"`, `name="routing"`, `routing.json`} {
 			if !strings.Contains(body, want) {
 				t.Errorf("%s lacks %s", path, want)
 			}
@@ -687,17 +685,18 @@ func TestListImportExport(t *testing.T) {
 	if w.Code != http.StatusOK || strings.Contains(w.Body.String(), `class="msg bad"`) {
 		t.Fatalf("import: %d %s", w.Code, w.Body.String())
 	}
-	w = do(t, h, "GET", "/lists/export?kind=direct", nil, nil)
-	if cd := w.Header().Get("Content-Disposition"); cd != `attachment; filename="always-direct.txt"` {
+	w = do(t, h, "GET", "/lists/export", nil, nil)
+	if cd := w.Header().Get("Content-Disposition"); cd != `attachment; filename="routing.json"` {
 		t.Errorf("content disposition: %q", cd)
 	}
-	for _, line := range []string{"+.ads.example", "+.example.org", "example.com", "hosts.example", "192.168.12.0/24", "Telegram.exe"} {
-		if !strings.Contains(w.Body.String(), "\n"+line+"\n") {
-			t.Errorf("export lacks %q:\n%s", line, w.Body.String())
-		}
+	var routing routingDocument
+	if err := json.Unmarshal(w.Body.Bytes(), &routing); err != nil {
+		t.Fatal(err)
 	}
-	if w := do(t, h, "GET", "/lists/export?kind=nope", nil, nil); w.Code != http.StatusBadRequest {
-		t.Errorf("unknown export: %d", w.Code)
+	for _, line := range []string{"+.ads.example", "+.example.org", "example.com", "hosts.example", "192.168.12.0/24", "Telegram.exe"} {
+		if !slices.ContainsFunc(routing.Rules, func(r apiRouteRule) bool { return r.Entry == line && r.Route == "direct" }) {
+			t.Errorf("export lacks direct %q: %+v", line, routing.Rules)
+		}
 	}
 }
 

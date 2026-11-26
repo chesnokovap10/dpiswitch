@@ -380,6 +380,7 @@ setting is switched off, and with the service should it die.</p>
 <h4 id="h-awg2">The second tunnel</h4>
 <p>The <a href="/overview#summary"><b>Overview</b></a> always shows cards for awg1 and awg2. Each card's checkbox independently enables or disables that tunnel; it is disabled until a config is loaded. A disabled tunnel is skipped in every route chain while its config is kept.</p>
 <p><a href="/lists#list-tunnel"><b>Routing rules</b></a> give every row its own route. Enabled <a href="/lists#presets"><b>presets</b></a> strictly use the tunnel order from Settings with no direct fallback when no explicit rule or <code>enabled_presets</code> override matches. The detector compares the direct path with awg1 only; traffic already sent to awg2 by an explicit rule is not checked.</p>
+<p>Import and Export use one <code>routing.json</code> file containing every explicit rule, preset and custom root category. The entire file is validated before anything is replaced.</p>
 <p>Presets form an alphabetically sorted tree of <b>AI, Messengers, Social networks, Video hosting and Other services</b>, plus categories you create.
 Other services is always last; remaining categories and services are sorted alphabetically in the selected language.
 A category checkbox selects all its services; a mixed state means a partial selection. The arrow expands

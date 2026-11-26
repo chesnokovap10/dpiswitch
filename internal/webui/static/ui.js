@@ -525,21 +525,12 @@ async function send(url, body, target, changed, presetOp) {
 document.addEventListener('submit', e => {
   if (e.defaultPrevented) return;
   const f = e.target;
-  if (f.matches('[data-transfer-import],[data-transfer-export]')) {
-    const chosen = [...f.querySelectorAll('input[name="item"]:checked')];
+  if (f.matches('[data-routing-import]') && !f.elements.routing.files.length) {
+    e.preventDefault();
     const err = f.querySelector('.transfer-error');
-    let message = chosen.length ? '' : f.dataset.selectError;
-    if (!message && f.matches('[data-transfer-import]') && !f.elements.bundle.files.length) {
-      const missing = chosen.some(c => !f.elements['file_' + c.value].files.length);
-      if (missing) message = f.dataset.fileError;
-    }
-    if (message) {
-      e.preventDefault();
-      err.textContent = message;
-      err.hidden = false;
-      return;
-    }
-    err.hidden = true;
+    err.textContent = f.dataset.fileError;
+    err.hidden = false;
+    return;
   }
   if (f.matches('[data-settings-archive]') && !f.elements.archive.files.length) {
     e.preventDefault();
@@ -579,10 +570,6 @@ document.addEventListener('submit', e => {
 });
 
 document.addEventListener('change', async e => {
-  if (e.target.matches('[data-transfer-file]') && e.target.files.length) {
-    const row = e.target.closest('.transfer-row');
-    if (row) row.querySelector('input[name="item"]').checked = true;
-  }
   const el = e.target, f = el.form;
   if (!f || !f.dataset.instant || !el.name) return;
   const fd = new URLSearchParams();

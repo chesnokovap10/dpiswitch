@@ -46,7 +46,7 @@ func readOptional(name string) ([]byte, bool, error) {
 }
 
 func settingsArchiveBody() ([]byte, error) {
-	manifest := settingsArchiveManifest{Format: "dpi-switch-settings", Version: 1}
+	manifest := settingsArchiveManifest{Format: "dpi-switch-settings", Version: 2}
 	conf1, has1, err := readOptional(paths.SourceConf())
 	if err != nil {
 		return nil, err
@@ -72,14 +72,12 @@ func settingsArchiveBody() ([]byte, error) {
 	if err := zipAdd(zw, "settings.json", settings); err != nil {
 		return nil, err
 	}
-	for _, kind := range transferOrder {
-		b, err := transferBody(kind)
-		if err != nil {
-			return nil, err
-		}
-		if err := zipAdd(zw, transferName[kind], b); err != nil {
-			return nil, err
-		}
+	routing, err := routingBody()
+	if err != nil {
+		return nil, err
+	}
+	if err := zipAdd(zw, routingFileName, routing); err != nil {
+		return nil, err
 	}
 	if manifest.Source1 {
 		if err := zipAdd(zw, "source.conf", conf1); err != nil {
@@ -122,10 +120,7 @@ func settingsArchiveFiles(b []byte) (map[string][]byte, error) {
 	if err != nil {
 		return nil, errors.New("The ZIP archive could not be read")
 	}
-	known := map[string]bool{"manifest.json": true, "settings.json": true, "source.conf": true, "source2.conf": true}
-	for _, name := range transferName {
-		known[name] = true
-	}
+	known := map[string]bool{"manifest.json": true, "settings.json": true, "source.conf": true, "source2.conf": true, routingFileName: true}
 	out := map[string][]byte{}
 	for _, f := range zr.File {
 		name := strings.ToLower(path.Base(f.Name))
@@ -151,46 +146,26 @@ func settingsArchiveFiles(b []byte) (map[string][]byte, error) {
 	return out, nil
 }
 
-func makeSettingsArchivePlan(b []byte, language string) (settingsArchivePlan, error) {
+func makeSettingsArchivePlan(b []byte) (settingsArchivePlan, error) {
 	var plan settingsArchivePlan
 	files, err := settingsArchiveFiles(b)
 	if err != nil {
 		return plan, err
 	}
-	if err := json.Unmarshal(files["manifest.json"], &plan.manifest); err != nil || plan.manifest.Format != "dpi-switch-settings" || plan.manifest.Version != 1 {
+	if err := json.Unmarshal(files["manifest.json"], &plan.manifest); err != nil || plan.manifest.Format != "dpi-switch-settings" || plan.manifest.Version != 2 {
 		return plan, errors.New("This is not a supported DPI Switch settings archive")
 	}
 	settingsBody, ok := files["settings.json"]
 	if !ok {
 		return plan, errors.New("settings.json is missing from the archive")
 	}
-	plan.transfer = importPlan{kinds: append([]string(nil), transferOrder...), lists: map[string][]string{}, routes: map[string][]string{}}
-	for _, kind := range transferOrder {
-		b, ok := files[transferName[kind]]
-		if kind == "routes" && !ok {
-			legacy := []struct{ archive, list string }{
-				{"always-via-tunnels.txt", paths.TunnelList}, {"always-via-tunnel1.txt", paths.Tunnel1List},
-				{"always-via-tunnel2.txt", paths.Tunnel2List}, {"second-tunnel-own-list.txt", paths.Awg2List},
-			}
-			for _, old := range legacy {
-				body, found := files[old.archive]
-				if !found {
-					return plan, fmt.Errorf("%s is missing from the archive", transferName[kind])
-				}
-				doc := ctl.ParseList(string(body), ctl.ListPolicy{AllowEnabledPresets: true})
-				if len(doc.Issues) != 0 {
-					return plan, fmt.Errorf("%s: %s", old.archive, listIssues(language, doc.Issues))
-				}
-				plan.transfer.routes[old.list] = append(plan.transfer.routes[old.list], doc.Values()...)
-			}
-			continue
-		}
-		if !ok {
-			return plan, fmt.Errorf("%s is missing from the archive", transferName[kind])
-		}
-		if err := addTransferToPlan(&plan.transfer, kind, b, language); err != nil {
-			return plan, err
-		}
+	routing, ok := files[routingFileName]
+	if !ok {
+		return plan, fmt.Errorf("%s is missing from the archive", routingFileName)
+	}
+	plan.transfer, err = routingPlan(routing)
+	if err != nil {
+		return plan, err
 	}
 	known := map[string]bool{}
 	for _, p := range plan.transfer.presets {
@@ -264,7 +239,7 @@ func (s *Server) applySettingsArchive(plan settingsArchivePlan) (appliedImport, 
 	}
 	var snaps []fileSnapshot
 	files := []string{paths.Settings(), paths.SourceConf(), paths.SourceConf2(), paths.User(paths.AppsList), paths.UserPresets()}
-	for _, kind := range transferOrder {
+	for _, kind := range routingParts {
 		if kind == "routes" {
 			for _, spec := range routeSpecs {
 				files = append(files, paths.User(spec.List))
@@ -292,7 +267,7 @@ func (s *Server) applySettingsArchive(plan settingsArchivePlan) (appliedImport, 
 	}
 	s.listMu.Lock()
 	defer s.listMu.Unlock()
-	for _, kind := range transferOrder {
+	for _, kind := range routingParts {
 		if kind == "routes" {
 			for _, spec := range routeSpecs {
 				if err := writeEntries(spec.List, plan.transfer.routes[spec.List]); err != nil {
@@ -352,7 +327,7 @@ func (s *Server) actSettingsArchive(w http.ResponseWriter, r *http.Request) {
 		s.redirect(w, r, errors.New("The settings archive is too large or could not be read"), "")
 		return
 	}
-	plan, err := makeSettingsArchivePlan(body, lang(r))
+	plan, err := makeSettingsArchivePlan(body)
 	if err != nil {
 		s.redirect(w, r, err, "")
 		return

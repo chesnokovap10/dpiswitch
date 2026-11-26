@@ -3,6 +3,7 @@ package webui
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -52,74 +53,78 @@ func multipartPost(t *testing.T, h http.Handler, target string, values map[strin
 	return rec
 }
 
-func TestTransferImportSeparateFilesIsAtomic(t *testing.T) {
+func TestRoutingFileRoundTripIsAtomic(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
-	if err := writeEntries(paths.DirectList, []string{"old.example"}); err != nil {
+	if err := writeEntries(paths.DirectList, []string{"direct.example"}); err != nil {
 		t.Fatal(err)
 	}
-	ps, err := presets.EncodeCatalogFile(presets.Catalog{
+	if err := writeEntries(paths.BlockList, []string{"blocked.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeEntries(paths.Tunnel1List, []string{"enabled_presets", "tunnel.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := presets.ReplaceCatalog(presets.Catalog{
 		Categories: []presets.Category{{ID: "games", Title: "Games", Custom: true}},
 		Presets:    []presets.Preset{{ID: "mine", Title: "Mine", Category: "games", Lines: []string{"preset.example"}}},
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
-	rec := multipartPost(t, h, "/act/listsimport", map[string][]string{"item": {"direct", "block", "presets"}}, map[string]struct {
+
+	exported := do(t, h, http.MethodGet, "/lists/export", nil, nil)
+	if exported.Code != http.StatusOK || exported.Header().Get("Content-Disposition") != `attachment; filename="routing.json"` {
+		t.Fatalf("export: %d %q", exported.Code, exported.Header().Get("Content-Disposition"))
+	}
+	var doc routingDocument
+	if err := json.Unmarshal(exported.Body.Bytes(), &doc); err != nil || doc.Format != "dpi-switch-routing" || doc.Version != 1 {
+		t.Fatalf("routing file: %+v, %v", doc, err)
+	}
+	if len(doc.Rules) != 4 || len(doc.Categories) != 1 || len(doc.Presets) != 1 {
+		t.Fatalf("routing contents: %+v", doc)
+	}
+
+	if err := writeEntries(paths.DirectList, []string{"changed.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := presets.Replace(nil); err != nil {
+		t.Fatal(err)
+	}
+	rec := multipartPost(t, h, "/act/listsimport", nil, map[string]struct {
 		name string
 		body []byte
 	}{
-		"file_direct":  {"anything.txt", []byte("new.example\n")},
-		"file_block":   {"block.txt", []byte("ads.example\n")},
-		"file_presets": {"my-presets.json", ps},
+		"routing": {"routing.json", exported.Body.Bytes()},
 	})
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("import: %d %s", rec.Code, rec.Body.String())
 	}
-	if got := strings.Join(readEntries(paths.DirectList), ","); got != "new.example" {
+	if got := strings.Join(readEntries(paths.DirectList), ","); got != "direct.example" {
 		t.Fatalf("direct: %q", got)
 	}
-	if got := strings.Join(readEntries(paths.BlockList), ","); got != "ads.example" {
+	if got := strings.Join(readEntries(paths.BlockList), ","); got != "blocked.example" {
 		t.Fatalf("block: %q", got)
+	}
+	if got := strings.Join(readEntries(paths.Tunnel1List), ","); got != "enabled_presets,tunnel.example" {
+		t.Fatalf("tunnel: %q", got)
 	}
 	if got := presets.LoadCatalog(); len(got.Presets) != 1 || got.Presets[0].ID != "mine" || len(got.Categories) != 1 || got.Categories[0].Title != "Games" {
 		t.Fatalf("preset catalog: %+v", got)
 	}
 
-	rec = multipartPost(t, h, "/act/listsimport", map[string][]string{"item": {"direct", "block"}}, map[string]struct {
+	bad := slices.Replace(append([]byte(nil), exported.Body.Bytes()...), 0, 1, '{')
+	bad = bytes.Replace(bad, []byte(`"blocked.example"`), []byte(`"bad host"`), 1)
+	rec = multipartPost(t, h, "/act/listsimport", nil, map[string]struct {
 		name string
 		body []byte
 	}{
-		"file_direct": {"direct.txt", []byte("must-not-stick.example\n")},
-		"file_block":  {"block.txt", []byte("bad host\n")},
+		"routing": {"routing.json", bad},
 	})
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("refused import: %d %s", rec.Code, rec.Body.String())
 	}
-	if got := strings.Join(readEntries(paths.DirectList), ","); got != "new.example" {
+	if got := strings.Join(readEntries(paths.DirectList), ","); got != "direct.example" {
 		t.Fatalf("partial import remained: %q", got)
-	}
-}
-
-func TestTransferMultiExportZIP(t *testing.T) {
-	s, _ := testServer(t)
-	if err := writeEntries(paths.DirectList, []string{"one.example"}); err != nil {
-		t.Fatal(err)
-	}
-	rec := do(t, s.Handler(), http.MethodGet, "/lists/export?item=direct&item=routes", nil, nil)
-	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/zip" {
-		t.Fatalf("export: %d %s", rec.Code, rec.Header().Get("Content-Type"))
-	}
-	zr, err := zip.NewReader(bytes.NewReader(rec.Body.Bytes()), int64(rec.Body.Len()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var names []string
-	for _, f := range zr.File {
-		names = append(names, f.Name)
-	}
-	if !slices.Equal(names, []string{"always-direct.txt", "always-via.json"}) {
-		t.Fatalf("zip files: %v", names)
 	}
 }
 
@@ -160,8 +165,13 @@ func TestSettingsArchiveRoundTrip(t *testing.T) {
 	for _, f := range zr.File {
 		names = append(names, f.Name)
 	}
-	if slices.Contains(names, "ui.key") || !slices.Contains(names, "source.conf") || !slices.Contains(names, "source2.conf") || !slices.Contains(names, "manifest.json") {
+	if slices.Contains(names, "ui.key") || !slices.Contains(names, "source.conf") || !slices.Contains(names, "source2.conf") || !slices.Contains(names, "manifest.json") || !slices.Contains(names, routingFileName) {
 		t.Fatalf("archive files: %v", names)
+	}
+	for _, old := range []string{"always-direct.txt", "always-via.json", "forbidden.txt", "presets.json"} {
+		if slices.Contains(names, old) {
+			t.Fatalf("archive still contains legacy %s: %v", old, names)
+		}
 	}
 
 	set.Attempts = 2

@@ -1,8 +1,6 @@
 package webui
 
 import (
-	"archive/zip"
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,7 +8,6 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"path"
 	"slices"
 	"strings"
 
@@ -20,114 +17,45 @@ import (
 )
 
 const (
-	transferFileMax    = 4 << 20
+	transferFileMax    = 32 << 20
 	transferRequestMax = 36 << 20
+	routingFileName    = "routing.json"
 )
 
-var transferOrder = []string{"direct", "routes", "block", "presets"}
+var routingParts = []string{"direct", "routes", "block", "presets"}
 
-var transferName = map[string]string{
-	"direct":  "always-direct.txt",
-	"routes":  "always-via.json",
-	"tunnel":  "always-via-tunnels.txt",
-	"tunnel1": "always-via-tunnel1.txt",
-	"tunnel2": "always-via-tunnel2.txt",
-	"block":   "forbidden.txt",
-	"awg2":    "second-tunnel-own-list.txt",
-	"presets": "presets.json",
+type routingDocument struct {
+	Format     string             `json:"format"`
+	Version    int                `json:"version"`
+	Rules      []apiRouteRule     `json:"rules"`
+	Categories []presets.Category `json:"categories,omitempty"`
+	Presets    []presets.Preset   `json:"presets"`
 }
 
-func transferBody(kind string) ([]byte, error) {
-	if kind == "routes" {
-		var rows []struct{ Entry, Route string }
-		for _, spec := range routeSpecs {
-			for _, entry := range readEntries(spec.List) {
-				rows = append(rows, struct{ Entry, Route string }{entry, spec.ID})
-			}
-		}
-		return json.MarshalIndent(rows, "", "  ")
-	}
-	if name := listFile[kind]; name != "" {
-		return listBody(readEntries(name)), nil
-	}
-	if kind == "presets" {
-		return presets.EncodeCatalogFile(presets.LoadCatalog())
-	}
-	return nil, errors.New("unknown transfer item")
-}
-
-func selectedKinds(values []string) ([]string, error) {
-	want := map[string]bool{}
-	for _, kind := range values {
-		if transferName[kind] == "" || want[kind] {
-			return nil, errors.New("unknown transfer item")
-		}
-		want[kind] = true
-	}
-	var out []string
-	for _, kind := range transferOrder {
-		if want[kind] {
-			out = append(out, kind)
-		}
-	}
-	if len(out) == 0 {
-		return nil, errors.New("Select at least one item")
-	}
-	return out, nil
-}
-
-// handleListExport keeps the old kind= link working and serves the new
-// selection dialog. One item stays its original file; several become a ZIP.
-func (s *Server) handleListExport(w http.ResponseWriter, r *http.Request) {
-	values := r.URL.Query()["item"]
-	if kind := r.URL.Query().Get("kind"); len(values) == 0 && kind != "" {
-		values = []string{kind}
-	}
-	kinds, err := selectedKinds(values)
+func routingBody() ([]byte, error) {
+	catalog := presets.LoadCatalog()
+	b, err := json.MarshalIndent(routingDocument{
+		Format: "dpi-switch-routing", Version: 1, Rules: currentAPIRoutes(),
+		Categories: catalog.Categories, Presets: catalog.Presets,
+	}, "", "  ")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		return nil, err
 	}
-	if len(kinds) == 1 {
-		body, err := transferBody(kinds[0])
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		contentType := "text/plain; charset=utf-8"
-		if kinds[0] == "presets" || kinds[0] == "routes" {
-			contentType = "application/json"
-		}
-		w.Header().Set("Content-Type", contentType)
-		w.Header().Set("Content-Disposition", `attachment; filename="`+transferName[kinds[0]]+`"`)
-		w.Write(body)
-		return
+	if len(b) > transferFileMax {
+		return nil, errors.New("The file is too large: 32 MB at most")
 	}
-	var body bytes.Buffer
-	zw := zip.NewWriter(&body)
-	for _, kind := range kinds {
-		b, err := transferBody(kind)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		f, err := zw.Create(transferName[kind])
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if _, err := f.Write(b); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-	if err := zw.Close(); err != nil {
+	return append(b, '\n'), nil
+}
+
+func (s *Server) handleListExport(w http.ResponseWriter, r *http.Request) {
+	body, err := routingBody()
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", `attachment; filename="dpi-switch-routing.zip"`)
-	w.Write(body.Bytes())
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+routingFileName+`"`)
+	w.Write(body)
 }
 
 func readTransferFile(r io.Reader) ([]byte, error) {
@@ -136,43 +64,9 @@ func readTransferFile(r io.Reader) ([]byte, error) {
 		return nil, err
 	}
 	if len(b) > transferFileMax {
-		return nil, errors.New("The file is too large: 4 MB at most")
+		return nil, errors.New("The file is too large: 32 MB at most")
 	}
 	return b, nil
-}
-
-func zipTransferFiles(b []byte) (map[string][]byte, error) {
-	zr, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
-	if err != nil {
-		return nil, errors.New("The ZIP archive could not be read")
-	}
-	byName := map[string]string{}
-	for kind, name := range transferName {
-		byName[strings.ToLower(name)] = kind
-	}
-	out := map[string][]byte{}
-	for _, f := range zr.File {
-		kind := byName[strings.ToLower(path.Base(f.Name))]
-		if kind == "" || f.FileInfo().IsDir() {
-			continue
-		}
-		if _, duplicate := out[kind]; duplicate {
-			return nil, fmt.Errorf("%s: duplicate file in ZIP", transferName[kind])
-		}
-		if f.UncompressedSize64 > transferFileMax {
-			return nil, fmt.Errorf("%s: the file is too large", transferName[kind])
-		}
-		r, err := f.Open()
-		if err != nil {
-			return nil, err
-		}
-		out[kind], err = readTransferFile(r)
-		r.Close()
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", transferName[kind], err)
-		}
-	}
-	return out, nil
 }
 
 func transferUpload(r *http.Request, field string) ([]byte, bool, error) {
@@ -197,88 +91,76 @@ type importPlan struct {
 	hasPS      bool
 }
 
-func addTransferToPlan(plan *importPlan, kind string, b []byte, lang string) error {
-	if kind == "routes" {
-		var rows []struct{ Entry, Route string }
-		if err := json.Unmarshal(b, &rows); err != nil {
-			return fmt.Errorf("%s: %w", transferName[kind], err)
-		}
-		valid := map[string]string{}
-		for _, spec := range routeSpecs {
-			valid[spec.ID] = spec.List
-		}
-		seen := map[string]bool{}
-		for i, row := range rows {
-			file := valid[row.Route]
-			if file == "" {
-				return fmt.Errorf("%s: row %d: unknown route %q", transferName[kind], i+1, row.Route)
-			}
-			doc := ctl.ParseList(row.Entry, ctl.ListPolicy{AllowEnabledPresets: file != ""})
-			if len(doc.Issues) != 0 || len(doc.Values()) != 1 {
-				return fmt.Errorf("%s: row %d: invalid entry", transferName[kind], i+1)
-			}
-			entry := doc.Values()[0]
-			key := strings.ToLower(entry)
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			plan.routes[file] = append(plan.routes[file], entry)
-		}
-		return nil
+func routingPlan(b []byte) (importPlan, error) {
+	plan := importPlan{kinds: slices.Clone(routingParts), lists: map[string][]string{}, routes: map[string][]string{}}
+	var file routingDocument
+	if err := json.Unmarshal(b, &file); err != nil {
+		return plan, fmt.Errorf("%s: %w", routingFileName, err)
 	}
-	if kind == "presets" {
-		catalog, err := presets.DecodeCatalogFile(b)
-		if err != nil {
-			return fmt.Errorf("%s: %w", transferName[kind], err)
+	if file.Format != "dpi-switch-routing" || file.Version != 1 {
+		return plan, errors.New("This is not a supported DPI Switch routing file")
+	}
+	valid := map[string]string{}
+	for _, spec := range ruleSpecs {
+		valid[spec.ID] = spec.List
+	}
+	seen := map[string]bool{}
+	for i, row := range file.Rules {
+		name := valid[row.Route]
+		if name == "" {
+			return plan, fmt.Errorf("%s: rule %d: unknown route %q", routingFileName, i+1, row.Route)
 		}
-		plan.categories, plan.presets, plan.hasPS = catalog.Categories, catalog.Presets, true
-		return nil
+		doc := ctl.ParseList(row.Entry, ctl.ListPolicy{AllowEnabledPresets: true})
+		if len(doc.Issues) != 0 || len(doc.Values()) != 1 {
+			return plan, fmt.Errorf("%s: rule %d: invalid entry", routingFileName, i+1)
+		}
+		entry := doc.Values()[0]
+		key := strings.ToLower(entry)
+		if seen[key] {
+			return plan, fmt.Errorf("%s: rule %d: duplicate entry %q", routingFileName, i+1, entry)
+		}
+		seen[key] = true
+		switch row.Route {
+		case "direct", "block":
+			plan.lists[row.Route] = append(plan.lists[row.Route], entry)
+		default:
+			plan.routes[name] = append(plan.routes[name], entry)
+		}
 	}
-	doc := ctl.ParseList(string(b), ctl.ListPolicy{AllowEnabledPresets: listFile[kind] != ""})
-	if len(doc.Issues) > 0 {
-		return fmt.Errorf("%s: %s", transferName[kind], listIssues(lang, doc.Issues))
+	for _, entries := range append([][]string{plan.lists["direct"], plan.lists["block"]}, mapValues(plan.routes)...) {
+		if len(listBody(entries)) > ctl.UserListMax {
+			return plan, fmt.Errorf("%s: %w", routingFileName, errListTooLarge)
+		}
 	}
-	entries := doc.Values()
-	if len(listBody(entries)) > ctl.UserListMax {
-		return fmt.Errorf("%s: %w", transferName[kind], errListTooLarge)
+	catalogBody, err := presets.EncodeCatalogFile(presets.Catalog{Categories: file.Categories, Presets: file.Presets})
+	if err != nil {
+		return plan, fmt.Errorf("%s: %w", routingFileName, err)
 	}
-	plan.lists[kind] = entries
-	return nil
+	catalog, err := presets.DecodeCatalogFile(catalogBody)
+	if err != nil {
+		return plan, fmt.Errorf("%s: %w", routingFileName, err)
+	}
+	plan.categories, plan.presets, plan.hasPS = catalog.Categories, catalog.Presets, true
+	return plan, nil
+}
+
+func mapValues(m map[string][]string) [][]string {
+	out := make([][]string, 0, len(m))
+	for _, entries := range m {
+		out = append(out, entries)
+	}
+	return out
 }
 
 func transferPlan(r *http.Request) (importPlan, error) {
-	var plan importPlan
-	kinds, err := selectedKinds(r.MultipartForm.Value["item"])
+	b, ok, err := transferUpload(r, "routing")
 	if err != nil {
-		return plan, err
+		return importPlan{}, fmt.Errorf("%s: %w", routingFileName, err)
 	}
-	plan.kinds, plan.lists, plan.routes = kinds, map[string][]string{}, map[string][]string{}
-	fromZIP := map[string][]byte{}
-	if b, ok, err := transferUpload(r, "bundle"); err != nil {
-		return plan, err
-	} else if ok {
-		fromZIP, err = zipTransferFiles(b)
-		if err != nil {
-			return plan, err
-		}
+	if !ok {
+		return importPlan{}, errors.New("Choose a DPI Switch routing file")
 	}
-	for _, kind := range kinds {
-		b, ok, err := transferUpload(r, "file_"+kind)
-		if err != nil {
-			return plan, fmt.Errorf("%s: %w", transferName[kind], err)
-		}
-		if !ok {
-			b, ok = fromZIP[kind]
-		}
-		if !ok {
-			return plan, fmt.Errorf("%s: no file selected", transferName[kind])
-		}
-		if err := addTransferToPlan(&plan, kind, b, lang(r)); err != nil {
-			return plan, err
-		}
-	}
-	return plan, nil
+	return routingPlan(b)
 }
 
 type fileSnapshot struct {
@@ -493,10 +375,10 @@ func (s *Server) actTransferImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if moved > 0 {
-		s.redirect(w, r, nil, "Imported %d files; %d open connections moved", len(plan.kinds), moved)
+		s.redirect(w, r, nil, "Routing data loaded; %d open connections moved", moved)
 		return
 	}
-	s.redirect(w, r, nil, "Imported %d files", len(plan.kinds))
+	s.redirect(w, r, nil, "Routing data loaded")
 }
 
 func (s *Server) actListClassify(w http.ResponseWriter, r *http.Request) {

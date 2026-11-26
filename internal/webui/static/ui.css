@@ -415,14 +415,6 @@ dialog form{margin:0}
 .transferdlg .bundle-file{display:flex;align-items:center;gap:16px;border:1px solid var(--line);border-radius:7px;padding:8px 10px;margin:10px 0 5px}
 .transferdlg .bundle-file>span{display:flex;flex-direction:column;min-width:210px}
 .transferdlg small{color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0}
-.transfer-group{border:1px solid var(--line);border-radius:8px;margin-top:10px;overflow:hidden}
-.transfer-group.current{border-color:var(--accent)}
-.transfer-group h3{margin:0;padding:7px 10px;background:var(--bg)}
-.transfer-row{display:grid;grid-template-columns:18px minmax(190px,1fr) minmax(210px,1fr);gap:9px;align-items:center;
-  min-height:42px;padding:6px 10px;border-top:1px solid var(--line);cursor:pointer}
-.transfer-row>span{display:flex;flex-direction:column;min-width:0}
-.transfer-row input[type=file]{min-width:0;width:100%;font-size:12px}
-.transfer-row.compact{grid-template-columns:18px minmax(0,1fr)}
 .transferdlg .actions{min-height:0}
 .settings-archive-dlg{width:660px}
 .archive-warning{border:1px solid var(--warn);background:var(--warn-bg);border-radius:8px;padding:10px 12px;margin:10px 0 12px}

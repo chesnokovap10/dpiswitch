@@ -148,40 +148,18 @@
 {{define "transferbuttons"}}
   <span class="transfer-buttons">
     <button type="button" data-open="dlg-import-{{.Page}}">{{.T "Import…"}}</button>
-    <button type="button" data-open="dlg-export-{{.Page}}">{{.T "Export…"}}</button>
+    <a class="button" href="/lists/export">{{.T "Export…"}}</a>
   </span>
 {{end}}
 
 {{define "transferdialogs"}}{{$v := .}}
 <dialog id="dlg-import-{{.Page}}" class="transferdlg">
-  <form method="post" action="/act/listsimport" enctype="multipart/form-data" data-transfer-import data-reset
-    data-select-error="{{.T "Select at least one item."}}" data-file-error="{{.T "Choose a file for every selected item, or add a ZIP archive containing it."}}">
+  <form method="post" action="/act/listsimport" enctype="multipart/form-data" data-routing-import data-reset
+    data-file-error="{{.T "Choose a DPI Switch routing file."}}">
     <h2>{{.T "Import routing data"}}</h2>
-    <p class="hint">{{.T "Select one or several items. Each selected item is replaced completely. All selected files are checked first: if one is invalid, nothing is imported."}}</p>
-    <label class="bundle-file"><span>{{.T "ZIP archive (optional)"}}<small>dpi-switch-routing.zip</small></span><input type="file" name="bundle" accept=".zip,application/zip"></label>
-    <p class="hint">{{.T "A separate file below overrides the same file from the ZIP archive."}}</p>
-    <div class="transfer-group {{if eq .Page "lists"}}current{{end}}">
-      <h3>{{.T "Routing data"}} <small>{{.T "4 files"}}</small></h3>
-      <label class="transfer-row"><input type="checkbox" name="item" value="direct"><span>{{.T "Direct rules"}}<small>always-direct.txt</small></span><input type="file" name="file_direct" data-transfer-file accept=".txt,.yaml,.yml,text/plain,application/yaml"></label>
-      <label class="transfer-row"><input type="checkbox" name="item" value="routes"><span>{{.T "Tunnel route rules"}}<small>always-via.json</small></span><input type="file" name="file_routes" data-transfer-file accept=".json,application/json"></label>
-      <label class="transfer-row"><input type="checkbox" name="item" value="block"><span>{{.T "Block rules"}}<small>forbidden.txt</small></span><input type="file" name="file_block" data-transfer-file accept=".txt,.yaml,.yml,text/plain,application/yaml"></label>
-      <label class="transfer-row"><input type="checkbox" name="item" value="presets"><span>{{.T "Presets"}}<small>presets.json</small></span><input type="file" name="file_presets" data-transfer-file accept=".json,application/json"></label>
-    </div>
+    <p class="hint">{{.T "The file contains all explicit routing rules, presets and custom preset categories. Everything is checked first and then replaced together."}}</p>
+    <label class="bundle-file"><span>{{.T "Routing data"}}<small>routing.json</small></span><input type="file" name="routing" accept=".json,application/json"></label>
     <div class="actions"><span class="msg bad transfer-error" hidden></span><span class="spacer"></span><button type="button" data-close>{{.T "Cancel"}}</button><button class="primary" data-busy="{{.T "Importing…"}}">{{.T "Import"}}</button></div>
-  </form>
-</dialog>
-<dialog id="dlg-export-{{.Page}}" class="transferdlg">
-  <form method="get" action="/lists/export" data-transfer-export data-reset data-select-error="{{.T "Select at least one item."}}">
-    <h2>{{.T "Export routing data"}}</h2>
-    <p class="hint">{{.T "One selected item is downloaded as its original file; several items are downloaded together as a ZIP archive."}}</p>
-    <div class="transfer-group {{if eq .Page "lists"}}current{{end}}">
-      <h3>{{.T "Routing data"}} <small>{{.T "4 files"}}</small></h3>
-      <label class="transfer-row compact"><input type="checkbox" name="item" value="direct"><span>{{.T "Direct rules"}}<small>always-direct.txt</small></span></label>
-      <label class="transfer-row compact"><input type="checkbox" name="item" value="routes"><span>{{.T "Tunnel route rules"}}<small>always-via.json</small></span></label>
-      <label class="transfer-row compact"><input type="checkbox" name="item" value="block"><span>{{.T "Block rules"}}<small>forbidden.txt</small></span></label>
-      <label class="transfer-row compact"><input type="checkbox" name="item" value="presets"><span>{{.T "Presets"}}<small>presets.json</small></span></label>
-    </div>
-    <div class="actions"><span class="msg bad transfer-error" hidden></span><span class="spacer"></span><button type="button" data-close>{{.T "Cancel"}}</button><button class="primary">{{.T "Export"}}</button></div>
   </form>
 </dialog>
 {{end}}

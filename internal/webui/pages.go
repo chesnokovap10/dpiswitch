@@ -266,8 +266,8 @@ var routeSpecs = []routeSpec{
 	{"awg2-awg1-direct", paths.Awg2List},
 }
 
-// ruleSpecs is the order used when the separate files are presented as one
-// routing-rules editor. It follows their effective priority, so a duplicate
+// ruleSpecs is the order used in the routing-rules editor and routing.json.
+// It follows their effective priority, so a duplicate
 // left by an older version keeps the route that actually won.
 var ruleSpecs = append(append([]routeSpec{{"block", paths.BlockList}}, routeSpecs...), routeSpec{"direct", paths.DirectList})
 
