@@ -25,6 +25,17 @@
 </main>
 </div>
 {{template "rowmenu" .}}
+<dialog id="app-dialog" class="app-dialog" aria-labelledby="app-dialog-title">
+  <form method="dialog">
+    <h2 id="app-dialog-title">{{.T "Confirm action"}}</h2>
+    <p class="app-dialog-text"></p>
+    <div class="actions">
+      <span class="spacer"></span>
+      <button value="cancel" data-dialog-cancel>{{.T "Cancel"}}</button>
+      <button value="ok" class="primary" data-dialog-ok>{{.T "Continue"}}</button>
+    </div>
+  </form>
+</dialog>
 <script src="/static/ui.js"></script>
 <script src="/static/rowmenu.js"></script>
 <script src="/static/live.js"></script>
@@ -150,10 +161,10 @@
     <label class="bundle-file"><span>{{.T "ZIP archive (optional)"}}<small>dpi-switch-routing.zip</small></span><input type="file" name="bundle" accept=".zip,application/zip"></label>
     <p class="hint">{{.T "A separate file below overrides the same file from the ZIP archive."}}</p>
     <div class="transfer-group {{if eq .Page "lists"}}current{{end}}">
-      <h3>{{.T "Routing lists"}} <small>4</small></h3>
-      <label class="transfer-row"><input type="checkbox" name="item" value="direct"><span>{{.T "Always direct"}}<small>always-direct.txt</small></span><input type="file" name="file_direct" data-transfer-file accept=".txt,.yaml,.yml,text/plain,application/yaml"></label>
-      <label class="transfer-row"><input type="checkbox" name="item" value="routes"><span>{{.T "Always via"}}<small>always-via.json</small></span><input type="file" name="file_routes" data-transfer-file accept=".json,application/json"></label>
-      <label class="transfer-row"><input type="checkbox" name="item" value="block"><span>{{.T "Forbidden"}}<small>forbidden.txt</small></span><input type="file" name="file_block" data-transfer-file accept=".txt,.yaml,.yml,text/plain,application/yaml"></label>
+      <h3>{{.T "Routing data"}} <small>{{.T "4 files"}}</small></h3>
+      <label class="transfer-row"><input type="checkbox" name="item" value="direct"><span>{{.T "Direct rules"}}<small>always-direct.txt</small></span><input type="file" name="file_direct" data-transfer-file accept=".txt,.yaml,.yml,text/plain,application/yaml"></label>
+      <label class="transfer-row"><input type="checkbox" name="item" value="routes"><span>{{.T "Tunnel route rules"}}<small>always-via.json</small></span><input type="file" name="file_routes" data-transfer-file accept=".json,application/json"></label>
+      <label class="transfer-row"><input type="checkbox" name="item" value="block"><span>{{.T "Block rules"}}<small>forbidden.txt</small></span><input type="file" name="file_block" data-transfer-file accept=".txt,.yaml,.yml,text/plain,application/yaml"></label>
       <label class="transfer-row"><input type="checkbox" name="item" value="presets"><span>{{.T "Presets"}}<small>presets.json</small></span><input type="file" name="file_presets" data-transfer-file accept=".json,application/json"></label>
     </div>
     <div class="actions"><span class="msg bad transfer-error" hidden></span><span class="spacer"></span><button type="button" data-close>{{.T "Cancel"}}</button><button class="primary" data-busy="{{.T "Importing…"}}">{{.T "Import"}}</button></div>
@@ -164,10 +175,10 @@
     <h2>{{.T "Export routing data"}}</h2>
     <p class="hint">{{.T "One selected item is downloaded as its original file; several items are downloaded together as a ZIP archive."}}</p>
     <div class="transfer-group {{if eq .Page "lists"}}current{{end}}">
-      <h3>{{.T "Routing lists"}} <small>4</small></h3>
-      <label class="transfer-row compact"><input type="checkbox" name="item" value="direct"><span>{{.T "Always direct"}}<small>always-direct.txt</small></span></label>
-      <label class="transfer-row compact"><input type="checkbox" name="item" value="routes"><span>{{.T "Always via"}}<small>always-via.json</small></span></label>
-      <label class="transfer-row compact"><input type="checkbox" name="item" value="block"><span>{{.T "Forbidden"}}<small>forbidden.txt</small></span></label>
+      <h3>{{.T "Routing data"}} <small>{{.T "4 files"}}</small></h3>
+      <label class="transfer-row compact"><input type="checkbox" name="item" value="direct"><span>{{.T "Direct rules"}}<small>always-direct.txt</small></span></label>
+      <label class="transfer-row compact"><input type="checkbox" name="item" value="routes"><span>{{.T "Tunnel route rules"}}<small>always-via.json</small></span></label>
+      <label class="transfer-row compact"><input type="checkbox" name="item" value="block"><span>{{.T "Block rules"}}<small>forbidden.txt</small></span></label>
       <label class="transfer-row compact"><input type="checkbox" name="item" value="presets"><span>{{.T "Presets"}}<small>presets.json</small></span></label>
     </div>
     <div class="actions"><span class="msg bad transfer-error" hidden></span><span class="spacer"></span><button type="button" data-close>{{.T "Cancel"}}</button><button class="primary">{{.T "Export"}}</button></div>
@@ -209,7 +220,7 @@
 {{/* a tunnel's health: in the overview's and the second tunnel's state, and
    in the header's chip. Drawn here alone -- /api/tunnels sends them drawn
    every second (see tunnelpulse.go), and ui.js only puts them in place */}}
-{{define "tunpill"}}{{$v := .V}}{{if .PendingNote}}<span class="pill warn" title="{{$v.Note .Note}}">{{.PendingNote}}</span>{{else if .Alive}}<span class="pill {{if .Poor}}warn{{else}}ok{{end}}">{{if .Poor}}{{$v.T "responding slowly"}}{{else}}{{$v.T "responding"}}{{end}} · {{$v.Note .Note}}</span>{{with .Quality}} <span class="muted">{{.}}</span>{{end}}{{else}}<span class="pill bad">{{$v.T "not responding"}}</span> <span class="muted">{{$v.Note .Note}}</span>{{end}}{{end}}
+{{define "tunpill"}}{{$v := .V}}{{if .PendingNote}}<span class="pill warn" title="{{$v.Note .Note}}">{{.PendingNote}}</span>{{else if .Alive}}<span class="pill {{if .Poor}}warn{{else}}ok{{end}}">{{if .Poor}}{{$v.T "health check responds slowly"}}{{else}}{{$v.T "health check responds"}}{{end}} · {{$v.Note .Note}}</span>{{with .Quality}} <span class="muted">{{.}}</span>{{end}}{{else}}<span class="pill bad">{{$v.T "health check does not respond"}}</span> <span class="muted">{{$v.Note .Note}}</span>{{end}}{{end}}
 {{define "tunchip"}}<span class="dot {{if .PendingNote}}warn{{else if not .Alive}}bad{{else if .Poor}}warn{{else}}ok{{end}}"></span>{{.Name}} {{if .PendingNote}}<span title="{{.V.Note .Note}}">{{.PendingNote}}</span>{{else if .Alive}}{{.V.Note .Note}}{{else}}{{.V.T "not responding"}}{{end}}{{end}}
 
 {{/* the second tunnel's state: switched off in this mode, or its health */}}
@@ -221,5 +232,5 @@
 {{/* the mode decides whether the verdicts apply: said while they do not; on
    the verdicts page and under the overview's counts */}}
 {{define "vnote"}}{{if not .St.HasConfig}}<p class="hint warn-t" style="margin:0">{{if .St.Second}}{{.T "The first tunnel (awg1) is not loaded: the detector checks nothing, even with auto-switch On, but the ClientHello cut when DPI bypass has it switched on. It measures the direct path against awg1 only, never awg2; until awg1 is loaded, what no list names goes direct."}}{{else}}{{.T "The tunnel's config (awg1) is not loaded: the detector checks nothing, even with auto-switch On, but the ClientHello cut when DPI bypass has it switched on. Until it is loaded, what no list names goes direct."}}{{end}}</p>
-{{- else if eq .St.Mode "observe"}}<p class="hint warn-t" style="margin:0">{{if .St.Second}}{{.T "Observe only is on: the verdicts are recorded, not applied. Everything goes direct but Forbidden, the three Always via lists and the second tunnel while switched on."}}{{else}}{{.T "Observe only is on: the verdicts are recorded, not applied. Everything goes direct but Forbidden and Always via tunnel."}}{{end}}</p>
+{{- else if eq .St.Mode "observe"}}<p class="hint warn-t" style="margin:0">{{.T "Observe only is on: verdicts are recorded but not applied. Traffic goes direct unless an explicit rule selects block or an awg route; enabled presets still use their route."}}</p>
 {{- else if eq .St.Mode "tunnel"}}<p class="hint warn-t" style="margin:0">{{if .St.Second}}{{.T "Tunnel only is on: the verdicts are recorded, not applied. Everything but Always direct goes through the tunnels and never direct."}}{{else}}{{.T "Tunnel only is on: the verdicts are recorded, not applied. Everything but Always direct goes through the tunnel and never direct."}}{{end}}</p>{{end}}{{end}}

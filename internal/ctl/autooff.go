@@ -334,6 +334,42 @@ func watchSettings(ctx context.Context, cfg Config, a *api, st *state, last Sett
 	}
 }
 
+// closeVerifiedSplit closes only the application connections whose route is
+// changed when the ClientHello cut is enabled. In Observe they were plain
+// direct; in On they were in the tunnel. User-pinned routes stay untouched.
+func closeVerifiedSplit(a *api, st *state, id string) int {
+	names := st.verifiedSplit(id)
+	if len(names) == 0 {
+		return 0
+	}
+	conns, err := a.connections()
+	if err != nil {
+		log.Printf("cannot read connections: %v", err)
+		return 0
+	}
+	n := 0
+	for _, c := range conns {
+		dom := c.domain()
+		if c.ID == "" || dom == "" || c.fromProbe() || c.pinned() {
+			continue
+		}
+		matched := false
+		for _, name := range names {
+			if MatchDomainRule(name, dom) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		if err := a.closeConnection(c.ID); err == nil {
+			n++
+		}
+	}
+	return n
+}
+
 // switchMode carries out a change of auto-switch mode at once. The files the
 // mode decides are written first -- the catch-all of observe only, the
 // direct lists tunnel only sets aside -- since a connection closed after

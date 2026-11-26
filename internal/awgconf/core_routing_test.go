@@ -245,6 +245,12 @@ func (l *coreLog) String() string {
 	return l.buf.String()
 }
 
+func (l *coreLog) reset() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.buf.Reset()
+}
+
 // coreSafe: the config made to run beside the service and without admin
 // rights -- no TUN, the controller and the DNS listener on free ports, the
 // listeners given in place of the prober's
@@ -373,6 +379,22 @@ func (a *coreAPI) get(path string, v any) error {
 		return fmt.Errorf("%s: HTTP %d", path, resp.StatusCode)
 	}
 	return json.NewDecoder(resp.Body).Decode(v)
+}
+
+func (a *coreAPI) put(path string, v any) error {
+	b, _ := json.Marshal(v)
+	req, _ := http.NewRequest(http.MethodPut, a.base+path, bytes.NewReader(b))
+	req.Header.Set("Authorization", "Bearer "+a.secret)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := (&http.Client{Timeout: 3 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s: HTTP %d", path, resp.StatusCode)
+	}
+	return nil
 }
 
 func (a *coreAPI) wait(d time.Duration) bool {

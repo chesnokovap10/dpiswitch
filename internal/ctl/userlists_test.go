@@ -338,9 +338,8 @@ func TestLoadStateBad(t *testing.T) {
 	}
 }
 
-// Observe only with the cut on sends everything the cut's way -- its QUIC
-// too, the decoy ahead of it. The decoy off, QUIC goes plain and TCP alone
-// is cut: direct-split always carries the decoy.
+// Observe only is a plain-direct catch-all. The cut is limited to names the
+// detector verified and therefore never takes unrelated composite-site hosts.
 func TestObserveFilesQUICDecoy(t *testing.T) {
 	rules := func(b []byte) []string {
 		var out []string
@@ -355,8 +354,8 @@ func TestObserveFilesQUICDecoy(t *testing.T) {
 		split, decoy bool
 		plain, cut   string
 	}{
-		{true, true, "", "NETWORK,tcp NETWORK,udp"},
-		{true, false, "NETWORK,udp", "NETWORK,tcp"},
+		{true, true, "NETWORK,tcp NETWORK,udp", ""},
+		{true, false, "NETWORK,tcp NETWORK,udp", ""},
 		{false, true, "NETWORK,tcp NETWORK,udp", ""},
 		{false, false, "NETWORK,tcp NETWORK,udp", ""},
 	} {

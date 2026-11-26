@@ -51,20 +51,20 @@ func overviewData(v *view) overview {
 // --- verdicts ---
 
 type vrow struct {
-	Key     string // as the service's memory has it: "@" an address, "+." a whole domain
-	Dom     string // the domain a name is under, for the row's menu
-	Domain  string
-	Uni     string // a name in Russian or other letters, as it is written; Domain is its punycode
-	Addr    bool   // a bare address with a verdict of its own
-	Fam     int    // a whole domain: its clean subdomains
-	Verdict string
-	Reason  string
-	Decided time.Time
-	Expires time.Time
-	Idle    bool // see ctl.DirectEntry.Idle
-	Node    string
-	NoQUIC  bool // see ctl.DirectEntry.NoQUIC
-	NoTCP   bool // see ctl.DirectEntry.NoTCP
+	Key     string    `json:"key"`                   // as the service's memory has it: "@" an address, "+." a whole domain
+	Dom     string    `json:"root_domain,omitempty"` // the domain a name is under, for the row's menu
+	Domain  string    `json:"domain"`
+	Uni     string    `json:"unicode_domain,omitempty"` // a name in Russian or other letters, as it is written; Domain is its punycode
+	Addr    bool      `json:"address,omitempty"`        // a bare address with a verdict of its own
+	Fam     int       `json:"family_members,omitempty"` // a whole domain: its clean subdomains
+	Verdict string    `json:"verdict,omitempty"`
+	Reason  string    `json:"reason,omitempty"`
+	Decided time.Time `json:"decided_at,omitempty"`
+	Expires time.Time `json:"expires_at,omitempty"`
+	Idle    bool      `json:"idle,omitempty"` // see ctl.DirectEntry.Idle
+	Node    string    `json:"tested_ip,omitempty"`
+	NoQUIC  bool      `json:"no_quic,omitempty"` // see ctl.DirectEntry.NoQUIC
+	NoTCP   bool      `json:"no_tcp,omitempty"`  // see ctl.DirectEntry.NoTCP
 }
 
 type verdicts struct {
@@ -266,10 +266,15 @@ var routeSpecs = []routeSpec{
 	{"awg2-awg1-direct", paths.Awg2List},
 }
 
+// ruleSpecs is the order used when the separate files are presented as one
+// routing-rules editor. It follows their effective priority, so a duplicate
+// left by an older version keeps the route that actually won.
+var ruleSpecs = append(append([]routeSpec{{"block", paths.BlockList}}, routeSpecs...), routeSpec{"direct", paths.DirectList})
+
 func listsData() lists {
 	l := lists{Direct: readEntries(paths.DirectList), Block: readEntries(paths.BlockList), awg2: awg2Data(), DefaultTunnel: loadSettings().DefaultTunnel}
-	listed := append(append([]string{}, l.Direct...), l.Block...)
-	for _, route := range routeSpecs {
+	var listed []string
+	for _, route := range ruleSpecs {
 		entries := readEntries(route.List)
 		l.TunnelEntries = append(l.TunnelEntries, entries...)
 		for range entries {

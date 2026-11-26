@@ -290,7 +290,7 @@ func (s *Server) actList(w http.ResponseWriter, r *http.Request) {
 	s.part(w, r, page, "list-"+kind, ok, msg)
 }
 
-// actRouteList saves the common Always via editor. The hidden routes field
+// actRouteList saves the common routing-rules editor. The hidden routes field
 // has one route ID for every visible line in entries.
 func (s *Server) actRouteList(w http.ResponseWriter, r *http.Request) {
 	text, routeText := r.FormValue("entries"), r.FormValue("routes")
@@ -316,12 +316,17 @@ func (s *Server) actRouteList(w http.ResponseWriter, r *http.Request) {
 	byFile := map[string][]string{}
 	shown, shownRoutes := []string{}, []string{}
 	valid := map[string]string{}
-	for _, spec := range routeSpecs {
+	for _, spec := range ruleSpecs {
 		valid[spec.ID] = spec.List
 	}
 	seen := map[string]bool{}
 	for i, line := range raw {
-		doc := ctl.ParseList(line, ctl.ListPolicy{})
+		route := ""
+		if i < len(rawRoutes) {
+			route = strings.TrimSpace(rawRoutes[i])
+		}
+		file := valid[route]
+		doc := ctl.ParseList(line, ctl.ListPolicy{AllowAwg2Rule: file == paths.Tunnel2List})
 		if len(doc.Issues) != 0 {
 			s.refuse(w, r, "lists", "tunnel", raw, listIssues(lang(r), doc.Issues))
 			return
@@ -330,11 +335,6 @@ func (s *Server) actRouteList(w http.ResponseWriter, r *http.Request) {
 		if len(values) == 0 {
 			continue
 		}
-		route := ""
-		if i < len(rawRoutes) {
-			route = strings.TrimSpace(rawRoutes[i])
-		}
-		file := valid[route]
 		if file == "" {
 			s.refuse(w, r, "lists", "tunnel", raw, tr(lang(r), "Choose a route for every entry"))
 			return
@@ -353,22 +353,67 @@ func (s *Server) actRouteList(w http.ResponseWriter, r *http.Request) {
 		s.refuse(w, r, "lists", "tunnel", raw, tr(lang(r), errListTooLarge.Error()))
 		return
 	}
-	moved := 0
-	var err, closeErr error
-	for _, spec := range routeSpecs {
-		var n int
-		n, err, closeErr = s.saveEntries(spec.List, byFile[spec.List])
-		moved += n
-		if err != nil || closeErr != nil {
-			break
-		}
-	}
+	moved, err, closeErr := s.saveRouteEntries(byFile)
 	ok, msg := saved(r, err, moved, closeErr)
 	v := &view{Lang: lang(r), Page: "lists", Path: back(r), St: s.status(), Msg: &flash{ok, msg}}
 	d := listsData()
 	d.TunnelEntries, d.Routes = shown, shownRoutes
 	v.Data = d
 	render(w, v, "list-tunnel")
+}
+
+// saveRouteEntries commits the common editor's backing files as one unit.
+// A row moved between files must never disappear or retain two routes when a
+// later write fails. Connection moves happen only after every file is durable.
+func (s *Server) saveRouteEntries(byFile map[string][]string) (moved int, err, closeErr error) {
+	if err := paths.UserReady(); err != nil {
+		return 0, err, nil
+	}
+	s.listMu.Lock()
+	old := map[string][]string{}
+	var snapshots []fileSnapshot
+	for _, spec := range ruleSpecs {
+		old[spec.List] = readEntries(spec.List)
+		snap, snapErr := takeSnapshot(paths.User(spec.List))
+		if snapErr != nil {
+			s.listMu.Unlock()
+			return 0, snapErr, nil
+		}
+		snapshots = append(snapshots, snap)
+	}
+	apps, snapErr := takeSnapshot(paths.User(paths.AppsList))
+	if snapErr != nil {
+		s.listMu.Unlock()
+		return 0, snapErr, nil
+	}
+	snapshots = append(snapshots, apps)
+	rollback := func(cause error) error {
+		if restoreErr := restoreSnapshots(snapshots); restoreErr != nil {
+			return errors.Join(cause, fmt.Errorf("rollback: %w", restoreErr))
+		}
+		return cause
+	}
+	for _, spec := range ruleSpecs {
+		if err := writeEntries(spec.List, byFile[spec.List]); err != nil {
+			err = rollback(err)
+			s.listMu.Unlock()
+			return 0, err, nil
+		}
+	}
+	if err := paths.RemoveRetry(paths.User(paths.AppsList)); err != nil {
+		err = rollback(err)
+		s.listMu.Unlock()
+		return 0, err, nil
+	}
+	s.listMu.Unlock()
+
+	var closeErrs []error
+	for _, spec := range ruleSpecs {
+		n, err := closeEntriesChange(spec.List, old[spec.List], byFile[spec.List])
+		moved += n
+		closeErrs = append(closeErrs, err)
+	}
+	return moved, nil, errors.Join(closeErrs...)
 }
 
 type listShadow struct{ entry, list string }

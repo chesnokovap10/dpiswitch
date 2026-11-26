@@ -404,6 +404,9 @@ dialog{border:1px solid var(--line);border-radius:10px;padding:16px;width:580px;
 dialog::backdrop{background:rgba(0,0,0,.35)}
 dialog h2{font-size:15px;margin:0 0 8px}
 dialog form{margin:0}
+.app-dialog{width:min(520px,calc(100vw - 48px));padding:20px}
+.app-dialog-text{white-space:pre-line;line-height:1.5;margin:12px 0 18px}
+.app-dialog .actions{min-height:0}
 .transferdlg{width:720px;max-height:calc(100vh - 48px);overflow:auto}
 .transferdlg .bundle-file{display:flex;align-items:center;gap:16px;border:1px solid var(--line);border-radius:7px;padding:8px 10px;margin:10px 0 5px}
 .transferdlg .bundle-file>span{display:flex;flex-direction:column;min-width:210px}

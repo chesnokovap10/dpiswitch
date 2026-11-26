@@ -34,6 +34,9 @@ type Settings struct {
 	MaxBackoffMin int `json:"max_backoff_min"`
 	// how much slower than the tunnel the direct path may be, in percent
 	SlowPct int `json:"slow_pct"`
+	// whether an otherwise clean direct path is kept in the tunnel when it is
+	// slower than the configured tolerance
+	CompareLatency bool `json:"compare_latency"`
 	// attempts per probe; the best measurement counts
 	Attempts int `json:"attempts"`
 	// extend the verdict to the whole domain when it has several clean
@@ -174,16 +177,17 @@ func DefaultSettings() Settings {
 		// every preset off by default: the second tunnel is optional, and a
 		// preset silently pinning traffic to a tunnel the user has not set up
 		// is worse than no preset at all
-		Awg2Presets:   []string{},
-		CleanTTLMin:   7 * 24 * 60,
-		FailTTLMin:    60,
-		MaxBackoffMin: 24 * 60,
-		SlowPct:       20,
-		Attempts:      3,
-		DirectDNS:     append([]string(nil), defaultDirectDNS...),
-		TunnelDNS:     []string{},
-		TunnelDNS2:    []string{},
-		UIOpen:        UIWindow,
+		Awg2Presets:    []string{},
+		CleanTTLMin:    7 * 24 * 60,
+		FailTTLMin:     60,
+		MaxBackoffMin:  24 * 60,
+		SlowPct:        20,
+		CompareLatency: true,
+		Attempts:       3,
+		DirectDNS:      append([]string(nil), defaultDirectDNS...),
+		TunnelDNS:      []string{},
+		TunnelDNS2:     []string{},
+		UIOpen:         UIWindow,
 		// on: a file written while it was one switch with the cut has the
 		// decoy as the cut had it
 		QUICFake: true,
@@ -473,5 +477,7 @@ func (s Settings) apply(cfg Config) Config {
 		}
 	}
 	probe.SetSlowFactor(1 + float64(s.SlowPct)/100)
+	probe.SetCompareLatency(s.CompareLatency)
+	cfg.CompareLatency = s.CompareLatency
 	return cfg
 }

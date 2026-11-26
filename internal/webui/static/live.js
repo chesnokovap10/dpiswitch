@@ -681,7 +681,7 @@ pageInit.live = function (sec) {
       // the rows turn closed with the next tick
     } catch (err) {
       for (const b of xs) b.disabled = false;
-      alert(W.closeFail + ' ' + err.message);
+      await window.appDialog(W.closeFail + ' ' + err.message, true);
     }
   });
 

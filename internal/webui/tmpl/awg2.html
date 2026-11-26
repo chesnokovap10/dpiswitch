@@ -46,7 +46,7 @@
 
 {{define "presets"}}{{$v := .}}
   <h3>{{.T "Presets"}}</h3>
-  <p class="hint">{{.T "Enabled presets use the default tunnel order from Settings. Always via rows and Always direct have higher priority. A switch applies at once, open connections included."}}</p>
+  <p class="hint">{{.T "A preset applies when no explicit routing rule matches the connection. It uses the default route selected in Settings. Switching a preset immediately moves its open connections."}}</p>
   <form method="post" action="/act/preset" data-swap="presets" data-instant="1" class="presets" data-preset-tree>
     {{range .PresetGroups}}
     <details data-grp="presets-{{.ID}}" class="preset-group">
@@ -116,4 +116,4 @@
 {{end}}
 
 
-{{define "list-awg2"}}{{template "entrylist" (el . "awg2" (.T "Your own list") (.TH "Through the second tunnel, beside the presets and with their priority and fallback: below Forbidden, the three Always via lists and Always direct; above the detector. <a class=\"hl\" href=\"/help#h-routes\"><code>awg2_rule</code></a> in <a class=\"hl\" href=\"/lists?tunnel-list=tunnel2#list-tunnel2\">Always via Tunnel2</a> also makes every entry here use awg2 only.") .Data.Hosts .Data.Online)}}{{end}}
+{{define "list-awg2"}}{{template "entrylist" (el . "awg2" (.T "Your own list") (.TH "These entries behave like presets: they use the default route when no explicit routing rule matches. To require awg2 without fallback, add the entry to <a class=\"hl\" href=\"/lists#list-tunnel\">Routing rules</a> and select awg2.") .Data.Hosts .Data.Online)}}{{end}}

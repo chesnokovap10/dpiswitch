@@ -527,8 +527,8 @@ func readSettings(cfg Config) (Settings, bool) {
 func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) Config {
 	was, old := cfg.Apply, cfg
 	cfg = s.apply(cfg)
-	log.Printf("settings: auto-switch %s, direct TTL %s, blocked TTL %s, cap %s, tolerance +%d%%, attempts %d, ClientHello cut %v, QUIC decoy %v",
-		s.Mode(), cfg.TTL, cfg.FailTTL, cfg.MaxBackoff, s.SlowPct, cfg.Attempts, cfg.Split, cfg.QUICFake)
+	log.Printf("settings: auto-switch %s, direct TTL %s, blocked TTL %s, cap %s, compare latency %v, tolerance +%d%%, attempts %d, ClientHello cut %v, QUIC decoy %v",
+		s.Mode(), cfg.TTL, cfg.FailTTL, cfg.MaxBackoff, s.CompareLatency, s.SlowPct, cfg.Attempts, cfg.Split, cfg.QUICFake)
 
 	// Terms follow the setting they come from, and only when it changed.
 	// The other verdicts' terms were left as they were -- a blocked re-check
@@ -536,6 +536,7 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 	// save, whatever it changed, reset the CLEAN ones, a CLEAN measured
 	// slower once among them (see entry.SlowOnce).
 	failChanged := cfg.FailTTL != old.FailTTL || cfg.MaxBackoff != old.MaxBackoff
+	compareOff := old.CompareLatency && !cfg.CompareLatency
 	// the cut switched on: the names blocked by their hello are tried with
 	// it now, not when their re-check comes -- a day away for some
 	splitOn := cfg.Split && !old.Split
@@ -553,6 +554,16 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 	for _, m := range st.Networks {
 		for _, e := range m {
 			switch {
+			case compareOff && e.Verdict == probe.Slower:
+				// SLOWER says the paths otherwise worked. Re-check it now under
+				// the new policy instead of leaving it in the tunnel until its
+				// old backoff expires.
+				e.ExpiresAt = now
+			case compareOff && e.SlowOnce:
+				// A clean name kept after one slow measurement no longer needs
+				// the early confirmation scheduled for that measurement.
+				e.SlowOnce = false
+				e.ExpiresAt = now.Add(cfg.TTL)
 			case splitOn && (e.Verdict == probe.BlockedTLS || e.Verdict == probe.BlockedDPI || e.Verdict == probe.BlockedTCP):
 				e.ExpiresAt = now
 			case quicOn && (e.Verdict == probe.BlockedQUIC || e.Verdict == probe.BlockedDPI || e.Verdict == probe.CleanSplit && e.NoQUIC):
@@ -585,6 +596,10 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 		// the main loop writes it once it finds the network
 		if netID != noNetwork {
 			applyList(cfg, a, st, netID)
+		}
+		if splitOn && netID != noNetwork {
+			n := closeVerifiedSplit(a, st, netID)
+			log.Printf("the ClientHello cut switched on: %d verified connections moved", n)
 		}
 		// the cut switched off: its list is empty now, and what it sent
 		// direct goes through the tunnel once it opens again
@@ -619,19 +634,6 @@ func onSettingsChanged(cfg Config, s Settings, a *api, st *state, netID string) 
 			listMu.Unlock()
 			n := closeByProviderNet(a, ObserveProvider, "udp")
 			log.Printf("observe only, the QUIC decoy on: %d QUIC connections moved", n)
-		}
-		// observe only: its catch-all changed hands -- what the other one
-		// carries opens again the new way
-		if old.Split != cfg.Split && s.Mode() == ModeObserve {
-			listMu.Lock()
-			syncUserFiles(a)
-			listMu.Unlock()
-			was := ObserveProvider
-			if old.Split {
-				was = ObserveSplitProvider
-			}
-			n := closeByProvider(a, was)
-			log.Printf("observe only, the ClientHello cut %v: %d open connections moved", cfg.Split, n)
 		}
 	}
 	return cfg

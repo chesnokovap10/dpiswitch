@@ -369,6 +369,41 @@ func TestRenderSecondDNS(t *testing.T) {
 	}
 }
 
+// With only awg2 loaded, every rule must still point at a group emitted in
+// the same config. A stale reference to the removed tunnel2 group made mihomo
+// reject config.yaml and restart forever.
+func TestRenderNoFirstRoutesInsideAwg2ToExistingGroup(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	two := "[Interface]\n" +
+		"PrivateKey = AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n" +
+		"Address = 10.9.1.3/32, fd7a:a1c3:8b42:8::5/128\n" +
+		"DNS = fd7a:a1c3:8b42:8::1\n" +
+		"[Peer]\n" +
+		"PublicKey = AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n" +
+		"Endpoint = 198.51.100.8:51820\n"
+	if err := os.WriteFile(paths.SourceConf2(), []byte(two), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := RenderNoFirst()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, ",tunnel2,no-resolve\n") {
+		t.Fatal("inside awg2 rule points at removed tunnel2 group")
+	}
+	for _, rule := range []string{
+		"  - IP-CIDR6,fd7a:a1c3:8b42:8::/64," + ctl.Tunnel2OnlyGroup + ",no-resolve\n",
+		"  - name: " + ctl.Tunnel2OnlyGroup + "\n",
+	} {
+		if !strings.Contains(out, rule) {
+			t.Fatalf("generated config is missing %q", rule)
+		}
+	}
+}
+
 // writeTemp: text in a file of its own, for what reads a file
 func writeTemp(t *testing.T, text string) string {
 	p := filepath.Join(t.TempDir(), "config.yaml")

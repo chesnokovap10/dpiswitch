@@ -63,6 +63,24 @@ function failed(el, text) {
   el.append(m);
 }
 
+// All questions and notices belong to the application, not to the browser
+// chrome. Besides looking the same as the other dialogs, this keeps the
+// wording and buttons in the selected UI language.
+function appDialog(text, notice = false) {
+  const d = document.getElementById('app-dialog');
+  if (!d) return Promise.resolve(notice || false);
+  d.querySelector('.app-dialog-text').textContent = text;
+  d.querySelector('[data-dialog-cancel]').hidden = notice;
+  const ok = d.querySelector('[data-dialog-ok]');
+  if (!ok.dataset.label) ok.dataset.label = ok.textContent;
+  ok.textContent = notice ? 'OK' : ok.dataset.label;
+  d.returnValue = '';
+  d.showModal();
+  ok.focus();
+  return new Promise(resolve => d.addEventListener('close', () => resolve(notice || d.returnValue === 'ok'), {once: true}));
+}
+window.appDialog = appDialog;
+
 // --- pages ---
 // The page asked for comes with the document; the others are fetched right
 // after it is drawn, and kept. Each is a section of <main>, one shown at a
@@ -531,7 +549,17 @@ document.addEventListener('submit', e => {
     return;
   }
   const q = (e.submitter && e.submitter.dataset.confirm) || f.dataset.confirm;
-  if (q && !confirm(q)) { e.preventDefault(); return; }
+  if (q && !f._confirmed) {
+    e.preventDefault();
+    const submitter = e.submitter;
+    appDialog(q).then(ok => {
+      if (!ok || !f.isConnected) return;
+      f._confirmed = true;
+      f.requestSubmit(submitter);
+    });
+    return;
+  }
+  f._confirmed = false;
   const b = e.submitter, label = b && b.textContent;
   if (b && b.dataset.busy) {
     // a plain form reloads the page: the button is disabled after the
@@ -550,7 +578,7 @@ document.addEventListener('submit', e => {
   });
 });
 
-document.addEventListener('change', e => {
+document.addEventListener('change', async e => {
   if (e.target.matches('[data-transfer-file]') && e.target.files.length) {
     const row = e.target.closest('.transfer-row');
     if (row) row.querySelector('input[name="item"]').checked = true;
@@ -628,7 +656,7 @@ document.addEventListener('drop', e => {
   if (p) p.value = '';
   readInto(t, e.dataTransfer.files[0]);
 });
-document.addEventListener('change', e => {
+document.addEventListener('change', async e => {
   const p = e.target;
   if (p.type !== 'file' || !p.form || !p.files[0]) return;
   if (p.dataset.listImport !== undefined) {
@@ -649,10 +677,7 @@ document.addEventListener('change', e => {
       p.value = '';
       return;
     }
-    if (dirty(p.form) && !confirm(p.dataset.replace)) {
-      p.value = '';
-      return;
-    }
+    if (dirty(p.form) && !await appDialog(p.dataset.replace)) { p.value = ''; return; }
     const current = ticket(t);
     const fr = new FileReader();
     fr.onload = () => {

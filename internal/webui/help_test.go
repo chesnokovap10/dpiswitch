@@ -73,25 +73,24 @@ func TestSettingsHelpLinks(t *testing.T) {
 	}
 }
 
-// The three route-list blocks lead back to the help table that explains
-// their priority. The table has the same anchor with either tunnel layout.
-func legacyRouteListHelpLinks(t *testing.T) {
+// The unified routing editor leads to its help, and the second-tunnel text
+// leads back to that editor rather than to a removed Tunnel2 tab.
+func TestRouteHelpLinks(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
 	for _, l := range []string{"en", "ru"} {
 		c := map[string]string{"Cookie": "lang=" + l}
 		page := do(t, h, "GET", "/lists", nil, c).Body.String()
-		// The three route-list block headings.
-		if n := strings.Count(page, `href="/help#h-routes"`); n != 3 {
-			t.Errorf("%s: %d route-list help links, want 3", l, n)
+		if n := strings.Count(page, `href="/help#h-routes"`); n != 1 {
+			t.Errorf("%s: %d route help links, want 1", l, n)
 		}
 		help := do(t, h, "GET", "/help", nil, c).Body.String()
 		if !strings.Contains(help, `id="h-routes"`) {
 			t.Errorf("%s: route help anchor is missing", l)
 		}
 		awg2 := do(t, h, "GET", "/awg2", nil, c).Body.String()
-		if n := strings.Count(awg2, `href="/lists?tunnel-list=tunnel2#list-tunnel2"`); n != 2 {
-			t.Errorf("%s: %d links from awg2 explanations to Tunnel2, want 2", l, n)
+		if strings.Contains(awg2, `tunnel-list=tunnel2`) || strings.Contains(awg2, `list-tunnel2`) {
+			t.Errorf("%s: removed Tunnel2 tab is still linked", l)
 		}
 	}
 }

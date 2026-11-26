@@ -1,10 +1,8 @@
 {{define "content"}}
 <div class="page">
   <div class="lists-intro"><p class="hint">{{.T "One per line: a site (example.com; +.example.com for the domain and all under it; * for any one label: +.example.*), an address or a network (1.2.3.4, 192.168.0.0/16: for connections made to it by address), a program (telegram.exe; a full path for that copy only)."}}</p><div class="lists-transfer">{{template "transferbuttons" .}}</div></div>
-  <div class="cols2 fill lists lists4">
-    <div class="box" id="list-direct" data-fresh="/frag/lists/list-direct">{{template "list-direct" .}}</div>
+  <div class="cols2 fill lists">
     <div class="box" id="list-tunnel" data-fresh="/frag/lists/list-tunnel">{{template "list-tunnel" .}}</div>
-    <div class="box" id="list-block" data-fresh="/frag/lists/list-block">{{template "list-block" .}}</div>
     <div class="box" id="presets" data-fresh="/frag/lists/presets">{{template "presets" .}}</div>
   </div>
 </div>
@@ -14,8 +12,9 @@
 {{define "list-direct"}}{{template "entrylist" (el . "direct" (.T "Always direct") (.T "Never through a tunnel, whatever the detector finds, in every mode. Below Forbidden and Always via; above presets and the detector.") .Data.Direct .Data.Online)}}{{end}}
 
 {{define "list-tunnel"}}{{$v := .}}
-  <h3><a class="hl" href="/help#h-routes">{{.T "Always via"}}</a></h3>
-  <p class="hint">{{.T "Each row uses its selected route in every mode. Routes without direct fail closed when every enabled tunnel in the chain is unavailable."}}</p>
+  <span id="list-direct" hidden></span><span id="list-block" hidden></span>
+  <h3><a class="hl" href="/help#h-routes">{{.T "Routing rules"}}</a></h3>
+  <p class="hint">{{.T "Each row uses its selected route in every mode. Block refuses the connection. Tunnel routes without direct fail closed when every enabled tunnel in the chain is unavailable."}}</p>
   <form method="post" action="/act/list" data-swap="list-tunnel">
     <input type="hidden" name="kind" value="tunnel">
     <div class="row" style="margin-bottom:8px">
@@ -29,9 +28,11 @@
       <div class="entry-routes" aria-label="{{.T "Route"}}"></div>
       <div class="entry-types" aria-label="{{.T "Recognized as"}}"></div>
       <template class="route-options"><select aria-label="{{.T "Route"}}">
+        <option value="direct">direct</option>
         <option value="awg1">awg1</option><option value="awg2">awg2</option>
         <option value="awg1-awg2">awg1→awg2</option><option value="awg2-awg1">awg2→awg1</option>
         <option value="awg1-awg2-direct">awg1→awg2→direct</option><option value="awg2-awg1-direct">awg2→awg1→direct</option>
+        <option value="block">block</option>
       </select></template>
     </div>
     <div class="actions"><button class="primary" name="op" value="save">{{.T "Save"}}</button>{{template "msg" .}}<span class="spacer"></span><span class="muted">{{.Tf "%d entries" (len .Data.TunnelEntries)}}</span></div>

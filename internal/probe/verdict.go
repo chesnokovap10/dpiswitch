@@ -64,8 +64,12 @@ const slowMargin = 10 * time.Millisecond
 // the factor is configurable from the UI; probes read it from several
 // goroutines, so it is stored atomically (in thousandths)
 var slowFactorMilli atomic.Int64
+var compareLatency atomic.Bool
 
-func init() { slowFactorMilli.Store(1200) }
+func init() {
+	slowFactorMilli.Store(1200)
+	compareLatency.Store(true)
+}
 
 // slowBand: hysteresis around the SLOWER threshold. A direct path hovering
 // at it flipped CLEAN and SLOWER from one check to the next, and every flip
@@ -76,7 +80,7 @@ const slowBand = 0.1
 // slower: whether the direct path is too slow to switch to. A CLEAN name
 // must get clearly slower to leave, a SLOWER one clearly faster to come back.
 func slower(direct, tunnel time.Duration, prev Verdict) bool {
-	if tunnel <= 0 {
+	if !compareLatency.Load() || tunnel <= 0 {
 		return false
 	}
 	limit := float64(tunnel)*slowFactor() + float64(slowMargin)
@@ -90,6 +94,10 @@ func slower(direct, tunnel time.Duration, prev Verdict) bool {
 }
 
 func SetSlowFactor(f float64) { slowFactorMilli.Store(int64(f * 1000)) }
+
+// SetCompareLatency controls whether an otherwise clean direct path may get
+// SLOWER solely because it takes longer than the tunnel.
+func SetCompareLatency(on bool) { compareLatency.Store(on) }
 
 func slowFactor() float64 { return float64(slowFactorMilli.Load()) / 1000 }
 
@@ -126,7 +134,7 @@ func CheckSplit(split, tunnel Dialer, plain Report, attempts int, prev Verdict) 
 // (BLOCKED_QUIC), tried again over QUIC through the same outbound -- which,
 // with the QUIC decoy on, sends a decoy Initial for www.google.com ahead of
 // the client's first one (quic-fake in awgconf). As strict as CheckSplit:
-// CLEAN_SPLIT only if every pass is clean and not slower.
+// CLEAN_SPLIT only if every pass is clean and, when enabled, not slower.
 func CheckSplitQUIC(split, tunnel Dialer, plain Report, attempts int, prev Verdict) Report {
 	return checkSplitAlive(split, tunnel, plain, attempts, prev, true)
 }

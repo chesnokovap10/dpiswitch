@@ -12,23 +12,24 @@ only costs a detour.</div>
 {{if .St.Second}}
 <h4 id="h-routes">Where a connection goes</h4>
 <p>Every new connection is matched against these rules from the top; the first one that fits decides.</p>
+<p>The lists page has two blocks: one rules editor where every row selects <b>direct</b>, <b>block</b>,
+or an awg chain, and <b>presets</b>.</p>
 <table>
 <tr><th>#</th><th>Rule</th><th>Route</th></tr>
 <tr><td>1</td><td>The tunnel servers themselves</td><td>direct (otherwise the tunnel would loop into itself)</td></tr>
 <tr><td>2</td><td>Addresses inside the tunnels (their DNS server)</td><td>that tunnel</td></tr>
-<tr><td>3</td><td><a href="/lists#list-block">Forbidden</a>: programs, sites, addresses</td><td>refused, in every mode</td></tr>
+<tr><td>3</td><td><a href="/lists#list-tunnel">Routing rule</a> with route <b>block</b></td><td>refused, in every mode</td></tr>
 <tr><td>4</td><td>Local networks: the router, printers, shares, <code>.local</code> and <code>.lan</code> names</td><td>direct</td></tr>
-<tr><td>5</td><td><a href="/lists#list-tunnel">Always via</a>: programs, sites, addresses; a route on every row</td><td>the selected awg1/awg2 chain, optionally with direct fallback</td></tr>
-<tr><td>6</td><td><a href="/lists#list-direct">Always direct</a></td><td>direct in every mode</td></tr>
+<tr><td>5</td><td><a href="/lists#list-tunnel">Routing rule</a> with an awg route</td><td>the selected awg1/awg2 chain, optionally with direct fallback</td></tr>
+<tr><td>6</td><td><a href="/lists#list-tunnel">Routing rule</a> with route <b>direct</b></td><td>direct in every mode</td></tr>
 <tr><td>7</td><td><a href="/lists#presets">Presets</a></td><td>the default tunnel order from Settings</td></tr>
-<tr><td>8</td><td><a href="/lists#list-direct">Always direct</a>: programs, sites, addresses</td><td>direct, in every mode</td></tr>
-<tr><td>9</td><td><a href="/overview#summary">Tunnel switches</a></td><td>disabled tunnels are skipped in every chain</td></tr>
-<tr><td>10</td><td>Everything else, while "Observe only" is chosen</td><td>direct</td></tr>
-<tr><td>11</td><td>Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name)</td><td>direct</td></tr>
-<tr><td>12</td><td>Everything else</td><td>by the mode -- see the tables below</td></tr>
+<tr><td>8</td><td><a href="/overview#summary">Tunnel switches</a></td><td>disabled tunnels are skipped in every chain</td></tr>
+<tr><td>9</td><td>Everything else, while "Observe only" is chosen</td><td>direct</td></tr>
+<tr><td>10</td><td>Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name)</td><td>direct</td></tr>
+<tr><td>11</td><td>Everything else</td><td>by the mode -- see the tables below</td></tr>
 </table>
-<p>User-rule priority is: Forbidden → Always via → Always direct → presets → detector.</p>
-<p>Every Always via row has its own route:</p>
+<p>An explicit routing rule takes priority over presets and the detector. The editor does not keep duplicate entries.</p>
+<p>Every routing-rule row has its own route:</p>
 <table>
 <tr><th>Route</th><th>When a tunnel is switched off or has no config</th><th>When every remaining tunnel is unavailable</th></tr>
 <tr><td>awg1</td><td>the row is refused</td><td>refused</td></tr>
@@ -95,14 +96,16 @@ auto-switch off closes the connections the detector sent direct.</p>
 {{else}}
 <h4 id="h-routes">Where a connection goes</h4>
 <p>Every new connection is matched against these rules from the top; the first one that fits decides.</p>
+<p>The lists page has two blocks: one rules editor where every row selects <b>direct</b>, <b>block</b>,
+or the tunnel, and <b>presets</b>.</p>
 <table>
 <tr><th>#</th><th>Rule</th><th>Route</th></tr>
 <tr><td>1</td><td>The tunnel's server itself</td><td>direct (otherwise the tunnel would loop into itself)</td></tr>
 <tr><td>2</td><td>Addresses inside the tunnel (its DNS server)</td><td>the tunnel</td></tr>
-<tr><td>3</td><td><a href="/lists#list-block">Forbidden</a>: programs, sites, addresses</td><td>refused, in every mode</td></tr>
+<tr><td>3</td><td><a href="/lists#list-tunnel">Routing rule: block</a></td><td>refused, in every mode</td></tr>
 <tr><td>4</td><td>Local networks: the router, printers, shares, <code>.local</code> and <code>.lan</code> names</td><td>direct</td></tr>
 <tr><td>5</td><td><a href="/lists#list-tunnel">Always via tunnel</a>: programs, sites, addresses</td><td>the tunnel; never direct</td></tr>
-<tr><td>6</td><td><a href="/lists#list-direct">Always direct</a>: programs, sites, addresses</td><td>direct, in every mode</td></tr>
+<tr><td>6</td><td><a href="/lists#list-tunnel">Routing rule: direct</a></td><td>direct, in every mode</td></tr>
 <tr><td>7</td><td>Everything else, while "Observe only" is chosen</td><td>direct</td></tr>
 <tr><td>8</td><td>Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name)</td><td>direct</td></tr>
 <tr><td>9</td><td>Everything else</td><td>by the mode -- see the table below</td></tr>
@@ -128,6 +131,9 @@ compare with.</p>
 open connections the change moves are closed, and the programs reconnect over the new route. Turning
 auto-switch off closes the connections the detector sent direct.</p>
 {{end}}
+<p>The tunnel state in the header and Overview comes from a separate health check through that tunnel.
+It shows that the check address is reachable; it does not guarantee that every site will answer through
+an otherwise healthy tunnel.</p>
 <h4 id="h-syntax">What a list takes</h4>
 <p>One entry per line; sites, addresses and programs in any mix. Case does not matter, repeats go, and
 a saved list is sorted: sites, addresses, programs. Sites are written as the core (mihomo) reads them.</p>
@@ -172,8 +178,8 @@ TCP connection, TLS handshake with the name in it (SNI) and a full certificate c
 request and its answer. A name seen on UDP 443 is also tried over QUIC (HTTP/3). The ports the
 name was really used on are the ones probed.</li>
 <li>This is repeated several times (<a href="/settings#attempts">attempts per probe</a>). The name is clean only if
-every attempt is clean, and the direct path is not slower than the tunnel by more than the
-tolerance.</li>
+every attempt is clean. With Compare route latency on, the direct path must also not be slower than the
+tunnel beyond the tolerance; with it off, speed alone does not change the verdict.</li>
 </ol>
 <p>A new name is checked the moment it is seen, up to 4 such at once. Re-checks, and what found no room, run in cycles every 10 seconds, up to 20 names a cycle, 8 at once. The checks pause while the tunnel fails the core's own health
 checks, and for a cycle after sleep or a network change: the measurements would say more about that
@@ -182,8 +188,8 @@ moment than about the path.</p>
 <h4>Verdicts</h4>
 <table>
 <tr><th>Verdict</th><th>What was seen</th><th>Route</th></tr>
-<tr><td><span class="pill ok">CLEAN</span></td><td>Every attempt passed directly just as through the tunnel, not slower</td><td>direct</td></tr>
-<tr><td><span class="pill ok">CLEAN_SPLIT</span></td><td>Blocked direct by name (BLOCKED_TLS), but with the ClientHello cut every attempt went as well as through the tunnel, and no slower. Only with the <a href="/settings#split_hello">cut</a> on</td><td>direct with the cut; cut off: tunnel</td></tr>
+<tr><td><span class="pill ok">CLEAN</span></td><td>Every attempt passed directly just as through the tunnel; with latency comparison on, not slower beyond the tolerance</td><td>direct</td></tr>
+<tr><td><span class="pill ok">CLEAN_SPLIT</span></td><td>Blocked direct by name (BLOCKED_TLS), but with the ClientHello cut every attempt went as well as through the tunnel; with latency comparison on, not slower beyond the tolerance. Only with the <a href="/settings#split_hello">cut</a> on</td><td>direct with the cut; cut off: tunnel</td></tr>
 <tr><td><span class="pill bad">BLOCKED_TCP</span></td><td>The address does not answer directly, with the site name or without, and works through the tunnel every time: an IP block, no DPI bypass helps here</td><td>tunnel</td></tr>
 <tr><td><span class="pill bad">BLOCKED_TLS</span></td><td>TCP connects, but the TLS handshake is cut once the site's name is seen: the typical DPI block</td><td>tunnel</td></tr>
 <tr><td><span class="pill bad">BLOCKED_DPI</span></td><td>"DPI bypass failed": blocked by name (BLOCKED_TLS), and the ClientHello cut does not get through either. Only with the <a href="/settings#split_hello">cut</a> on; each re-check tries the cut again</td><td>tunnel</td></tr>
@@ -245,9 +251,8 @@ rules, may not take the cut. A connection left open with no answer has the site 
 term. So it is off by default.</li>
 <li>Switched on, it checks the BLOCKED_TLS names again at once. Switched off, it takes them off the direct
 path at once and closes their connections: they open again through the tunnel.</li>
-<li>It works in On and Observe only. In On only the names checked go with the cut. In Observe only with the
-cut on everything goes with it at once, before any check: a name not checked would hang until the detector
-got to it. The names the detector found clean without the cut go direct as they are. In Tunnel only nothing
+<li>It works in On and Observe only. In both modes only names the detector checked and recorded as
+CLEAN_SPLIT take the cut; all other direct traffic keeps its ClientHello unchanged. In Tunnel only nothing
 goes direct, the cut included; the detector checks and records there too.</li>
 <li>{{if .St.Second}}With no first tunnel (awg1 not loaded){{else}}With no tunnel (its config not loaded){{end}} there is nothing to compare against, and the detector checks the
 cut alone: a site is tried direct as it is, and when it is cut on its ClientHello, direct with the cut.
@@ -270,9 +275,8 @@ TCP on 443 refused.</li>
 <li>Switched off, QUIC to every site going direct with the cut is refused, and the browser takes TCP; the
 names that go direct over QUIC alone go back to the tunnel. Its open QUIC connections close and open again
 the new way.</li>
-<li>It works only together with the <a href="/settings#split_hello">ClientHello cut</a>: only the cut's names
-take that way. In Observe only with the cut on, all QUIC goes with the decoy; with the decoy off, QUIC goes
-direct as it is.</li>
+<li>It works only together with the <a href="/settings#split_hello">ClientHello cut</a>: only verified
+CLEAN_SPLIT names take that way. When the cut is off, the QUIC control is disabled.</li>
 <li>Switching it needs no core restart.</li>
 </ul>
 
@@ -375,7 +379,7 @@ setting is switched off, and with the service should it die.</p>
 {{if .St.Second}}
 <h4 id="h-awg2">The second tunnel</h4>
 <p>The <a href="/overview#summary"><b>Overview</b></a> always shows cards for awg1 and awg2. Each card's checkbox independently enables or disables that tunnel; it is disabled until a config is loaded. A disabled tunnel is skipped in every route chain while its config is kept.</p>
-<p><a href="/lists#list-tunnel"><b>Always via</b></a> gives every row its own route. Enabled <a href="/lists#presets"><b>presets</b></a> use the default tunnel order from Settings. The detector compares the direct path with awg1 only; traffic already sent to awg2 by an explicit rule is not checked.</p>
+<p><a href="/lists#list-tunnel"><b>Routing rules</b></a> give every row its own route. Enabled <a href="/lists#presets"><b>presets</b></a> use the default tunnel order from Settings when no explicit rule matches. The detector compares the direct path with awg1 only; traffic already sent to awg2 by an explicit rule is not checked.</p>
 <p>Presets form an alphabetically sorted tree of <b>AI, Messengers, Social networks, Video hosting and Other services</b>.
 Other services is always last; remaining categories and services are sorted alphabetically.
 A category checkbox selects all its services; a mixed state means a partial selection. The arrow expands
@@ -405,7 +409,7 @@ site goes through the tunnel until the detector checks it again. Rows are picked
 <b>Shift</b> pick several, and the right-click and ✕ on a row picked act on all the rows picked at once.</li>
 <li>If many sites broke at once (a new block by the ISP), <a href="/verdicts#vreset">reset all verdicts</a>: everything
 goes through the tunnel and the detector starts over.</li>
-<li>If a site must see your real address (a bank, government services), add it to <a href="/lists#list-direct">Always direct</a>.</li>
+<li>If a site must see your real address (a bank, government services), add it to <a href="/lists#list-tunnel">Routing rules</a> with route <b>direct</b>.</li>
 <li>The <a href="/logs#log">logs</a> show every verdict with its reason.</li>
 <li>The <a href="/live#ltable">Live</a> page shows which route its connections take right now, and by which rule; a
 right-click on a row sends the site straight to the list it belongs in.</li>
@@ -419,7 +423,7 @@ the tunnel, grey the detector's checks;{{end}} closed rows have none. Hover over
 for the group and the rule that chose it.</p>
 <ul>
 <li><b><a href="/live#ltabs">Tabs</a>.</b> Open, Closed, Failed, Forbidden — the tries the
-<a href="/lists#list-block">Forbidden</a> list refused — and All. Beside them, a <a href="/live#lroutes">filter by
+the <a href="/lists#list-tunnel">block routing rule</a> refused — and All. Beside them, a <a href="/live#lroutes">filter by
 route</a>, a <a href="/live#lfilter">search</a> by host, program
 and address, and <a href="/live#lnoprobe">"Hide the detector's checks"</a>. A click on a column's head sorts
 the table by it; the columns keep their widths.</li>
@@ -456,7 +460,7 @@ connection follows the rules as they are now. ✕ on a row picked closes the con
 <li><b>A row right-clicked</b> opens a menu. On top, what to send: the whole domain (<code>+.example.com</code>),
 the name alone, the address (a list routes by address only the connections made to it by address) or the
 program. {{if .St.Second}}Then where: <b>Direct</b>, <b>Via the tunnel</b>, <b>Via the second
-tunnel</b> (the <a href="/lists#list-tunnel">Always via list</a>), <b>To a preset</b> (the <a href="/lists#presets">presets</a>
+tunnel</b> (an explicit <a href="/lists#list-tunnel">routing rule</a>), <b>To a preset</b> (the <a href="/lists#presets">presets</a>
 switched off are greyed: they route nothing), <b>Forbid</b>.{{else}}Then where: <b>Direct</b>, <b>Via the tunnel</b>, <b>Forbid</b>.{{end}} <b>File location</b> opens the program's folder
 with its file picked out — for the detector's checks, DPI Switch's own; greyed for several rows picked and
 on the Verdicts page. On a row picked the menu is for all the rows picked: on top, in place of one name,
@@ -467,9 +471,7 @@ themselves in the tooltip), and the group picked goes to the list in one action.
 For it to take that route, the menu takes it out of wherever a rule would route it first. The core's rules
 come in this order:</p>
 <ol>
-<li><a href="/lists#list-block">Forbidden</a>;</li>
-<li><a href="/lists#list-tunnel">Always via</a> with a route on every row;</li>
-<li><a href="/lists#list-direct">Always direct</a>;</li>
+<li>an explicit <a href="/lists#list-tunnel">routing rule</a> with its selected route;</li>
 {{if .St.Second}}<li>enabled <a href="/lists#presets">presets</a> through the default tunnel route;</li>
 {{else}}{{end}}<li>the detector's verdicts.</li>
 </ol>

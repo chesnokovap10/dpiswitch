@@ -30,6 +30,7 @@ type tunnelQuality struct {
 	Median  int // ms, the handshakes of the last hour
 	Usual   int // ms, of the journal before it
 	SlowPct int
+	Samples int
 	Poor    bool
 }
 
@@ -44,6 +45,7 @@ var (
 	qualityTail   = int64(1 << 20)
 	qualityEvery  = time.Minute
 	qualityRebase = time.Hour
+	qualityGrace  = 10 * time.Minute // do not blink out when the eighth sample crosses the hour
 )
 
 type shake struct {
@@ -71,16 +73,21 @@ func readShakes(path string, tail int64) []shake {
 	for {
 		line, err := r.ReadBytes('\n')
 		var rep struct {
-			Time   string `json:"time"`
-			Proto  string `json:"proto"`
-			Tunnel struct {
+			Time     string `json:"time"`
+			Proto    string `json:"proto"`
+			TunnelMs int64  `json:"tunnel_ms"`
+			Tunnel   struct {
 				TLSOk   bool          `json:"tls_ok"`
 				TLSTime time.Duration `json:"tls_time_ns"`
 			} `json:"tunnel"`
 		}
-		if json.Unmarshal(line, &rep) == nil && rep.Proto != "quic" && rep.Tunnel.TLSOk && rep.Tunnel.TLSTime > 0 {
+		if json.Unmarshal(line, &rep) == nil && rep.Proto != "quic" && rep.Tunnel.TLSOk && (rep.TunnelMs > 0 || rep.Tunnel.TLSTime > 0) {
 			if at, perr := time.Parse(time.RFC3339, rep.Time); perr == nil {
-				out = append(out, shake{at, int(rep.Tunnel.TLSTime / time.Millisecond)})
+				ms := int(rep.TunnelMs)
+				if ms <= 0 { // journals written before tunnel_ms was added
+					ms = int(rep.Tunnel.TLSTime / time.Millisecond)
+				}
+				out = append(out, shake{at, ms})
 			}
 		}
 		if err != nil {
@@ -102,7 +109,7 @@ func medianMs(s []shake) int {
 // three times the usual and no less than 300 ms: a retransmission, not a
 // far server.
 func judgeQuality(recent []shake, usual int) (tunnelQuality, bool) {
-	if len(recent) < qualityMin || usual <= 0 {
+	if len(recent) == 0 || usual <= 0 {
 		return tunnelQuality{}, false
 	}
 	limit := max(3*usual, 300)
@@ -112,9 +119,9 @@ func judgeQuality(recent []shake, usual int) (tunnelQuality, bool) {
 			slow++
 		}
 	}
-	q := tunnelQuality{Median: medianMs(recent), Usual: usual, SlowPct: 100 * slow / len(recent)}
+	q := tunnelQuality{Median: medianMs(recent), Usual: usual, SlowPct: 100 * slow / len(recent), Samples: len(recent)}
 	q.Poor = q.SlowPct >= qualityPoor
-	return q, true
+	return q, len(recent) >= qualityMin
 }
 
 type qualityCache struct {
@@ -124,6 +131,7 @@ type qualityCache struct {
 	ok      bool
 	usualAt time.Time
 	usual   int
+	validAt time.Time
 }
 
 var awg1Quality qualityCache
@@ -148,7 +156,18 @@ func (c *qualityCache) get(path string, now time.Time) (tunnelQuality, bool) {
 	}
 	recent := slices.DeleteFunc(readShakes(path, qualityTail),
 		func(x shake) bool { return !x.at.After(since) || x.at.After(now) })
-	c.q, c.ok = judgeQuality(recent, c.usual)
+	q, enough := judgeQuality(recent, c.usual)
+	if enough {
+		c.validAt = now
+		c.q, c.ok = q, true
+	} else if len(recent) > 0 && c.ok && now.Sub(c.validAt) <= qualityGrace {
+		// A sample crossing the exact one-hour boundary must not make the
+		// whole line disappear between two UI refreshes. Keep showing the
+		// current smaller window briefly, including its sample count.
+		c.q = q
+	} else {
+		c.q, c.ok = tunnelQuality{}, false
+	}
 	return c.q, c.ok
 }
 
@@ -162,5 +181,5 @@ func quality(name string) (tunnelQuality, bool) {
 
 // qualityText: the line under a tunnel's state
 func qualityText(lang string, q tunnelQuality) string {
-	return fmt.Sprintf(tr(lang, "handshakes %d ms, usually %d · %d%% slow in the last hour"), q.Median, q.Usual, q.SlowPct)
+	return fmt.Sprintf(tr(lang, "TLS through awg1: median %d ms, usually %d · %d%% slow · %d samples in the last hour"), q.Median, q.Usual, q.SlowPct, q.Samples)
 }

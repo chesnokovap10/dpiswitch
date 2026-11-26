@@ -718,7 +718,7 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 		return n, nil
 	}
 	switch field {
-	case "auto_switch", "families", "split_hello", "quic_fake", "ipv6", "dns_cache", "udp_guard", "nrpt", "ui_open", "default_tunnel", "clean_ttl_min", "fail_ttl_min", "max_backoff_min", "slow_pct", "attempts":
+	case "auto_switch", "families", "compare_latency", "split_hello", "quic_fake", "ipv6", "dns_cache", "udp_guard", "nrpt", "ui_open", "default_tunnel", "clean_ttl_min", "fail_ttl_min", "max_backoff_min", "slow_pct", "attempts":
 	default:
 		http.Error(w, "unknown setting", http.StatusBadRequest)
 		return
@@ -734,6 +734,8 @@ func (s *Server) actSet(w http.ResponseWriter, r *http.Request) {
 				err = setMode(set, val)
 			case "families":
 				set.Families = val == "1"
+			case "compare_latency":
+				set.CompareLatency = val == "1"
 			case "split_hello":
 				set.SplitHello = val == "1"
 			case "quic_fake":

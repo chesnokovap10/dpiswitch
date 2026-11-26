@@ -72,6 +72,9 @@ type Config struct {
 	TTL           time.Duration
 	FailTTL       time.Duration
 	MaxBackoff    time.Duration
+	// CompareLatency: a working direct path may receive SLOWER when it is
+	// slower than the tunnel beyond the configured tolerance.
+	CompareLatency bool
 	// Idle: how long a name may go unrequested before its verdict stops being
 	// re-checked on a timer, and, at ten times that, is dropped from memory.
 	Idle         time.Duration

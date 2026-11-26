@@ -49,8 +49,12 @@
   <div><select name="families"><option value="1" {{if $s.Families}}selected{{end}}>{{.T "Extend to the domain"}}</option><option value="0" {{if not $s.Families}}selected{{end}}>{{.T "Checked names only"}}</option></select></div>
   <div class="h"><span>{{.T "3+ clean subdomains and none blocked: new subdomains go direct at once, checked afterwards."}}</span>{{template "rowmsg" ($d.MsgFor "families")}}</div>
 
+  <div>{{.T "Compare route latency"}}</div>
+  <div><select id="compare_latency" name="compare_latency"><option value="1" {{if $s.CompareLatency}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.CompareLatency}}selected{{end}}>{{.T "Off"}}</option></select></div>
+  <div class="h"><span>{{.T "On: a working direct path stays in the tunnel when it is noticeably slower. Off: speed alone never produces the Slower verdict."}}</span>{{template "rowmsg" ($d.MsgFor "compare_latency")}}</div>
+
   <div>{{.T "Latency tolerance, %"}}</div>
-  <div><input type="number" name="slow_pct" min="0" max="500" step="5" value="{{$s.SlowPct}}"></div>
+  <div><input type="number" name="slow_pct" min="0" max="500" step="5" value="{{$s.SlowPct}}" {{if not $s.CompareLatency}}disabled{{end}}></div>
   <div class="h"><span>{{.T "How much slower than the tunnel the direct path may be and still be used. 0: only if not slower."}}</span>{{template "rowmsg" ($d.MsgFor "slow_pct")}}</div>
 
   <div><a class="hl" href="/help#h-checks">{{.T "Attempts per probe"}}</a></div>
@@ -81,7 +85,7 @@
   <div class="h"><span>{{.T "A site blocked by its name is checked once more with the ClientHello cut in two; if it works so, it goes direct that way."}}</span><span class="warn-t">{{.T "Can break a site whose other parts the cut does not get through. Off by default."}}</span>{{if and $s.SplitHello (eq $m "tunnel")}}<span class="warn-t">{{.T "Not working now: in Tunnel only nothing goes direct."}}</span>{{else if and $s.SplitHello (not .St.HasConfig)}}<span class="muted">{{.T "awg1 is not loaded: the cut is checked without comparing speed."}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "split_hello")}}</div>
 
   <div><a class="hl" href="/help#h-quic">{{.T "QUIC decoy"}}</a></div>
-  <div><select id="quic_fake" name="quic_fake"><option value="1" {{if $s.QUICFake}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.QUICFake}}selected{{end}}>{{.T "Off"}}</option></select></div>
+  <div><select id="quic_fake" name="quic_fake" {{if not $s.SplitHello}}disabled{{end}}><option value="1" {{if $s.QUICFake}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.QUICFake}}selected{{end}}>{{.T "Off"}}</option></select></div>
   <div class="h"><span>{{.T "QUIC to the sites going direct with the cut goes direct too, a decoy first packet for www.google.com ahead of it; where that does not get through, QUIC is refused and the browser takes TCP. Off: their QUIC is always refused."}}</span>{{if and $s.QUICFake (not $s.SplitHello)}}<span class="warn-t">{{.T "Not working now: it works together with the ClientHello cut, which is off."}}</span>{{end}}{{template "rowmsg" ($d.MsgFor "quic_fake")}}</div>
 
   </div></details>
@@ -90,7 +94,7 @@
 
   <div>{{.T "Default tunnel routing"}}</div>
   <div><select id="default_tunnel" name="default_tunnel"><option value="awg1-awg2" {{if eq $s.DefaultTunnel "awg1-awg2"}}selected{{end}}>awg1→awg2</option><option value="awg2-awg1" {{if eq $s.DefaultTunnel "awg2-awg1"}}selected{{end}}>awg2→awg1</option></select></div>
-  <div class="h"><span>{{.T "Used by enabled presets and traffic the detector sends through a tunnel. Always via rows have higher priority."}}</span>{{template "rowmsg" ($d.MsgFor "default_tunnel")}}</div>
+  <div class="h"><span>{{.T "Used by presets and by traffic the detector sends through a tunnel. An explicit rule in Routing rules takes priority."}}</span>{{template "rowmsg" ($d.MsgFor "default_tunnel")}}</div>
 
   <div><a class="hl" href="/help#h-ipv6">IPv6</a></div>
   <div><select name="ipv6"><option value="1" {{if $s.IPv6}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.IPv6}}selected{{end}}>{{.T "Off"}}</option></select></div>

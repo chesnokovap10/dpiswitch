@@ -215,7 +215,7 @@ func TestTunnelsDrawn(t *testing.T) {
 	if c := got.Awg1.Chip; !strings.Contains(c, `class="dot ok"`) || !strings.Contains(c, "awg1 42 ms") {
 		t.Fatalf("awg1's chip: %q", c)
 	}
-	if p := got.Awg1.Pill; !strings.Contains(p, `class="pill ok"`) || !strings.Contains(p, "responding · 42 ms") {
+	if p := got.Awg1.Pill; !strings.Contains(p, `class="pill ok"`) || !strings.Contains(p, "health check responds · 42 ms") {
 		t.Fatalf("awg1's pill: %q", p)
 	}
 	if c := got.Awg2.Chip; !strings.Contains(c, `class="dot bad"`) || !strings.Contains(c, "not responding") {

@@ -125,6 +125,14 @@ func TestSlowerHysteresis(t *testing.T) {
 	}
 }
 
+func TestLatencyComparisonCanBeDisabled(t *testing.T) {
+	SetCompareLatency(false)
+	t.Cleanup(func() { SetCompareLatency(true) })
+	if slower(10*time.Second, time.Millisecond, Clean) {
+		t.Fatal("latency-only verdict produced while comparison is disabled")
+	}
+}
+
 // An IPv6 node the direct path does not reach is no block the probe saw.
 func TestJudgeNodeIPv6(t *testing.T) {
 	cut := PathResult{TCPOk: true, TLSTried: true, Err: "EOF", ErrStage: "tls"}

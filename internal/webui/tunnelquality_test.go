@@ -54,8 +54,18 @@ func TestTunnelQuality(t *testing.T) {
 	if !ok || !q.Poor || q.SlowPct != 33 {
 		t.Fatalf("a poor hour: %+v %v", q, ok)
 	}
-	if s := qualityText("ru", q); s != fmt.Sprintf("отклик проб %d мс, обычно 120 · медленных %d%% за час", q.Median, q.SlowPct) {
+	if s := qualityText("ru", q); s != fmt.Sprintf("TLS через awg1: медиана %d мс, обычно 120 · медленных %d%% · замеров за час: %d", q.Median, q.SlowPct, q.Samples) {
 		t.Errorf("said %q", s)
+	}
+	// When the oldest of exactly eight samples crosses the one-hour edge,
+	// the line stays for a short grace period instead of blinking out.
+	c = new(qualityCache)
+	q, ok = c.get(path, now)
+	if !ok {
+		t.Fatal("quality missing before the edge")
+	}
+	if q2, ok := c.get(path, now.Add(time.Minute)); !ok || q2.Samples == 0 {
+		t.Errorf("quality disappeared at the window edge: %+v %v", q2, ok)
 	}
 	// read once a minute: the journal is megabytes
 	os.Remove(path)

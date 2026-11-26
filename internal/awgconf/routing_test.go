@@ -89,26 +89,26 @@ var routingTables = map[string][]row{
 	ctl.ModeOn: {
 		{"none", D, D, D, D, R, D, R},
 		{"awg1", "awg1 > DIRECT", D, "awg1 > DIRECT", "awg1 > DIRECT", "awg1 > REJECT", D, R},
-		{"awg2 on", D, D, "awg2 > DIRECT", "awg2 > DIRECT", "awg2 > REJECT", D, R},
+		{"awg2 on", "awg2 > DIRECT", D, "awg2 > DIRECT", "awg2 > DIRECT", "awg2 > REJECT", D, R},
 		{"awg2 off", D, D, D, D, R, D, R},
-		{"both on", "awg1 > awg2 > DIRECT", D, "awg2 > awg1 > DIRECT", "awg2 > awg1 > DIRECT", "awg1 > awg2 > REJECT", D, R},
+		{"both on", "awg1 > awg2 > DIRECT", D, "awg1 > awg2 > DIRECT", "awg2 > awg1 > DIRECT", "awg1 > awg2 > REJECT", D, R},
 		{"both off", "awg1 > DIRECT", D, "awg1 > DIRECT", "awg1 > DIRECT", "awg1 > REJECT", D, R},
 	},
 	ctl.ModeObserve: {
 		{"none", D, D, D, D, R, D, R},
-		{"awg1", D, D, D, D, "awg1 > REJECT", D, R},
+		{"awg1", D, D, "awg1 > DIRECT", "awg1 > DIRECT", "awg1 > REJECT", D, R},
 		{"awg2 on", D, D, "awg2 > DIRECT", "awg2 > DIRECT", "awg2 > REJECT", D, R},
 		{"awg2 off", D, D, D, D, R, D, R},
-		{"both on", D, D, "awg2 > awg1 > DIRECT", "awg2 > awg1 > DIRECT", "awg1 > awg2 > REJECT", D, R},
-		{"both off", D, D, D, D, "awg1 > REJECT", D, R},
+		{"both on", D, D, "awg1 > awg2 > DIRECT", "awg2 > awg1 > DIRECT", "awg1 > awg2 > REJECT", D, R},
+		{"both off", D, D, "awg1 > DIRECT", "awg1 > DIRECT", "awg1 > REJECT", D, R},
 	},
 	ctl.ModeTunnel: {
-		{"none", R, R, R, R, R, D, R},
-		{"awg1", "awg1 > REJECT", "awg1 > REJECT", "awg1 > REJECT", "awg1 > REJECT", "awg1 > REJECT", D, R},
-		{"awg2 on", "awg2 > REJECT", "awg2 > REJECT", "awg2 > REJECT", "awg2 > REJECT", "awg2 > REJECT", D, R},
-		{"awg2 off", R, R, R, R, R, D, R},
-		{"both on", "awg1 > awg2 > REJECT", "awg1 > awg2 > REJECT", "awg2 > awg1 > REJECT", "awg2 > awg1 > REJECT", "awg1 > awg2 > REJECT", D, R},
-		{"both off", "awg1 > REJECT", "awg1 > REJECT", "awg1 > REJECT", "awg1 > REJECT", "awg1 > REJECT", D, R},
+		{"none", R, R, R, D, R, D, R},
+		{"awg1", "awg1 > REJECT", "awg1 > REJECT", "awg1 > REJECT", "awg1 > DIRECT", "awg1 > REJECT", D, R},
+		{"awg2 on", "awg2 > REJECT", "awg2 > REJECT", "awg2 > REJECT", "awg2 > DIRECT", "awg2 > REJECT", D, R},
+		{"awg2 off", R, R, R, D, R, D, R},
+		{"both on", "awg1 > awg2 > REJECT", "awg1 > awg2 > REJECT", "awg1 > awg2 > REJECT", "awg2 > awg1 > DIRECT", "awg1 > awg2 > REJECT", D, R},
+		{"both off", "awg1 > REJECT", "awg1 > REJECT", "awg1 > REJECT", "awg1 > DIRECT", "awg1 > REJECT", D, R},
 	},
 }
 
@@ -181,7 +181,7 @@ func TestRoutingSplit(t *testing.T) {
 				if quic := at("AND,((NETWORK,UDP),(DST-PORT,443),(RULE-SET," + ctl.NoQUICProvider + ")),REJECT"); quic > cut {
 					t.Error("QUIC refused to the decoy's failures after they are sent direct")
 				}
-				if at("RULE-SET,force-tunnel,"+ctl.TunnelListsGroup) > cut || at("RULE-SET,force-block,REJECT") > cut {
+				if at("RULE-SET,force-tunnel,"+ctl.Route12Group) > cut || at("RULE-SET,force-block,REJECT") > cut {
 					t.Error("the user's lists below the cut's")
 				}
 			})
@@ -189,10 +189,8 @@ func TestRoutingSplit(t *testing.T) {
 	}
 }
 
-// TestRoutingObserveCut: observe only with the ClientHello cut on sends
-// what no list names through direct-split at once, before any check -- with
-// no first tunnel too; what the detector found clean without the cut goes
-// plain, the cut's names cut, the user's lists as ever.
+// TestRoutingObserveCut: observe only keeps unverified names plain even when
+// the cut is on; only detector-verified CLEAN_SPLIT names use direct-split.
 func TestRoutingObserveCut(t *testing.T) {
 	for _, r := range routingTables[ctl.ModeObserve] {
 		t.Run(r.loaded, func(t *testing.T) {
@@ -227,7 +225,7 @@ func TestRoutingObserveCut(t *testing.T) {
 				col, host string
 				want      route
 			}{
-				{"what no list names", hostUnnamed, split},
+				{"what no list names", hostUnnamed, D},
 				{"a clean site", hostClean, D},
 				{"cut by the detector", hostSplit, split},
 				{"Always via tunnel", hostTunnel, r.tunnel},
@@ -287,11 +285,8 @@ func setupRouting(t *testing.T, mode, loaded string) (*simCore, []string) {
 	}
 	set, err := ctl.UpdateSettings(paths.Settings(), func(s *ctl.Settings) error {
 		s.SetMode(mode)
-		// the second tunnel on in the settings where the row has one
-		s.SecondTunnel = second && !hidden
-		// the switch as the row has it; a row with no second tunnel has
-		// it on, as it is by default
-		s.SetAwg2(!strings.HasSuffix(loaded, " off"))
+		s.Awg1On = first
+		s.SetAwg2(second && !hidden && !strings.HasSuffix(loaded, " off"))
 		s.Awg2Presets = []string{"routing"}
 		return nil
 	})
@@ -364,7 +359,8 @@ func TestStrictTunnelLists(t *testing.T) {
 			}
 		}
 	}
-	// Duplicates take the first of Tunnels -> Tunnel1 -> Tunnel2.
+	// Legacy duplicates take the first route in the unified editor's
+	// effective order: awg1, awg2, then the fallback chains.
 	dup := "duplicate.example\n"
 	for _, name := range []string{paths.TunnelList, paths.Tunnel1List, paths.Tunnel2List} {
 		if err := os.WriteFile(paths.User(name), []byte(dup), 0o600); err != nil {
@@ -374,8 +370,8 @@ func TestStrictTunnelLists(t *testing.T) {
 	ctl.SyncUserFiles()
 	core = render()
 	secondOnly := map[string]bool{"awg1": false, "awg2": true}
-	if got, why := core.route("duplicate.example", secondOnly); got != "awg2" {
-		t.Errorf("Tunnels did not win over Tunnel1 and Tunnel2: %s\n  %s", got, why)
+	if got, why := core.route("duplicate.example", secondOnly); got != "REJECT" {
+		t.Errorf("the higher-priority awg1 route did not win: %s\n  %s", got, why)
 	}
 	if err := os.WriteFile(paths.User(paths.TunnelList), []byte("# empty\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -660,13 +656,14 @@ func TestRenderRuleOrder(t *testing.T) {
 		return i
 	}
 	order := []string{"RULE-SET,force-block-apps,REJECT", "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
-		"RULE-SET,force-tunnel-apps,tunnel-lists", "RULE-SET,force-tunnel-ip,tunnel-lists,no-resolve",
-		"RULE-SET,force-tunnel1-apps,tunnel-one", "RULE-SET,force-tunnel1-ip,tunnel-one,no-resolve",
-		"RULE-SET,awg2-rule,tunnel2-lists", "RULE-SET,force-tunnel2-apps,tunnel2-lists", "RULE-SET,force-tunnel2-ip,tunnel2-lists,no-resolve",
+		"RULE-SET,force-tunnel1-apps,route-awg1", "RULE-SET,force-tunnel1-ip,route-awg1,no-resolve",
+		"RULE-SET,awg2-rule,route-awg2",
+		"RULE-SET,force-tunnel2-apps,route-awg2", "RULE-SET,force-tunnel2-ip,route-awg2,no-resolve",
+		"RULE-SET,force-tunnel-apps,route-awg1-awg2", "RULE-SET,force-tunnel-ip,route-awg1-awg2,no-resolve",
 		"RULE-SET,force-direct-apps,DIRECT", "RULE-SET,force-direct-ip,DIRECT,no-resolve",
-		"RULE-SET,presets,tunnel2", "RULE-SET,awg2-hosts-ip,tunnel2,no-resolve",
+		"RULE-SET,presets,tunnel-default",
 		"RULE-SET,direct-split-verified,direct-split", "RULE-SET,direct-verified,DIRECT",
-		"RULE-SET,observe-split,direct-split", "RULE-SET,observe-all,DIRECT", "MATCH,tunnel-rest"}
+		"RULE-SET,observe-split,direct-split", "RULE-SET,observe-all,DIRECT", "MATCH,tunnel-default"}
 	for k := 1; k < len(order); k++ {
 		if at(order[k-1]) > at(order[k]) {
 			t.Errorf("%s below %s", order[k-1], order[k])
@@ -694,16 +691,16 @@ func TestRenderGroups(t *testing.T) {
 	}{
 		{"no tunnel", false, false, map[string]string{
 			"tunnel": "DIRECT", "tunnel-soft-any": "DIRECT", "tunnel-one": "REJECT", "tunnel-any": "REJECT",
-			"tunnel2-soft": "DIRECT", "tunnel2-strict": "REJECT", "tunnel2-only": "REJECT"}},
+			"tunnel2-soft": "DIRECT", "tunnel2-only-soft": "DIRECT", "tunnel2-strict": "REJECT", "tunnel2-only": "REJECT"}},
 		{"the second alone", false, true, map[string]string{
-			"tunnel": "DIRECT", "tunnel-soft-any": "DIRECT", "tunnel-one": "REJECT", "tunnel-any": "awg2",
-			"tunnel2-soft": "awg2 DIRECT", "tunnel2-strict": "awg2", "tunnel2-only": "awg2"}},
+			"tunnel": "DIRECT", "tunnel-soft-any": "awg2 DIRECT", "tunnel-one": "REJECT", "tunnel-any": "awg2",
+			"tunnel2-soft": "awg2 DIRECT", "tunnel2-only-soft": "awg2 DIRECT", "tunnel2-strict": "awg2", "tunnel2-only": "awg2"}},
 		{"the first alone", true, false, map[string]string{
 			"tunnel": "awg1 DIRECT", "tunnel-soft-any": "awg1 DIRECT", "tunnel-one": "awg1", "tunnel-any": "awg1",
-			"tunnel2-soft": "awg1 DIRECT", "tunnel2-strict": "awg1", "tunnel2-only": "REJECT"}},
+			"tunnel2-soft": "awg1 DIRECT", "tunnel2-only-soft": "DIRECT", "tunnel2-strict": "awg1", "tunnel2-only": "REJECT"}},
 		{"both", true, true, map[string]string{
 			"tunnel": "awg1 DIRECT", "tunnel-soft-any": "awg1 awg2 DIRECT", "tunnel-one": "awg1", "tunnel-any": "awg1 awg2",
-			"tunnel2-soft": "awg2 awg1 DIRECT", "tunnel2-strict": "awg2 awg1", "tunnel2-only": "awg2"}},
+			"tunnel2-soft": "awg2 awg1 DIRECT", "tunnel2-only-soft": "awg2 DIRECT", "tunnel2-strict": "awg2 awg1", "tunnel2-only": "awg2"}},
 	} {
 		os.Remove(paths.SourceConf2())
 		if c.awg2 {
@@ -747,51 +744,20 @@ func TestRenderGroups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for g, first := range map[string]string{"tunnel-lists": "tunnel-one", "tunnel2": "tunnel2-strict", "tunnel-rest": "tunnel-one"} {
+	for g, first := range map[string]string{
+		ctl.RouteAwg1Group: ctl.TunnelOneGroup, ctl.RouteAwg2Group: "REJECT",
+		ctl.Route12Group: ctl.TunnelOneGroup, ctl.Route21Group: ctl.TunnelOneGroup,
+		ctl.Route12DirectGroup: ctl.TunnelSoftGroup, ctl.Route21DirectGroup: ctl.TunnelSoftGroup,
+		ctl.DefaultRouteGroup: ctl.TunnelOneGroup,
+	} {
 		if got := members(t, out, g); !strings.HasPrefix(got, first+" ") {
 			t.Errorf("%s lists %q: %s is not chosen at start", g, got, first)
 		}
 	}
 }
 
-// The members the select groups take, by mode and by the second tunnel's
-// switch: tunnel only never goes direct.
-func TestRouteChoice(t *testing.T) {
-	for _, c := range []struct {
-		mode                      string
-		awg2                      bool
-		lists, strict2, two, rest string
-	}{
-		{ctl.ModeOn, true, ctl.TunnelAnyGroup, ctl.Tunnel2OnlyGroup, ctl.Tunnel2SoftGroup, ctl.TunnelSoftAnyGroup},
-		{ctl.ModeOn, false, ctl.TunnelOneGroup, "REJECT", ctl.Tunnel2SoftGroup, ctl.TunnelSoftGroup},
-		{ctl.ModeObserve, true, ctl.TunnelAnyGroup, ctl.Tunnel2OnlyGroup, ctl.Tunnel2SoftGroup, ctl.TunnelSoftAnyGroup},
-		{ctl.ModeTunnel, true, ctl.TunnelAnyGroup, ctl.Tunnel2OnlyGroup, ctl.Tunnel2StrictGroup, ctl.TunnelAnyGroup},
-		{ctl.ModeTunnel, false, ctl.TunnelOneGroup, "REJECT", ctl.Tunnel2StrictGroup, ctl.TunnelOneGroup},
-	} {
-		s := ctl.DefaultSettings()
-		s.SecondTunnel = true
-		s.SetMode(c.mode)
-		s.SetAwg2(c.awg2)
-		got := ctl.RouteChoice(s)
-		if got[ctl.TunnelListsGroup] != c.lists || got[ctl.Tunnel2ListsGroup] != c.strict2 || got[ctl.Tunnel2Group] != c.two || got[ctl.TunnelRestGroup] != c.rest {
-			t.Errorf("%s, awg2 %v: %v", c.mode, c.awg2, got)
-		}
-		// off in the settings, whatever the mode was switched to by hand:
-		// the members of one tunnel
-		s.SecondTunnel = false
-		off := ctl.RouteChoice(s)
-		s.SecondTunnel = true
-		s.SetAwg2(false)
-		if want := ctl.RouteChoice(s); fmt.Sprint(off) != fmt.Sprint(want) {
-			t.Errorf("%s, the second tunnel off in the settings: %v, want %v", c.mode, off, want)
-		}
-	}
-}
-
 // TestRoutingSecondOff: the second tunnel off in the settings, its .conf,
-// its presets and its list kept. Every cell is the one of the row without
-// it -- "awg1" for both loaded, "none" for the second alone -- in every
-// mode, and the config knows no awg2.
+// presets and list stay loaded, but every selected route skips awg2.
 func TestRoutingSecondOff(t *testing.T) {
 	for _, mode := range []string{ctl.ModeOn, ctl.ModeObserve, ctl.ModeTunnel} {
 		rows := map[string]row{}
@@ -821,14 +787,8 @@ func TestRoutingSecondOff(t *testing.T) {
 						}
 					}
 				}
-				for name, g := range core.groups {
-					if slices.Contains(g.members, "awg2") {
-						t.Errorf("group %s has awg2", name)
-					}
-				}
-				if got := Tunnels(); slices.Contains(got, "awg2") {
-					t.Errorf("tunnels %v", got)
-				}
+				// The proxy remains in the config so the switch applies live;
+				// select groups above ensure no application route chooses it.
 			})
 		}
 	}

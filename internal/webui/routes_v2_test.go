@@ -13,9 +13,14 @@ func TestUnifiedRouteListAndNavigation(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
 	body := do(t, h, http.MethodGet, "/lists", nil, nil).Body.String()
-	for _, id := range []string{`id="list-direct"`, `id="list-tunnel"`, `id="list-block"`, `id="presets"`} {
+	for _, id := range []string{`id="list-tunnel"`, `id="presets"`} {
 		if strings.Count(body, id) != 1 {
 			t.Fatalf("%s count in lists page", id)
+		}
+	}
+	for _, id := range []string{`<div class="box" id="list-direct"`, `<div class="box" id="list-block"`} {
+		if strings.Contains(body, id) {
+			t.Fatalf("separate block remains: %s", id)
 		}
 	}
 	routeBlock := body[strings.Index(body, `<div class="box" id="list-tunnel"`):]
@@ -23,15 +28,15 @@ func TestUnifiedRouteListAndNavigation(t *testing.T) {
 	if entry < 0 || route < entry || kind < route {
 		t.Fatalf("columns are not entry | route | type")
 	}
-	for _, value := range []string{"awg1", "awg2", "awg1-awg2", "awg2-awg1", "awg1-awg2-direct", "awg2-awg1-direct"} {
+	for _, value := range []string{"direct", "awg1", "awg2", "awg1-awg2", "awg2-awg1", "awg1-awg2-direct", "awg2-awg1-direct", "block"} {
 		if !strings.Contains(body, `value="`+value+`"`) {
 			t.Errorf("route %s missing", value)
 		}
 	}
 
 	w := do(t, h, http.MethodPost, "/act/list", url.Values{
-		"kind": {"tunnel"}, "entries": {"one.example\ntwo.example"},
-		"routes": {"awg1\nawg2-awg1-direct"}, "op": {"save"},
+		"kind": {"tunnel"}, "entries": {"one.example\ntwo.example\ndirect.example\nblocked.example"},
+		"routes": {"awg1\nawg2-awg1-direct\ndirect\nblock"}, "op": {"save"},
 	}, nil)
 	if w.Code != http.StatusOK || strings.Contains(w.Body.String(), `msg bad`) {
 		t.Fatalf("save: %d %s", w.Code, w.Body.String())
@@ -41,6 +46,12 @@ func TestUnifiedRouteListAndNavigation(t *testing.T) {
 	}
 	if got := strings.Join(readEntries(paths.Awg2List), ","); got != "two.example" {
 		t.Fatalf("reverse direct list = %q", got)
+	}
+	if got := strings.Join(readEntries(paths.DirectList), ","); got != "direct.example" {
+		t.Fatalf("direct list = %q", got)
+	}
+	if got := strings.Join(readEntries(paths.BlockList), ","); got != "blocked.example" {
+		t.Fatalf("block list = %q", got)
 	}
 
 	layout := do(t, h, http.MethodGet, "/overview", nil, nil).Body.String()

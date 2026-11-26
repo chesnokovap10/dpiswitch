@@ -41,7 +41,7 @@
         <span>{{.T "State"}}</span><div>{{template "tunstate" (tun . "awg1" $s.TunnelAlive $s.TunnelNote)}}</div>
         <span>Endpoint</span><div>{{$s.Endpoint}}</div>
         <span>DNS</span><div>{{with .Data.DNS}}{{.}}{{if $.Data.DNSSet}} <a class="muted" href="/settings#dns">({{$.T "from the settings"}})</a>{{end}}{{else}}<span class="muted">—</span>{{end}}</div>
-        <span>{{.T "Carries"}}</span><div>{{.T "traffic selected by the default route and matching Always via rows"}}</div>
+        <span>{{.T "Carries"}}</span><div>{{.T "traffic selected by the default route, presets and explicit rules that include awg1"}}</div>
       </div>
       <div class="actions">
         <button type="button" data-open="dlg-config">{{.T "Replace config…"}}</button>
@@ -55,7 +55,7 @@
       <div class="kv">
         <span>{{.T "State"}}</span><div>{{template "awg2pill" .}}</div>
         <span>Endpoint</span><div>{{$s.Endpoint2}}</div>
-        <span>{{.T "Carries"}}</span><div><a href="/lists#presets">{{.Tf "%d presets" $s.Presets}}</a>, {{.T "traffic selected by the default route and matching Always via rows"}}</div>
+        <span>{{.T "Carries"}}</span><div><a href="/lists#presets">{{.Tf "%d presets" $s.Presets}}</a>, {{.T "traffic selected by the default route and explicit rules that include awg2"}}</div>
       </div>
       <div class="actions">
         <button type="button" data-open="dlg-config2">{{.T "Replace config…"}}</button>

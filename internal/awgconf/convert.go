@@ -814,7 +814,11 @@ func render(c *Conf) (string, error) {
 		writeInsideRules(w, c, tunDNS, "tunnel")
 	}
 	if c2 != nil {
-		writeInsideRules(w, c2, tun2DNS, "tunnel2")
+		// The address and resolver inside awg2 are reachable through awg2
+		// alone. The old tunnel2 select group no longer exists in generated
+		// configs; leaving that name here makes mihomo reject the whole file
+		// when only the second tunnel is loaded.
+		writeInsideRules(w, c2, tun2DNS, ctl.Tunnel2OnlyGroup)
 	}
 	w("")
 	w("  # 3. forbidden: refused in every mode, above everything but the tunnels'")
@@ -868,6 +872,13 @@ func render(c *Conf) (string, error) {
 		{paths.Awg2List, ctl.Route21DirectGroup},
 	} {
 		provider := strings.TrimSuffix(route.file, ".txt")
+		if route.file == paths.Tunnel2List {
+			// awg2_rule is stored in this route's file but expands dynamically
+			// to enabled presets and the former awg2 own-list entries. Keep it
+			// at the same priority as the explicit awg2 route: below awg1, above
+			// the remaining, softer routes.
+			w("  - RULE-SET,%s,%s", ctl.Awg2RuleProvider, ctl.RouteAwg2Group)
+		}
 		w("  - RULE-SET,%s-apps,%s", provider, route.group)
 		w("  - RULE-SET,%s,%s", provider, route.group)
 		w("  - RULE-SET,%s-ip,%s,no-resolve", provider, route.group)

@@ -39,10 +39,11 @@ var transferName = map[string]string{
 
 func transferBody(kind string) ([]byte, error) {
 	if kind == "routes" {
-		d := listsData()
-		rows := make([]struct{ Entry, Route string }, len(d.TunnelEntries))
-		for i := range rows {
-			rows[i].Entry, rows[i].Route = d.TunnelEntries[i], d.Routes[i]
+		var rows []struct{ Entry, Route string }
+		for _, spec := range routeSpecs {
+			for _, entry := range readEntries(spec.List) {
+				rows = append(rows, struct{ Entry, Route string }{entry, spec.ID})
+			}
 		}
 		return json.MarshalIndent(rows, "", "  ")
 	}
@@ -211,7 +212,7 @@ func addTransferToPlan(plan *importPlan, kind string, b []byte, lang string) err
 			if file == "" {
 				return fmt.Errorf("%s: row %d: unknown route %q", transferName[kind], i+1, row.Route)
 			}
-			doc := ctl.ParseList(row.Entry, ctl.ListPolicy{})
+			doc := ctl.ParseList(row.Entry, ctl.ListPolicy{AllowAwg2Rule: file == paths.Tunnel2List})
 			if len(doc.Issues) != 0 || len(doc.Values()) != 1 {
 				return fmt.Errorf("%s: row %d: invalid entry", transferName[kind], i+1)
 			}

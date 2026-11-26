@@ -43,22 +43,13 @@ func observeAll(mode string) []byte {
 	return []byte("# empty\n")
 }
 
-// observeFiles: the catch-alls of observe only -- plain direct, and direct
-// with the ClientHello cut. With the cut switched on everything goes the
-// cut's way: a name not checked yet is cut at once rather than blocked
-// until the detector gets to it, and the ones the cut harms go plain by
-// the detector's direct list, which stands above.
+// observeFiles: the catch-all of observe only is always plain direct.
+// ClientHello splitting is deliberately limited to names the detector has
+// verified as CLEAN_SPLIT. Applying it to every TCP connection broke
+// composite sites whose static hosts do not tolerate the altered hello.
 func observeFiles(s Settings) (plain, cut []byte) {
 	empty := []byte("# empty\n")
 	all := observeAll(s.Mode())
-	if s.Mode() == ModeObserve && s.SplitHello {
-		if !s.QUICFake {
-			// the decoy off: QUIC goes plain, TCP is cut
-			return []byte("# observe only, the QUIC decoy off: UDP goes plain\nNETWORK,udp\n"),
-				[]byte("# observe only: TCP goes with the ClientHello cut\nNETWORK,tcp\n")
-		}
-		return empty, all
-	}
 	return all, empty
 }
 
