@@ -63,6 +63,7 @@
 - [Второй туннель](#второй-туннель)
 - [Live](#live)
 - [Если сайт не открывается](#если-сайт-не-открывается)
+- [Локальный API v1](#локальный-api-v1)
 - [Права и файлы](#права-и-файлы)
 - [Команды](#команды)
 - [Сборка и разработка](#сборка-и-разработка)
@@ -106,7 +107,7 @@
 |---|---|
 | **Обзор** | Сколько сайтов идёт напрямую, заблокировано, медленнее, не проверено; состояние обоих туннелей, замена `.conf`; последние события |
 | **Вердикты** | Все вердикты по вкладкам «Напрямую», «Заблокированы», «Медленнее», «Не проверено», фильтр по имени (русские имена ищутся и показываются как есть); строка выделяется кликом, правый клик отправляет её в список, ✕ сбрасывает её вердикт; «Сбросить вердикты…» — выбранной сети; сеть в шапке раскрывает список сетей |
-| **Списки маршрутов** | «Всегда напрямую», «Всегда через» с отдельными списками «Туннели», «Туннель1», «Туннель2», «Запрещено»: сайты, адреса и программы в каждом |
+| **Списки маршрутов** | Два блока: общий редактор правил, где каждой строке назначается «Напрямую», «Запретить» или цепочка awg, и пресеты |
 | **Второй туннель** | Только когда он включён в настройках. Подключение awg2, пресеты (YouTube, Telegram и WhatsApp, Discord, ИИ-сервисы, Instagram/Facebook/X; их можно изменить, удалить и добавить свои) и свои сайты |
 | **Настройки** | Детектор, сроки, IPv6, DNS; каждое изменение применяется сразу |
 | **Логи** | Лог контроллера и службы, ядра, трея и интерфейса; последние 400 строк, вместе с предыдущим файлом после ротации |
@@ -114,6 +115,8 @@
 | **Live** | Соединения ядра раз в секунду — открытые, закрытые, ошибки и запрещённые попытки за весь запуск ядра; щелчок закрепляет строку, правый щелчок отправляет её сайт, адрес или программу в нужный список. Подробнее — в разделе [Live](#live) |
 
 В шапке — состояние службы и туннелей, переключатель авто-переключения и кнопка «Старт»/«Стоп».
+Состояние туннеля — отдельная контрольная проверка через него: оно подтверждает доступность контрольного
+адреса, а не ответ каждого сайта через этот туннель.
 Внизу боковой панели — установка и удаление службы, автозапуск трея и выбор языка (English / Русский).
 Трей говорит на том же языке, что и интерфейс.
 
@@ -128,13 +131,14 @@
 |---|---|---|
 | Авто-переключение | Вкл | Незаблокированные сайты идут напрямую; «Только наблюдать» — всё напрямую, кроме списков (белый список); «Только в туннель» — всё, кроме «Всегда напрямую», через туннели и никогда напрямую. Вердикты записываются в любом режиме |
 | Домены целиком | Распространять на домен | 3+ чистых поддомена и ни одного заблокированного — весь домен напрямую |
+| Сравнивать задержку маршрутов | Вкл | Учитывать разницу скорости прямого пути и туннеля; если выключено, рабочий прямой путь не получает вердикт «Медленнее» |
 | Допуск по задержке | 20 % | Насколько прямой путь может быть медленнее туннеля и всё ещё использоваться |
 | Попыток на пробу | 3 | Сайт чистый, только если чисты все попытки |
 | Держать напрямую | 7 дней | Сколько чистый сайт идёт напрямую до следующей проверки |
 | Перепроверять заблокированные через | 1 час | Затем всё реже, до потолка паузы |
 | Потолок паузы | 1 день | Самая долгая пауза между проверками сайта |
 | Разбивать ClientHello | Выкл | Сайт, заблокированный по имени, проверяется с разрезанным ClientHello и, если так работает, идёт напрямую с разбиением |
-| Подставной пакет QUIC | Вкл | QUIC к сайтам с разбиением идёт напрямую с подставным первым пакетом (www.google.com); где не помогает — отклоняется. Только вместе с разбиением |
+| Подставной пакет QUIC | Вкл | QUIC к сайтам с разбиением идёт напрямую с подставным первым пакетом (www.google.com); где не помогает — отклоняется. Только вместе с разбиением; когда разбиение выключено, настройка недоступна |
 | IPv6 | Вкл | Вкл: IPv6 работает везде — через туннель, напрямую и в проверках детектора. Выкл: IPv6 нет совсем |
 | DNS для прямых сайтов | `tls://8.8.8.8`, `tls://8.8.4.4`, `tls://[2001:4860:4860::8888]`, `tls://[2001:4860:4860::8844]` | DoT Google по IPv4 и IPv6, мимо туннеля |
 | DNS внутри туннеля | из `.conf` | Для сайтов, идущих через туннель |
@@ -174,7 +178,7 @@
 соединения, которые это изменение переносит, закрываются, и программы переподключаются уже по новому
 маршруту. Выключение авто-переключения закрывает соединения, которые детектор пустил напрямую.
 
-В каждом списке можно смешивать сайты (`example.com`, `+.example.com` — домен и всё под ним), адреса и
+В общем редакторе правил можно смешивать сайты (`example.com`, `+.example.com` — домен и всё под ним), адреса и
 сети (`1.2.3.4`, `192.168.0.0/16`) и программы (`telegram.exe` или полный путь к одной копии). Имя на
 своём языке (`госуслуги.рф`) записывается так, как его видит ядро, — в punycode. Адрес действует на
 соединения, которые идут прямо по адресу: браузер ходит к сайтам по именам, поэтому сайт добавляйте
@@ -190,8 +194,9 @@
    TCP-соединение, TLS-рукопожатие с именем сайта (SNI) и полной проверкой цепочки сертификатов,
    HTTP-запрос и ответ. Имя, замеченное на UDP 443, пробуется ещё и по QUIC (HTTP/3). Проверяются те
    порты, на которых имя реально использовалось.
-4. Это повторяется несколько раз (попыток на пробу). Имя чистое, только если чисты все попытки и
-   прямой путь не медленнее туннеля больше допуска.
+4. Это повторяется несколько раз (попыток на пробу). Имя чистое, только если чисты все попытки. Когда
+   включено «Сравнивать задержку маршрутов», прямой путь также не должен быть медленнее туннеля больше
+   допуска; когда выключено, скорость сама по себе вердикт не меняет.
 
 Новое имя проверяется сразу, как только замечено, — до 4 таких одновременно. Перепроверки и всё, что не
 поместилось, идут циклами раз в 10 секунд, до 20 имён за цикл. Проверки встают на паузу, пока туннель не проходит собственные
@@ -202,15 +207,15 @@
 
 | Вердикт | Что увидели | Маршрут |
 |---|---|---|
-| 🟢 `CLEAN` | Все попытки прошли напрямую так же, как через туннель, и не медленнее | напрямую |
-| 🟢 `CLEAN_SPLIT` | Напрямую блокируется по имени, но с разбитым ClientHello все попытки прошли так же, как через туннель, и не медленнее. Только при включённом разбиении | напрямую с разбиением |
+| 🟢 `CLEAN` | Все попытки прошли напрямую так же, как через туннель; при включённом сравнении задержки — и не медленнее сверх допуска | напрямую |
+| 🟢 `CLEAN_SPLIT` | Напрямую блокируется по имени, но с разбитым ClientHello все попытки прошли так же, как через туннель; при включённом сравнении задержки — и не медленнее сверх допуска. Только при включённом разбиении | напрямую с разбиением |
 | 🔴 `BLOCKED_TCP` | Напрямую адрес не отвечает — ни с именем сайта, ни без, а через туннель работает: блокировка по IP | туннель |
 | 🔴 `BLOCKED_TLS` | TCP устанавливается, но TLS-рукопожатие обрывается, как только видно имя сайта: типичная блокировка DPI | туннель |
 | 🔴 `BLOCKED_DPI` | Блокируется по имени, и с разбитым ClientHello тоже не проходит. Только при включённом разбиении | туннель |
 | 🔴 `BLOCKED_QUIC` | Напрямую заблокирован QUIC (UDP 443). TCP может работать, но имя идёт одним маршрутом целиком | туннель |
 | 🔴 `MITM` | Сертификат на прямом пути не сайта или не проходит проверку: вместо сайта отвечает кто-то другой | туннель |
 | 🔴 `CONTENT_DIFF` | Ответ на прямом пути отличается от туннельного: скорее всего, страница-заглушка | туннель |
-| 🟡 `SLOWER` | Не заблокирован, но напрямую медленнее туннеля сверх допуска | туннель |
+| 🟡 `SLOWER` | Не заблокирован, но напрямую медленнее туннеля сверх допуска; только когда включено сравнение задержки маршрутов | туннель |
 | ⚪ `INCONCLUSIVE` | Не с чем сравнить: туннель тоже не прошёл, сайт нигде не отвечает или его IPv6-узел напрямую недоступен | остаётся прежний вердикт; новое имя остаётся в туннеле |
 
 ### Сроки и перепроверки
@@ -486,6 +491,26 @@ GitHub и Reddit. Маски вида `+.claude.ai` покрывают доме�
 5. На странице **Live** видно, каким маршрутом и по какому правилу идут его соединения прямо сейчас, а
    правым щелчком по строке сайт можно сразу отправить в нужный список.
 
+### Локальный API v1
+
+Веб-интерфейс и внешние локальные инструменты могут использовать типизированный JSON API по адресу
+`http://127.0.0.1:<порт>/api/v1`. Порт виден в адресной строке интерфейса. Для авторизации передайте
+содержимое `%LOCALAPPDATA%\dpiswitch\ui.key` в заголовке `X-DPISwitch-Key`; ключ нельзя передавать
+другим пользователям или программам.
+
+- `GET /api/v1` — список ресурсов;
+- `GET /api/v1/status` — служба, режим, сеть, счётчики и оба туннеля без HTML;
+- `GET`, `PATCH`, `PUT /api/v1/settings` — настройки;
+- `GET`, `PUT /api/v1/routes` — весь набор правил `{entry, route}` одной атомарной операцией;
+- `GET /api/v1/verdicts?cat=direct|blocked|slow|unknown&net=...&q=...` — вердикты;
+- `GET /api/v1/presets` — каталог пресетов и признак `enabled`.
+
+Изменяемые документы возвращают `revision` и `ETag`. При записи передайте `revision` в JSON или
+`If-Match`; устаревшая версия получает `409 Conflict` или `412 Precondition Failed` и не перезаписывает
+более новое изменение. Частичное обновление настроек выглядит как
+`{"revision":"...","settings":{"compare_latency":false,"attempts":3}}`. Полная замена маршрутов —
+`{"revision":"...","rules":[{"entry":"+.example.com","route":"awg1-awg2"},{"entry":"bank.example","route":"direct"}]}`.
+
 ### Права и файлы
 
 Служба принадлежит пользователю, который её установил: только он (и администраторы) может запускать
@@ -611,6 +636,7 @@ your real ISP. Everything else stays in the tunnel.
 - [The second tunnel](#the-second-tunnel)
 - [Live](#live-1)
 - [When a site does not open](#when-a-site-does-not-open)
+- [Local API v1](#local-api-v1)
 - [Permissions and files](#permissions-and-files)
 - [Commands](#commands)
 - [Build and development](#build-and-development)
@@ -654,14 +680,16 @@ their own port and access key).
 |---|---|
 | **Overview** | How many sites go direct, are blocked, slower, unverified; both tunnels' state, replacing a `.conf`; recent events |
 | **Verdicts** | Every verdict in the "Direct", "Blocked", "Slower", "Unverified" tabs, a name filter (names in Russian letters are found and shown as written); a click pins a row, a right-click sends it to a list, ✕ resets its verdict; "Reset verdicts…" of the network shown; the network in the header opens the list of networks |
-| **Routing lists** | "Always direct", "Always via" with separate Tunnels, Tunnel1 and Tunnel2 lists, "Forbidden": sites, addresses and programs in each |
+| **Routing lists** | Two blocks: one rules editor where every row selects Direct, Block, or an awg chain, and presets |
 | **Second tunnel** | Only while it is switched on in the settings. Attaching awg2, presets (YouTube, Telegram and WhatsApp, Discord, AI services, Instagram/Facebook/X; edit them, delete them, add your own) and your own list |
 | **Settings** | Detector, terms, IPv6, DNS; every change applies at once |
 | **Logs** | The controller and service log, the core's, the tray and UI's; the last 400 lines, the previous file's included after a rotation |
 | **Help** | What is described below; its links lead straight to the field meant, which blinks |
 | **Live** | The core's connections every second — open, closed, failed and forbidden tries over the core's whole run; a click pins a row, a right-click sends its site, address or program to a list. More in [Live](#live-1) |
 
-The header shows the service and tunnels' state, the auto-switch toggle and Start/Stop. The bottom
+The header shows the service and tunnels' state, the auto-switch toggle and Start/Stop. A tunnel's state
+is a separate health check through it: it confirms that the check address is reachable, not that every
+site answers through that tunnel. The bottom
 of the sidebar holds installing and removing the service, the tray's autostart and the language
 (English / Русский). The tray speaks the same language as the UI.
 
@@ -676,13 +704,14 @@ many are blocked.
 |---|---|---|
 | Auto-switch | On | Unblocked sites go direct; "Observe only" — everything direct but the lists (a whitelist); "Tunnel only" — everything but Always direct through the tunnels and never direct. Verdicts are recorded in every mode |
 | Whole domains | Extend to the domain | 3+ clean subdomains and none blocked — the whole domain goes direct |
+| Compare route latency | On | Account for the speed difference between the direct path and the tunnel; when off, a working direct path does not get a Slower verdict |
 | Latency tolerance | 20 % | How much slower than the tunnel the direct path may be and still be used |
 | Attempts per probe | 3 | A site is clean only if every attempt is |
 | Keep direct for | 7 days | How long a clean site goes direct before it is checked again |
 | Re-check blocked after | 1 hour | Then less and less often, up to the pause cap |
 | Pause cap | 1 day | The longest wait between checks of a site |
 | Cut the ClientHello | Off | A site blocked by its name is checked with its ClientHello cut and, if it works so, goes direct with the cut |
-| QUIC decoy | On | QUIC to the cut's sites goes direct behind a decoy first packet (www.google.com); refused where that does not help. With the cut only |
+| QUIC decoy | On | QUIC to the cut's sites goes direct behind a decoy first packet (www.google.com); refused where that does not help. With the cut only; the control is disabled while the cut is off |
 | IPv6 | On | On: IPv6 works everywhere — through the tunnel, direct and in the detector's checks. Off: no IPv6 at all |
 | DNS for direct sites | `tls://8.8.8.8`, `tls://8.8.4.4`, `tls://[2001:4860:4860::8888]`, `tls://[2001:4860:4860::8844]` | Google DoT over IPv4 and IPv6, outside the tunnel |
 | DNS inside the tunnel | from the `.conf` | For the sites that go through the tunnel |
@@ -722,7 +751,7 @@ The core decides once, when a connection opens. When you change a list or a pres
 connections the change moves are closed, and the programs reconnect over the new route. Turning
 auto-switch off closes the connections the detector sent direct.
 
-Every list takes sites (`example.com`, `+.example.com` for the domain and all under it), addresses and
+The shared rules editor takes sites (`example.com`, `+.example.com` for the domain and all under it), addresses and
 networks (`1.2.3.4`, `192.168.0.0/16`) and programs (`telegram.exe`, or a full path for one copy) in
 any mix. A name in its own letters (`госуслуги.рф`) is written as the core sees it, in punycode. An
 address counts for connections made to it by address: a browser reaches sites by name, so add a site
@@ -739,7 +768,8 @@ only" is chosen, Always direct is set aside — the lists page says so.
    request and its answer. A name seen on UDP 443 is also tried over QUIC (HTTP/3). The ports the
    name was really used on are the ones probed.
 4. This is repeated several times (attempts per probe). The name is clean only if every attempt is
-   clean, and the direct path is not slower than the tunnel by more than the tolerance.
+   clean. With Compare route latency on, the direct path must also not be slower than the tunnel beyond
+   the tolerance; with it off, speed alone does not change the verdict.
 
 A new name is checked the moment it is seen, up to 4 such at once. Re-checks, and what found no room, run
 in cycles every 10 seconds, up to 20 names a cycle. The checks pause while the tunnel fails the core's own health
@@ -750,15 +780,15 @@ moment than about the path.
 
 | Verdict | What was seen | Route |
 |---|---|---|
-| 🟢 `CLEAN` | Every attempt passed directly just as through the tunnel, not slower | direct |
-| 🟢 `CLEAN_SPLIT` | Blocked by its name directly, but with the ClientHello cut every attempt passed just as through the tunnel, not slower. With the cut switched on only | direct with the cut |
+| 🟢 `CLEAN` | Every attempt passed directly just as through the tunnel; with latency comparison on, not slower beyond the tolerance | direct |
+| 🟢 `CLEAN_SPLIT` | Blocked by its name directly, but with the ClientHello cut every attempt passed just as through the tunnel; with latency comparison on, not slower beyond the tolerance. With the cut switched on only | direct with the cut |
 | 🔴 `BLOCKED_TCP` | The address does not answer directly, with the site's name or without, and works through the tunnel: blocked by IP | tunnel |
 | 🔴 `BLOCKED_TLS` | TCP connects, but the TLS handshake is cut once the site's name is seen: the typical DPI block | tunnel |
 | 🔴 `BLOCKED_DPI` | Blocked by its name, and the ClientHello cut does not get through either. With the cut switched on only | tunnel |
 | 🔴 `BLOCKED_QUIC` | QUIC (UDP 443) is blocked directly. TCP may work, but a name goes one way as a whole | tunnel |
 | 🔴 `MITM` | The certificate on the direct path is not the site's, or does not verify: someone answers in the site's place | tunnel |
 | 🔴 `CONTENT_DIFF` | The answer on the direct path differs from the tunnel's: most likely a block page | tunnel |
-| 🟡 `SLOWER` | Not blocked, but slower direct than through the tunnel beyond the tolerance | tunnel |
+| 🟡 `SLOWER` | Not blocked, but slower direct than through the tunnel beyond the tolerance; only with route-latency comparison on | tunnel |
 | ⚪ `INCONCLUSIVE` | Nothing to compare: the tunnel failed too, the site answers nowhere, or its IPv6 node is out of reach directly | keeps the previous verdict; a new name stays in the tunnel |
 
 ### Terms and re-checks
@@ -1033,6 +1063,24 @@ and the presets change as one: a file failing to write puts back the ones writte
 4. The **logs** show every verdict with its reason.
 5. The **Live** page shows which route its connections take right now, and by which rule; a
    right-click on a row sends the site straight to the list it belongs in.
+
+### Local API v1
+
+The web UI and other local tools can use the typed JSON API at
+`http://127.0.0.1:<port>/api/v1`; the port is visible in the UI address bar. Authenticate with the
+contents of `%LOCALAPPDATA%\dpiswitch\ui.key` in the `X-DPISwitch-Key` header. Do not share that key.
+
+- `GET /api/v1` discovers resources;
+- `GET /api/v1/status` returns the service, mode, network, counts and both tunnels without HTML;
+- `GET`, `PATCH`, `PUT /api/v1/settings` read or change settings;
+- `GET`, `PUT /api/v1/routes` read or atomically replace all `{entry, route}` rules;
+- `GET /api/v1/verdicts?cat=direct|blocked|slow|unknown&net=...&q=...` returns verdicts;
+- `GET /api/v1/presets` returns the preset catalog with each `enabled` state.
+
+Mutable documents return `revision` and `ETag`. Send the revision in JSON or as `If-Match`; a stale
+write gets `409 Conflict` or `412 Precondition Failed` and never overwrites a newer change. A settings
+patch is `{"revision":"...","settings":{"compare_latency":false,"attempts":3}}`. A complete routes
+replacement is `{"revision":"...","rules":[{"entry":"+.example.com","route":"awg1-awg2"},{"entry":"bank.example","route":"direct"}]}`.
 
 ### Permissions and files
 

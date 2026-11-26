@@ -116,6 +116,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/favicon.ico", s.handleIcon)
 	mux.HandleFunc("/lang", s.handleLang)
 	mux.HandleFunc("/api/status", s.handleStatus)
+	mux.HandleFunc("/api/v1", s.handleAPIV1)
+	mux.HandleFunc("/api/v1/", s.handleAPIV1)
 	mux.HandleFunc("/api/tunnels", s.handleTunnels)
 	mux.HandleFunc("/live/stream", s.handleLive)
 	mux.HandleFunc("/live/presets", s.handleLivePresets)
