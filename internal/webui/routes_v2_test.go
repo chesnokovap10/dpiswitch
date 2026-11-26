@@ -6,8 +6,28 @@ import (
 	"strings"
 	"testing"
 
+	"dpiswitch/internal/ctl"
 	"dpiswitch/internal/paths"
 )
+
+func TestRouteAllowsExistingOutbound(t *testing.T) {
+	for _, tc := range []struct {
+		route, outbound string
+		want            bool
+	}{
+		{"awg1-awg2", "awg1", true}, // expanding awg1 must keep it open
+		{"awg1-awg2", "awg2", true},
+		{"awg1-awg2", "DIRECT", false},
+		{"awg1-awg2-direct", "DIRECT", true},
+		{"direct", ctl.SplitOutbound, true},
+		{"awg2", "awg1", false},
+		{"block", "awg1", false},
+	} {
+		if got := routeAllowsOutbound(tc.route, tc.outbound); got != tc.want {
+			t.Errorf("route %s with %s = %v, want %v", tc.route, tc.outbound, got, tc.want)
+		}
+	}
+}
 
 func TestUnifiedRouteListAndNavigation(t *testing.T) {
 	s, _ := testServer(t)

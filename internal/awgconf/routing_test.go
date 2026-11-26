@@ -87,20 +87,20 @@ const (
 // the tables of the help
 var routingTables = map[string][]row{
 	ctl.ModeOn: {
-		{"none", D, D, D, D, R, D, R},
-		{"awg1", "awg1 > DIRECT", D, "awg1 > DIRECT", "awg1 > DIRECT", "awg1 > REJECT", D, R},
-		{"awg2 on", "awg2 > DIRECT", D, "awg2 > DIRECT", "awg2 > DIRECT", "awg2 > REJECT", D, R},
-		{"awg2 off", D, D, D, D, R, D, R},
-		{"both on", "awg1 > awg2 > DIRECT", D, "awg1 > awg2 > DIRECT", "awg2 > awg1 > DIRECT", "awg1 > awg2 > REJECT", D, R},
-		{"both off", "awg1 > DIRECT", D, "awg1 > DIRECT", "awg1 > DIRECT", "awg1 > REJECT", D, R},
+		{"none", D, D, R, D, R, D, R},
+		{"awg1", "awg1 > DIRECT", D, "awg1 > REJECT", "awg1 > DIRECT", "awg1 > REJECT", D, R},
+		{"awg2 on", "awg2 > DIRECT", D, "awg2 > REJECT", "awg2 > DIRECT", "awg2 > REJECT", D, R},
+		{"awg2 off", D, D, R, D, R, D, R},
+		{"both on", "awg1 > awg2 > DIRECT", D, "awg1 > awg2 > REJECT", "awg2 > awg1 > DIRECT", "awg1 > awg2 > REJECT", D, R},
+		{"both off", "awg1 > DIRECT", D, "awg1 > REJECT", "awg1 > DIRECT", "awg1 > REJECT", D, R},
 	},
 	ctl.ModeObserve: {
-		{"none", D, D, D, D, R, D, R},
-		{"awg1", D, D, "awg1 > DIRECT", "awg1 > DIRECT", "awg1 > REJECT", D, R},
-		{"awg2 on", D, D, "awg2 > DIRECT", "awg2 > DIRECT", "awg2 > REJECT", D, R},
-		{"awg2 off", D, D, D, D, R, D, R},
-		{"both on", D, D, "awg1 > awg2 > DIRECT", "awg2 > awg1 > DIRECT", "awg1 > awg2 > REJECT", D, R},
-		{"both off", D, D, "awg1 > DIRECT", "awg1 > DIRECT", "awg1 > REJECT", D, R},
+		{"none", D, D, R, D, R, D, R},
+		{"awg1", D, D, "awg1 > REJECT", "awg1 > DIRECT", "awg1 > REJECT", D, R},
+		{"awg2 on", D, D, "awg2 > REJECT", "awg2 > DIRECT", "awg2 > REJECT", D, R},
+		{"awg2 off", D, D, R, D, R, D, R},
+		{"both on", D, D, "awg1 > awg2 > REJECT", "awg2 > awg1 > DIRECT", "awg1 > awg2 > REJECT", D, R},
+		{"both off", D, D, "awg1 > REJECT", "awg1 > DIRECT", "awg1 > REJECT", D, R},
 	},
 	ctl.ModeTunnel: {
 		{"none", R, R, R, D, R, D, R},
@@ -663,7 +663,7 @@ func TestRenderRuleOrder(t *testing.T) {
 		"RULE-SET,force-tunnel-apps,route-awg1-awg2", "RULE-SET,force-tunnel-ip,route-awg1-awg2,no-resolve",
 		"RULE-SET,force-direct-apps,DIRECT", "RULE-SET,force-direct-ip,DIRECT,no-resolve",
 		"RULE-SET,enabled-presets,route-enabled-presets",
-		"RULE-SET,presets,tunnel-default",
+		"RULE-SET,presets,route-presets-default",
 		"RULE-SET,direct-split-verified,direct-split", "RULE-SET,direct-verified,DIRECT",
 		"RULE-SET,observe-split,direct-split", "RULE-SET,observe-all,DIRECT", "MATCH,tunnel-default"}
 	for k := 1; k < len(order); k++ {
@@ -750,7 +750,7 @@ func TestRenderGroups(t *testing.T) {
 		ctl.RouteAwg1Group: ctl.TunnelOneGroup, ctl.RouteAwg2Group: "REJECT",
 		ctl.Route12Group: ctl.TunnelOneGroup, ctl.Route21Group: ctl.TunnelOneGroup,
 		ctl.Route12DirectGroup: ctl.TunnelSoftGroup, ctl.Route21DirectGroup: ctl.TunnelSoftGroup,
-		ctl.DefaultRouteGroup: ctl.TunnelOneGroup,
+		ctl.DefaultRouteGroup: ctl.TunnelOneGroup, ctl.PresetsRouteGroup: ctl.TunnelOneGroup,
 	} {
 		if got := members(t, out, g); !strings.HasPrefix(got, first+" ") {
 			t.Errorf("%s lists %q: %s is not chosen at start", g, got, first)

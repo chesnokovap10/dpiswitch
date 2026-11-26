@@ -209,6 +209,114 @@ func closeEntriesChange(name string, old, entries []string) (int, error) {
 		func() bool { return ctl.Synced(name) })
 }
 
+// routeAllowsOutbound reports whether a connection that already took
+// outbound still satisfies route. Expanding awg1 to awg1 -> awg2, for
+// example, must not tear down a connection already using awg1.
+func routeAllowsOutbound(route, outbound string) bool {
+	direct := outbound == "DIRECT" || outbound == ctl.SplitOutbound
+	switch route {
+	case "direct":
+		return direct
+	case "awg1":
+		return outbound == "awg1"
+	case "awg2":
+		return outbound == "awg2"
+	case "awg1-awg2", "awg2-awg1":
+		return outbound == "awg1" || outbound == "awg2"
+	case "awg1-awg2-direct", "awg2-awg1-direct":
+		return direct || outbound == "awg1" || outbound == "awg2"
+	default: // block, or a row removed altogether
+		return false
+	}
+}
+
+func indexedRoutes(specs []routeSpec, files map[string][]string) map[string]string {
+	out := map[string]string{}
+	for _, spec := range specs {
+		for _, entry := range files[spec.List] {
+			key := strings.ToLower(entry)
+			if _, exists := out[key]; !exists {
+				out[key] = spec.ID
+			}
+		}
+	}
+	return out
+}
+
+// closeRouteEntriesChange reloads an atomic common-editor change and closes
+// only connections whose actual outbound is no longer accepted by the new
+// route. The old per-file comparison closed every matching connection twice
+// when a row merely moved from one route file to another.
+func closeRouteEntriesChange(specs []routeSpec, old, cur map[string][]string) (int, error) {
+	before, after := indexedRoutes(specs, old), indexedRoutes(specs, cur)
+	type transition struct{ entry, route string }
+	var transitions []transition
+	presetRoute, presetChanged := "", false
+	seen := map[string]bool{}
+	for entry, oldRoute := range before {
+		seen[entry] = true
+		newRoute := after[entry]
+		if oldRoute == newRoute {
+			continue
+		}
+		if strings.EqualFold(entry, ctl.EnabledPresets) {
+			presetRoute, presetChanged = newRoute, true
+		} else {
+			transitions = append(transitions, transition{entry, newRoute})
+		}
+	}
+	for entry, newRoute := range after {
+		if seen[entry] {
+			continue
+		}
+		if strings.EqualFold(entry, ctl.EnabledPresets) {
+			presetRoute, presetChanged = newRoute, true
+		} else {
+			transitions = append(transitions, transition{entry, newRoute})
+		}
+	}
+	// With no override, presets use their strict default order. Both tunnel
+	// outbounds remain valid; direct never does.
+	if presetChanged && presetRoute == "" {
+		presetRoute = "awg1-awg2"
+	}
+
+	var providers, changedFiles []string
+	for _, spec := range specs {
+		if len(changed(old[spec.List], cur[spec.List])) == 0 {
+			continue
+		}
+		changedFiles = append(changedFiles, spec.List)
+		providers = append(providers, ctl.ListProviders(spec.List)...)
+	}
+	if len(changedFiles) == 0 {
+		return 0, nil
+	}
+	if presetChanged {
+		providers = append(providers, ctl.EnabledPresetsProvider)
+		if serviceRunning() {
+			ctl.SyncRoutesNow(apiAddr, ctl.SecretFromConfig(paths.Config()))
+		}
+	}
+	presetMatch := enabledPresetsSourceMatch()
+	match := func(c ctl.Conn) bool {
+		for _, move := range transitions {
+			if entryMatch([]string{move.entry})(c) && !routeAllowsOutbound(move.route, c.Outbound) {
+				return true
+			}
+		}
+		return presetChanged && presetMatch(c) && !routeAllowsOutbound(presetRoute, c.Outbound)
+	}
+	return closeMoved(providers, match, func() bool {
+		for _, file := range changedFiles {
+			if !ctl.Synced(file) {
+				return false
+			}
+		}
+		return true
+	})
+}
+
 // actList saves one of the lists; "add" puts a program from the online list
 // into it and saves at once -- it used to land in the field only, waiting
 // for a Save that was easy to miss.
@@ -375,13 +483,8 @@ func (s *Server) saveRouteEntries(byFile map[string][]string) (moved int, err, c
 	}
 	s.listMu.Unlock()
 
-	var closeErrs []error
-	for _, spec := range ruleSpecs {
-		n, err := closeEntriesChange(spec.List, old[spec.List], byFile[spec.List])
-		moved += n
-		closeErrs = append(closeErrs, err)
-	}
-	return moved, nil, errors.Join(closeErrs...)
+	moved, closeErr = closeRouteEntriesChange(ruleSpecs, old, byFile)
+	return moved, nil, closeErr
 }
 
 type listShadow struct{ entry, list string }

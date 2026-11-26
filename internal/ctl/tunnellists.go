@@ -27,6 +27,7 @@ const (
 	Route12DirectGroup       = "route-awg1-awg2-direct"
 	Route21DirectGroup       = "route-awg2-awg1-direct"
 	DefaultRouteGroup        = "tunnel-default"
+	PresetsRouteGroup        = "route-presets-default"
 	EnabledPresetsRouteGroup = "route-enabled-presets"
 
 	// Old names remain for compatibility with older generated configs and
@@ -108,13 +109,14 @@ func RouteChoice(s Settings) map[string]string {
 		Route12DirectGroup:       soft(false),
 		Route21DirectGroup:       soft(true),
 		DefaultRouteGroup:        def,
+		PresetsRouteGroup:        strict(reverse),
 		EnabledPresetsRouteGroup: EnabledPresetsRoute(),
 	}
 }
 
 // EnabledPresetsRoute is the proxy/group selected for the virtual
 // enabled_presets row. With no override its empty provider still points at
-// the ordinary default route.
+// the strict default route of presets.
 func EnabledPresetsRoute() string {
 	for _, route := range []struct{ file, group string }{
 		{paths.BlockList, "REJECT"},
@@ -130,7 +132,7 @@ func EnabledPresetsRoute() string {
 			return route.group
 		}
 	}
-	return DefaultRouteGroup
+	return PresetsRouteGroup
 }
 
 // routesSet: the member last chosen in the core, by group; listMu held. A

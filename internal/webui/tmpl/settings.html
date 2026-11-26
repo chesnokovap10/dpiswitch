@@ -94,7 +94,7 @@
 
   <div>{{.T "Default tunnel routing"}}</div>
   <div><select id="default_tunnel" name="default_tunnel"><option value="awg1-awg2" {{if eq $s.DefaultTunnel "awg1-awg2"}}selected{{end}}>awg1→awg2</option><option value="awg2-awg1" {{if eq $s.DefaultTunnel "awg2-awg1"}}selected{{end}}>awg2→awg1</option></select></div>
-  <div class="h"><span>{{.T "Used by presets and by traffic the detector sends through a tunnel. An explicit rule in Routing rules takes priority."}}</span>{{template "rowmsg" ($d.MsgFor "default_tunnel")}}</div>
+  <div class="h"><span>{{.T "Sets the tunnel order for presets and for traffic the detector sends through a tunnel. Presets use it strictly, without direct fallback; other traffic follows the current mode. An explicit rule in Routing rules takes priority."}}</span>{{template "rowmsg" ($d.MsgFor "default_tunnel")}}</div>
 
   <div><a class="hl" href="/help#h-ipv6">IPv6</a></div>
   <div><select name="ipv6"><option value="1" {{if $s.IPv6}}selected{{end}}>{{.T "On"}}</option><option value="0" {{if not $s.IPv6}}selected{{end}}>{{.T "Off"}}</option></select></div>

@@ -23,13 +23,13 @@ or an awg chain, and <b>presets</b>.</p>
 <tr><td>5</td><td><a href="/lists#list-tunnel">Routing rule</a> with an awg route</td><td>the selected awg1/awg2 chain, optionally with direct fallback</td></tr>
 <tr><td>6</td><td><a href="/lists#list-tunnel">Routing rule</a> with route <b>direct</b></td><td>direct in every mode</td></tr>
 <tr><td>7</td><td>The optional <code>enabled_presets</code> row</td><td>the route selected for every enabled preset</td></tr>
-<tr><td>8</td><td><a href="/lists#presets">Presets</a> without <code>enabled_presets</code></td><td>the default tunnel order from Settings</td></tr>
+<tr><td>8</td><td><a href="/lists#presets">Presets</a> without <code>enabled_presets</code></td><td>the strict tunnel order from Settings; direct is never used</td></tr>
 <tr><td>9</td><td><a href="/overview#summary">Tunnel switches</a></td><td>disabled tunnels are skipped in every chain</td></tr>
 <tr><td>10</td><td>Everything else, while "Observe only" is chosen</td><td>direct</td></tr>
 <tr><td>11</td><td>Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name)</td><td>direct</td></tr>
 <tr><td>12</td><td>Everything else</td><td>by the mode -- see the tables below</td></tr>
 </table>
-<p><code>enabled_presets</code> has the “presets” type and assigns one route to all enabled presets, overriding their default route. It is optional and does not affect detector traffic. Explicit site, address and program rules take priority over it. The editor does not keep duplicate entries.</p>
+<p><code>enabled_presets</code> has the “presets” type and assigns one route to all enabled presets, overriding their strict default tunnel route. It is optional and does not affect detector traffic. Explicit site, address and program rules take priority over it. The editor does not keep duplicate entries.</p>
 <p>Every routing-rule row has its own route:</p>
 <table>
 <tr><th>Route</th><th>When a tunnel is switched off or has no config</th><th>When every remaining tunnel is unavailable</th></tr>
@@ -40,9 +40,9 @@ or an awg chain, and <b>presets</b>.</p>
 <tr><td>awg1 → awg2 → direct</td><td>the disabled tunnel is skipped</td><td>direct</td></tr>
 <tr><td>awg2 → awg1 → direct</td><td>the disabled tunnel is skipped</td><td>direct</td></tr>
 </table>
-<p>Presets and traffic the detector keeps in a tunnel use the awg1 → awg2 or awg2 → awg1 order selected in Settings. In Observe only, traffic not named by a rule goes direct, while presets keep using the default route.</p>
+<p>Presets strictly use the awg1 → awg2 or awg2 → awg1 order selected in Settings, without direct fallback in any mode. Other traffic uses the same order according to the current mode. In Observe only, traffic not named by a rule goes direct, while presets stay in their strict tunnel chain.</p>
 <table>
-<tr><th>Enabled tunnels</th><th>On and presets</th><th>Tunnel only</th></tr>
+<tr><th>Enabled tunnels</th><th>Other traffic in On</th><th>Presets in every mode</th></tr>
 <tr><td>both</td><td>selected order, then direct</td><td>selected order, without direct</td></tr>
 <tr><td>awg1 only</td><td>awg1 → direct</td><td>awg1 only</td></tr>
 <tr><td>awg2 only</td><td>awg2 → direct</td><td>awg2 only</td></tr>
@@ -379,7 +379,7 @@ setting is switched off, and with the service should it die.</p>
 {{if .St.Second}}
 <h4 id="h-awg2">The second tunnel</h4>
 <p>The <a href="/overview#summary"><b>Overview</b></a> always shows cards for awg1 and awg2. Each card's checkbox independently enables or disables that tunnel; it is disabled until a config is loaded. A disabled tunnel is skipped in every route chain while its config is kept.</p>
-<p><a href="/lists#list-tunnel"><b>Routing rules</b></a> give every row its own route. Enabled <a href="/lists#presets"><b>presets</b></a> use the default tunnel order from Settings when no explicit rule matches. The detector compares the direct path with awg1 only; traffic already sent to awg2 by an explicit rule is not checked.</p>
+<p><a href="/lists#list-tunnel"><b>Routing rules</b></a> give every row its own route. Enabled <a href="/lists#presets"><b>presets</b></a> strictly use the tunnel order from Settings with no direct fallback when no explicit rule or <code>enabled_presets</code> override matches. The detector compares the direct path with awg1 only; traffic already sent to awg2 by an explicit rule is not checked.</p>
 <p>Presets form an alphabetically sorted tree of <b>AI, Messengers, Social networks, Video hosting and Other services</b>.
 Other services is always last; remaining categories and services are sorted alphabetically.
 A category checkbox selects all its services; a mixed state means a partial selection. The arrow expands
@@ -472,7 +472,7 @@ For it to take that route, the menu takes it out of wherever a rule would route 
 come in this order:</p>
 <ol>
 <li>an explicit <a href="/lists#list-tunnel">routing rule</a> with its selected route;</li>
-{{if .St.Second}}<li>enabled <a href="/lists#presets">presets</a> through the default tunnel route;</li>
+{{if .St.Second}}<li>enabled <a href="/lists#presets">presets</a> through the strict default tunnel route;</li>
 {{else}}{{end}}<li>the detector's verdicts.</li>
 </ol>
 <p>A list whose rules come <b>before</b> the one chosen loses every line routing it, a wider one too:

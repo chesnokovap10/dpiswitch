@@ -160,15 +160,15 @@
 | 5 | Явное правило сайта, адреса или программы с маршрутом awg | выбранная цепочка awg1/awg2, при необходимости с резервом `direct` |
 | 6 | Явное правило с маршрутом `direct` | напрямую, в любом режиме |
 | 7 | Необязательная строка `enabled_presets` | выбранный для неё маршрут всех включённых пресетов |
-| 8 | Пресеты без `enabled_presets` | порядок туннелей по умолчанию из настроек |
+| 8 | Пресеты без `enabled_presets` | строгий порядок туннелей из настроек, без резерва `direct` |
 | 9 | Выключенный туннель в цепочке | пропускается; маршрут без `direct` отклоняется, если доступных туннелей не осталось |
 | 10 | Всё остальное, пока выбрано «Только наблюдать» | напрямую |
 | 11 | Вердикты детектора: чистые имена и адреса, на которых их проверяли (для соединений без имени) | напрямую |
 | 12 | Всё остальное | по режиму: во «Вкл» awg1, затем awg2 (если включён), затем напрямую; в «Только в туннель» те же туннели, но никогда напрямую |
 
 Без конфига первого туннеля служба всё равно работает: Live показывает трафик, правила действуют, а детектор
-ничего не проверяет — ему не с чем сравнивать. `enabled_presets` имеет тип «пресеты» и переопределяет маршрут
-по умолчанию только для включённых пресетов; строка необязательна и не влияет на трафик детектора. Явные
+ничего не проверяет — ему не с чем сравнивать. `enabled_presets` имеет тип «пресеты» и переопределяет строгий
+маршрут туннелей по умолчанию только для включённых пресетов; строка необязательна и не влияет на трафик детектора. Явные
 правила сайтов, адресов и программ имеют более высокий приоритет.
 
 Ядро решает один раз — когда соединение открывается. Когда вы меняете список или пресет, открытые
@@ -398,10 +398,10 @@ OpenVPN, IKEv2), звонок или игра, которым привязка �
 Второй сервер AmneziaWG только для выбранных сервисов: YouTube, Telegram и WhatsApp, Discord, ИИ-сервисов (ChatGPT,
 Claude, Google AI, Grok, Meta AI, Copilot и общего входа ИИ-сервисов), Instagram, Facebook, X и вашего списка. Он стоит ниже
 «Запрещено», трёх списков «Всегда через» и «Всегда напрямую» и выше детектора — детектор его имена не трогает.
-Второй туннель доступен как отдельный шаг любого маршрута в общем редакторе. Пресеты по умолчанию используют
-выбранный в настройках порядок туннелей. Чтобы одним действием назначить всем включённым пресетам другой
+Второй туннель доступен как отдельный шаг любого маршрута в общем редакторе. Пресеты по умолчанию строго используют
+выбранный в настройках порядок туннелей без резерва `direct`. Чтобы одним действием назначить всем включённым пресетам другой
 маршрут, добавьте строку **`enabled_presets`** и выберите для неё `direct`, `block`, awg1, awg2 или цепочку.
-Без этой строки действует маршрут по умолчанию; явные правила отдельных сайтов, адресов и программ выше неё.
+Без этой строки действует строгий маршрут туннелей по умолчанию без резерва `direct`; явные правила отдельных сайтов, адресов и программ выше неё.
 Детектор сравнивает прямой путь только с первым туннелем; без awg1 проверки не выполняются. Все пресеты по
 умолчанию выключены. Переключение пресета и смена маршрута применяются сразу, включая открытые соединения.
 
@@ -730,7 +730,7 @@ Every new connection is matched against these rules from the top; the first one 
 | 5 | An explicit site, address or program rule with an awg route | the selected awg1/awg2 chain, optionally with `direct` fallback |
 | 6 | An explicit rule with route `direct` | direct, in every mode |
 | 7 | The optional `enabled_presets` row | the route selected for every enabled preset |
-| 8 | Presets without `enabled_presets` | the default tunnel order from Settings |
+| 8 | Presets without `enabled_presets` | the strict tunnel order from Settings, with no `direct` fallback |
 | 9 | A disabled tunnel in a chain | skipped; a route without `direct` is refused when no enabled tunnel remains |
 | 10 | Everything else, while "Observe only" is chosen | direct |
 | 11 | Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name) | direct |
@@ -738,7 +738,7 @@ Every new connection is matched against these rules from the top; the first one 
 
 Without the first tunnel's config the service still runs: Live shows traffic and routing rules apply, but the
 detector checks nothing because it has no tunnel to compare with. `enabled_presets` has the “presets” type and
-overrides the default route only for enabled presets; it is optional and does not affect detector traffic.
+overrides the strict default tunnel route only for enabled presets; it is optional and does not affect detector traffic.
 Explicit site, address and program rules have higher priority.
 
 The core decides once, when a connection opens. When you change a list or a preset, the open
@@ -969,9 +969,9 @@ switched on. The rest of this section, and what the others say of awg2, is of th
 A second AmneziaWG server for chosen services only: YouTube, Telegram and WhatsApp, Discord, AI services (ChatGPT, Claude,
 Google AI, Grok, Meta AI, Copilot and shared AI sign-in), Instagram, Facebook, X and your own list. It stands below
 Forbidden, the three Always via lists and Always direct and above the detector, which leaves its names alone. If it
-The second tunnel is available as an independent hop in every route in the common editor. Presets use the
-default tunnel order from Settings. To assign one different route to all enabled presets, add
-**`enabled_presets`** and select `direct`, `block`, awg1, awg2 or a chain. Without that row the default route
+The second tunnel is available as an independent hop in every route in the common editor. Presets strictly use the
+default tunnel order from Settings, with no `direct` fallback. To assign one different route to all enabled presets, add
+**`enabled_presets`** and select `direct`, `block`, awg1, awg2 or a chain. Without that row the strict default tunnel route
 applies; explicit rules for individual sites, addresses and programs stand above it. The detector measures
 the direct path against the first tunnel only and performs no checks without awg1. Every preset is off by
 default. Preset switches and route changes apply at once, open connections included.

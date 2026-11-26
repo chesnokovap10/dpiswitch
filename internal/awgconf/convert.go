@@ -666,9 +666,10 @@ func render(c *Conf) (string, error) {
 	selectGroup(ctl.Route12DirectGroup, softMembers...)
 	selectGroup(ctl.Route21DirectGroup, softMembers...)
 	selectGroup(ctl.DefaultRouteGroup, append(softMembers, strictMembers...)...)
+	selectGroup(ctl.PresetsRouteGroup, strictMembers...)
 	selectGroup(ctl.EnabledPresetsRouteGroup,
 		ctl.RouteAwg1Group, ctl.RouteAwg2Group, ctl.Route12Group, ctl.Route21Group,
-		ctl.Route12DirectGroup, ctl.Route21DirectGroup, "DIRECT", "REJECT", ctl.DefaultRouteGroup)
+		ctl.Route12DirectGroup, ctl.Route21DirectGroup, "DIRECT", "REJECT", ctl.PresetsRouteGroup)
 	w("")
 	w("rule-providers:")
 	w("  # second-tunnel presets: the rules of the ones switched on, in one file")
@@ -889,8 +890,9 @@ func render(c *Conf) (string, error) {
 	w("  # 7. an optional enabled_presets row overrides the default route for")
 	w("  #    enabled presets. Ordinary explicit rules above still win.")
 	w("  - RULE-SET,%s,%s", ctl.EnabledPresetsProvider, ctl.EnabledPresetsRouteGroup)
-	w("  #    With no override, presets use the configured default tunnel order.")
-	w("  - RULE-SET,%s,%s", ctl.PresetsProvider, ctl.DefaultRouteGroup)
+	w("  #    With no override, presets use the configured tunnel order strictly:")
+	w("  #    no direct fallback when every enabled tunnel is unavailable.")
+	w("  - RULE-SET,%s,%s", ctl.PresetsProvider, ctl.PresetsRouteGroup)
 	w("")
 	w("  # 7a. a CDN family going the tunnel's way (ctl/cdnfam.go): its page")
 	w("  #     and CDN hosts all through the tunnel, the ones the cut gets")

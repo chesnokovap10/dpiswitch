@@ -13,23 +13,23 @@ func TestRouteChoiceIndependentTunnels(t *testing.T) {
 		t.Fatal(err)
 	}
 	tests := []struct {
-		name              string
-		one, two          bool
-		order, mode       string
-		def, strict, soft string
+		name                      string
+		one, two                  bool
+		order, mode               string
+		def, strict, soft, preset string
 	}{
-		{"both forward", true, true, DefaultTunnel12, ModeOn, TunnelSoftAnyGroup, TunnelAnyGroup, TunnelSoftAnyGroup},
-		{"both reverse", true, true, DefaultTunnel21, ModeOn, Tunnel2SoftGroup, TunnelAnyGroup, TunnelSoftAnyGroup},
-		{"only awg1", true, false, DefaultTunnel21, ModeOn, TunnelSoftGroup, TunnelOneGroup, TunnelSoftGroup},
-		{"only awg2", false, true, DefaultTunnel12, ModeOn, Tunnel2OnlySoftGroup, Tunnel2OnlyGroup, Tunnel2OnlySoftGroup},
-		{"neither", false, false, DefaultTunnel12, ModeOn, "DIRECT", "REJECT", "DIRECT"},
+		{"both forward", true, true, DefaultTunnel12, ModeOn, TunnelSoftAnyGroup, TunnelAnyGroup, TunnelSoftAnyGroup, TunnelAnyGroup},
+		{"both reverse", true, true, DefaultTunnel21, ModeOn, Tunnel2SoftGroup, TunnelAnyGroup, TunnelSoftAnyGroup, Tunnel2StrictGroup},
+		{"only awg1", true, false, DefaultTunnel21, ModeOn, TunnelSoftGroup, TunnelOneGroup, TunnelSoftGroup, TunnelOneGroup},
+		{"only awg2", false, true, DefaultTunnel12, ModeOn, Tunnel2OnlySoftGroup, Tunnel2OnlyGroup, Tunnel2OnlySoftGroup, Tunnel2OnlyGroup},
+		{"neither", false, false, DefaultTunnel12, ModeOn, "DIRECT", "REJECT", "DIRECT", "REJECT"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			s := DefaultSettings()
 			s.Awg1On, s.Awg2On, s.DefaultTunnel = tc.one, tc.two, tc.order
 			s.SetMode(tc.mode)
-			if got := RouteChoice(s); got[DefaultRouteGroup] != tc.def || got[Route12Group] != tc.strict || got[Route12DirectGroup] != tc.soft {
+			if got := RouteChoice(s); got[DefaultRouteGroup] != tc.def || got[Route12Group] != tc.strict || got[Route12DirectGroup] != tc.soft || got[PresetsRouteGroup] != tc.preset {
 				t.Fatalf("choices = %#v", got)
 			}
 			s.SetMode(ModeTunnel)
@@ -64,5 +64,11 @@ func TestEnabledPresetsRoute(t *testing.T) {
 		if got := EnabledPresetsRoute(); got != want {
 			t.Errorf("%s: route %q, want %q", file, got, want)
 		}
+	}
+	for _, clear := range paths.UserLists {
+		_ = os.Remove(paths.User(clear))
+	}
+	if got := EnabledPresetsRoute(); got != PresetsRouteGroup {
+		t.Fatalf("no override: route %q, want %q", got, PresetsRouteGroup)
 	}
 }

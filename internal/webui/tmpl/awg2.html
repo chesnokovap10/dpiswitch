@@ -46,7 +46,7 @@
 
 {{define "presets"}}{{$v := .}}
   <h3>{{.T "Presets"}}</h3>
-  <p class="hint">{{.T "A preset applies when no explicit routing rule matches the connection. It uses the default route selected in Settings. Switching a preset immediately moves its open connections."}}</p>
+  <p class="hint">{{.T "A preset applies when no explicit routing rule matches the connection. By default it strictly uses the tunnel order from Settings: disabled tunnels are skipped, but there is no direct fallback. Switching a preset immediately moves its open connections."}}</p>
   <form method="post" action="/act/preset" data-swap="presets" data-instant="1" class="presets" data-preset-tree>
     {{range .PresetGroups}}
     <details data-grp="presets-{{.ID}}" class="preset-group">

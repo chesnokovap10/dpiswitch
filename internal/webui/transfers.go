@@ -469,11 +469,9 @@ func (s *Server) actTransferImport(w http.ResponseWriter, r *http.Request) {
 	var closeErrs []error
 	for _, kind := range plan.kinds {
 		if kind == "routes" {
-			for _, spec := range routeSpecs {
-				n, err := closeEntriesChange(spec.List, applied.oldRoutes[spec.List], plan.routes[spec.List])
-				moved += n
-				closeErrs = append(closeErrs, err)
-			}
+			n, err := closeRouteEntriesChange(routeSpecs, applied.oldRoutes, plan.routes)
+			moved += n
+			closeErrs = append(closeErrs, err)
 			continue
 		}
 		if name := listFile[kind]; name != "" {
