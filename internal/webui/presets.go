@@ -231,8 +231,8 @@ func (s *Server) actPresetSave(w http.ResponseWriter, r *http.Request) {
 	n := 0
 	var cerr error
 	if err == nil && on {
-		n, cerr = closeMoved([]string{ctl.PresetsProvider, ctl.Awg2RuleProvider}, rulesMatch(changed(was, ctl.PresetRules(p))),
-			func() bool { return ctl.PresetWritten(p, true) && ctl.Awg2RuleSynced() })
+		n, cerr = closeMoved([]string{ctl.PresetsProvider, ctl.EnabledPresetsProvider}, rulesMatch(changed(was, ctl.PresetRules(p))),
+			func() bool { return ctl.PresetWritten(p, true) && ctl.EnabledPresetsSynced() })
 	}
 	ok, msg := saved(r, err, n, cerr)
 	if ok && n == 0 && id == "" {
@@ -302,8 +302,8 @@ func (s *Server) actPresetDel(w http.ResponseWriter, r *http.Request) {
 	n := 0
 	var cerr error
 	if err == nil && on {
-		n, cerr = closeMoved([]string{ctl.PresetsProvider, ctl.Awg2RuleProvider}, rulesMatch(ctl.PresetRules(old)),
-			func() bool { return ctl.PresetWritten(old, false) && ctl.Awg2RuleSynced() })
+		n, cerr = closeMoved([]string{ctl.PresetsProvider, ctl.EnabledPresetsProvider}, rulesMatch(ctl.PresetRules(old)),
+			func() bool { return ctl.PresetWritten(old, false) && ctl.EnabledPresetsSynced() })
 	}
 	ok, msg := saved(r, err, n, cerr)
 	if ok && n == 0 {
@@ -360,13 +360,13 @@ func (s *Server) actPresetRestore(w http.ResponseWriter, r *http.Request) {
 	n := 0
 	var cerr error
 	if len(now) > 0 {
-		n, cerr = closeMoved([]string{ctl.PresetsProvider, ctl.Awg2RuleProvider}, rulesMatch(moved), func() bool {
+		n, cerr = closeMoved([]string{ctl.PresetsProvider, ctl.EnabledPresetsProvider}, rulesMatch(moved), func() bool {
 			for _, p := range now {
 				if !ctl.PresetWritten(p, true) {
 					return false
 				}
 			}
-			return ctl.Awg2RuleSynced()
+			return ctl.EnabledPresetsSynced()
 		})
 	}
 	ok, msg := saved(r, err, n, cerr)

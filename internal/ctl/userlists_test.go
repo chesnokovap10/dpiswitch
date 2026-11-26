@@ -62,9 +62,9 @@ func TestParseEntry(t *testing.T) {
 	}
 }
 
-// awg2_rule follows the enabled presets and the second tunnel's own list,
-// and disappears from the generated provider when the marker is removed.
-func TestAwg2Rule(t *testing.T) {
+// enabled_presets follows only the enabled presets, regardless of which
+// route file holds the virtual row, and becomes empty when it is removed.
+func TestEnabledPresets(t *testing.T) {
 	t.Setenv("ProgramData", t.TempDir())
 	if err := paths.EnsureDataDir(); err != nil {
 		t.Fatal(err)
@@ -80,26 +80,29 @@ func TestAwg2Rule(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.WriteFile(paths.User(paths.Awg2List), []byte("own.example\nown.exe\n"), 0o644)
-	os.WriteFile(paths.User(paths.Tunnel2List), []byte(Awg2Rule+"\nstrict.example\n"), 0o644)
+	os.WriteFile(paths.User(paths.DirectList), []byte(EnabledPresets+"\nstrict.example\n"), 0o644)
 	changed := SyncUserFiles()
-	if !contains(changed, Awg2RuleProvider) || !Synced(paths.Tunnel2List) {
-		t.Fatalf("changed %v, synced %v", changed, Synced(paths.Tunnel2List))
+	if !contains(changed, EnabledPresetsProvider) || !Synced(paths.DirectList) {
+		t.Fatalf("changed %v, synced %v", changed, Synced(paths.DirectList))
 	}
-	b, err := os.ReadFile(paths.Awg2Rule())
+	b, err := os.ReadFile(paths.EnabledPresets())
 	if err != nil {
 		t.Fatal(err)
 	}
 	body := string(b)
-	for _, want := range []string{PresetRules(all[0])[0], "DOMAIN,own.example", "PROCESS-NAME,own.exe"} {
+	for _, want := range []string{PresetRules(all[0])[0]} {
 		if !strings.Contains(body, want+"\n") {
-			t.Errorf("generated awg2_rule lacks %q:\n%s", want, body)
+			t.Errorf("generated enabled_presets lacks %q:\n%s", want, body)
 		}
 	}
-	os.WriteFile(paths.User(paths.Tunnel2List), []byte("strict.example\n"), 0o644)
-	if got := SyncUserFiles(); !contains(got, Awg2RuleProvider) {
+	if strings.Contains(body, "own.example") || strings.Contains(body, "own.exe") {
+		t.Fatalf("enabled_presets contains the old awg2 own list:\n%s", body)
+	}
+	os.WriteFile(paths.User(paths.DirectList), []byte("strict.example\n"), 0o644)
+	if got := SyncUserFiles(); !contains(got, EnabledPresetsProvider) {
 		t.Fatalf("marker removal did not change provider: %v", got)
 	}
-	if b, _ := os.ReadFile(paths.Awg2Rule()); strings.Contains(string(b), "own.example") {
+	if b, _ := os.ReadFile(paths.EnabledPresets()); strings.Contains(string(b), PresetRules(all[0])[0]) {
 		t.Fatalf("marker removed, rules remain:\n%s", b)
 	}
 }
@@ -129,10 +132,10 @@ func TestSplitList(t *testing.T) {
 func TestParseList(t *testing.T) {
 	in := strings.Join([]string{
 		"# comment", "DOMAIN,Example.com", "DOMAIN-SUFFIX,example.org", "IP-CIDR,192.168.12.3/24,no-resolve",
-		"PROCESS-NAME,Telegram.exe", "0.0.0.0 hosts.example", "||ads.example^", "AWG2_RULE", "example.com", "bad host",
+		"PROCESS-NAME,Telegram.exe", "0.0.0.0 hosts.example", "||ads.example^", "ENABLED_PRESETS", "example.com", "bad host",
 	}, "\n")
-	d := ParseList(in, ListPolicy{AllowAwg2Rule: true})
-	want := "awg2_rule\n+.ads.example\n+.example.org\nexample.com\nhosts.example\n192.168.12.0/24\nTelegram.exe"
+	d := ParseList(in, ListPolicy{AllowEnabledPresets: true})
+	want := "enabled_presets\n+.ads.example\n+.example.org\nexample.com\nhosts.example\n192.168.12.0/24\nTelegram.exe"
 	if got := strings.Join(d.Values(), "\n"); got != want {
 		t.Errorf("parsed list:\n%s\nwant:\n%s", got, want)
 	}
@@ -142,8 +145,8 @@ func TestParseList(t *testing.T) {
 	if len(d.Normalized) != 7 || len(d.Duplicates) != 1 || d.Duplicates[0].FirstLine != 2 || d.Duplicates[0].Line != 9 {
 		t.Fatalf("normalization: changes %+v, duplicates %+v", d.Normalized, d.Duplicates)
 	}
-	if d := ParseList("awg2_rule", ListPolicy{}); len(d.Entries) != 0 || len(d.Issues) != 1 {
-		t.Fatalf("macro outside Tunnel2: %+v", d)
+	if d := ParseList("enabled_presets", ListPolicy{}); len(d.Entries) != 0 || len(d.Issues) != 1 {
+		t.Fatalf("macro outside routing rules: %+v", d)
 	}
 }
 
@@ -232,7 +235,7 @@ func TestParseEntryDomainLimits(t *testing.T) {
 func FuzzParseListRoundTrip(f *testing.F) {
 	for _, seed := range []string{
 		"example.com\n10.0.0.1\ntelegram.exe",
-		"DOMAIN-SUFFIX,Example.org\nIP-CIDR,192.168.1.7/24,no-resolve\nAWG2_RULE",
+		"DOMAIN-SUFFIX,Example.org\nIP-CIDR,192.168.1.7/24,no-resolve\nENABLED_PRESETS",
 		"0.0.0.0 ads.example\n||tracker.example^\n# comment",
 		"[Adblock Plus 2.0]\n! comment\n||tracker.example^$third-party",
 		"bad host\nDOMAIN,too,many",
@@ -244,12 +247,12 @@ func FuzzParseListRoundTrip(f *testing.F) {
 		if len(text) > 1<<20 {
 			t.Skip()
 		}
-		d := ParseList(text, ListPolicy{AllowAwg2Rule: true})
+		d := ParseList(text, ListPolicy{AllowEnabledPresets: true})
 		if len(d.Issues) != 0 {
 			return
 		}
 		canonical := strings.Join(d.Values(), "\n")
-		again := ParseList(canonical, ListPolicy{AllowAwg2Rule: true})
+		again := ParseList(canonical, ListPolicy{AllowEnabledPresets: true})
 		if len(again.Issues) != 0 || len(again.Duplicates) != 0 {
 			t.Fatalf("canonical list did not parse cleanly: %+v", again)
 		}
@@ -431,11 +434,11 @@ func TestPresetWildcard(t *testing.T) {
 }
 
 func TestClassifyListLines(t *testing.T) {
-	text := "\n# note\nexample.com\n192.0.2.1\n192.0.2.0/24\ngame.exe\nawg2_rule\nbad host\n0.0.0.0 one.example two.example"
-	got := ClassifyListLines(text, ListPolicy{AllowAwg2Rule: true})
+	text := "\n# note\nexample.com\n192.0.2.1\n192.0.2.0/24\ngame.exe\nenabled_presets\nbad host\n0.0.0.0 one.example two.example"
+	got := ClassifyListLines(text, ListPolicy{AllowEnabledPresets: true})
 	want := []ListLineClass{
 		{Kind: "blank"}, {Kind: "comment"}, {Kind: "site"}, {Kind: "ip"},
-		{Kind: "network"}, {Kind: "program"}, {Kind: "rule"}, {Kind: "error"},
+		{Kind: "network"}, {Kind: "program"}, {Kind: "presets"}, {Kind: "error"},
 		{Kind: "site", Count: 2},
 	}
 	if !reflect.DeepEqual(got, want) {

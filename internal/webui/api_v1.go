@@ -233,7 +233,7 @@ func (s *Server) apiV1Routes(w http.ResponseWriter, r *http.Request) {
 			apiV1Fail(w, http.StatusBadRequest, fmt.Sprintf("rule %d: unknown route %q", i+1, row.Route))
 			return
 		}
-		doc := ctl.ParseList(row.Entry, ctl.ListPolicy{AllowAwg2Rule: file == paths.Tunnel2List})
+		doc := ctl.ParseList(row.Entry, ctl.ListPolicy{AllowEnabledPresets: file != ""})
 		if len(doc.Issues) != 0 || len(doc.Values()) != 1 {
 			apiV1Fail(w, http.StatusBadRequest, fmt.Sprintf("rule %d: exactly one valid entry is required", i+1))
 			return

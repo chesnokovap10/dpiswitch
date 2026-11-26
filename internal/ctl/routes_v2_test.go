@@ -1,8 +1,17 @@
 package ctl
 
-import "testing"
+import (
+	"os"
+	"testing"
+
+	"dpiswitch/internal/paths"
+)
 
 func TestRouteChoiceIndependentTunnels(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
 	tests := []struct {
 		name              string
 		one, two          bool
@@ -32,5 +41,28 @@ func TestRouteChoiceIndependentTunnels(t *testing.T) {
 				t.Fatalf("tunnel-only default = %q, want %q", got, want)
 			}
 		})
+	}
+}
+
+func TestEnabledPresetsRoute(t *testing.T) {
+	t.Setenv("ProgramData", t.TempDir())
+	if err := paths.EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	for file, want := range map[string]string{
+		paths.BlockList: "REJECT", paths.DirectList: "DIRECT",
+		paths.Tunnel1List: RouteAwg1Group, paths.Tunnel2List: RouteAwg2Group,
+		paths.TunnelList: Route12Group, paths.Tunnel21List: Route21Group,
+		paths.Tunnel12DirectList: Route12DirectGroup, paths.Awg2List: Route21DirectGroup,
+	} {
+		for _, clear := range paths.UserLists {
+			_ = os.Remove(paths.User(clear))
+		}
+		if err := os.WriteFile(paths.User(file), []byte(EnabledPresets+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := EnabledPresetsRoute(); got != want {
+			t.Errorf("%s: route %q, want %q", file, got, want)
+		}
 	}
 }

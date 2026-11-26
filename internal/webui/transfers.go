@@ -212,7 +212,7 @@ func addTransferToPlan(plan *importPlan, kind string, b []byte, lang string) err
 			if file == "" {
 				return fmt.Errorf("%s: row %d: unknown route %q", transferName[kind], i+1, row.Route)
 			}
-			doc := ctl.ParseList(row.Entry, ctl.ListPolicy{AllowAwg2Rule: file == paths.Tunnel2List})
+			doc := ctl.ParseList(row.Entry, ctl.ListPolicy{AllowEnabledPresets: file != ""})
 			if len(doc.Issues) != 0 || len(doc.Values()) != 1 {
 				return fmt.Errorf("%s: row %d: invalid entry", transferName[kind], i+1)
 			}
@@ -234,7 +234,7 @@ func addTransferToPlan(plan *importPlan, kind string, b []byte, lang string) err
 		plan.presets, plan.hasPS = ps, true
 		return nil
 	}
-	doc := ctl.ParseList(string(b), ctl.ListPolicy{AllowAwg2Rule: kind == "tunnel2"})
+	doc := ctl.ParseList(string(b), ctl.ListPolicy{AllowEnabledPresets: listFile[kind] != ""})
 	if len(doc.Issues) > 0 {
 		return fmt.Errorf("%s: %s", transferName[kind], listIssues(lang, doc.Issues))
 	}
@@ -431,7 +431,7 @@ func closePresetImport(a appliedImport) (int, error) {
 	for _, id := range a.oldSettings.Awg2Presets {
 		oldOn[id] = true
 	}
-	return closeMoved([]string{ctl.PresetsProvider, ctl.Awg2RuleProvider}, rulesMatch(moved), func() bool {
+	return closeMoved([]string{ctl.PresetsProvider, ctl.EnabledPresetsProvider}, rulesMatch(moved), func() bool {
 		for _, p := range a.newPresets {
 			if newOn[p.ID] && !ctl.PresetWritten(p, true) {
 				return false
@@ -444,7 +444,7 @@ func closePresetImport(a appliedImport) (int, error) {
 				}
 			}
 		}
-		return ctl.Awg2RuleSynced()
+		return ctl.EnabledPresetsSynced()
 	})
 }
 
@@ -504,7 +504,8 @@ func (s *Server) actListClassify(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
 		return
 	}
-	classes := ctl.ClassifyListLines(string(b), ctl.ListPolicy{AllowAwg2Rule: r.URL.Query().Get("kind") == "tunnel2"})
+	kind := r.URL.Query().Get("kind")
+	classes := ctl.ClassifyListLines(string(b), ctl.ListPolicy{AllowEnabledPresets: kind == "tunnel" || listFile[kind] != ""})
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(classes)

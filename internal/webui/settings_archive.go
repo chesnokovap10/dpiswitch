@@ -177,15 +177,11 @@ func makeSettingsArchivePlan(b []byte, language string) (settingsArchivePlan, er
 				if !found {
 					return plan, fmt.Errorf("%s is missing from the archive", transferName[kind])
 				}
-				doc := ctl.ParseList(string(body), ctl.ListPolicy{AllowAwg2Rule: old.list == paths.Tunnel2List})
+				doc := ctl.ParseList(string(body), ctl.ListPolicy{AllowEnabledPresets: true})
 				if len(doc.Issues) != 0 {
 					return plan, fmt.Errorf("%s: %s", old.archive, listIssues(language, doc.Issues))
 				}
-				for _, entry := range doc.Values() {
-					if !strings.EqualFold(entry, ctl.Awg2Rule) {
-						plan.transfer.routes[old.list] = append(plan.transfer.routes[old.list], entry)
-					}
-				}
+				plan.transfer.routes[old.list] = append(plan.transfer.routes[old.list], doc.Values()...)
 			}
 			continue
 		}

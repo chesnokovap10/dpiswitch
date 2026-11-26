@@ -178,13 +178,13 @@ func CoreRun() string { return Data("core-run.txt") }
 // second tunnel (awg2): source .conf, custom host list, presets -- the
 // user's set of them, and the rules of the ones switched on, which the
 // service writes for the core
-func SourceConf2() string { return User("source2.conf") }
-func Awg2Hosts() string   { return Data(Awg2List) }
-func UserPresets() string { return User("presets.json") }
-func Presets() string     { return Data("presets.txt") }
-func Awg2Rule() string    { return Data("awg2-rule.txt") }
-func ForceTunnel() string { return Data(TunnelList) }
-func TunnelIPv6() string  { return Data("tunnel-ipv6.json") }
+func SourceConf2() string    { return User("source2.conf") }
+func Awg2Hosts() string      { return Data(Awg2List) }
+func UserPresets() string    { return User("presets.json") }
+func Presets() string        { return Data("presets.txt") }
+func EnabledPresets() string { return Data("enabled-presets.txt") }
+func ForceTunnel() string    { return Data(TunnelList) }
+func TunnelIPv6() string     { return Data("tunnel-ipv6.json") }
 
 // UDPGuard: what the UDP guard is doing (see udpguard), for the UI
 func UDPGuard() string { return Data("udp-guard.json") }

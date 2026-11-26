@@ -717,11 +717,10 @@ func TestListReportsEveryBadLine(t *testing.T) {
 func TestListReportsSpecificParseReasons(t *testing.T) {
 	s, _ := testServer(t)
 	w := do(t, s.Handler(), "POST", "/act/list", url.Values{
-		"kind": {"direct"}, "entries": {"awg2_rule\nIP-CIDR,10.0.0.0/8,DIRECT,bad-option\nDOMAIN,example.com,DIRECT,extra"},
+		"kind": {"direct"}, "entries": {"IP-CIDR,10.0.0.0/8,DIRECT,bad-option\nDOMAIN,example.com,DIRECT,extra"},
 	}, map[string]string{"Cookie": "lang=ru"})
 	body := html.UnescapeString(w.Body.String())
 	for _, want := range []string{
-		"awg2_rule разрешено только во «Всегда через: Туннель2»",
 		"в IP-правиле неподдерживаемая опция",
 		"в правиле неверное количество полей",
 	} {
@@ -866,33 +865,6 @@ func TestEntryMatch(t *testing.T) {
 		if got := m(c); got != want {
 			t.Errorf("%+v: %v, want %v", c, got, want)
 		}
-	}
-}
-
-func TestAwg2RuleChangeMatch(t *testing.T) {
-	source := func(c ctl.Conn) bool { return c.Host == "source.example" }
-	higher := ctl.ListProviders(paths.TunnelList)[0]
-	for _, tc := range []struct {
-		name                  string
-		adding, active, alive bool
-		conn                  ctl.Conn
-		want                  bool
-	}{
-		{"add already on awg2", true, true, true, ctl.Conn{Host: "source.example", Outbound: "awg2", RulePayload: ctl.PresetsProvider}, false},
-		{"add already on unhealthy awg2", true, true, false, ctl.Conn{Host: "source.example", Outbound: "awg2", RulePayload: ctl.PresetsProvider}, false},
-		{"add from fallback", true, true, false, ctl.Conn{Host: "source.example", Outbound: "awg1", RulePayload: ctl.PresetsProvider}, true},
-		{"add while switched off", true, false, false, ctl.Conn{Host: "source.example", Outbound: "DIRECT"}, true},
-		{"add below higher list", true, true, true, ctl.Conn{Host: "source.example", Outbound: "awg1", RulePayload: higher}, false},
-		{"add unrelated", true, true, true, ctl.Conn{Host: "other.example", Outbound: "DIRECT"}, false},
-		{"remove healthy", false, true, true, ctl.Conn{Outbound: "awg2", RulePayload: ctl.Awg2RuleProvider}, false},
-		{"remove after failure", false, true, false, ctl.Conn{Outbound: "awg2", RulePayload: ctl.Awg2RuleProvider}, true},
-		{"remove unrelated", false, true, false, ctl.Conn{Outbound: "awg2", RulePayload: ctl.PresetsProvider}, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := awg2RuleChangeMatch(tc.adding, tc.active, tc.alive, source)(tc.conn); got != tc.want {
-				t.Fatalf("got %v, want %v", got, tc.want)
-			}
-		})
 	}
 }
 
@@ -1243,22 +1215,6 @@ func legacyAwg2Switch(t *testing.T) {
 	mode(ctl.ModeObserve)
 	if !active() {
 		t.Fatal("observe only switched awg2 off")
-	}
-}
-
-func legacyTunnel2Awg2Rule(t *testing.T) {
-	s, _ := testServer(t)
-	h := s.Handler()
-	w := do(t, h, "POST", "/act/list", url.Values{"kind": {"tunnel2"}, "entries": {"example.com\nAWG2_RULE"}}, nil)
-	if w.Code != http.StatusOK || strings.Contains(w.Body.String(), `class="msg bad"`) {
-		t.Fatalf("Tunnel2 list: %d %s", w.Code, w.Body.String())
-	}
-	if got := strings.Join(readEntries(paths.Tunnel2List), ","); got != "awg2_rule,example.com" {
-		t.Fatalf("Tunnel2 list saved as %q", got)
-	}
-	w = do(t, h, "POST", "/act/list", url.Values{"kind": {"tunnel1"}, "entries": {ctl.Awg2Rule}}, nil)
-	if !strings.Contains(w.Body.String(), `class="msg bad"`) {
-		t.Fatalf("awg2_rule accepted outside Tunnel2: %s", w.Body.String())
 	}
 }
 

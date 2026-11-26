@@ -333,8 +333,8 @@ func setupRouting(t *testing.T, mode, loaded string) (*simCore, []string) {
 }
 
 // The two strict lists use only their named tunnel, in every mode. The
-// generated awg2_rule provider makes the enabled presets and awg2 own list
-// strict too, without changing those source lists.
+// enabled_presets virtual row can give enabled presets any explicit route
+// without changing the old awg2 own-list route.
 func TestStrictTunnelLists(t *testing.T) {
 	core, loaded := setupRouting(t, ctl.ModeOn, "both on")
 	render := func() *simCore {
@@ -381,17 +381,19 @@ func TestStrictTunnelLists(t *testing.T) {
 	if got, why := core.route("duplicate.example", secondOnly); got != "REJECT" {
 		t.Errorf("Tunnel1 did not win over Tunnel2: %s\n  %s", got, why)
 	}
-	if err := os.WriteFile(paths.User(paths.Tunnel2List), []byte(ctl.Awg2Rule+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(paths.User(paths.Tunnel2List), []byte(ctl.EnabledPresets+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	ctl.SyncUserFiles()
 	core = render()
-	for _, host := range []string{hostPreset, hostAwg2} {
-		for _, alive := range aliveSets(loaded) {
-			want := route("awg2 > REJECT").want(alive)
-			if got, why := core.route(host, alive); got != want {
-				t.Errorf("awg2_rule %s, alive %v: %s, want %s\n  %s", host, alive, got, want, why)
-			}
+	for _, alive := range aliveSets(loaded) {
+		want := route("awg2 > REJECT").want(alive)
+		if got, why := core.route(hostPreset, alive); got != want {
+			t.Errorf("enabled_presets, alive %v: %s, want %s\n  %s", alive, got, want, why)
+		}
+		ownWant := route("awg2 > awg1 > DIRECT").want(alive)
+		if got, why := core.route(hostAwg2, alive); got != ownWant {
+			t.Errorf("old awg2 own-list route changed, alive %v: %s, want %s\n  %s", alive, got, ownWant, why)
 		}
 	}
 }
@@ -657,10 +659,10 @@ func TestRenderRuleOrder(t *testing.T) {
 	}
 	order := []string{"RULE-SET,force-block-apps,REJECT", "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
 		"RULE-SET,force-tunnel1-apps,route-awg1", "RULE-SET,force-tunnel1-ip,route-awg1,no-resolve",
-		"RULE-SET,awg2-rule,route-awg2",
 		"RULE-SET,force-tunnel2-apps,route-awg2", "RULE-SET,force-tunnel2-ip,route-awg2,no-resolve",
 		"RULE-SET,force-tunnel-apps,route-awg1-awg2", "RULE-SET,force-tunnel-ip,route-awg1-awg2,no-resolve",
 		"RULE-SET,force-direct-apps,DIRECT", "RULE-SET,force-direct-ip,DIRECT,no-resolve",
+		"RULE-SET,enabled-presets,route-enabled-presets",
 		"RULE-SET,presets,tunnel-default",
 		"RULE-SET,direct-split-verified,direct-split", "RULE-SET,direct-verified,DIRECT",
 		"RULE-SET,observe-split,direct-split", "RULE-SET,observe-all,DIRECT", "MATCH,tunnel-default"}

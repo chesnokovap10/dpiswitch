@@ -600,13 +600,13 @@ func (s *Server) actPreset(w http.ResponseWriter, r *http.Request) {
 	n := 0
 	var cerr error
 	if err == nil {
-		n, cerr = closeMoved([]string{ctl.PresetsProvider, ctl.Awg2RuleProvider}, rulesMatch(rules), func() bool {
+		n, cerr = closeMoved([]string{ctl.PresetsProvider, ctl.EnabledPresetsProvider}, rulesMatch(rules), func() bool {
 			for _, p := range selected {
 				if !ctl.PresetWritten(p, on) {
 					return false
 				}
 			}
-			return ctl.Awg2RuleSynced()
+			return ctl.EnabledPresetsSynced()
 		})
 	}
 	ok, msg := saved(r, err, n, cerr)

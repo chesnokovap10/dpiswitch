@@ -14,7 +14,7 @@
 {{define "list-tunnel"}}{{$v := .}}
   <span id="list-direct" hidden></span><span id="list-block" hidden></span>
   <h3><a class="hl" href="/help#h-routes">{{.T "Routing rules"}}</a></h3>
-  <p class="hint">{{.T "Each row uses its selected route in every mode. Block refuses the connection. Tunnel routes without direct fail closed when every enabled tunnel in the chain is unavailable."}}</p>
+  <p class="hint">{{.T "Each row uses its selected route in every mode. Block refuses the connection. Tunnel routes without direct fail closed when every enabled tunnel in the chain is unavailable."}} {{.T "Add enabled_presets to override the default route for all enabled presets. Without it, presets use Default tunnel routing. Explicit site, address and program rules have higher priority."}}</p>
   <form method="post" action="/act/list" data-swap="list-tunnel">
     <input type="hidden" name="kind" value="tunnel">
     <div class="row" style="margin-bottom:8px">
@@ -22,8 +22,8 @@
       <button name="op" value="add">{{.T "Add"}}</button>
     </div>
     <div class="entry-editor routed grow" data-entry-editor data-kind="tunnel" data-default="{{.Data.DefaultTunnel}}"
-      data-site="{{.T "site"}}" data-ip="{{.T "IP address"}}" data-network="{{.T "network"}}" data-program="{{.T "program"}}" data-comment="{{.T "comment"}}" data-rule="{{.T "rule"}}" data-error="{{.T "error"}}">
-      <textarea name="entries" wrap="off" spellcheck="false" placeholder="example.com&#10;+.example.org&#10;telegram.exe">{{lines .Data.TunnelEntries}}</textarea>
+      data-site="{{.T "site"}}" data-ip="{{.T "IP address"}}" data-network="{{.T "network"}}" data-program="{{.T "program"}}" data-comment="{{.T "comment"}}" data-presets="{{.T "presets"}}" data-error="{{.T "error"}}">
+      <textarea name="entries" wrap="off" spellcheck="false" placeholder="enabled_presets&#10;example.com&#10;+.example.org&#10;telegram.exe">{{lines .Data.TunnelEntries}}</textarea>
       <textarea name="routes" class="route-values" hidden>{{lines .Data.Routes}}</textarea>
       <div class="entry-routes" aria-label="{{.T "Route"}}"></div>
       <div class="entry-types" aria-label="{{.T "Recognized as"}}"></div>

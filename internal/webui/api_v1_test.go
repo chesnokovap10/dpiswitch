@@ -68,11 +68,12 @@ func TestAPIV1RoutesAreAtomicAndVersioned(t *testing.T) {
 		{Entry: "direct.example", Route: "direct"},
 		{Entry: "blocked.example", Route: "block"},
 		{Entry: "tunnel.example", Route: "awg2-awg1-direct"},
+		{Entry: "enabled_presets", Route: "awg1"},
 	}}, map[string]string{"If-Match": got.Revision})
 	if w.Code != 200 {
 		t.Fatalf("put routes: %d %s", w.Code, w.Body.String())
 	}
-	if strings.Join(readEntries(paths.DirectList), ",") != "direct.example" || strings.Join(readEntries(paths.BlockList), ",") != "blocked.example" || strings.Join(readEntries(paths.Awg2List), ",") != "tunnel.example" {
+	if strings.Join(readEntries(paths.DirectList), ",") != "direct.example" || strings.Join(readEntries(paths.BlockList), ",") != "blocked.example" || strings.Join(readEntries(paths.Awg2List), ",") != "tunnel.example" || strings.Join(readEntries(paths.Tunnel1List), ",") != "enabled_presets" {
 		t.Fatal("route files do not match the API document")
 	}
 	w = apiRequest(t, h, http.MethodPut, "/api/v1/routes", apiRoutesDocument{Revision: got.Revision}, nil)

@@ -666,6 +666,9 @@ func render(c *Conf) (string, error) {
 	selectGroup(ctl.Route12DirectGroup, softMembers...)
 	selectGroup(ctl.Route21DirectGroup, softMembers...)
 	selectGroup(ctl.DefaultRouteGroup, append(softMembers, strictMembers...)...)
+	selectGroup(ctl.EnabledPresetsRouteGroup,
+		ctl.RouteAwg1Group, ctl.RouteAwg2Group, ctl.Route12Group, ctl.Route21Group,
+		ctl.Route12DirectGroup, ctl.Route21DirectGroup, "DIRECT", "REJECT", ctl.DefaultRouteGroup)
 	w("")
 	w("rule-providers:")
 	w("  # second-tunnel presets: the rules of the ones switched on, in one file")
@@ -676,13 +679,13 @@ func render(c *Conf) (string, error) {
 	w("    behavior: classical")
 	w("    format: text")
 	w("    path: ./%s", filepath.Base(paths.Presets()))
-	w("  # awg2_rule in the strict Tunnel2 list: the enabled presets and awg2's")
-	w("  # own list, generated together so either source can change live")
-	w("  %s:", ctl.Awg2RuleProvider)
+	w("  # enabled_presets: the rules of enabled presets when the common route")
+	w("  # editor assigns that virtual row an explicit route")
+	w("  %s:", ctl.EnabledPresetsProvider)
 	w("    type: file")
 	w("    behavior: classical")
 	w("    format: text")
-	w("    path: ./%s", filepath.Base(paths.Awg2Rule()))
+	w("    path: ./%s", filepath.Base(paths.EnabledPresets()))
 	w("  # observe only: everything goes direct -- the service writes the")
 	w("  # catch-all here in that mode and leaves the file empty otherwise")
 	w("  observe-all:")
@@ -872,13 +875,6 @@ func render(c *Conf) (string, error) {
 		{paths.Awg2List, ctl.Route21DirectGroup},
 	} {
 		provider := strings.TrimSuffix(route.file, ".txt")
-		if route.file == paths.Tunnel2List {
-			// awg2_rule is stored in this route's file but expands dynamically
-			// to enabled presets and the former awg2 own-list entries. Keep it
-			// at the same priority as the explicit awg2 route: below awg1, above
-			// the remaining, softer routes.
-			w("  - RULE-SET,%s,%s", ctl.Awg2RuleProvider, ctl.RouteAwg2Group)
-		}
 		w("  - RULE-SET,%s-apps,%s", provider, route.group)
 		w("  - RULE-SET,%s,%s", provider, route.group)
 		w("  - RULE-SET,%s-ip,%s,no-resolve", provider, route.group)
@@ -890,7 +886,10 @@ func render(c *Conf) (string, error) {
 	w("  - RULE-SET,force-direct,DIRECT")
 	w("  - RULE-SET,force-direct-ip,DIRECT,no-resolve")
 	w("")
-	w("  # 7. presets use the configured default tunnel order.")
+	w("  # 7. an optional enabled_presets row overrides the default route for")
+	w("  #    enabled presets. Ordinary explicit rules above still win.")
+	w("  - RULE-SET,%s,%s", ctl.EnabledPresetsProvider, ctl.EnabledPresetsRouteGroup)
+	w("  #    With no override, presets use the configured default tunnel order.")
 	w("  - RULE-SET,%s,%s", ctl.PresetsProvider, ctl.DefaultRouteGroup)
 	w("")
 	w("  # 7a. a CDN family going the tunnel's way (ctl/cdnfam.go): its page")
@@ -1198,7 +1197,7 @@ func Regenerate() (bool, error) {
 // EnsureLists creates missing list files: a provider without
 // its file prevents the core from starting
 func EnsureLists() {
-	files := []string{paths.Verified(), paths.VerifiedAddr(), paths.VerifiedSplit(), paths.VerifiedSplitNoQUIC(), paths.VerifiedSplitNoTCP(), paths.QUICDecoyOff(), paths.ObserveAll(), paths.ObserveSplit(), paths.Presets(), paths.Awg2Rule(),
+	files := []string{paths.Verified(), paths.VerifiedAddr(), paths.VerifiedSplit(), paths.VerifiedSplitNoQUIC(), paths.VerifiedSplitNoTCP(), paths.QUICDecoyOff(), paths.ObserveAll(), paths.ObserveSplit(), paths.Presets(), paths.EnabledPresets(),
 		paths.Inherit(), paths.InheritIP(), paths.Hold(), paths.Refuse(), paths.FamilyDirect(), paths.FamilyTunnel()}
 	for _, l := range paths.UserLists {
 		files = append(files, paths.Data(l), paths.Data(paths.IPList(l)), paths.Data(paths.AppList(l)))

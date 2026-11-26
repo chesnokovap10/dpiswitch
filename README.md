@@ -155,24 +155,21 @@
 |---|---|---|
 | 1 | Сами серверы туннелей | напрямую (иначе туннель зациклится сам в себя) |
 | 2 | Адреса внутри туннелей (их DNS-сервер) | этот туннель |
-| 3 | Запрещено: программы, сайты, адреса | отказ, в любом режиме |
+| 3 | Явное правило с маршрутом `block` | отказ, в любом режиме |
 | 4 | Локальные сети: роутер, принтеры, общие папки, имена `.local` и `.lan` | напрямую |
-| 5 | Всегда через — Туннели: программы, сайты, адреса | awg1; если он лежит — awg2, пока он включён; напрямую никогда |
-| 6 | Всегда через — Туннель1 | только awg1; если он лежит, соединение отклоняется |
-| 7 | Всегда через — Туннель2 | только awg2; если он лежит или выключен, соединение отклоняется; `awg2_rule` охватывает включённые пресеты и свой список awg2 |
-| 8 | Всегда напрямую: программы (`qbittorrent.exe` и т. п.), сайты, адреса | напрямую, в любом режиме |
-| 9 | Второй туннель, пока загружен и включён: пресеты и ваш список | awg2; если он лежит — awg1; затем напрямую, а в «Только в туннель» отклоняется |
+| 5 | Явное правило сайта, адреса или программы с маршрутом awg | выбранная цепочка awg1/awg2, при необходимости с резервом `direct` |
+| 6 | Явное правило с маршрутом `direct` | напрямую, в любом режиме |
+| 7 | Необязательная строка `enabled_presets` | выбранный для неё маршрут всех включённых пресетов |
+| 8 | Пресеты без `enabled_presets` | порядок туннелей по умолчанию из настроек |
+| 9 | Выключенный туннель в цепочке | пропускается; маршрут без `direct` отклоняется, если доступных туннелей не осталось |
 | 10 | Всё остальное, пока выбрано «Только наблюдать» | напрямую |
 | 11 | Вердикты детектора: чистые имена и адреса, на которых их проверяли (для соединений без имени) | напрямую |
 | 12 | Всё остальное | по режиму: во «Вкл» awg1, затем awg2 (если включён), затем напрямую; в «Только в туннель» те же туннели, но никогда напрямую |
 
-Без конфига первого туннеля служба всё равно работает: Live показывает трафик, списки действуют, а детектор
-ничего не проверяет — ему не с чем сравнивать. Второй туннель, если загружен только он, берёт свои пресеты и
-список, «Туннели» и «Туннель2», а в «Только в туннель» — всё; «Туннель1» без awg1 отклоняется. Подробные таблицы для каждого режима и набора
-загруженных конфигов — в справке программы.
-
-Строка, вписанная в несколько списков, идёт по тому, что выше в таблице: «Запрещено» → «Туннели» →
-«Туннель1» → «Туннель2» → «Всегда напрямую» → пресеты и список awg2 → детектор.
+Без конфига первого туннеля служба всё равно работает: Live показывает трафик, правила действуют, а детектор
+ничего не проверяет — ему не с чем сравнивать. `enabled_presets` имеет тип «пресеты» и переопределяет маршрут
+по умолчанию только для включённых пресетов; строка необязательна и не влияет на трафик детектора. Явные
+правила сайтов, адресов и программ имеют более высокий приоритет.
 
 Ядро решает один раз — когда соединение открывается. Когда вы меняете список или пресет, открытые
 соединения, которые это изменение переносит, закрываются, и программы переподключаются уже по новому
@@ -401,12 +398,12 @@ OpenVPN, IKEv2), звонок или игра, которым привязка �
 Второй сервер AmneziaWG только для выбранных сервисов: YouTube, Telegram и WhatsApp, Discord, ИИ-сервисов (ChatGPT,
 Claude, Google AI, Grok, Meta AI, Copilot и общего входа ИИ-сервисов), Instagram, Facebook, X и вашего списка. Он стоит ниже
 «Запрещено», трёх списков «Всегда через» и «Всегда напрямую» и выше детектора — детектор его имена не трогает.
-Обычно, если он лежит, его сайты идут через первый туннель; если лежат оба — напрямую, а в «Только в туннель»
-отклоняются. Специальная строка **`awg2_rule`** в списке «Всегда через — Туннель2» направляет только через awg2
-все включённые пресеты и весь свой список второго туннеля. Если awg2 недоступен или выключен, такие соединения
-не проходят; изменения пресетов и своего списка учитываются автоматически. Детектор сравнивает прямой путь только с первым туннелем: то, что идёт в awg2, не проверяется никогда, а без awg1 не проверяется ничего, даже при включённом «Вкл». Пока он не подключён, пресеты
-и свой список ничего не маршрутизируют. Все
-пресеты по умолчанию выключены. Переключение пресета применяется сразу, включая открытые соединения.
+Второй туннель доступен как отдельный шаг любого маршрута в общем редакторе. Пресеты по умолчанию используют
+выбранный в настройках порядок туннелей. Чтобы одним действием назначить всем включённым пресетам другой
+маршрут, добавьте строку **`enabled_presets`** и выберите для неё `direct`, `block`, awg1, awg2 или цепочку.
+Без этой строки действует маршрут по умолчанию; явные правила отдельных сайтов, адресов и программ выше неё.
+Детектор сравнивает прямой путь только с первым туннелем; без awg1 проверки не выполняются. Все пресеты по
+умолчанию выключены. Переключение пресета и смена маршрута применяются сразу, включая открытые соединения.
 
 Пресеты собраны в раскрывающиеся категории: **Видеохостинги, ИИ, Мессенджеры, Соцсети,
 Прочее**; «Прочее» всегда последнее, остальные категории и сервисы внутри — по алфавиту. Галочка категории выбирает все её сервисы, промежуточное
@@ -728,24 +725,21 @@ Every new connection is matched against these rules from the top; the first one 
 |---|---|---|
 | 1 | The tunnel servers themselves | direct (otherwise the tunnel would loop into itself) |
 | 2 | Addresses inside the tunnels (their DNS server) | that tunnel |
-| 3 | Forbidden: programs, sites, addresses | refused, in every mode |
+| 3 | An explicit rule with route `block` | refused, in every mode |
 | 4 | Local networks: the router, printers, shares, `.local` and `.lan` names | direct |
-| 5 | Always via — Tunnels: programs, sites, addresses | awg1; if it is down, awg2 while switched on; never direct |
-| 6 | Always via — Tunnel1 | awg1 only; if it is down, the connection is refused |
-| 7 | Always via — Tunnel2 | awg2 only; if it is down or switched off, the connection is refused; `awg2_rule` covers the enabled presets and awg2 own list |
-| 8 | Always direct: programs (`qbittorrent.exe`, etc.), sites, addresses | direct, in every mode |
-| 9 | Second tunnel, while loaded and switched on: presets and your list | awg2; if it is down, awg1; then direct — in Tunnel only refused |
+| 5 | An explicit site, address or program rule with an awg route | the selected awg1/awg2 chain, optionally with `direct` fallback |
+| 6 | An explicit rule with route `direct` | direct, in every mode |
+| 7 | The optional `enabled_presets` row | the route selected for every enabled preset |
+| 8 | Presets without `enabled_presets` | the default tunnel order from Settings |
+| 9 | A disabled tunnel in a chain | skipped; a route without `direct` is refused when no enabled tunnel remains |
 | 10 | Everything else, while "Observe only" is chosen | direct |
 | 11 | Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name) | direct |
 | 12 | Everything else | by the mode: in On awg1, then awg2 (if switched on), then direct; in Tunnel only the same tunnels, never direct |
 
-Without the first tunnel's config the service runs all the same: Live shows the traffic, the lists apply,
-and the detector checks nothing, having no tunnel to compare with. The second tunnel, loaded alone, takes
-its presets and list, Always via — Tunnels and Tunnel2 -- in Tunnel only, everything; Tunnel1 is refused without awg1. The program's help has a table
-for each mode and each set of configs loaded.
-
-A line written in several lists goes by the one higher in the table: Forbidden → Tunnels → Tunnel1 →
-Tunnel2 → Always direct → the presets and the awg2 list → the detector.
+Without the first tunnel's config the service still runs: Live shows traffic and routing rules apply, but the
+detector checks nothing because it has no tunnel to compare with. `enabled_presets` has the “presets” type and
+overrides the default route only for enabled presets; it is optional and does not affect detector traffic.
+Explicit site, address and program rules have higher priority.
 
 The core decides once, when a connection opens. When you change a list or a preset, the open
 connections the change moves are closed, and the programs reconnect over the new route. Turning
@@ -975,12 +969,12 @@ switched on. The rest of this section, and what the others say of awg2, is of th
 A second AmneziaWG server for chosen services only: YouTube, Telegram and WhatsApp, Discord, AI services (ChatGPT, Claude,
 Google AI, Grok, Meta AI, Copilot and shared AI sign-in), Instagram, Facebook, X and your own list. It stands below
 Forbidden, the three Always via lists and Always direct and above the detector, which leaves its names alone. If it
-is down, its sites go through the first tunnel; if both are down, direct — in Tunnel only refused. The special
-**`awg2_rule`** line in Always via — Tunnel2 sends every enabled preset and the whole awg2 own list through awg2
-only. If awg2 is unavailable or switched off, those connections fail; changes to the presets and own list are
-followed automatically. The detector measures the direct path against the first tunnel only: what goes to awg2 is never checked, and without awg1 nothing is, even with auto-switch On. Until it is attached, its presets and list route
-nothing. Every
-preset is off by default. A preset switch applies at once, open connections included.
+The second tunnel is available as an independent hop in every route in the common editor. Presets use the
+default tunnel order from Settings. To assign one different route to all enabled presets, add
+**`enabled_presets`** and select `direct`, `block`, awg1, awg2 or a chain. Without that row the default route
+applies; explicit rules for individual sites, addresses and programs stand above it. The detector measures
+the direct path against the first tunnel only and performs no checks without awg1. Every preset is off by
+default. Preset switches and route changes apply at once, open connections included.
 
 Presets form a tree of **AI, Messengers, Social networks, Video hosting and Other services**,
 with Other services always last and all remaining categories and services sorted alphabetically. A category checkbox selects all its services; a mixed state

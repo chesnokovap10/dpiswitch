@@ -29,21 +29,21 @@ const (
 )
 
 // ListPolicy is the small part of a list's grammar that depends on the
-// block it belongs to. All six user lists otherwise use exactly the same
-// parser. The strict Tunnel2 list alone accepts awg2_rule.
+// block it belongs to. enabled_presets is a virtual entry accepted by the
+// common route editor; it routes the currently enabled presets as one row.
 type ListPolicy struct {
-	AllowAwg2Rule bool
+	AllowEnabledPresets bool
 }
 
 // ListEntry is one parsed and canonical line of a user list. Raw and Line
 // let the UI explain normalization without making the routing code parse the
 // text again.
 type ListEntry struct {
-	Kind     int
-	Value    string
-	Raw      string
-	Line     int
-	Awg2Rule bool
+	Kind           int
+	Value          string
+	Raw            string
+	Line           int
+	EnabledPresets bool
 }
 
 // ListIssue is one line the document parser could not understand. A whole
@@ -57,13 +57,13 @@ type ListIssue struct {
 // Typed causes let the UI explain a rejected imported line without parsing
 // or exposing the parser's English diagnostic text.
 var (
-	ErrListAwg2Scope    = errors.New("awg2 rule outside Tunnel2")
-	ErrListRuleFields   = errors.New("wrong number of rule fields")
-	ErrListIPOption     = errors.New("unsupported IP rule option")
-	ErrListHostsAlias   = errors.New("hosts alias is not a domain")
-	ErrListProgramComma = errors.New("comma in program name")
-	ErrListDomainLabel  = errors.New("domain label too long")
-	ErrListDomainName   = errors.New("domain name too long")
+	ErrListEnabledPresetsScope = errors.New("enabled presets outside routing rules")
+	ErrListRuleFields          = errors.New("wrong number of rule fields")
+	ErrListIPOption            = errors.New("unsupported IP rule option")
+	ErrListHostsAlias          = errors.New("hosts alias is not a domain")
+	ErrListProgramComma        = errors.New("comma in program name")
+	ErrListDomainLabel         = errors.New("domain label too long")
+	ErrListDomainName          = errors.New("domain name too long")
 )
 
 type ListChange struct {
@@ -137,10 +137,10 @@ func ParseList(text string, policy ListPolicy) ListDocument {
 	sort.SliceStable(d.Entries, func(i, j int) bool {
 		a, b := d.Entries[i], d.Entries[j]
 		ak, bk := a.Kind, b.Kind
-		if a.Awg2Rule {
+		if a.EnabledPresets {
 			ak = -1
 		}
-		if b.Awg2Rule {
+		if b.EnabledPresets {
 			bk = -1
 		}
 		if ak != bk {
@@ -174,8 +174,8 @@ func ClassifyListLines(text string, policy ListPolicy) []ListLineClass {
 		}
 		kind := "site"
 		switch {
-		case entries[0].Awg2Rule:
-			kind = "rule"
+		case entries[0].EnabledPresets:
+			kind = "presets"
 		case entries[0].Kind == EntryIP && strings.Contains(entries[0].Value, "/"):
 			kind = "network"
 		case entries[0].Kind == EntryIP:
@@ -266,11 +266,11 @@ func parseListEntries(line, raw string, number int, policy ListPolicy) ([]ListEn
 
 func parseListEntry(line, raw string, number int, policy ListPolicy) (ListEntry, error) {
 	e := ListEntry{Raw: raw, Line: number}
-	if strings.EqualFold(line, Awg2Rule) {
-		if !policy.AllowAwg2Rule {
-			return e, fmt.Errorf("%w: %s is allowed only in Tunnel2", ErrListAwg2Scope, Awg2Rule)
+	if strings.EqualFold(line, EnabledPresets) {
+		if !policy.AllowEnabledPresets {
+			return e, fmt.Errorf("%w: %s is allowed only in routing rules", ErrListEnabledPresetsScope, EnabledPresets)
 		}
-		e.Value, e.Awg2Rule = Awg2Rule, true
+		e.Value, e.EnabledPresets = EnabledPresets, true
 		return e, nil
 	}
 	converted := line
@@ -519,7 +519,7 @@ func splitList(b []byte) listFiles {
 func listFilesFrom(d ListDocument) listFiles {
 	var f listFiles
 	for _, e := range d.Entries {
-		if e.Awg2Rule {
+		if e.EnabledPresets {
 			continue
 		}
 		switch e.Kind {
@@ -560,9 +560,7 @@ func (f listFiles) bodies(list string) map[string][]byte {
 	return map[string][]byte{list: body(f.names), paths.IPList(list): body(cidrs), paths.AppList(list): body(rules)}
 }
 
-// rules is the same list as one classical rule-provider. It is used by
-// awg2_rule, which joins the second tunnel's enabled presets and own list in
-// one provider routed strictly through awg2.
+// rules is the same list as one classical rule-provider.
 func (f listFiles) rules() []string {
 	var out []string
 	for _, n := range f.names {

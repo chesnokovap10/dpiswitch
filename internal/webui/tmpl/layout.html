@@ -206,7 +206,7 @@
     <div class="entry-editor grow" data-entry-editor data-kind="{{.Kind}}"
       data-site="{{$v.T "site"}}" data-ip="{{$v.T "IP address"}}" data-network="{{$v.T "network"}}"
       data-program="{{$v.T "program"}}" data-comment="{{$v.T "comment"}}" data-rule="{{$v.T "rule"}}" data-error="{{$v.T "error"}}">
-      <textarea name="entries" wrap="off" spellcheck="false" placeholder="{{if eq .Kind "tunnel2"}}awg2_rule&#10;{{end}}example.com&#10;+.example.org&#10;192.168.1.0/24&#10;telegram.exe">{{lines .Entries}}</textarea>
+      <textarea name="entries" wrap="off" spellcheck="false" placeholder="example.com&#10;+.example.org&#10;192.168.1.0/24&#10;telegram.exe">{{lines .Entries}}</textarea>
       <div class="entry-types" aria-label="{{$v.T "Recognized as"}}"></div>
     </div>
     <div class="actions"><button class="primary" name="op" value="save">{{$v.T "Save"}}</button>{{template "msg" $v}}<span class="spacer"></span>

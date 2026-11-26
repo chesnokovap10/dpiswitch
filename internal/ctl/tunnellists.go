@@ -20,13 +20,14 @@ const (
 	DefaultTunnel12 = "awg1-awg2"
 	DefaultTunnel21 = "awg2-awg1"
 
-	RouteAwg1Group     = "route-awg1"
-	RouteAwg2Group     = "route-awg2"
-	Route12Group       = "route-awg1-awg2"
-	Route21Group       = "route-awg2-awg1"
-	Route12DirectGroup = "route-awg1-awg2-direct"
-	Route21DirectGroup = "route-awg2-awg1-direct"
-	DefaultRouteGroup  = "tunnel-default"
+	RouteAwg1Group           = "route-awg1"
+	RouteAwg2Group           = "route-awg2"
+	Route12Group             = "route-awg1-awg2"
+	Route21Group             = "route-awg2-awg1"
+	Route12DirectGroup       = "route-awg1-awg2-direct"
+	Route21DirectGroup       = "route-awg2-awg1-direct"
+	DefaultRouteGroup        = "tunnel-default"
+	EnabledPresetsRouteGroup = "route-enabled-presets"
 
 	// Old names remain for compatibility with older generated configs and
 	// tests; new configs use the Route* and DefaultRoute groups above.
@@ -100,14 +101,36 @@ func RouteChoice(s Settings) map[string]string {
 		def = strict(reverse)
 	}
 	return map[string]string{
-		RouteAwg1Group:     map[bool]string{true: TunnelOneGroup, false: "REJECT"}[one],
-		RouteAwg2Group:     map[bool]string{true: Tunnel2OnlyGroup, false: "REJECT"}[two],
-		Route12Group:       strict(false),
-		Route21Group:       strict(true),
-		Route12DirectGroup: soft(false),
-		Route21DirectGroup: soft(true),
-		DefaultRouteGroup:  def,
+		RouteAwg1Group:           map[bool]string{true: TunnelOneGroup, false: "REJECT"}[one],
+		RouteAwg2Group:           map[bool]string{true: Tunnel2OnlyGroup, false: "REJECT"}[two],
+		Route12Group:             strict(false),
+		Route21Group:             strict(true),
+		Route12DirectGroup:       soft(false),
+		Route21DirectGroup:       soft(true),
+		DefaultRouteGroup:        def,
+		EnabledPresetsRouteGroup: EnabledPresetsRoute(),
 	}
+}
+
+// EnabledPresetsRoute is the proxy/group selected for the virtual
+// enabled_presets row. With no override its empty provider still points at
+// the ordinary default route.
+func EnabledPresetsRoute() string {
+	for _, route := range []struct{ file, group string }{
+		{paths.BlockList, "REJECT"},
+		{paths.Tunnel1List, RouteAwg1Group},
+		{paths.Tunnel2List, RouteAwg2Group},
+		{paths.TunnelList, Route12Group},
+		{paths.Tunnel21List, Route21Group},
+		{paths.Tunnel12DirectList, Route12DirectGroup},
+		{paths.Awg2List, Route21DirectGroup},
+		{paths.DirectList, "DIRECT"},
+	} {
+		if EnabledPresetsIn(route.file) {
+			return route.group
+		}
+	}
+	return DefaultRouteGroup
 }
 
 // routesSet: the member last chosen in the core, by group; listMu held. A

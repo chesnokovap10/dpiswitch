@@ -124,7 +124,7 @@ func Defaults() Config {
 func pinnedLists() []string {
 	return []string{paths.Awg2Hosts(), paths.ForceTunnel(), paths.Data(paths.Tunnel1List),
 		paths.Data(paths.Tunnel2List), paths.Data(paths.Tunnel21List), paths.Data(paths.Tunnel12DirectList),
-		paths.Awg2Rule(), paths.ForceBlock(), paths.Presets()}
+		paths.EnabledPresets(), paths.ForceBlock(), paths.Presets()}
 }
 
 // Run loops until the context is cancelled. It is the single

@@ -22,13 +22,14 @@ or an awg chain, and <b>presets</b>.</p>
 <tr><td>4</td><td>Local networks: the router, printers, shares, <code>.local</code> and <code>.lan</code> names</td><td>direct</td></tr>
 <tr><td>5</td><td><a href="/lists#list-tunnel">Routing rule</a> with an awg route</td><td>the selected awg1/awg2 chain, optionally with direct fallback</td></tr>
 <tr><td>6</td><td><a href="/lists#list-tunnel">Routing rule</a> with route <b>direct</b></td><td>direct in every mode</td></tr>
-<tr><td>7</td><td><a href="/lists#presets">Presets</a></td><td>the default tunnel order from Settings</td></tr>
-<tr><td>8</td><td><a href="/overview#summary">Tunnel switches</a></td><td>disabled tunnels are skipped in every chain</td></tr>
-<tr><td>9</td><td>Everything else, while "Observe only" is chosen</td><td>direct</td></tr>
-<tr><td>10</td><td>Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name)</td><td>direct</td></tr>
-<tr><td>11</td><td>Everything else</td><td>by the mode -- see the tables below</td></tr>
+<tr><td>7</td><td>The optional <code>enabled_presets</code> row</td><td>the route selected for every enabled preset</td></tr>
+<tr><td>8</td><td><a href="/lists#presets">Presets</a> without <code>enabled_presets</code></td><td>the default tunnel order from Settings</td></tr>
+<tr><td>9</td><td><a href="/overview#summary">Tunnel switches</a></td><td>disabled tunnels are skipped in every chain</td></tr>
+<tr><td>10</td><td>Everything else, while "Observe only" is chosen</td><td>direct</td></tr>
+<tr><td>11</td><td>Detector verdicts: names found clean, and the addresses they were probed on (for connections that carry no name)</td><td>direct</td></tr>
+<tr><td>12</td><td>Everything else</td><td>by the mode -- see the tables below</td></tr>
 </table>
-<p>An explicit routing rule takes priority over presets and the detector. The editor does not keep duplicate entries.</p>
+<p><code>enabled_presets</code> has the “presets” type and assigns one route to all enabled presets, overriding their default route. It is optional and does not affect detector traffic. Explicit site, address and program rules take priority over it. The editor does not keep duplicate entries.</p>
 <p>Every routing-rule row has its own route:</p>
 <table>
 <tr><th>Route</th><th>When a tunnel is switched off or has no config</th><th>When every remaining tunnel is unavailable</th></tr>
@@ -50,8 +51,7 @@ or an awg chain, and <b>presets</b>.</p>
 {{if false}}<p>A line written in several lists goes by the one higher in this table: Forbidden → Tunnels → Tunnel1 →
 Tunnel2 → Always direct → the presets and the awg2 list → the detector.</p>
 <p>In the mode tables below, the Tunnels column is the fallback route awg1 → awg2. Tunnel1 and Tunnel2 use
-only their named tunnel in every mode and refuse the connection when it is unavailable. The <code>awg2_rule</code>
-line in Tunnel2 dynamically covers the enabled presets and the awg2 own list.</p>
+only their named tunnel in every mode and refuse the connection when it is unavailable.</p>
 <p>How it goes in each auto-switch mode, by the configs loaded. "Clean" are the sites the detector found
 unblocked; the detector works only with awg1 loaded. Tunnel switches are on the <a href="/overview#summary"><b>Overview
 tunnel</b></a> switch; with no awg2 loaded its presets and list do nothing.</p>

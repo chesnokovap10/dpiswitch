@@ -19,12 +19,12 @@ import (
 // SyncUserFiles brings the copies up to date and writes the presets the
 // settings ask for.
 
-// Awg2Rule is the special line accepted in the strict Tunnel2 list. It
-// dynamically means the enabled second-tunnel presets and its own list.
-const Awg2Rule = "awg2_rule"
+// EnabledPresets is the virtual entry accepted in routing rules. Its chosen
+// route overrides the default route for all currently enabled presets.
+const EnabledPresets = "enabled_presets"
 
-// Awg2RuleProvider is the generated classical provider behind Awg2Rule.
-const Awg2RuleProvider = "awg2-rule"
+// EnabledPresetsProvider is the generated provider behind EnabledPresets.
+const EnabledPresetsProvider = "enabled-presets"
 
 // setAside is retained as the hook used by list synchronization. Tunnel
 // switches now change select groups, so no user list is hidden.
@@ -79,7 +79,7 @@ func wantCopies(name string, s Settings) (map[string][]byte, bool, error) {
 	if !have {
 		return nil, false, nil
 	}
-	doc := ParseList(string(u), ListPolicy{AllowAwg2Rule: name == paths.Tunnel2List})
+	doc := ParseList(string(u), ListPolicy{AllowEnabledPresets: true})
 	if len(doc.Issues) != 0 {
 		i := doc.Issues[0]
 		return nil, false, fmt.Errorf("line %d (%q): %w", i.Line, i.Raw, i.Err)
@@ -99,11 +99,8 @@ func Synced(name string) bool {
 			return false
 		}
 	}
-	if name == paths.Tunnel2List {
-		want, werr := wantAwg2Rule(LoadSettings(paths.Settings()))
-		if d, err := os.ReadFile(paths.Awg2Rule()); err != nil || werr != nil || !bytes.Equal(d, want) {
-			return false
-		}
+	if !EnabledPresetsSynced() {
+		return false
 	}
 	return true
 }
@@ -158,24 +155,33 @@ func SyncUserFiles() []string {
 	if replaced(paths.Presets(), wantPresets(set), "presets") {
 		changed = append(changed, PresetsProvider)
 	}
-	if want, err := wantAwg2Rule(set); err != nil {
-		logOnce(Awg2RuleProvider, "awg2_rule not generated: %v", err)
+	if want, err := wantEnabledPresets(set); err != nil {
+		logOnce(EnabledPresetsProvider, "enabled_presets not generated: %v", err)
 	} else {
-		logOnce(Awg2RuleProvider, "")
-		if replaced(paths.Awg2Rule(), want, "awg2_rule") {
-			changed = append(changed, Awg2RuleProvider)
+		logOnce(EnabledPresetsProvider, "")
+		if replaced(paths.EnabledPresets(), want, "enabled_presets") {
+			changed = append(changed, EnabledPresetsProvider)
 		}
 	}
 	return changed
 }
 
-// wantAwg2Rule generates the strict awg2 provider. Without the marker in the
-// Tunnel2 list it is empty. With it, it follows the currently enabled presets
-// and the second tunnel's own list without copying their lines into the UI.
-func wantAwg2Rule(s Settings) ([]byte, error) {
-	b, err := paths.ReadUserFile(paths.User(paths.Tunnel2List), UserListMax)
-	if err != nil || !hasAwg2Rule(b) {
-		return []byte("# awg2_rule is not in Always via Tunnel2\n"), nil
+// wantEnabledPresets generates the rules of the currently enabled presets.
+// The provider stays empty until a route file contains the virtual entry.
+func wantEnabledPresets(s Settings) ([]byte, error) {
+	found := false
+	for _, name := range paths.UserLists {
+		b, err := paths.ReadUserFile(paths.User(name), UserListMax)
+		if err == nil && hasEnabledPresets(b) {
+			found = true
+			break
+		}
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+	}
+	if !found {
+		return []byte("# enabled_presets has no route override\n"), nil
 	}
 	on := map[string]bool{}
 	for _, id := range s.Awg2Presets {
@@ -187,19 +193,9 @@ func wantAwg2Rule(s Settings) ([]byte, error) {
 			rules = append(rules, PresetRules(p)...)
 		}
 	}
-	if own, err := paths.ReadUserFile(paths.User(paths.Awg2List), UserListMax); err == nil {
-		doc := ParseList(string(own), ListPolicy{})
-		if len(doc.Issues) != 0 {
-			i := doc.Issues[0]
-			return nil, fmt.Errorf("%s line %d (%q): %w", paths.Awg2List, i.Line, i.Raw, i.Err)
-		}
-		rules = append(rules, listFilesFrom(doc).rules()...)
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return nil, err
-	}
 	seen := map[string]bool{}
 	var out strings.Builder
-	out.WriteString("# awg2_rule: enabled second-tunnel presets and its own list -- generated, do not edit\n")
+	out.WriteString("# enabled_presets: currently enabled presets -- generated, do not edit\n")
 	for _, r := range rules {
 		if k := strings.ToLower(r); !seen[k] {
 			seen[k] = true
@@ -209,13 +205,19 @@ func wantAwg2Rule(s Settings) ([]byte, error) {
 	return []byte(out.String()), nil
 }
 
-func hasAwg2Rule(b []byte) bool {
+func hasEnabledPresets(b []byte) bool {
 	for _, line := range strings.Split(string(b), "\n") {
-		if strings.EqualFold(strings.TrimSpace(line), Awg2Rule) {
+		if strings.EqualFold(strings.TrimSpace(line), EnabledPresets) {
 			return true
 		}
 	}
 	return false
+}
+
+// EnabledPresetsIn reports whether one route file contains the virtual entry.
+func EnabledPresetsIn(name string) bool {
+	b, err := paths.ReadUserFile(paths.User(name), UserListMax)
+	return err == nil && hasEnabledPresets(b)
 }
 
 // wantPresets: the core's presets file as the settings make it. Presets use
@@ -232,7 +234,7 @@ func Awg2Synced() bool {
 	if d, err := os.ReadFile(paths.Presets()); err != nil || !bytes.Equal(d, wantPresets(set)) {
 		return false
 	}
-	if !Awg2RuleSynced() {
+	if !EnabledPresetsSynced() {
 		return false
 	}
 	// no list of the user's: the copies are left as they are, nothing to wait for
@@ -242,11 +244,11 @@ func Awg2Synced() bool {
 	return Synced(paths.Awg2List)
 }
 
-// Awg2RuleSynced reports whether the generated expansion of awg2_rule
-// follows the current preset selection and own list.
-func Awg2RuleSynced() bool {
-	d, err := os.ReadFile(paths.Awg2Rule())
-	want, werr := wantAwg2Rule(LoadSettings(paths.Settings()))
+// EnabledPresetsSynced reports whether the generated virtual entry follows
+// the current preset selection.
+func EnabledPresetsSynced() bool {
+	d, err := os.ReadFile(paths.EnabledPresets())
+	want, werr := wantEnabledPresets(LoadSettings(paths.Settings()))
 	return err == nil && werr == nil && bytes.Equal(d, want)
 }
 

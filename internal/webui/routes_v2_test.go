@@ -13,10 +13,13 @@ func TestUnifiedRouteListAndNavigation(t *testing.T) {
 	s, _ := testServer(t)
 	h := s.Handler()
 	body := do(t, h, http.MethodGet, "/lists", nil, nil).Body.String()
-	for _, id := range []string{`id="list-tunnel"`, `id="presets"`} {
+	for _, id := range []string{`id="list-tunnel"`, `id="presets"`, `data-presets="presets"`} {
 		if strings.Count(body, id) != 1 {
 			t.Fatalf("%s count in lists page", id)
 		}
+	}
+	if !strings.Contains(body, "enabled_presets") {
+		t.Fatal("enabled_presets explanation missing")
 	}
 	for _, id := range []string{`<div class="box" id="list-direct"`, `<div class="box" id="list-block"`} {
 		if strings.Contains(body, id) {
@@ -35,8 +38,8 @@ func TestUnifiedRouteListAndNavigation(t *testing.T) {
 	}
 
 	w := do(t, h, http.MethodPost, "/act/list", url.Values{
-		"kind": {"tunnel"}, "entries": {"one.example\ntwo.example\ndirect.example\nblocked.example"},
-		"routes": {"awg1\nawg2-awg1-direct\ndirect\nblock"}, "op": {"save"},
+		"kind": {"tunnel"}, "entries": {"one.example\ntwo.example\ndirect.example\nblocked.example\nenabled_presets"},
+		"routes": {"awg1\nawg2-awg1-direct\ndirect\nblock\nblock"}, "op": {"save"},
 	}, nil)
 	if w.Code != http.StatusOK || strings.Contains(w.Body.String(), `msg bad`) {
 		t.Fatalf("save: %d %s", w.Code, w.Body.String())
@@ -50,7 +53,7 @@ func TestUnifiedRouteListAndNavigation(t *testing.T) {
 	if got := strings.Join(readEntries(paths.DirectList), ","); got != "direct.example" {
 		t.Fatalf("direct list = %q", got)
 	}
-	if got := strings.Join(readEntries(paths.BlockList), ","); got != "blocked.example" {
+	if got := strings.Join(readEntries(paths.BlockList), ","); got != "enabled_presets,blocked.example" {
 		t.Fatalf("block list = %q", got)
 	}
 

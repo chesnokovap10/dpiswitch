@@ -48,7 +48,7 @@ func readEntriesFile(name string) []string {
 			}
 		}
 	}
-	out, _ := normEntriesFor(lines, false)
+	out, _ := normEntriesFor(lines, true)
 	return out
 }
 
@@ -58,8 +58,8 @@ func normEntries(lines []string) (out []string, issues []ctl.ListIssue) {
 	return normEntriesFor(lines, false)
 }
 
-func normEntriesFor(lines []string, allowAwg2Rule bool) (out []string, issues []ctl.ListIssue) {
-	d := ctl.ParseList(strings.Join(lines, "\n"), ctl.ListPolicy{AllowAwg2Rule: allowAwg2Rule})
+func normEntriesFor(lines []string, allowEnabledPresets bool) (out []string, issues []ctl.ListIssue) {
+	d := ctl.ParseList(strings.Join(lines, "\n"), ctl.ListPolicy{AllowEnabledPresets: allowEnabledPresets})
 	return d.Values(), d.Issues
 }
 
@@ -131,17 +131,15 @@ func entryMatch(entries []string) func(ctl.Conn) bool {
 	}
 }
 
-// awg2SourceMatch matches the sources awg2_rule expands: the currently
-// enabled presets and the second tunnel's own user list. It reads the user
-// sources rather than their active core copies, which are empty while awg2 is
-// switched off; adding the marker then must still close and block connections.
-func awg2SourceMatch() func(ctl.Conn) bool {
+// enabledPresetsSourceMatch matches the currently enabled presets behind the
+// virtual enabled_presets row.
+func enabledPresetsSourceMatch() func(ctl.Conn) bool {
 	set := loadSettings()
 	on := map[string]bool{}
 	for _, id := range set.Awg2Presets {
 		on[id] = true
 	}
-	entries := readEntries(paths.Awg2List)
+	var entries []string
 	for _, p := range presets.Load() {
 		if on[p.ID] {
 			entries = append(entries, p.Lines...)
@@ -149,40 +147,6 @@ func awg2SourceMatch() func(ctl.Conn) bool {
 	}
 	entries, _ = normEntries(entries)
 	return entryMatch(entries)
-}
-
-// awg2RuleChangeMatch picks only connections whose effective route changes
-// when the awg2_rule marker is added or removed. Merely matching one of its
-// source rules is not enough: while awg2 is healthy those connections already
-// use awg2, and rules in Tunnels or Tunnel1 still stand above the marker.
-func awg2RuleChangeMatch(adding, awg2Active, awg2Alive bool, source func(ctl.Conn) bool) func(ctl.Conn) bool {
-	higher := append(ctl.ListProviders(paths.TunnelList), ctl.ListProviders(paths.Tunnel1List)...)
-	return func(c ctl.Conn) bool {
-		if adding {
-			if !source(c) || slices.Contains(higher, c.RulePayload) {
-				return false
-			}
-			// The new strict rule still selects awg2. An existing connection
-			// already using it complies even if the latest health check failed.
-			return !awg2Active || !strings.EqualFold(c.Outbound, "awg2")
-		}
-		if c.RulePayload != ctl.Awg2RuleProvider {
-			return false
-		}
-		// On removal the normal second-tunnel group falls back while awg2 is
-		// down, so its strict connection must reconnect then.
-		return !awg2Active || !awg2Alive || !strings.EqualFold(c.Outbound, "awg2")
-	}
-}
-
-func awg2RouteState() (active, alive bool) {
-	active = loadSettings().Awg2Active()
-	if !active {
-		return false, false
-	}
-	secret := ctl.SecretFromConfig(paths.Config())
-	alive, _ = ctl.TunnelHealth(apiAddr, secret, "awg2")
-	return true, alive
 }
 
 // saveEntries writes the user's copy of a list and closes what the change
@@ -227,17 +191,21 @@ func (s *Server) saveEntries(name string, entries []string) (n int, err, closeEr
 // transition logic as an ordinary Save for each changed list.
 func closeEntriesChange(name string, old, entries []string) (int, error) {
 	moved := changed(old, entries)
-	isRule := func(s string) bool { return strings.EqualFold(s, ctl.Awg2Rule) }
+	isRule := func(s string) bool { return strings.EqualFold(s, ctl.EnabledPresets) }
 	plain := slices.DeleteFunc(slices.Clone(moved), isRule)
 	match := entryMatch(plain)
 	oldRule, newRule := slices.ContainsFunc(old, isRule), slices.ContainsFunc(entries, isRule)
-	if name == paths.Tunnel2List && oldRule != newRule {
-		active, alive := awg2RouteState()
-		marker := awg2RuleChangeMatch(newRule, active, alive, awg2SourceMatch())
+	providers := ctl.ListProviders(name)
+	if oldRule != newRule {
+		marker := enabledPresetsSourceMatch()
 		byLine := match
 		match = func(c ctl.Conn) bool { return byLine(c) || marker(c) }
+		providers = append(providers, ctl.EnabledPresetsProvider)
+		if serviceRunning() {
+			ctl.SyncRoutesNow(apiAddr, ctl.SecretFromConfig(paths.Config()))
+		}
 	}
-	return closeMoved(ctl.ListProviders(name), match,
+	return closeMoved(providers, match,
 		func() bool { return ctl.Synced(name) })
 }
 
@@ -271,7 +239,7 @@ func (s *Server) actList(w http.ResponseWriter, r *http.Request) {
 		}
 		text += a
 	}
-	doc := ctl.ParseList(text, ctl.ListPolicy{AllowAwg2Rule: kind == "tunnel2"})
+	doc := ctl.ParseList(text, ctl.ListPolicy{AllowEnabledPresets: listFile[kind] != ""})
 	entries := doc.Values()
 	if len(doc.Issues) != 0 {
 		s.refuse(w, r, page, kind, splitLines(text), listIssues(lang(r), doc.Issues))
@@ -326,7 +294,7 @@ func (s *Server) actRouteList(w http.ResponseWriter, r *http.Request) {
 			route = strings.TrimSpace(rawRoutes[i])
 		}
 		file := valid[route]
-		doc := ctl.ParseList(line, ctl.ListPolicy{AllowAwg2Rule: file == paths.Tunnel2List})
+		doc := ctl.ParseList(line, ctl.ListPolicy{AllowEnabledPresets: file != ""})
 		if len(doc.Issues) != 0 {
 			s.refuse(w, r, "lists", "tunnel", raw, listIssues(lang(r), doc.Issues))
 			return
@@ -423,11 +391,11 @@ type listRedundant struct{ entry, coveredBy string }
 func redundantListEntries(entries []string) []listRedundant {
 	var out []listRedundant
 	for i, entry := range entries {
-		if strings.EqualFold(entry, ctl.Awg2Rule) {
+		if strings.EqualFold(entry, ctl.EnabledPresets) {
 			continue
 		}
 		for j, wider := range entries {
-			if i == j || strings.EqualFold(wider, ctl.Awg2Rule) {
+			if i == j || strings.EqualFold(wider, ctl.EnabledPresets) {
 				continue
 			}
 			_, in := liveOverlap(wider)(entry)
@@ -447,7 +415,7 @@ func redundantListEntries(entries []string) []listRedundant {
 func shadowedListEntries(kind string, entries []string) []listShadow {
 	var out []listShadow
 	for _, entry := range entries {
-		if strings.EqualFold(entry, ctl.Awg2Rule) {
+		if strings.EqualFold(entry, ctl.EnabledPresets) {
 			continue
 		}
 		for _, higher := range []string{"block", "tunnel", "tunnel1", "tunnel2", "direct", "awg2"} {
@@ -534,8 +502,8 @@ func listIssues(l string, issues []ctl.ListIssue) string {
 		line := fmt.Sprintf(tr(l, "line %d: %q is neither a site, an address nor a program"), issue.Line, issue.Raw)
 		var reason string
 		switch {
-		case errors.Is(issue.Err, ctl.ErrListAwg2Scope):
-			reason = tr(l, "awg2_rule is allowed only in Always via Tunnel2")
+		case errors.Is(issue.Err, ctl.ErrListEnabledPresetsScope):
+			reason = tr(l, "enabled_presets is allowed only in Routing rules")
 		case errors.Is(issue.Err, ctl.ErrListRuleFields):
 			reason = tr(l, "the rule has the wrong number of fields")
 		case errors.Is(issue.Err, ctl.ErrListIPOption):
