@@ -4,7 +4,7 @@ package version
 
 import "runtime/debug"
 
-var Version = "1.13.3"
+var Version = "2.0.1"
 
 // Commit: the commit the program was built from, its first seven digits, a
 // "+" after them when the tree had changes not committed. go build stamps it
